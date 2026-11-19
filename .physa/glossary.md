@@ -65,12 +65,12 @@ _Avoid_: LGTM, rubber stamp
 **Steward**: A person a team names to look after a capability: guardrail trips and decay reviews go to them. With no steward named, whoever recently anchored changes to the capability is asked.
 _Avoid_: capability owner, maintainer, DRI
 
-**Needs you**: Everything waiting on one person: sign-offs their stakes require, questions addressed to them, their ideas that need shaping or are withering, their bets that hit a circuit breaker, guardrail trips and decay reviews on capabilities they steward, and map proposals on their PRs. The home screen, and the only thing that notifies.
+**Needs you**: Everything waiting on one person: sign-offs their stakes require, questions and asks addressed to them, their ideas that need shaping or are withering, their bets that hit a circuit breaker, guardrail trips and decay reviews on capabilities they steward, and map proposals on their PRs. The home screen, and the only thing that notifies.
 _Avoid_: inbox, activity feed
 
 **Rollback**: Undoing something, cheapest first: turn its flag off; revert its changes; reverse its decision and list what relied on it. Every rollback is recorded with who and why, and weakens the strength of what was rolled back.
 
-**Appetite**: How much a team is willing to spend on a pitch, in time or money. A budget, never an estimate.
+**Appetite**: How much time a team is willing to spend on a pitch. A budget, never an estimate.
 _Avoid_: estimate, points, story points
 
 **Bet**: A person's decision to build a pitch within its appetite.
@@ -100,6 +100,9 @@ _Avoid_: daemon, orchestrator
 
 **Harness**: A pluggable workflow of agent roles that builds and checks changes. The owner's afk-derived workflow is the first.
 _Avoid_: pipeline, agent framework
+
+**Ask**: What an agent needs from a person during a run: an answer, a choice, a permission. It stays with its run and expires; its answer becomes a decision only if it passes the decision test.
+_Avoid_: question (that is the map's), prompt, interrupt
 
 **Run**: One execution of a harness on a change or scope, from start to its end state.
 _Avoid_: job

@@ -81,6 +81,9 @@ _Avoid_: sprint, commitment
 **Change**: One small, atomic change to the product, usually a single commit in its own PR, anchored to exactly one capability. A change that touches two capabilities should have been split.
 _Avoid_: change set, ticket, leaf, work item
 
+**Acceptance**: The runnable checks a planned change must pass, with a failure case, written before the code. It is the contract every role judges against, and the engine re-runs it itself.
+_Avoid_: acceptance criteria, definition of done, DoD
+
 **Spike**: Optional. A run during shaping that builds working or partial code to learn something for a pitch. Its branch stays with the idea, and a bet can start from it; it never lands on its own. Its runs count as attention to the idea. It has its own very small appetite.
 _Avoid_: prototype, POC
 
@@ -100,10 +103,10 @@ _Avoid_: daemon, orchestrator
 **Harness**: A pluggable workflow of agent roles that builds and checks changes. The owner's afk-derived workflow is the first.
 _Avoid_: pipeline, agent framework
 
-**Role**: A part an agent plays in a harness, declared by the harness as one of three kinds: build, check or fix.
+**Role**: A part an agent plays in a harness, declared by the harness as one of four kinds: conduct (leads the work and spawns the others), build, check or fix. The engine sees only the kind, never the harness's own name for a role.
 _Avoid_: persona, agent type
 
-**Finding**: A problem a check reports on a change: which check, how severe, what is wrong. A fix can address it, and a critic can drop it.
+**Finding**: A problem a check reports on a change: which check, at what level, what is wrong. The harness names the levels and says which are serious. A fix can address it, and a critic can drop it.
 _Avoid_: issue, comment, defect
 
 **Rework**: What a change spends after its first build to fix findings: review rounds and tokens. Counted for agents only, never for people.

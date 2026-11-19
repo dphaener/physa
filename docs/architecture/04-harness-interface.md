@@ -267,6 +267,4 @@ Changes to the role prompts, in order:
 - **Q11** Plan review stays, as optional roles that review the bet's plan before building starts.
 - **Q12** Harnesses are installed per machine. (Which harness a repo uses is still open: Q13.)
 
-## 14. Open questions
-
-- **Q13** Which harness a repo uses when a machine has more than one installed.
+- **Q13** One harness per machine, the developer's choice; every repo on the machine uses it and nothing about it enters the repo. A team's bar lives in its stakes policy and the PR check, not in the harness. A per-repo override waits until someone needs it; a team default and harness comparison belong to the hosted layer.

@@ -101,7 +101,6 @@ Deterministic first, then one agent session:
    - the capabilities the change actually touches;
    - the rules at stake, and whether each looks respected;
    - contradictions with existing decisions;
-   - terms used against the glossary (avoided aliases, undefined terms);
    - suggested map edits that this change itself makes true (for example, a rule this PR introduces).
 4. **Miss and excess** are computed (§3.4).
 

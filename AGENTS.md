@@ -16,9 +16,9 @@ Anchor commits with `Capability: <file name in .physa/capabilities>`.
 
 ## Language
 
-- Use glossary terms exactly. Never use a term's _Avoid_ aliases, in code, docs, commits or conversation.
+- Speak and write in glossary terms: in conversation with the owner, commits, PR descriptions, docs and code. Don't use the words a term's _Avoid_ list names.
 - Never write "ADR", in any form, anywhere.
-- When a new concept needs a word, propose a glossary entry before using it.
+- The glossary changes only when the owner means to change it. If a new concept seems to need a word, ask; don't add one.
 
 ## Working with the owner
 

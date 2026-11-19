@@ -120,7 +120,7 @@ The day-one map will be thinner than the code, because much of the "why" behind 
 
 ### 4.6 The glossary is built in
 
-Agents and people confuse each other when the same thing has three names. The glossary is part of the map: each term with a short definition and the aliases to avoid. Slices carry it, the PR check flags drift to avoided aliases or undefined terms, and shaping settles new terms as they come up.
+Agents and people confuse each other when the same thing has three names. The glossary is part of the map: each term with a short definition and the words that would be confused with it. It exists so agents speak to people in concrete terms that mean something: every slice carries it, so agents are armed with it when they talk, write commits and PR descriptions, and write the map. It guides agents and never polices people, and it changes only when the team means to change it.
 
 ## 5. From idea to established
 

@@ -105,6 +105,8 @@ Pocock format, one entry per term:
 _Avoid_: hook URL, target, destination
 ```
 
+The glossary exists so agents speak to people in concrete terms. It guides agents and is never enforced: no check flags people's words. It changes only when the team means to change it; nothing learned from PRs edits it.
+
 Terms are product-wide. A slice includes the terms whose name appears in the text it assembled (a plain word match on the term and its aliases: deterministic, not semantic).
 
 ## 5. product.md
@@ -174,7 +176,6 @@ Runs locally and in CI. It fails on:
 - a duplicate slug, or a reference to a slug that does not exist;
 - a rule or decision without an anchor or a `Because:` line;
 - an anchor that does not resolve to a commit or PR in this repo;
-- an avoided glossary alias used in the map itself;
 - a capability file or the whole map over its size budget.
 
 ## 9. Size budgets (Q5)

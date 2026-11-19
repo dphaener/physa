@@ -27,12 +27,20 @@ Because: a person reads one page per area, and parallel PRs on different capabil
 The files are the current state. What aggregates history (strength, decay, usage) lives in the engine's store, never in the read path.
 Because: Rhiza replayed a 127 MB event log on every read; `rhiza check` took 15.3 s until a projection was bolted on.
 
-### One word for one thing
+### Agents speak in glossary terms
 `one-word` · from docs/vision.md
-The glossary is part of the map. Agents and people use its terms and never its avoided aliases.
-Because: agents and people confuse each other when one thing has three names.
+The glossary is part of the map and travels in every slice, so agents use its terms when they talk with people, write commits and PR descriptions, and write the map. It guides agents; nothing checks people's words.
+Because: agents and people confuse each other when one thing has three names, and a tool that polices words gets removed.
 
 ## Decisions
+
+### The glossary changes only on purpose
+`glossary-intentional` · decided by dphaener, in their words · 2026-11-19 · from docs/architecture/01-map-and-slice.md
+Nothing learned from PRs edits the glossary. A person changes it when they mean to.
+Because: the glossary is the team's chosen language, not a record of how people happen to talk.
+Rejected:
+- Proposing new or clarified terms from what PRs and reviews say.
+- Flagging avoided words in commits and PRs: polices people, mostly false alarms (27 on the first map, nearly all ordinary English).
 
 ### In the repo, hidden directory
 `in-repo` · decided by dphaener, in their words · 2026-11-19 · from docs/architecture/01-map-and-slice.md

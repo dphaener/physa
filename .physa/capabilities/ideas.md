@@ -31,7 +31,7 @@ Because: work is not knowledge; Rhiza's model drowned in run records.
 
 ### Shape Up as a starting point
 `shape-up-start` · decided by dphaener, in their words · 2026-11-19 · from docs/vision.md
-Physa borrows pitches, appetites, bets, scopes and circuit breakers from Shape Up, and replaces whatever does not fit work built by agents: scopes are set during shaping, appetites are tokens, and hills are gone.
+Physa borrows pitches, appetites, bets and circuit breakers from Shape Up, and replaces whatever does not fit work built by agents: scope means a pitch's breadth and is set during shaping, appetites are tokens, and hills and countable scopes are gone.
 Because: its ideas were about judgment, not about how slow building was.
 Rejected:
 - Six-week cycles and cooldown: sized to human building speed.

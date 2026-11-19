@@ -125,9 +125,9 @@ Agents and people confuse each other when the same thing has three names. The gl
 ## 5. From idea to established
 
 1. **Idea.** A person's intent to try something. Free to start; no signal required yet.
-2. **Shaping.** The idea becomes a pitch: the problem, the appetite (in tokens), the solution, its scopes, the signal it expects, its rabbit holes and its no-gos. How much shaping an idea needs depends on its appetite.
+2. **Shaping.** The idea becomes a pitch: the problem, the appetite (in tokens), the solution, its scope, the signal it expects, its rabbit holes and its no-gos. How much shaping an idea needs depends on its appetite.
 3. **Bet.** A person decides to build the pitch within its appetite. Agents can draft pitches; only people bet. Who may bet on what is the team's policy, not Physa's.
-4. **Scopes and changes.** Scopes are set during shaping, often helped by spikes: agent-built working or partial code that teaches the pitch something. A bet is delivered as its scopes, and each scope as small changes built by a harness.
+4. **Changes.** A pitch's scope, its breadth, is set during shaping, often helped by spikes: agent-built working or partial code that teaches the pitch something. A bet is delivered as the small changes its pitch plans, built by a harness. A pitch too broad for one bet becomes more than one idea.
 5. **Progress.** Shape Up's hill does not fit: the figuring out now happens in shaping. How a bet's progress is described and shown is still open.
 6. **Circuit breaker.** When a bet runs out of appetite, its work stops and goes back to shaping. Appetites are never extended automatically.
 7. **Flow decides.** Built ideas ship behind a flag, are measured against their signal, and thicken into a capability or wither.

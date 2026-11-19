@@ -147,7 +147,7 @@ One line per capability, sorted by name. With local data available it adds stren
 
 ```
 physa slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]
-physa slice --change <bet or scope>     (for planned work: the capabilities were chosen when it was shaped)
+physa slice --change <bet>     (for planned work: the capabilities were chosen when it was shaped)
 ```
 
 Output sections, always in this order:

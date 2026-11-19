@@ -1,6 +1,6 @@
 # Architecture 03: the engine and its local store
 
-Draft 0.3, 2026-11-19. Uses `.physa/glossary.md` terms only. Builds on 01 and 02. Items marked (Q) are open questions for the owner.
+Draft 0.4, 2026-11-19. Uses `.physa/glossary.md` terms only. Builds on 01 and 02. Items marked (Q) are open questions for the owner.
 
 The engine is where Rhiza failed: "no orchestrator" was its goal six times and never happened, the owner wrote watch, stall and cleanup scripts around it, and its orchestration became a 55,000-line package with about 85% of all fixes. This design starts from those failures.
 
@@ -62,7 +62,7 @@ The engine is where Rhiza failed: "no orchestrator" was its goal six times and n
 
 ### 4.2 Shape
 
-- **State tables are the truth** (Q3): the current state of every idea, pitch, bet, scope, change, run and session, read directly.
+- **State tables are the truth** (Q3): the current state of every idea, pitch, bet, change, run and session, read directly.
 - **Every state change appends an event in the same transaction.** Events are an audit trail and the input to strength. They are never replayed to answer a read.
 - **Retention**: agent output and logs expire after 30 days; events after 90 days; the aggregates strength needs are kept, small.
 - **Schema changes** are numbered migrations applied by the engine at start.
@@ -71,7 +71,7 @@ The engine is where Rhiza failed: "no orchestrator" was its goal six times and n
 
 | Kind | Holds | Never |
 |---|---|---|
-| Work | ideas, spikes, pitches, bets, scopes, changes, their appetites | in the map |
+| Work | ideas, spikes, pitches, bets, changes, their appetites | in the map |
 | Runs | runs, sessions, their outcomes, harness records (findings, evidence, rounds, verdicts, notes) | in the map |
 | People | asks (§9), sign-offs, answers, interventions | in the map |
 | Measures | slice records, PR check results pulled by `physa sync`, signal and flag results, rollbacks | in the map |
@@ -173,20 +173,20 @@ Agents ask through the engine:
 
 What the engine records so views can show a bet's progress without hills (Q17):
 
-- **The plan is recorded and replanning is counted.** When building starts, the conductor names the changes it plans for each scope. The engine stores the plan and every revision with its reason. A plan that keeps changing is the new uphill: it shows what shaping missed.
-- **Progress is facts, never a percentage.** Per scope: changes landed, in a run, waiting on a person. Per bet: tokens spent against the appetite, asks open. Never folded into one number.
-- **A scope is done when its planned changes have landed.** When the team's process asks for it to be shown working, that is a sign-off the engine asks for, and the scope is not done until it is given.
+- **The plan is recorded and replanning is counted.** When building starts, the conductor names the changes it plans for the bet. The engine stores the plan and every revision with its reason. A plan that keeps changing is the new uphill: it shows what shaping missed.
+- **Progress is facts, never a percentage.** Per bet: changes landed, in a run, waiting on a person; tokens spent against the appetite; asks open. Never folded into one number.
+- **A bet is done when its planned changes have landed.** When the team's process asks for it to be shown working, that is a sign-off the engine asks for, and the bet is not done until it is given.
 - **Spend is recorded per change**, so a view can show where the appetite went and a change eating a large share of it stands out while it happens.
 
 ## 11. Lifecycles
 
-Ideas have no named states (`strength-not-mode`). Scopes have none either: they are set during shaping and a bet is delivered through them (Q13). Everything else the engine runs has a small state machine, each owned by one part of the engine:
+Ideas have no named states (`strength-not-mode`). Everything else the engine runs has a small state machine, each owned by one part of the engine:
 
 | Thing | States |
 |---|---|
 | Bet | active → done, or stopped by its circuit breaker |
 | Change | open → landed → exposed (its flag widening) → established, or reverted |
-| Run (for a spike, change or scope) | queued → running → waiting on a person → ended (outcome) |
+| Run (for a spike or a change) | queued → running → waiting on a person → ended (outcome) |
 | Session | running → done, exited, lost, or stalled |
 
 ## 12. The API
@@ -214,11 +214,11 @@ The engine is the part of Physa most likely to grow by accretion. Its packages g
 - **Q11** **Ask** is its own term, distinct from a map question (added to the glossary).
 - **Q12** Appetite is tokens, warned at 80%, stopped at 100%. The owner first chose time, then: "Time doesn't really matter as much. Agents are fast." and "we should call it tokens. Call it what it is."
 
-- **Q13** Scopes are set during shaping and listed in the pitch, with no lifecycle. Showing a scope working on its own can be part of the process; it is not required. Spikes (optional) are runs during shaping whose working or partial code feeds the pitch. Hill is removed from the glossary.
+- **Q13** Scope is the breadth of a pitch (the owner: "Scope is the breadth of the feature"), set during shaping. There is no countable piece between a bet and its changes; a pitch too broad for one bet becomes more than one idea. Spikes (optional) are runs during shaping whose working or partial code feeds the pitch. Hill is removed from the glossary.
 - **Q14** A bet's appetite counts from when it is accepted and building starts.
 - **Q15** Init's token limit is an appetite, consistent with Q12.
 - **Q18** A spike has its own appetite, very small, set when it starts.
-- **Q17** What the engine records for a bet's progress, as in §10a: the plan and its revisions, facts never a percentage, a scope done when its planned changes land (or at a sign-off when the team asks for one), spend per change. How it is shown is for the views design.
+- **Q17** What the engine records for a bet's progress, as in §10a: the plan and its revisions, facts never a percentage, a bet done when its planned changes land (or at a sign-off when the team asks for one), spend per change. How it is shown is for the views design.
 - **Q16** Time plays no part in appetite (the owner: "time doesn't matter at all anymore"). Stalls and unanswered asks are supervision and Needs you, not appetite.
 
 ## 15. Open questions

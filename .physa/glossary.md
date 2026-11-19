@@ -34,10 +34,10 @@ _Avoid_: context pack, context dump
 **Idea**: A person's intent to try something with the product: a PM's feature, a designer's layout, a developer's architecture. It is the thinnest tube in the network from the moment it exists, and it belongs to that person. It thickens as attention and then evidence flow into it, and withers when nothing does. An idea has no named states: its strength and a few facts (shaped, built, flagged to whom) say where it stands. When it withers, its code and flag are removed and its lesson stays in the map as a decision with the idea as a rejected option.
 _Avoid_: ticket, backlog item, story, probe
 
-**Shaping**: Turning an idea into a pitch: working out the problem, the appetite, the solution, the scopes, the signal and the no-gos. It can include spikes.
+**Shaping**: Turning an idea into a pitch: working out the problem, the appetite, the solution, the scope, the signal and the no-gos. It can include spikes.
 _Avoid_: grooming, refinement
 
-**Pitch**: A shaped idea: the problem, the appetite, the solution, its scopes, the signal it expects, its rabbit holes and no-gos.
+**Pitch**: A shaped idea: the problem, the appetite, the solution, its scope, the signal it expects, its rabbit holes and no-gos.
 _Avoid_: RFC, spec, PRD
 
 **Signal**: What an idea expects to see in real use if it is right: user behaviour for product ideas, task success for design ideas, engineering evidence (reverts, rework, defects, lead time, performance) for architecture ideas. Named during shaping, before code. Physa measures only what signals name; their events belong to the idea and decay with it.
@@ -76,8 +76,7 @@ _Avoid_: estimate, points, story points, time box
 **Bet**: A person's decision to build a pitch within its appetite.
 _Avoid_: sprint, commitment
 
-**Scope**: A meaningful part of a pitch, set during shaping and delivered as several small changes. Showing a scope working on its own can be part of the process, but is not required.
-_Avoid_: subtask, leaf, milestone
+**Scope**: The breadth of a pitch: what it covers. Its no-gos mark the edge. Set during shaping; widening it after the bet goes back to shaping. A pitch too broad for one bet becomes more than one idea.
 
 **Change**: One small, atomic change to the product, usually a single commit in its own PR, anchored to exactly one capability. A change that touches two capabilities should have been split.
 _Avoid_: change set, ticket, leaf, work item
@@ -104,7 +103,7 @@ _Avoid_: pipeline, agent framework
 **Ask**: What an agent needs from a person during a run: an answer, a choice, a permission. It stays with its run and expires; its answer becomes a decision only if it passes the decision test.
 _Avoid_: question (that is the map's), prompt, interrupt
 
-**Run**: One execution of a harness on a spike, a change or a scope, from start to its end state.
+**Run**: One execution of a harness on a spike or a change, from start to its end state.
 _Avoid_: job
 
 **Strength**: How much real flow an idea or capability carries: attention before code, then usage, rollout, signal results, stability and citations. Measured, never set by hand. How strict the process is and how much agents may do follow from it, by the team's own policy.

@@ -77,3 +77,8 @@ Because: "Time doesn't really matter as much. Agents are fast." Tokens are what 
 Rejected:
 - Time: "time doesn't matter at all anymore".
 - Money: tokens priced per model hide what is really spent.
+
+### Rework is recorded for every change
+`record-rework` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/03-engine-and-store.md
+The engine credits every commit and token to the session and role that produced it, and records review rounds, fix against build tokens, and findings per check. Agents only.
+Because: much is spent after builds fixing what checks asked for, and teams need numbers to tune their harness.

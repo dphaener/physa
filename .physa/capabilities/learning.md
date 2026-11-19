@@ -33,3 +33,8 @@ Because: CI cannot see a developer's local store.
 `results-in-checks` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/02-init-and-learning.md
 Each PR check writes its structured results into the check run; `physa sync` pulls them into the local store.
 Because: results feed strength and must not live in the repo; the open core must work without the hosted layer.
+
+### Recurring findings become proposed rules
+`findings-to-rules` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/03-engine-and-store.md
+When the same kind of finding recurs on a capability, learning proposes a rule on the next `physa/learn` PR.
+Because: a rule in the slice costs a few lines; the same lesson paid in review costs a build, a round and a fix.

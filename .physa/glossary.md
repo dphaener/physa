@@ -100,6 +100,15 @@ _Avoid_: daemon, orchestrator
 **Harness**: A pluggable workflow of agent roles that builds and checks changes. The owner's afk-derived workflow is the first.
 _Avoid_: pipeline, agent framework
 
+**Role**: A part an agent plays in a harness, declared by the harness as one of three kinds: build, check or fix.
+_Avoid_: persona, agent type
+
+**Finding**: A problem a check reports on a change: which check, how severe, what is wrong. A fix can address it, and a critic can drop it.
+_Avoid_: issue, comment, defect
+
+**Rework**: What a change spends after its first build to fix findings: review rounds and tokens. Counted for agents only, never for people.
+_Avoid_: churn, iteration
+
 **Ask**: What an agent needs from a person during a run: an answer, a choice, a permission. It stays with its run and expires; its answer becomes a decision only if it passes the decision test.
 _Avoid_: question (that is the map's), prompt, interrupt
 

@@ -1,6 +1,6 @@
 # Architecture 03: the engine and its local store
 
-Draft 0.4, 2026-11-19. Uses `.physa/glossary.md` terms only. Builds on 01 and 02. Items marked (Q) are open questions for the owner.
+Draft 0.5, 2026-11-19. Uses `.physa/glossary.md` terms only. Builds on 01 and 02. Items marked (Q) are open questions for the owner.
 
 The engine is where Rhiza failed: "no orchestrator" was its goal six times and never happened, the owner wrote watch, stall and cleanup scripts around it, and its orchestration became a 55,000-line package with about 85% of all fixes. This design starts from those failures.
 
@@ -153,6 +153,16 @@ What the engine asks for (sign-offs, bets, asks routed to Needs you) are not int
 
 Every run records its interventions. The engine reports runs finished with none, and the current streak, from the first run.
 
+## 8a. Rework
+
+Rework is what a change spends after its first build to fix findings. Recording it lets a team tune its harness and spend fewer tokens after builds (R1–R5).
+
+- **Every commit and every token is credited to the session that produced it**, and each session to a role the harness declares as build, check or fix (R1). This holds for any harness: the engine starts every session in its own worktree and sees the commit before and after it, so it does not depend on agents' trailers.
+- **Harnesses can report findings through the API** in one shape: the check, severity, the change, what is wrong, and later which fix addressed it or that a critic dropped it (R2). Optional: a harness that reports none still gets everything in the first point.
+- **Per change, the engine records rework** (R3): review rounds, fix tokens against build tokens, findings per check, findings dropped. A check whose findings are often dropped is noise; one whose findings always lead to a fix earns its tokens.
+- **Findings that recur become proposed rules** (R4). When the same kind of finding recurs on a capability, the learning step proposes a rule on the next `physa/learn` PR, so builders get it in their slice instead of paying for it in review.
+- **Agents only** (R5). Physa never tracks how people review.
+
 ## 9. Asks
 
 An **ask** is what an agent needs from a person during a run: an answer, a choice, a permission. It is not a map **question**: an ask is short-lived and stays with its run.
@@ -219,6 +229,7 @@ The engine is the part of Physa most likely to grow by accretion. Its packages g
 - **Q15** Init's token limit is an appetite, consistent with Q12.
 - **Q18** A spike has its own appetite, very small, set when it starts.
 - **Q17** What the engine records for a bet's progress, as in §10a: the plan and its revisions, facts never a percentage, a bet done when its planned changes land (or at a sign-off when the team asks for one), spend per change. How it is shown is for the views design.
+- **R1–R5** Rework recorded as in §8a; Role, Finding and Rework added to the glossary.
 - **Q16** Time plays no part in appetite (the owner: "time doesn't matter at all anymore"). Stalls and unanswered asks are supervision and Needs you, not appetite.
 
 ## 15. Open questions

@@ -20,11 +20,11 @@ Because: Rhiza's core imported its own TUI and web, and its web layer had to cop
 ## Decisions
 
 ### The owner's harness is the first
-`owner-harness-first` · decided by dphaener · 2026-11-19 · from docs/research/harness-spec.md
+`owner-harness-first` · decided by dphaener, in their words · 2026-11-19 · from docs/research/harness-spec.md
 The harness descended from forge and shipit through afk builds Physa from day one, and is the first harness plugin.
 Because: the owner trusts it, and building with it proves harnesses are pluggable.
 
 ### A Rex view plugin
-`rex-plugin` · decided by dphaener · 2026-11-19 · from docs/vision.md
+`rex-plugin` · decided by dphaener, in their words · 2026-11-19 · from docs/vision.md
 A Rex layer for the owner and Rex power users, as the first view plugin.
 Because: it proves views plug in, alongside harnesses.

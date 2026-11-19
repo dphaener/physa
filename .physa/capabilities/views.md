@@ -20,12 +20,12 @@ Because: role dashboards go stale and keep people apart.
 ## Decisions
 
 ### The network view is the signature
-`network-view` · decided by dphaener · 2026-11-19 · from docs/vision.md
+`network-view` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/vision.md
 The product drawn as a network: established capabilities thick, growing ideas thin, fading parts dimmed.
 Because: nobody else can draw it, because nobody else measures strength.
 
 ### Stewards look after capabilities
-`stewards` · decided by dphaener · 2026-11-19 · from docs/vision.md
+`stewards` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/vision.md
 Teams name stewards per capability; with none named, whoever recently anchored changes is asked.
 Because: guardrail trips and decay reviews need someone to go to.
 Rejected:

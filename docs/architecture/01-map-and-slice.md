@@ -77,6 +77,7 @@ Every entry starts with a heading, then one meta line in backticks-and-dots form
 - **Slug**: the entry's stable name, lowercase with hyphens, unique across the whole map. It is what trailers and other entries use. Headings can be reworded freely; the slug stays.
 - **Anchors**: PR numbers (`#1102`) or short commit hashes. Every rule and decision needs at least one, except entries recovered at setup from sources that are not changes (those cite the doc instead: `from CONTRIBUTING.md`).
 - **People and dates** are only on decisions and questions, where they matter.
+- **How a decision was reached** follows the person, one of three: `in their words` (the person stated it), `choosing an option` (the person picked from options offered), `accepting a proposal` (the person agreed to an agent's or someone else's recommendation). Example: `` `openfeature` · decided by dphaener, accepting a proposal · 2026-11-19 · #42 ``. It keeps rubber-stamped agreement visible: in Rhiza, the recommended option was accepted 88% of the time.
 - One line keeps entries scannable on GitHub and parseable without a schema language.
 
 ### 3.2 Entry kinds

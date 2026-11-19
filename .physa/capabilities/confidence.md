@@ -30,7 +30,7 @@ Because: it carries out a rule the team set in advance; it does not judge.
 ## Decisions
 
 ### Fewer, meaningful sign-offs
-`meaningful-signoffs` · decided by dphaener · 2026-11-19 · from docs/vision.md
+`meaningful-signoffs` · decided by dphaener, choosing an option · 2026-11-19 · from docs/vision.md
 People sign off only when the stakes require it. Physa never tracks how people review.
 Because: in Rhiza the recommended option was taken 88% of the time; frequent sign-offs become rubber stamps.
 Rejected:

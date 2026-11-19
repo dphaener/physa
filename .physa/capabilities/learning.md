@@ -25,11 +25,11 @@ Because: nothing changes silently.
 ## Decisions
 
 ### What was loaded travels in a trailer
-`loaded-trailer` · decided by dphaener · 2026-11-19 · from docs/architecture/02-init-and-learning.md
+`loaded-trailer` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/02-init-and-learning.md
 Agents add `Loaded: <capabilities>` to their commits, so CI can measure slice misses and excess with no store.
 Because: CI cannot see a developer's local store.
 
 ### GitHub keeps results in the open-source core
-`results-in-checks` · decided by dphaener · 2026-11-19 · from docs/architecture/02-init-and-learning.md
+`results-in-checks` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/02-init-and-learning.md
 Each PR check writes its structured results into the check run; `physa sync` pulls them into the local store.
 Because: results feed strength and must not live in the repo; the open core must work without the hosted layer.

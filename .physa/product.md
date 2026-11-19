@@ -44,14 +44,14 @@ Because: "it's nonsense to a user" (the owner, about Rhiza).
 ## Decisions
 
 ### Open-source core, closed hosted layer
-`open-core` · decided by dphaener · 2026-11-19 · from docs/vision.md
+`open-core` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/vision.md
 The core is everything one developer or one repo needs, fully working, under a permissive license. The hosted layer is where people, repos and production data come together, and is closed.
 Because: the open core is how developers bring Physa into their teams.
 Rejected:
 - Source-available hosted layer: no advantage worth the exposure.
 
 ### Go core, Rails hosted layer
-`go-and-rails` · decided by dphaener · 2026-11-19 · from docs/vision.md
+`go-and-rails` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/vision.md
 The core is Go, kept small and plain. The hosted layer is Rails, and reads the map by calling the core binary.
 Because: the core must install with one command anywhere; the hosted layer is where most screens live and where the owner is strongest.
 Rejected:
@@ -60,7 +60,7 @@ Rejected:
 - Rust core: hardest for the owner to review.
 
 ### Named Physa
-`name` · decided by dphaener · 2026-11-19 · from docs/vision.md
+`name` · decided by dphaener, choosing an option · 2026-11-19 · from docs/vision.md
 The product is Physa, after Physarum.
 Rejected:
 - Rhiza: no longer fits the product.
@@ -68,7 +68,7 @@ Rejected:
 - Phloem, Tendril, Loam, Graft: spelling, collisions or connotations.
 
 ### Strength replaces mode
-`strength-not-mode` · decided by dphaener · 2026-11-19 · from docs/vision.md
+`strength-not-mode` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/vision.md
 How proven an idea or capability is comes from measured strength. Strictness and agent autonomy follow from it by team policy.
 Because: a mode someone sets goes stale; a slime mold's tubes are as thick as their flow.
 Rejected:

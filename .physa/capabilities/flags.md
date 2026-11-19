@@ -20,13 +20,13 @@ Because: stale flags are hidden debt; decay removes them by design.
 ## Decisions
 
 ### Own the meaning, integrate the switch
-`openfeature` · decided by dphaener · 2026-11-19 · from docs/vision.md
+`openfeature` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/vision.md
 Physa owns the link between an idea and its flag, the flag's lifetime, signals and rollback. Evaluation goes through OpenFeature, so teams keep LaunchDarkly, Statsig or PostHog.
 Because: the meaning is new; the switch is commoditized, and flag vendors are moving toward intent.
 Rejected:
 - Owning the whole flag stack: fights established vendors on infrastructure.
 
 ### A self-hosted flag service in the core
-`own-flag-service` · decided by dphaener · 2026-11-19 · from docs/vision.md
+`own-flag-service` · decided by dphaener, choosing an option · 2026-11-19 · from docs/vision.md
 The open-source core includes a small flag service as the default OpenFeature provider.
 Because: instant rollback must work for a solo developer with no vendor and no hosted layer.

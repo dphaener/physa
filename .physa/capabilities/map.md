@@ -35,7 +35,7 @@ Because: agents and people confuse each other when one thing has three names.
 ## Decisions
 
 ### In the repo, hidden directory
-`in-repo` · decided by dphaener · 2026-11-19 · from docs/architecture/01-map-and-slice.md
+`in-repo` · decided by dphaener, in their words · 2026-11-19 · from docs/architecture/01-map-and-slice.md
 The map lives in `.physa/` in the team's repo.
 Because: reviewable in PRs, shared through git, trusted because it is visible.
 Rejected:
@@ -43,6 +43,6 @@ Rejected:
 - A visible `physa/` directory: more clutter for little gain.
 
 ### Superseded decisions fold into their replacement
-`fold-superseded` · decided by dphaener · 2026-11-19 · from docs/architecture/01-map-and-slice.md
+`fold-superseded` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/01-map-and-slice.md
 A superseded or reversed decision becomes a `Rejected:` item on the decision that replaced it. Git is the archive.
 Because: the history that matters stays beside the current choice, without growing the map.

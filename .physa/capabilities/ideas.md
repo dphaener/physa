@@ -30,7 +30,7 @@ Because: work is not knowledge; Rhiza's model drowned in run records.
 ## Decisions
 
 ### Shape Up as a starting point
-`shape-up-start` · decided by dphaener · 2026-11-19 · from docs/vision.md
+`shape-up-start` · decided by dphaener, in their words · 2026-11-19 · from docs/vision.md
 Physa borrows pitches, appetites, bets, scopes, hills and circuit breakers from Shape Up, and replaces whatever does not fit work built by agents.
 Because: its ideas were about judgment, not about how slow building was.
 Rejected:
@@ -38,7 +38,7 @@ Rejected:
 - Adopting it whole: it is a jumping-off point, not a template.
 
 ### An idea is a thin tube from the start
-`idea-is-tube` · decided by dphaener · 2026-11-19 · from docs/vision.md
+`idea-is-tube` · decided by dphaener, in their words · 2026-11-19 · from docs/vision.md
 An idea exists the moment a person wants to try something, and belongs to them. A signal is required by shaping, not before.
 Because: the PM's hunch, the designer's layout and the developer's architecture are each already a feeler.
 Rejected:

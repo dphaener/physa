@@ -30,7 +30,7 @@ Because: teams with existing agent docs must not find Physa rewriting them.
 ## Decisions
 
 ### GitHub first
-`github-first` · decided by dphaener · 2026-11-19 · from docs/architecture/02-init-and-learning.md
+`github-first` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/02-init-and-learning.md
 Init and the PR check read PRs and reviews through `gh`. Other hosts come later.
 Because: one host done well before several done badly.
 

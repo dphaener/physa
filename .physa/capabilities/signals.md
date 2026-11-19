@@ -30,12 +30,12 @@ Because: tracking plans rot like flags do.
 ## Decisions
 
 ### Engineering evidence from git and CI; runtime through OpenTelemetry
-`engineering-evidence` · decided by dphaener · 2026-11-19 · from docs/vision.md
+`engineering-evidence` · decided by dphaener, in their words · 2026-11-19 · from docs/vision.md
 Reverts, rework, defects and lead time come from git, PRs and CI. Errors and performance come through OpenTelemetry.
 Because: architecture ideas need evidence too, and monitoring is not ours to build.
 
 ### One SDK for flags and signal events
-`one-sdk` · decided by dphaener · 2026-11-19 · from docs/vision.md
+`one-sdk` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/vision.md
 The same SDK evaluates flags and records signal events.
 Because: exposure and outcome must join on the same person.
 Rejected:

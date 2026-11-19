@@ -30,12 +30,12 @@ Because: Rhiza only got its speed target after the pain.
 ## Decisions
 
 ### The index is derived, not stored
-`derived-index` · decided by dphaener · 2026-11-19 · from docs/architecture/01-map-and-slice.md
+`derived-index` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/01-map-and-slice.md
 `physa index` builds the index from the capability files on every call.
 Because: storing it would duplicate every promise.
 
 ### Pull at the start, check at the PR
-`pull-then-check` · decided by dphaener · 2026-11-19 · from docs/architecture/02-init-and-learning.md
+`pull-then-check` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/02-init-and-learning.md
 Agents pull a slice when they start; the PR check catches what they missed. Nothing is injected mid-session.
 Because: hooks are not universal across agents, but every agent's work ends at a PR.
 Rejected:

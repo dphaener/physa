@@ -35,7 +35,7 @@ Because: 76% of Rhiza's model was agent activity.
 ## Decisions
 
 ### A conductor on a durable engine
-`conductor-on-engine` · decided by dphaener · 2026-11-13 · from docs/research/rhiza-v1-lessons.md
+`conductor-on-engine` · decided by dphaener, in their words · 2026-11-13 · from docs/research/rhiza-v1-lessons.md
 One conductor agent per piece of work, on an engine that only enforces and records.
 Because: the conductor shipped four features cleanly in one night.
 Rejected:

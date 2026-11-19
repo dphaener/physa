@@ -82,7 +82,7 @@ _Avoid_: subtask, leaf, milestone
 **Change**: One small, atomic change to the product, usually a single commit in its own PR, anchored to exactly one capability. A change that touches two capabilities should have been split.
 _Avoid_: change set, ticket, leaf, work item
 
-**Spike**: Optional. A run during shaping that builds working or partial code to learn something for a pitch. Its branch stays with the idea, and a bet can start from it; it never lands on its own. Its runs count as attention to the idea.
+**Spike**: Optional. A run during shaping that builds working or partial code to learn something for a pitch. Its branch stays with the idea, and a bet can start from it; it never lands on its own. Its runs count as attention to the idea. It has its own very small appetite.
 _Avoid_: prototype, POC
 
 **Rabbit hole**: A known risk in a pitch that could swallow the appetite. Once found, it is kept in the map as a rule or a rejected option on a decision.

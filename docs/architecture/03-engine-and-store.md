@@ -165,7 +165,7 @@ Agents ask through the engine:
 
 ## 10. Appetites and circuit breakers
 
-- A bet's appetite is tokens (Q12), counted from when the bet is accepted and building starts (Q14). Time plays no part (Q16).
+- A bet's appetite is tokens (Q12), counted from when the bet is accepted and building starts (Q14). Time plays no part (Q16). A spike has its own very small appetite, set when it starts (Q18).
 - Adapters report each session's tokens; the engine adds them to the bet after every session record and checks the appetite in the same transaction.
 - At 80% the bet's steward is told through Needs you. At 100% the circuit breaker stops the bet's runs, records why, and the bet goes back to shaping. It never extends itself.
 
@@ -208,9 +208,9 @@ The engine is the part of Physa most likely to grow by accretion. Its packages g
 - **Q13** Scopes are set during shaping and listed in the pitch, with no lifecycle. Showing a scope working on its own can be part of the process; it is not required. Spikes (optional) are runs during shaping whose working or partial code feeds the pitch. Hill is removed from the glossary.
 - **Q14** A bet's appetite counts from when it is accepted and building starts.
 - **Q15** Init's token limit is an appetite, consistent with Q12.
+- **Q18** A spike has its own appetite, very small, set when it starts.
 - **Q16** Time plays no part in appetite (the owner: "time doesn't matter at all anymore"). Stalls and unanswered asks are supervision and Needs you, not appetite.
 
 ## 15. Open questions
 
-- **Q17** How a bet's progress is described and shown, now that hills are gone (for the views design).
-- **Q18** Whether a spike has its own appetite.
+- **Q17** How a bet's progress is described and shown, now that hills are gone. Showing it is for the views design; what the engine must record for it is decided here (owner: "there are underlying modeling decisions that may need to be considered").

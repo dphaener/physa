@@ -1,6 +1,6 @@
 # Architecture 03: the engine and its local store
 
-Draft 0.2, 2026-11-19. Uses `.physa/glossary.md` terms only. Builds on 01 and 02. Items marked (Q) are open questions for the owner.
+Draft 0.3, 2026-11-19. Uses `.physa/glossary.md` terms only. Builds on 01 and 02. Items marked (Q) are open questions for the owner.
 
 The engine is where Rhiza failed: "no orchestrator" was its goal six times and never happened, the owner wrote watch, stall and cleanup scripts around it, and its orchestration became a 55,000-line package with about 85% of all fixes. This design starts from those failures.
 
@@ -71,7 +71,7 @@ The engine is where Rhiza failed: "no orchestrator" was its goal six times and n
 
 | Kind | Holds | Never |
 |---|---|---|
-| Work | ideas, pitches, bets, scopes, changes, their appetites and hills | in the map |
+| Work | ideas, spikes, pitches, bets, scopes, changes, their appetites | in the map |
 | Runs | runs, sessions, their outcomes, harness records (findings, evidence, rounds, verdicts, notes) | in the map |
 | People | asks (§9), sign-offs, answers, interventions | in the map |
 | Measures | slice records, PR check results pulled by `physa sync`, signal and flag results, rollbacks | in the map |
@@ -95,7 +95,7 @@ This is what "durable" means: the engine can be killed at any moment and picks u
 |---|---|
 | People | CLI, Rex plugin, phone web, through the API |
 | Sessions | API calls from the harness and agents (records, asks, done), and the process ending |
-| Time | timers held in the store: appetite checks, stall checks, retries |
+| Time | timers held in the store: stall checks, retries |
 | GitHub | polled through `gh` with backoff in the open-source core (Q5); webhooks in the hosted layer |
 
 ## 6. Workspaces
@@ -165,19 +165,19 @@ Agents ask through the engine:
 
 ## 10. Appetites and circuit breakers
 
-- A bet's appetite is time (Q12): how long the team is willing to spend on it, starting when the bet is made (Q14).
+- A bet's appetite is tokens (Q12), counted from when the bet is accepted and building starts (Q14). Time plays no part (Q16).
+- Adapters report each session's tokens; the engine adds them to the bet after every session record and checks the appetite in the same transaction.
 - At 80% the bet's steward is told through Needs you. At 100% the circuit breaker stops the bet's runs, records why, and the bet goes back to shaping. It never extends itself.
 
 ## 11. Lifecycles
 
-Ideas have no named states (`strength-not-mode`). Everything else the engine runs has a small state machine, each owned by one part of the engine:
+Ideas have no named states (`strength-not-mode`). Scopes have none either: they are set during shaping and a bet is delivered through them (Q13). Everything else the engine runs has a small state machine, each owned by one part of the engine:
 
 | Thing | States |
 |---|---|
 | Bet | active → done, or stopped by its circuit breaker |
-| Scope | (Q13) |
 | Change | open → landed → exposed (its flag widening) → established, or reverted |
-| Run | queued → running → waiting on a person → ended (outcome) |
+| Run (for a spike, change or scope) | queued → running → waiting on a person → ended (outcome) |
 | Session | running → done, exited, lost, or stalled |
 
 ## 12. The API
@@ -203,10 +203,14 @@ The engine is the part of Physa most likely to grow by accretion. Its packages g
 - **Q9** Slots defaulted from the machine's cores and memory, and adjustable.
 - **Q10** An intervention is what a person does to keep work moving that the engine did not ask for.
 - **Q11** **Ask** is its own term, distinct from a map question (added to the glossary).
-- **Q12** Appetite is time only (the owner: "just time"). Warned at 80%, stopped at 100%.
+- **Q12** Appetite is tokens, warned at 80%, stopped at 100%. The owner first chose time, then: "Time doesn't really matter as much. Agents are fast." and "we should call it tokens. Call it what it is."
+
+- **Q13** Scopes are set during shaping and listed in the pitch, with no lifecycle. Showing a scope working on its own can be part of the process; it is not required. Spikes (optional) are runs during shaping whose working or partial code feeds the pitch. Hill is removed from the glossary.
+- **Q14** A bet's appetite counts from when it is accepted and building starts.
+- **Q15** Init's token limit is an appetite, consistent with Q12.
+- **Q16** Time plays no part in appetite (the owner: "time doesn't matter at all anymore"). Stalls and unanswered asks are supervision and Needs you, not appetite.
 
 ## 15. Open questions
 
-- **Q13** What a scope is to the engine, if anything (the owner: the scope lifecycle "didn't make sense").
-- **Q14** When a bet's time starts and what counts: calendar time from the bet.
-- **Q15** Init's token budget (02 §4) is not an appetite, now that appetite is time only.
+- **Q17** How a bet's progress is described and shown, now that hills are gone (for the views design).
+- **Q18** Whether a spike has its own appetite.

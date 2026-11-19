@@ -49,7 +49,7 @@ There are no role dashboards. Everyone sees the same views, filtered by what inv
 | Question | View |
 |---|---|
 | Does anything need me? | **Needs you**, the home screen |
-| What is changing right now? | Hills for current bets and scopes; recent changes by capability |
+| What is changing right now? | Progress of current bets (how it is shown is still open); recent changes by capability |
 | What is the product? | **The network**: capabilities and ideas drawn thicker the stronger they are |
 | Why is it like this? | A capability's page: promise, rules, decisions, history, ideas growing from it |
 | What is growing, what is withering? | Ideas and capabilities by strength trend; decay candidates |
@@ -125,10 +125,10 @@ Agents and people confuse each other when the same thing has three names. The gl
 ## 5. From idea to established
 
 1. **Idea.** A person's intent to try something. Free to start; no signal required yet.
-2. **Shaping.** The idea becomes a pitch: the problem, the appetite, the solution, the signal it expects, its rabbit holes and its no-gos. How much shaping an idea needs depends on its appetite.
+2. **Shaping.** The idea becomes a pitch: the problem, the appetite (in tokens), the solution, its scopes, the signal it expects, its rabbit holes and its no-gos. How much shaping an idea needs depends on its appetite.
 3. **Bet.** A person decides to build the pitch within its appetite. Agents can draft pitches; only people bet. Who may bet on what is the team's policy, not Physa's.
-4. **Scopes and changes.** A bet is delivered as scopes, each a finishable part with its own hill, and each scope as small changes built by a harness.
-5. **Hill.** Progress is reported as uphill (still figuring out) or downhill (executing what is known), not as percent complete.
+4. **Scopes and changes.** Scopes are set during shaping, often helped by spikes: agent-built working or partial code that teaches the pitch something. A bet is delivered as its scopes, and each scope as small changes built by a harness.
+5. **Progress.** Shape Up's hill does not fit: the figuring out now happens in shaping. How a bet's progress is described and shown is still open.
 6. **Circuit breaker.** When a bet runs out of appetite, its work stops and goes back to shaping. Appetites are never extended automatically.
 7. **Flow decides.** Built ideas ship behind a flag, are measured against their signal, and thicken into a capability or wither.
 

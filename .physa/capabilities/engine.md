@@ -70,9 +70,10 @@ Rejected:
 A session without progress for 15 minutes goes to Needs you; teams can allow one automatic restart first.
 Because: a fixer that never said done stalled a Rhiza run for 9 hours.
 
-### Appetite is time
-`appetite-time` · decided by dphaener, in their words · 2026-11-19 · from docs/architecture/03-engine-and-store.md
-A bet's appetite is time only. The steward is told at 80%; at 100% the circuit breaker stops it.
-Because: "just time" (the owner).
+### Appetite is tokens
+`appetite-tokens` · decided by dphaener, in their words · 2026-11-19 · from docs/architecture/03-engine-and-store.md
+A bet's appetite is tokens, as reported by adapters, counted from when the bet is accepted and building starts. The steward is told at 80%; at 100% the circuit breaker stops it.
+Because: "Time doesn't really matter as much. Agents are fast." Tokens are what is actually spent: "Call it what it is."
 Rejected:
-- Money or tokens as appetite.
+- Time: "time doesn't matter at all anymore".
+- Money: tokens priced per model hide what is really spent.

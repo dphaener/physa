@@ -1,6 +1,6 @@
 # Architecture 01: the map format and the slice contract
 
-Draft 0.1, 2026-11-19. Uses glossary.md terms only. Items marked (Q) are open questions for the owner.
+Draft 0.1, 2026-11-19. Uses `.physa/glossary.md` terms only. Items marked (Q) are open questions for the owner.
 
 ## 1. Constraints this design must meet
 

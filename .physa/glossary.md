@@ -1,9 +1,5 @@
 # Glossary
 
-Draft 0.1, 2026-11-19. Product name: Physa, after Physarum.
-Format: **Term**: what it is, in one or two sentences. _Avoid_: aliases that must not be used.
-Terms marked (open) are still being settled.
-
 ## Product knowledge
 
 **Map**: The product's knowledge, kept in the repo: capabilities, rules, decisions, questions and this glossary. It describes why the product is the way it is, never what the code does.

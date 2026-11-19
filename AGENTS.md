@@ -6,10 +6,13 @@ The repo is in design. There is no code yet.
 
 ## Read first
 
-1. `docs/glossary.md`: the only words we use for Physa's concepts.
-2. `docs/vision.md`: what Physa is and why.
-3. `docs/architecture/`: settled designs, numbered in order.
-4. `docs/research/`: background. Read when a design refers to it.
+1. `.physa/glossary.md`: the only words we use for Physa's concepts.
+2. `.physa/product.md`, then the files in `.physa/capabilities/` your task touches: Physa's own map, with the rules and decisions that apply.
+3. `docs/vision.md`: what Physa is and why.
+4. `docs/architecture/`: settled designs, numbered in order.
+5. `docs/research/`: background. Read when a design refers to it.
+
+Anchor commits with `Capability: <file name in .physa/capabilities>`.
 
 ## Language
 

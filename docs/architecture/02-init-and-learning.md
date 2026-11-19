@@ -1,6 +1,6 @@
 # Architecture 02: creating the map and keeping it learning
 
-Draft 0.1, 2026-11-19. Uses `docs/glossary.md` terms only. Builds on `01-map-and-slice.md`. Items marked (Q) are open questions for the owner.
+Draft 0.1, 2026-11-19. Uses `.physa/glossary.md` terms only. Builds on `01-map-and-slice.md`. Items marked (Q) are open questions for the owner.
 
 The map is only worth something if it gets created on a real codebase and keeps learning without anyone curating it. This doc covers both: `physa init`, and what happens around every PR.
 

@@ -1,6 +1,6 @@
 # Vision (draft 0.1)
 
-2026-11-19. Product name: Physa, after Physarum, the slime mold whose networks inspired the model. Every capitalised concept is defined in glossary.md, and this document uses no other words for them.
+2026-11-19. Product name: Physa, after Physarum, the slime mold whose networks inspired the model. Every concept is defined in `.physa/glossary.md`, and this document uses no other words for them.
 
 Sections marked **(open)** are not yet settled with the owner.
 

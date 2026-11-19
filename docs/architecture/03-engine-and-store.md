@@ -169,6 +169,15 @@ Agents ask through the engine:
 - Adapters report each session's tokens; the engine adds them to the bet after every session record and checks the appetite in the same transaction.
 - At 80% the bet's steward is told through Needs you. At 100% the circuit breaker stops the bet's runs, records why, and the bet goes back to shaping. It never extends itself.
 
+## 10a. Progress of a bet
+
+What the engine records so views can show a bet's progress without hills (Q17):
+
+- **The plan is recorded and replanning is counted.** When building starts, the conductor names the changes it plans for each scope. The engine stores the plan and every revision with its reason. A plan that keeps changing is the new uphill: it shows what shaping missed.
+- **Progress is facts, never a percentage.** Per scope: changes landed, in a run, waiting on a person. Per bet: tokens spent against the appetite, asks open. Never folded into one number.
+- **A scope is done when its planned changes have landed.** When the team's process asks for it to be shown working, that is a sign-off the engine asks for, and the scope is not done until it is given.
+- **Spend is recorded per change**, so a view can show where the appetite went and a change eating a large share of it stands out while it happens.
+
 ## 11. Lifecycles
 
 Ideas have no named states (`strength-not-mode`). Scopes have none either: they are set during shaping and a bet is delivered through them (Q13). Everything else the engine runs has a small state machine, each owned by one part of the engine:
@@ -209,8 +218,8 @@ The engine is the part of Physa most likely to grow by accretion. Its packages g
 - **Q14** A bet's appetite counts from when it is accepted and building starts.
 - **Q15** Init's token limit is an appetite, consistent with Q12.
 - **Q18** A spike has its own appetite, very small, set when it starts.
+- **Q17** What the engine records for a bet's progress, as in §10a: the plan and its revisions, facts never a percentage, a scope done when its planned changes land (or at a sign-off when the team asks for one), spend per change. How it is shown is for the views design.
 - **Q16** Time plays no part in appetite (the owner: "time doesn't matter at all anymore"). Stalls and unanswered asks are supervision and Needs you, not appetite.
 
 ## 15. Open questions
 
-- **Q17** How a bet's progress is described and shown, now that hills are gone. Showing it is for the views design; what the engine must record for it is decided here (owner: "there are underlying modeling decisions that may need to be considered").

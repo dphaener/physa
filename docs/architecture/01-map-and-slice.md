@@ -193,7 +193,7 @@ Settled with the owner (2026-11-20):
 
 - A `from <path>` anchor must name a file in the repo.
 - Commit-hash anchors resolve against the local repo: an anchor naming no commit fails, as does one in a directory that is not a git repository. A shallow clone is named in the message, since its history may be missing the commit.
-- `#N` PR anchors are checked for form only until plan step 2b resolves them against GitHub.
+- `#N` PR anchors resolve against GitHub through `gh`; an anchor naming no PR fails. When `gh` is missing, unauthenticated or unreachable, `physa check` says so and checks them for form only, never failing on that alone.
 - Over a size budget fails the check, with a message that proposes a merge or a prune. The §9 defaults are read as hard limits: a capability file over 150 lines, product.md over 100 lines. (The limit of more than 50 capability files was dropped the same day: `measure-before-budget`.)
 
 **Slug references** (Q7): a reference from one entry to another needs a written form before `physa check` can find references to slugs that do not exist. Until it has one, the check tests only slug shape and uniqueness.

@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/dphaener/physa/internal/history"
@@ -36,16 +37,43 @@ type Result struct {
 	Problems     []mapfile.Problem // sorted by path, then line, then message
 	Capabilities int
 	Entries      int // entries in product.md and in every capability file
+
+	// PRAnchors says how #N anchors were checked: PRAnchorsGitHub when every
+	// one was resolved, PRAnchorsFormOnly when only their form was.
+	PRAnchors string
+	// PRNote is why PR anchors were checked for form only after the resolver
+	// failed; empty otherwise (the caller explains a missing resolver).
+	PRNote string
+}
+
+// The values of Result.PRAnchors.
+const (
+	PRAnchorsGitHub   = "github"
+	PRAnchorsFormOnly = "form-only"
+)
+
+// Options carries what the check cannot learn from the repo's files.
+type Options struct {
+	// PRExists tells whether a PR with this number exists. Nil checks #N
+	// anchors for form only. An error stops resolving for the rest of the
+	// run: PR anchors are then checked for form only.
+	PRExists func(n int) (bool, error)
 }
 
 // Check reads the map under root (the repo root) and checks it. The error is
 // only for a map that cannot be read at all.
 func Check(root string) (Result, error) {
+	return CheckWith(root, Options{})
+}
+
+// CheckWith is Check with options: it resolves #N anchors through
+// o.PRExists when it is set.
+func CheckWith(root string, o Options) (Result, error) {
 	m, problems, err := mapfile.Read(root)
 	if err != nil {
 		return Result{}, err
 	}
-	c := &checker{root: root, problems: problems}
+	c := &checker{root: root, problems: problems, prExists: o.PRExists, prKnown: map[int]bool{}}
 	files := m.Capabilities
 	if m.Product != nil {
 		files = append([]*mapfile.File{m.Product}, files...)
@@ -70,12 +98,20 @@ func Check(root string) (Result, error) {
 		return strings.Compare(a.Message, b.Message)
 	})
 	res.Problems = c.problems
+	res.PRAnchors, res.PRNote = PRAnchorsFormOnly, c.prNote
+	if c.prExists != nil && c.prNote == "" {
+		res.PRAnchors = PRAnchorsGitHub
+	}
 	return res, nil
 }
 
 type checker struct {
 	root     string
 	problems []mapfile.Problem
+
+	prExists func(n int) (bool, error) // nil once resolving is off
+	prKnown  map[int]bool              // resolved numbers
+	prNote   string
 
 	repo     *history.Repo // opened when the first commit anchor is met
 	repoErr  error
@@ -142,6 +178,8 @@ func (c *checker) entry(f *mapfile.File, e *mapfile.Entry, seen map[string]strin
 			c.docAnchor(f, meta, a.Value)
 		case mapfile.Commit:
 			c.commitAnchor(f, meta, a.Value)
+		case mapfile.PR:
+			c.prAnchor(f, meta, a.Value)
 		}
 	}
 }
@@ -190,6 +228,31 @@ func (c *checker) commitAnchor(f *mapfile.File, line int, hash string) {
 			hint = " (the clone is shallow; fetch its full history)"
 		}
 		c.add(f.Path, line, "anchor %q does not name a commit in this repo%s", hash, hint)
+	}
+}
+
+// prAnchor checks that a #N anchor names a PR, when a resolver is set. Each
+// number is resolved once; the first resolver error turns resolving off.
+func (c *checker) prAnchor(f *mapfile.File, line int, value string) {
+	n, err := strconv.Atoi(value)
+	if c.prExists == nil || err != nil {
+		return // form only; the reader has checked the form
+	}
+	exists, seen := c.prKnown[n]
+	if !seen {
+		exists, err = c.prExists(n)
+		if err != nil {
+			c.prNote = err.Error()
+			if c.prNote == "" {
+				c.prNote = "the resolver failed"
+			}
+			c.prExists = nil
+			return
+		}
+		c.prKnown[n] = exists
+	}
+	if !exists {
+		c.add(f.Path, line, "anchor #%d names no PR in this repo", n)
 	}
 }
 

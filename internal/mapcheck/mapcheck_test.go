@@ -1,6 +1,7 @@
 package mapcheck
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -324,5 +325,64 @@ func copyTree(t *testing.T, from, to string) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func prCap(nums ...string) string {
+	out := "## Rules\n\n"
+	for i, n := range nums {
+		out += "### R" + string(rune('A'+i)) + "\n`r" + string(rune('a'+i)) + "` · from docs/d.md · #" + n + "\nBecause: y.\n\n"
+	}
+	return out
+}
+
+func checkWith(t *testing.T, root string, o Options) Result {
+	t.Helper()
+	r, err := CheckWith(root, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func TestPRAnchorsResolved(t *testing.T) {
+	root := newMap(t, "", prCap("10"))
+	r := checkWith(t, root, Options{PRExists: func(n int) (bool, error) { return n == 10, nil }})
+	if len(r.Problems) != 0 || r.PRAnchors != "github" || r.PRNote != "" {
+		t.Errorf("want none and github, got %v %q %q", r.Problems, r.PRAnchors, r.PRNote)
+	}
+}
+
+func TestPRAnchorUnknown(t *testing.T) {
+	root := newMap(t, "", prCap("10", "999"))
+	r := checkWith(t, root, Options{PRExists: func(n int) (bool, error) { return n == 10, nil }})
+	expect(t, r, ".physa/capabilities/a.md", 13, "anchor #999 names no PR in this repo")
+	if len(r.Problems) != 1 || r.PRAnchors != "github" {
+		t.Errorf("want one problem and github, got %v %q", r.Problems, r.PRAnchors)
+	}
+}
+
+func TestPRAnchorResolvedOnce(t *testing.T) {
+	root := newMap(t, "", prCap("10", "10", "11"))
+	calls := map[int]int{}
+	checkWith(t, root, Options{PRExists: func(n int) (bool, error) { calls[n]++; return true, nil }})
+	if calls[10] != 1 || calls[11] != 1 {
+		t.Errorf("want one call per number, got %v", calls)
+	}
+}
+
+func TestPRAnchorsFallBackOnError(t *testing.T) {
+	root := newMap(t, "", prCap("10", "999"))
+	calls := 0
+	r := checkWith(t, root, Options{PRExists: func(n int) (bool, error) { calls++; return false, errors.New("gh is not logged in") }})
+	if len(r.Problems) != 0 || r.PRAnchors != "form-only" || r.PRNote != "gh is not logged in" || calls != 1 {
+		t.Errorf("got %v %q %q after %d calls", r.Problems, r.PRAnchors, r.PRNote, calls)
+	}
+}
+
+func TestPRAnchorsWithoutResolverAreFormOnly(t *testing.T) {
+	r := check(t, newMap(t, "", prCap("10")))
+	if r.PRAnchors != "form-only" || r.PRNote != "" {
+		t.Errorf("got %q %q", r.PRAnchors, r.PRNote)
 	}
 }

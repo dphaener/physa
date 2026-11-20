@@ -90,6 +90,16 @@ func (r *Repo) Shallow() bool {
 	return err == nil && strings.TrimSpace(out) == "true"
 }
 
+// CommonDir returns the absolute path of git's common directory, which every
+// worktree of the repo shares.
+func (r *Repo) CommonDir() (string, error) {
+	out, stderr, err := r.git("rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", gitError(err, stderr)
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // git runs one read-only git command in the repo's directory.
 func (r *Repo) git(args ...string) (stdout, stderr string, err error) {
 	cmd := exec.Command("git", append([]string{"-C", r.dir}, args...)...)

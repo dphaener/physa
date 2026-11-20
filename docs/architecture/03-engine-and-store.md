@@ -58,6 +58,7 @@ The engine is where Rhiza failed: "no orchestrator" was its goal six times and n
 ### 4.1 Where
 
 - **One SQLite database per repo** at `.git/physa/physa.db` (Q2). It lives in git's common directory, so every worktree of the repo shares it, and it never enters the working tree or a commit.
+- **The driver is `modernc.org/sqlite`**, pure Go with no cgo, so the core ships as a single binary (decided by Claude as arbiter, 2026-11-20).
 - **Machine settings** (registered repos, slots, limits, adapters and their keys' locations) live in `~/.config/physa/`.
 
 ### 4.2 Shape

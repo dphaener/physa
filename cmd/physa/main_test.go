@@ -3,13 +3,50 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/dphaener/physa/internal/github"
 )
+
+// TestMain keeps every test off GitHub: unless a test installs its own fake,
+// GitHub knows no PRs, and a call that reaches the real gh would fail the run.
+func TestMain(m *testing.M) {
+	newGitHub = func(dir string) *github.Client { return fakeGitHub(dir, nil) }
+	os.Exit(m.Run())
+}
+
+// fakeGitHub returns a client whose gh knows exactly the PRs in known (a
+// nil map knows none); any other call fails with a 404.
+func fakeGitHub(dir string, known map[int]bool) *github.Client {
+	return github.NewWithRunner(dir, func(_ string, args ...string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "api" {
+			var n int
+			if _, err := fmt.Sscanf(args[1], "repos/{owner}/{repo}/pulls/%d", &n); err == nil && known[n] {
+				return []byte(strconv.Itoa(n) + "\n"), nil
+			}
+		}
+		return nil, &github.Error{Args: args, Stderr: "gh: Not Found (HTTP 404)", ExitCode: 1}
+	})
+}
+
+// useGitHub installs a fake GitHub that knows the PRs in known for one test.
+func useGitHub(t *testing.T, known ...int) {
+	t.Helper()
+	set := map[int]bool{}
+	for _, n := range known {
+		set[n] = true
+	}
+	old := newGitHub
+	newGitHub = func(dir string) *github.Client { return fakeGitHub(dir, set) }
+	t.Cleanup(func() { newGitHub = old })
+}
 
 func TestRunVersionForms(t *testing.T) {
 	for _, arg := range []string{"version", "--version", "-version"} {

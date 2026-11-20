@@ -1,7 +1,8 @@
 // Command physa is Physa's command line. It checks the map with check, lists
 // its capabilities with index, prints the slice of the map a task needs with
-// slice, lists the trailers of the commits of a range with trailers and prints
-// the version of the build with version.
+// slice, lists the trailers of the commits of a range with trailers, runs the
+// deterministic PR check with pr-check, pulls the results of the PR checks into
+// the local store with sync and prints the version of the build with version.
 package main
 
 import (
@@ -24,7 +25,9 @@ var version = "dev"
 
 const usage = "usage: physa check [dir] | physa index [dir] | physa version\n" +
 	"       physa slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]\n" +
-	"       physa trailers [<range>] [--json] [--strict]\n"
+	"       physa trailers [<range>] [--json] [--strict]\n" +
+	"       physa pr-check [<range>] [--pr <n>] [--json | --check-run]\n" +
+	"       physa sync\n"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -60,6 +63,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 			if ok {
 				return slice(".", opts, stdout, stderr)
 			}
+		case "pr-check":
+			opts, ok := parsePRCheck(args[1:])
+			if ok {
+				return prCheck(".", opts, stdout, stderr)
+			}
+		case "sync":
+			if len(args) == 1 {
+				return sync(".", stdout, stderr)
+			}
 		case "trailers":
 			opts, ok := parseTrailers(args[1:])
 			if ok {
@@ -74,10 +86,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 // check reports the map in dir: 0 when it is sound, 1 with problems, 2 when
 // it cannot be read.
 func check(dir string, stdout, stderr io.Writer) int {
-	res, err := mapcheck.Check(dir)
+	res, err := mapcheck.CheckWith(dir, mapcheck.Options{PRExists: prResolver(dir)})
 	if err != nil {
 		fmt.Fprintf(stderr, "physa check: %v\n", err)
 		return 2
+	}
+	if res.PRAnchors == mapcheck.PRAnchorsFormOnly && res.PRNote != "" {
+		fmt.Fprintf(stderr, "physa check: PR anchors checked for form only: %s\n", res.PRNote)
 	}
 	if len(res.Problems) > 0 {
 		for _, p := range res.Problems {

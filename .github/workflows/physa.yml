@@ -1,0 +1,48 @@
+# The physa check is non-blocking: its check run always concludes neutral
+# (02 Q5), so findings are shown, never enforced.
+# Pull requests from forks get a read-only token, so the check run cannot be
+# written and no check run appears on them.
+name: physa
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pr-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: read
+    steps:
+      - name: Check out the head commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build physa
+        run: go build -o "$RUNNER_TEMP/physa" ./cmd/physa
+
+      - name: Run the PR check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          "$RUNNER_TEMP/physa" pr-check "$BASE..$HEAD" --pr "$PR" --check-run > "$RUNNER_TEMP/output.json"
+
+      - name: Write the check run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -o pipefail
+          jq -n --arg sha "$HEAD" --slurpfile out "$RUNNER_TEMP/output.json" '{name: "physa", head_sha: $sha, status: "completed", conclusion: "neutral", output: ($out[0] // error("empty pr-check output"))}' | gh api "repos/$GITHUB_REPOSITORY/check-runs" --method POST --input -

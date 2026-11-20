@@ -157,3 +157,29 @@ func TestCheck(t *testing.T) {
 		t.Errorf("no commits should give an empty, non-nil list, got %v", got)
 	}
 }
+
+func TestCommonDir(t *testing.T) {
+	r, dir := newRepo(t)
+	commit(t, dir, "first")
+	got, err := r.CommonDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(got, ".git") {
+		t.Errorf("CommonDir = %q, want it to end in .git", got)
+	}
+
+	wt := t.TempDir() + "/wt"
+	run(t, dir, "worktree", "add", "-q", wt)
+	wr, err := Open(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wgot, err := wr.CommonDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wgot != got {
+		t.Errorf("worktree CommonDir = %q, want the main repo's %q", wgot, got)
+	}
+}

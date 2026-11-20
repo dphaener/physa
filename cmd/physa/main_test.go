@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,14 +14,57 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/github"
 )
 
-// TestMain keeps every test off GitHub: unless a test installs its own fake,
-// GitHub knows no PRs, and a call that reaches the real gh would fail the run.
+// TestMain keeps every test off GitHub and off any real agent: unless a test
+// installs its own fake, GitHub knows no PRs, and the agent refuses to start.
 func TestMain(m *testing.M) {
 	newGitHub = func(dir string) *github.Client { return fakeGitHub(dir, nil) }
+	newAdapter = func() adapter.Adapter { return refusingAdapter{} }
 	os.Exit(m.Run())
+}
+
+// errNoAgentInTests is what an agent no test installed answers.
+var errNoAgentInTests = errors.New("no agent may start in tests")
+
+// refusingAdapter is the agent when a test installs none: it never starts.
+type refusingAdapter struct{}
+
+func (refusingAdapter) Name() string { return "no-agent" }
+func (refusingAdapter) Start(context.Context, adapter.Spec) (adapter.Session, error) {
+	return nil, errNoAgentInTests
+}
+
+// fakeAdapter records each session's Spec and ends every session with result
+// and waitErr, or refuses to start with startErr.
+type fakeAdapter struct {
+	specs    []adapter.Spec
+	result   adapter.Result
+	startErr error
+	waitErr  error
+}
+
+func (f *fakeAdapter) Name() string { return "fake-agent" }
+func (f *fakeAdapter) Start(_ context.Context, s adapter.Spec) (adapter.Session, error) {
+	f.specs = append(f.specs, s)
+	if f.startErr != nil {
+		return nil, f.startErr
+	}
+	return fakeSession{f}, nil
+}
+
+type fakeSession struct{ f *fakeAdapter }
+
+func (s fakeSession) Wait() (adapter.Result, error) { return s.f.result, s.f.waitErr }
+
+// useAdapter installs f as the agent for one test.
+func useAdapter(t *testing.T, f *fakeAdapter) {
+	t.Helper()
+	old := newAdapter
+	newAdapter = func() adapter.Adapter { return f }
+	t.Cleanup(func() { newAdapter = old })
 }
 
 // fakeGitHub returns a client whose gh knows exactly the PRs in known (a

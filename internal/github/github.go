@@ -1,5 +1,6 @@
 // Package github reads GitHub through the gh command: whether a PR exists,
-// the repo's open and merged PRs, and the check runs on a commit. It never
+// a PR's title and body, the repo's open and merged PRs, and the check runs
+// on a commit. It never
 // writes to GitHub, and it tells a missing or unauthenticated gh apart from
 // an answer of "not found".
 package github
@@ -111,6 +112,26 @@ func (c *Client) PRExists(n int) (bool, error) {
 		return false, nil
 	}
 	return err == nil, err
+}
+
+// PRTitleBody returns the title and the body of pull request n. A PR with no
+// body gives "".
+func (c *Client) PRTitleBody(n int) (title, body string, err error) {
+	out, err := c.gh("api", fmt.Sprintf("repos/{owner}/{repo}/pulls/%d", n), "--jq", "{title, body}")
+	if err != nil {
+		return "", "", err
+	}
+	var raw struct {
+		Title *string `json:"title"`
+		Body  *string `json:"body"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return "", "", fmt.Errorf("reading PR #%d from gh: %w", n, err)
+	}
+	if raw.Title == nil {
+		return "", "", fmt.Errorf("reading PR #%d from gh: no title", n)
+	}
+	return *raw.Title, str(raw.Body), nil
 }
 
 // PullRequests lists the repo's open and merged PRs, sorted by number.

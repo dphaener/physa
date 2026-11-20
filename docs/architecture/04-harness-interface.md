@@ -259,6 +259,8 @@ What the engine needs from an agent, and nothing more (Q10):
 
 An adapter is one Go package behind one interface. A second adapter (Codex or opencode) is the test that the interface is not Claude-shaped.
 
+Step 2c landed the first rows only: `internal/adapter` offers start (a prompt, a directory, an environment, and a prompt-only flag), wait for the result, and tokens used, with Claude Code first in `internal/adapter/claude` via `claude -p --output-format stream-json`. The other rows come with the engine (step 5), which extends the session rather than replacing it. A prompt-only session has no tools (`--tools ""`); the reviewer uses it because the diff is untrusted and its output is public.
+
 ## 11. Spikes
 
 - A harness may declare a `spike` role. A spike is one session with a writable worktree, the idea's text, a very small appetite (03 Q18), and no gates. It ends with a commit and a note of what it learned.

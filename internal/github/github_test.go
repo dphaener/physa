@@ -43,6 +43,32 @@ func TestPRExists(t *testing.T) {
 	}
 }
 
+func TestPRTitleBody(t *testing.T) {
+	f := &fake{out: `{"title":"feat: x","body":"Some body\n\nCapability: a"}` + "\n"}
+	title, body, err := NewWithRunner(".", f.run).PRTitleBody(12)
+	if err != nil || title != "feat: x" || body != "Some body\n\nCapability: a" {
+		t.Fatalf("got %q, %q, %v", title, body, err)
+	}
+	want := []string{"api", "repos/{owner}/{repo}/pulls/12", "--jq", "{title, body}"}
+	if !reflect.DeepEqual(f.calls[0], want) {
+		t.Errorf("args = %v", f.calls[0])
+	}
+	f.out = `{"title":"t","body":null}`
+	if title, body, err = NewWithRunner(".", f.run).PRTitleBody(12); err != nil || title != "t" || body != "" {
+		t.Errorf("null body: got %q, %q, %v", title, body, err)
+	}
+	for _, out := range []string{"{not json", `{"body":"b"}`} {
+		f.out = out
+		if _, _, err := NewWithRunner(".", f.run).PRTitleBody(12); err == nil {
+			t.Errorf("%q: want an error", out)
+		}
+	}
+	f.out, f.err = "", &Error{Stderr: "gh: Not Found (HTTP 404)", ExitCode: 1}
+	if _, _, err := NewWithRunner(".", f.run).PRTitleBody(12); !errors.Is(err, ErrNotFound) {
+		t.Errorf("404: err = %v", err)
+	}
+}
+
 func TestPullRequests(t *testing.T) {
 	f := &fake{out: `{"number":5,"head":"b","state":"closed","merged_at":null}
 {"number":3,"head":"a","state":"closed","merged_at":"2026-01-01T00:00:00Z"}

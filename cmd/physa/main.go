@@ -1,8 +1,10 @@
 // Command physa is Physa's command line. It checks the map with check, lists
 // its capabilities with index, prints the slice of the map a task needs with
 // slice, lists the trailers of the commits of a range with trailers, runs the
-// deterministic PR check with pr-check, pulls the results of the PR checks into
-// the local store with sync and prints the version of the build with version.
+// PR check with pr-check (the reviewer agent only with --review), runs the
+// same check on the current branch with the developer's own agent with
+// review, pulls the results of the PR checks into the local store with sync
+// and prints the version of the build with version.
 package main
 
 import (
@@ -26,7 +28,8 @@ var version = "dev"
 const usage = "usage: physa check [dir] | physa index [dir] | physa version\n" +
 	"       physa slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]\n" +
 	"       physa trailers [<range>] [--json] [--strict]\n" +
-	"       physa pr-check [<range>] [--pr <n>] [--json | --check-run]\n" +
+	"       physa pr-check [<range>] [--pr <n>] [--review | --skip-review <reason>] [--json | --check-run]\n" +
+	"       physa review [--json]\n" +
 	"       physa sync\n"
 
 func main() {
@@ -67,6 +70,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 			opts, ok := parsePRCheck(args[1:])
 			if ok {
 				return prCheck(".", opts, stdout, stderr)
+			}
+		case "review":
+			if asJSON, ok := parseReview(args[1:]); ok {
+				return reviewBranch(".", asJSON, stdout, stderr)
 			}
 		case "sync":
 			if len(args) == 1 {

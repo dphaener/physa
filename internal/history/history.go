@@ -1,7 +1,7 @@
 // Package history reads the repo's git history: the commits of a range with
 // their Capability and Loaded trailers, whether a commit exists, and whether
-// each commit names capabilities the map has. It runs git; it never changes
-// history.
+// each commit names capabilities the map has, a change's diff and commit
+// messages, and the default branch. It runs git; it never changes history.
 package history
 
 import (
@@ -72,6 +72,60 @@ func (r *Repo) Log(rng string) ([]Commit, error) {
 		})
 	}
 	return commits, nil
+}
+
+// Diff returns the diff of the change rng as a PR shows it, against the merge
+// base. A..B and A...B both mean git diff A...B; a single rev A means A...HEAD.
+// Git's own message is the error when the range is not valid.
+func (r *Repo) Diff(rng string) (string, error) {
+	var spec string
+	if a, b, ok := strings.Cut(rng, "..."); ok {
+		spec = a + "..." + orHead(b)
+	} else if a, b, ok := strings.Cut(rng, ".."); ok {
+		spec = orHead(a) + "..." + orHead(b)
+	} else {
+		spec = rng + "...HEAD"
+	}
+	out, stderr, err := r.git("diff", "--no-color", "--no-ext-diff", "--end-of-options", spec, "--")
+	if err != nil {
+		return "", gitError(err, stderr)
+	}
+	return out, nil
+}
+
+func orHead(rev string) string {
+	if rev == "" {
+		return "HEAD"
+	}
+	return rev
+}
+
+// Message returns the subject and the body of the commit rev, the body
+// trimmed. Git's own message is the error when rev is not a commit.
+func (r *Repo) Message(rev string) (subject, body string, err error) {
+	out, stderr, err := r.git("show", "--no-patch", "--format=%s%x00%b", "--end-of-options", rev, "--")
+	if err != nil {
+		return "", "", gitError(err, stderr)
+	}
+	subject, body, _ = strings.Cut(out, "\x00")
+	return strings.TrimSpace(subject), strings.TrimSpace(body), nil
+}
+
+// DefaultBranch returns the repo's default branch: the one origin/HEAD points
+// at (such as origin/main), else a local main, else a local master. It never
+// fetches.
+func (r *Repo) DefaultBranch() (string, error) {
+	if out, _, err := r.git("symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		if name := strings.TrimSpace(out); name != "" {
+			return name, nil
+		}
+	}
+	for _, name := range []string{"main", "master"} {
+		if _, _, err := r.git("show-ref", "--verify", "--quiet", "refs/heads/"+name); err == nil {
+			return name, nil
+		}
+	}
+	return "", errors.New("no default branch was found: origin/HEAD, main and master are all missing")
 }
 
 // HasCommit reports whether hash, full or abbreviated, names exactly one

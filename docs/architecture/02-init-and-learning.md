@@ -104,6 +104,8 @@ Deterministic first, then one agent session:
    - suggested map edits that this change itself makes true (for example, a rule this PR introduces).
 4. **Miss and excess** are computed (§3.4).
 
+Decided by Claude as arbiter (2026-11-20), for the owner to review: the reviewer runs only when a credential is available; in the Action, that is a `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` secret. Without one, the check run says the reviewer was skipped and why, and the deterministic results stand. Invalid reviewer output is a reported failure, never silently dropped. Misses and excess are null unless the reviewer ran.
+
 Physa posts one comment, edited in place on every update, plus GitHub suggested changes for the map edits, which the author can accept with one click.
 
 **Non-blocking by default** (Q5): the check reports a neutral status. A team can make specific findings blocking by policy, for example a violated rule on a capability its stakes call established.
@@ -142,6 +144,8 @@ The hosted layer ingests the same results directly.
 ### 3.7 Locally, before pushing
 
 `physa review` runs the same open-PR check on the current branch against the default branch, with the developer's own agent. No CI needed.
+
+Decided by Claude as arbiter (2026-11-20), for the owner to review: `physa review` exits 1 when the reviewer fails, and prints the tokens it used when it ends.
 
 ## 4. Skills Physa ships
 

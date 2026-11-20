@@ -183,3 +183,102 @@ func TestCommonDir(t *testing.T) {
 		t.Errorf("worktree CommonDir = %q, want the main repo's %q", wgot, got)
 	}
 }
+
+func TestDiffUsesMergeBase(t *testing.T) {
+	r, dir := newRepo(t)
+	commit(t, dir, "chore: base")
+	run(t, dir, "branch", "base")
+	run(t, dir, "checkout", "-q", "-b", "topic")
+	os.WriteFile(dir+"/topic.txt", []byte("topic\n"), 0o644)
+	run(t, dir, "add", ".")
+	run(t, dir, "commit", "-q", "-m", "feat: topic")
+	run(t, dir, "checkout", "-q", "base")
+	os.WriteFile(dir+"/other.txt", []byte("other\n"), 0o644)
+	run(t, dir, "add", ".")
+	run(t, dir, "commit", "-q", "-m", "feat: other")
+	run(t, dir, "checkout", "-q", "topic")
+
+	two, err := r.Diff("base..topic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	three, err := r.Diff("base...topic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	single, err := r.Diff("base")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(two, "topic.txt") || strings.Contains(two, "other.txt") {
+		t.Errorf("two-dot diff is not against the merge base:\n%s", two)
+	}
+	if two != three || two != single {
+		t.Errorf("diffs differ:\n%s\n---\n%s\n---\n%s", two, three, single)
+	}
+}
+
+func TestDiffBadRange(t *testing.T) {
+	r, dir := newRepo(t)
+	commit(t, dir, "chore: base")
+	_, err := r.Diff("nope..HEAD")
+	if err == nil || !strings.Contains(err.Error(), "nope") {
+		t.Fatalf("want git's message naming the bad rev, got %v", err)
+	}
+}
+
+func TestMessage(t *testing.T) {
+	r, dir := newRepo(t)
+	commit(t, dir, "feat: only subject")
+	subject, body, err := r.Message("HEAD")
+	if err != nil || subject != "feat: only subject" || body != "" {
+		t.Errorf("got %q %q %v", subject, body, err)
+	}
+	commit(t, dir, "feat: with body\n\nFirst line.\n\nSecond para.\n\nCapability: x\n")
+	subject, body, err = r.Message("HEAD")
+	want := "First line.\n\nSecond para.\n\nCapability: x"
+	if err != nil || subject != "feat: with body" || body != want {
+		t.Errorf("got %q %q %v", subject, body, err)
+	}
+	if _, _, err := r.Message("nope"); err == nil {
+		t.Error("want an error for a missing rev")
+	}
+}
+
+func TestDefaultBranch(t *testing.T) {
+	t.Run("origin HEAD", func(t *testing.T) {
+		r, dir := newRepo(t)
+		commit(t, dir, "chore: base")
+		run(t, dir, "update-ref", "refs/remotes/origin/main", "HEAD")
+		run(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+		run(t, dir, "branch", "-m", "main")
+		if got, err := r.DefaultBranch(); err != nil || got != "origin/main" {
+			t.Errorf("got %q %v, want origin/main", got, err)
+		}
+	})
+	t.Run("main", func(t *testing.T) {
+		r, dir := newRepo(t)
+		commit(t, dir, "chore: base")
+		run(t, dir, "branch", "-m", "main")
+		if got, err := r.DefaultBranch(); err != nil || got != "main" {
+			t.Errorf("got %q %v, want main", got, err)
+		}
+	})
+	t.Run("master", func(t *testing.T) {
+		r, dir := newRepo(t)
+		commit(t, dir, "chore: base")
+		run(t, dir, "branch", "-m", "master")
+		if got, err := r.DefaultBranch(); err != nil || got != "master" {
+			t.Errorf("got %q %v, want master", got, err)
+		}
+	})
+	t.Run("none", func(t *testing.T) {
+		r, dir := newRepo(t)
+		commit(t, dir, "chore: base")
+		run(t, dir, "branch", "-m", "trunk")
+		_, err := r.DefaultBranch()
+		if err == nil || !strings.Contains(err.Error(), "no default branch") {
+			t.Errorf("want no default branch error, got %v", err)
+		}
+	})
+}

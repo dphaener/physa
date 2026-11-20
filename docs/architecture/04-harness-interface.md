@@ -36,20 +36,20 @@ physa harness install <git URL or path>
 ```
 
 1. **Read the plugin**: its subagent definitions (name, prompt, tools, model), skills, commands and hooks. A subagent without edit or write tools is already shaped like a check.
-2. **An agent proposes an overlay**: which subagents are roles, each role's kind, the record it must leave before done, the caps. Roles the plugin does not provide are filled by Physa's default prompts. A plugin with only skills fills fewer roles, and its skills are loaded into the roles that use them.
-3. **The developer reviews the overlay once**: each mapping, and every prompt line that spawns a role natively (§5.1), so a prompt that relies on it is visible before it stumbles.
-4. **The plugin's prompts are never edited.** Upstream updates still apply: updating the plugin proposes the overlay's diff for review.
+2. **An agent proposes the harness settings**: which subagents are roles, each role's kind, the record it must leave before done, the caps. Roles the plugin does not provide are filled by Physa's default prompts. A plugin with only skills fills fewer roles, and its skills are loaded into the roles that use them.
+3. **The developer reviews the harness settings once**: each mapping, and every prompt line that spawns a role natively (§5.1), so a prompt that relies on it is visible before it stumbles.
+4. **The plugin's prompts are never edited.** Upstream updates still apply: updating the plugin proposes the settings' diff for review.
 
 On disk, one harness per machine (Q13):
 
 ```
 ~/.config/physa/harness/
   plugin/             the developer's plugin, at a pinned commit, untouched
-  overlay.toml        the reviewed mapping (§4)
+  harness.toml        the harness settings, reviewed (§4)
 ```
 
 - **No harness code runs in the engine.** Logic lives in prompts or in the project's own commands.
-- **Versioned by the plugin's commit and the overlay's.** Every run records both, so rework numbers (03 §8a) can be compared across harness versions. That is how a developer sees whether a prompt change saved tokens.
+- **Versioned by the plugin's commit and the settings'.** Every run records both, so rework numbers (03 §8a) can be compared across harness versions. That is how a developer sees whether a prompt change saved tokens.
 - **The owner's harness is installed the same way as anyone's**, with no special path. It is the first test of the installer.
 
 An **adapter** is the other half: what starts and talks to one kind of agent (Claude Code, Codex, opencode). Adapters are part of the core, compiled in, one small package each (Q10).
@@ -63,7 +63,7 @@ An **adapter** is the other half: what starts and talks to one kind of agent (Cl
 | one PR per change set | **one PR per change** (glossary: a change is usually one commit in its own PR) |
 | "Evidence" written by the verifier | a **pass** record (Q4) |
 | question to the arbiter | **ask** (03 §9) |
-| `harness.toml` written for Physa | the developer's own plugin plus a reviewed **overlay** (§2.2) |
+| a harness written for Physa | the developer's own plugin plus reviewed **harness settings** (§2.2) |
 
 ### 3.1 The plan
 
@@ -100,9 +100,9 @@ planned ─► building ─► verified ─► checked ─► (sign-off if stake
 - Each change has its own branch off main (or off the change it comes `after`, once that one has landed: Q2), its own worktree under the run's directory, and its own PR.
 - **How the PR merges is the team's choice** (squash, merge commit or rebase), a team setting (Q1). The engine anchors the change by its PR number either way, and every commit a session makes carries the change's trailers, so nothing depends on the merge method.
 
-## 4. The overlay
+## 4. The harness settings
 
-What install proposes and the developer reviews. The owner's harness, as its overlay would read:
+What install proposes and the developer reviews. The owner's harness, as its `harness.toml` would read:
 
 ```toml
 [harness]
@@ -269,7 +269,7 @@ An adapter is one Go package behind one interface. A second adapter (Codex or op
 
 The owner's harness is installed like anyone's (§2.2). What install has to deal with:
 
-1. **Its Rhiza calls.** Its prompts call `rhiza run findings`, `rhiza run spawn` and the like. The engine adds a short "how to record" section to every role's brief naming Physa's calls, and the overlay review lists every prompt line that still names a Rhiza call. Lines that cannot work (writes to `.rhiza`, render, land, overlaps, model checks, lint-fix) are shown so the owner can update the plugin upstream, in its own repo, not through Physa.
+1. **Its Rhiza calls.** Its prompts call `rhiza run findings`, `rhiza run spawn` and the like. The engine adds a short "how to record" section to every role's brief naming Physa's calls, and the settings review lists every prompt line that still names a Rhiza call. Lines that cannot work (writes to `.rhiza`, render, land, overlaps, model checks, lint-fix) are shown so the owner can update the plugin upstream, in its own repo, not through Physa.
 2. **What the engine now does.** "Never read the run status" is a refused call, "detached checkout" is given, retries are capped, pushing and landing are the engine's. The prompts can keep saying so; it costs a few lines.
 3. **Plan review** (reviewer, critic, reviser) stays as optional roles (Q11): they review the bet's plan after the conductor writes it and before building starts.
 
@@ -283,13 +283,13 @@ Because the plugin is never edited by Physa, the owner's harness and Rhiza can r
 - **Q4** The verifier's record is a **pass**, not Evidence.
 - **Q5** Four role kinds: conduct, build, check, fix.
 - **Q6** Findings have **levels** the harness names; the harness says which are serious. Not "severity".
-- **Q7** Caps per change in the overlay, enforced by the engine; reaching one goes to Needs you.
+- **Q7** Caps per change in the harness settings, enforced by the engine; reaching one goes to Needs you.
 - **Q8** Check roles get a read-only checkout and engine-built briefs; their reads of build records are refused.
 - **Q9** The engine re-runs the `Checks:` block and acceptance itself; the verifier still judges the diff.
 - **Q10** Adapters compiled into the core, one package each; Claude Code first; a second adapter early.
 - **Q11** Plan review stays, as optional roles that review the bet's plan before building starts.
 - **Q12** Harnesses are installed per machine. (Which harness a repo uses is still open: Q13.)
 
-- **Q14** Every harness runs in Physa's skeleton. Install maps an existing plugin's subagents and skills onto roles; Physa's default prompts fill any role the plugin lacks; the developer reviews the overlay once; the plugin's prompts are never edited. (The owner: "Why not just do that for everything?")
+- **Q14** Every harness runs in Physa's skeleton. Install maps an existing plugin's subagents and skills onto roles; Physa's default prompts fill any role the plugin lacks; the developer reviews the harness settings once; the plugin's prompts are never edited. (The owner: "Why not just do that for everything?")
 - **Q15** Native subagents are allowed inside any role and share its workspace, identity and records (the owner: research agents when planning "should 100% be a normal thing that is allowed"). Only starting a role goes through `physa spawn`; a role's subagent definition is not loaded natively. No hooks.
 - **Q13** One harness per machine, the developer's choice; every repo on the machine uses it and nothing about it enters the repo. A team's bar lives in its stakes policy and the PR check, not in the harness. A per-repo override waits until someone needs it; a team default and harness comparison belong to the hosted layer.

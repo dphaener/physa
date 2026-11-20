@@ -102,5 +102,5 @@ So that no step grows: no views before step 8 beyond the CLI, no strength number
 - **Q2** The wedge (steps 1–4) comes before the engine (steps 5–7), as the vision's wedge decision implies.
 - **Q3** Two public releases: v0.1 after step 4 (the wedge), v1.0 after step 10. Nothing is pushed publicly before v0.1, and the research notes with the owner's words are checked before any push.
 - **Q4** nebari, with Rhiza removed from it first, is the brownfield test for init (step 4) and the first app for earned release (step 10); woodshop is the greenfield test (the owner).
-- **Q6** The slimmed harness, built from afk and forge, becomes its own plugin repo: used directly in Claude Code from step 0, and installed into Physa at step 7.
+- **Q6** The slimmed harness, built from afk and forge, becomes its own plugin repo, **dharness** (`~/code/dharness`, a fresh repo without afk's history; the owner): used directly in Claude Code from step 0, and installed into Physa at step 7.
 - **Q5** Ruby is the first provider for earned release, because the owner's apps and the likely first teams are Rails.

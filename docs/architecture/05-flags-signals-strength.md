@@ -249,10 +249,9 @@ Guardrails are the one part of signals that enters the map: they are promises an
 - **Engineering evidence is always on** (the owner: "it should be always on no matter what").
 - **Ceremony is opt-in**: the map and the engine are the core; flags, product signals, strength, shaping and sign-offs are off for a solo developer; appetite and its circuit breaker stay on.
 
-## 10. Open questions
-
 - **Q13** Strength is opt-in per repo while it is experimental.
-- **Q14** Evidence facts are always recorded, even with strength off, and kept for a year (not the store's usual 90 days), so strength can be switched on or its settings tested against real history.
-- **Q15** With strength off: stakes from exposure and reversibility only; established by the §7.1 conditions; withered only by a clear result against; no decay proposals; facts instead of strength in the index, slices and network view.
-- **Q16** Strength settings as one versioned file (weights with shapes, half-lives, thresholds); evidence never holds a weight; changing settings recomputes once as an explicit step; `physa strength preview` before adopting.
-- **Q17** Where a team's strength settings live so everyone computes the same strength: in the repo (reviewed in PRs like the map), in the hosted layer, or on each machine.
+- **Q14** Evidence is always recorded, even with strength off, and kept for a year.
+- **Q15** With strength off, nothing shows a strength number: stakes from exposure and reversibility; no decay proposals; facts instead of thickness in the index, slices and network view.
+- **Q16** Strength settings are one versioned file (weights with shapes, half-lives, thresholds); changing them recomputes once; `physa strength preview` before adopting.
+- **Q17** The settings live in the repo only when a team changes a default, as `.physa/strength.toml`, reviewed in PRs; with no file, the defaults apply.
+- **Q18** Strength's glossary entry says it is not a judgment of quality.

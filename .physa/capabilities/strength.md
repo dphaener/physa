@@ -9,7 +9,7 @@ stewards: [dphaener]
 
 ### Measured, never set by hand
 `measured-strength` · from docs/vision.md
-Strength comes from evidence: attention before code, then usage, rollout, signal results, stability and citations. Nobody types it in.
+Strength comes from evidence: attention before code, then usage, earned release, signal results, stability and citations. Nobody types it in.
 Because: a label someone sets goes stale; that was Rhiza's failure.
 
 ### Decay proposes, never deletes

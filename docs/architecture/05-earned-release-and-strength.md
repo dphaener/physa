@@ -37,7 +37,7 @@ The engine runs on a developer's laptop or a CI machine. A production app cannot
 ```
 
 - **`physa serve`** is the same Go binary, run as a server: flag evaluation and signal events, one SQLite file, deployable anywhere a container or a binary runs. The hosted layer runs it for teams that don't want to.
-- **The engine drives it** through its API with a token: widening a rollout, turning a flag off for a guardrail, reading results. People do the same through the CLI.
+- **The engine drives it** through its API with a token: widening a release, turning a flag off for a guardrail, reading results. People do the same through the CLI.
 - **It holds no code, no map and no personal data** (§5.3).
 
 ## 3. Earned release and its flags

@@ -1,15 +1,15 @@
 ---
-promise: With flags on, every built idea can be shown, widened or turned off for real users without a deploy, and its flag never outlives it.
+promise: Anyone can ship agent-written code with trust: it lands dark, reaches people only as far as its evidence and the stakes allow, and is withdrawn instantly when it misbehaves.
 stewards: [dphaener]
 ---
 
-# Flags
+# Earned release
 
 ## Rules
 
-### Flags behind every built idea, once flags are on
+### Every built idea earns its release, once it is on
 `flag-when-on` · from docs/vision.md
-With flags on, built ideas ship behind a flag; teams set exemptions by policy.
+With earned release on, built ideas land dark behind a flag; teams set exemptions by policy.
 Because: landing code and exposing users must be separate steps.
 
 ### A flag lives exactly as long as its idea
@@ -19,9 +19,16 @@ Because: stale flags are hidden debt; decay removes them by design.
 
 ## Decisions
 
-### Flags are opt-in
-`flags-opt-in` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/05-flags-signals-strength.md
-The whole flags feature (physa serve, the provider, experiments, guardrails, automatic rollback) is opt-in and off by default, with the product signals that need it.
+### Earned release, not flags
+`earned-release` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/05-earned-release-and-strength.md
+The mechanism is named for what it is for: agent-written code reaching people only as far as trust allows. Flags are the switch it uses.
+Because: "We're using flags as a means to an end. It's a bigger idea than that." "It's the single mechanism that allows anyone to ship code with agents with trust."
+Rejected:
+- Flags, Trial, Release, Rollout as its name: each says too little.
+
+### Earned release is opt-in
+`flags-opt-in` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/05-earned-release-and-strength.md
+Earned release as a whole (physa serve, the provider, flags, experiments, guardrails, automatic rollback, and the product signals that need them) is one opt-in switch, off by default.
 Because: "If I as a solo developer just want to YOLO everything, I don't care about going through all of that ceremony."
 Rejected:
 - Built ideas behind a flag by default.
@@ -39,6 +46,6 @@ The open-source core includes a small flag service as the default OpenFeature pr
 Because: instant rollback must work for a solo developer with no vendor and no hosted layer.
 
 ### One server next to production, no SDK of our own
-`physa-serve` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/architecture/05-flags-signals-strength.md
+`physa-serve` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/architecture/05-earned-release-and-strength.md
 `physa serve` (the same binary, one SQLite file) evaluates flags and takes signal events. Apps use OpenFeature SDKs with a thin Physa provider: OFREP to evaluate, OpenFeature's tracking API for events. One flag per idea, keyed by its slug.
 Because: a production app cannot ask a laptop whether a flag is on, and teams should not adopt a new SDK to try Physa.

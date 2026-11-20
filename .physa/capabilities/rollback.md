@@ -9,7 +9,7 @@ stewards: [dphaener]
 
 ### Cheapest first
 `cheapest-first` · from docs/vision.md
-Turn the flag off, when flags are on; then revert the anchored changes; then reverse the decision and list what relied on it.
+Turn the flag off, when earned release is on; then revert the anchored changes; then reverse the decision and list what relied on it.
 Because: most problems are fixed instantly by a flag, with no deploy.
 
 ### Every rollback is evidence

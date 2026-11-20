@@ -14,7 +14,7 @@ Because: a guessed risk score is an estimate by another name.
 
 ### Landing and exposing are separate bars
 `two-bars` · from docs/vision.md
-With flags on, landing code behind an off flag and exposing users each have their own stakes and their own bar. With flags off, landing is exposing: one bar, whose stakes include everyone the change reaches.
+With earned release on, landing code behind an off flag and exposing users each have their own stakes and their own bar. With it off, landing is exposing: one bar, whose stakes include everyone the change reaches.
 Because: most of the speed comes from landing freely and exposing carefully, and without a flag there is nothing in between.
 
 ### The engine re-runs the checks
@@ -24,7 +24,7 @@ Because: gate verdicts come from records, never from what an agent says.
 
 ### Guardrails roll back on their own
 `guardrail-rollback` · from docs/vision.md
-If a guardrail degrades during a rollout, the engine turns the flag off and records why.
+If a guardrail degrades while an idea earns its release, the engine turns the flag off and records why.
 Because: it carries out a rule the team set in advance; it does not judge.
 
 ## Decisions

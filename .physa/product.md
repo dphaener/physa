@@ -76,8 +76,8 @@ Rejected:
 - Named states for ideas: the same problem again.
 
 ### Ceremony is opt-in
-`ceremony-opt-in` · decided by dphaener, choosing an option · 2026-11-20 · from docs/architecture/05-flags-signals-strength.md
-The map and the engine are the core. Flags, signals that need them, strength, shaping and sign-offs are opt-in and off for a solo developer, whose path is idea, bet, changes, landed. Appetite and its circuit breaker stay on.
+`ceremony-opt-in` · decided by dphaener, choosing an option · 2026-11-20 · from docs/architecture/05-earned-release-and-strength.md
+The map and the engine are the core. Earned release (with the product signals it needs), shaping and sign-offs are opt-in and off for a solo developer, whose path is idea, bet, changes, landed. Appetite, its circuit breaker, engineering evidence and strength stay on.
 Because: a solo developer "just want[s] to YOLO everything" (the owner); a team grows into ceremony instead of opting out of it.
 Rejected:
 - The full process by default, with exemptions.

@@ -45,10 +45,13 @@ _Avoid_: KPI, success metric
 
 **Evidence**: Anything that adds to or takes from strength: measured signal results, engineering evidence, rollbacks, and judgment. Judgment is a named person's assessment, weighted below measurement and always shown as judgment.
 
-**Experiment**: Two or more ideas tried side by side against the same signal, by splitting a flag's audience between them. The one that carries more flow thickens; the result is recorded as a decision.
+**Experiment**: Two or more ideas earning release side by side against the same signal, by splitting a flag's audience between them. The one that carries more flow thickens; the result is recorded as a decision.
 _Avoid_: A/B test, bake-off
 
-**Flag**: A switch in the running product that decides who sees an idea's code: off, internal, a percentage, or everyone. Opt-in: with flags on, built ideas ship behind one, and a flag lives exactly as long as its idea: removed when the idea is established, removed with its code when the idea withers.
+**Earned release**: How an idea's landed code reaches people: it lands dark, its reach widens only as its evidence and the stakes bar allow (no one, internal, a percentage, everyone), it is watched against its signal and guardrails, and it is withdrawn instantly when it misbehaves. It is what lets anyone ship agent-written code with trust. Opt-in, as one switch.
+_Avoid_: rollout, progressive delivery, feature flagging
+
+**Flag**: The switch an earned release uses in the running product to decide who sees an idea's code. A flag lives exactly as long as its idea: removed when the idea is established, removed with its code when the idea withers.
 _Avoid_: feature toggle, kill switch
 
 **Stakes**: What a mistake in a change would cost: the strength of what it touches, times how many people it is exposed to, reduced by how easily it can be undone. Worked out by the engine, never guessed. Landing code and exposing users each have their own stakes.
@@ -56,7 +59,7 @@ _Avoid_: risk score, severity
 
 **Case**: The evidence a change carries before it lands: what it is for, its stakes, the rules at stake and whether they were respected, what was checked (with tests re-run by the engine, never taken from an agent's word), and the way back.
 
-**Guardrail**: A signal an established capability declares must not get worse, such as error rate or checkout completion. If it degrades during a rollout, the engine turns the flag off and records the rollback.
+**Guardrail**: A signal an established capability declares must not get worse, such as error rate or checkout completion. If it degrades while an idea earns its release, the engine turns the flag off and records the rollback.
 _Avoid_: SLO
 
 **Sign-off**: A person's acceptance of a change whose stakes require it. Asked for rarely, so each one means something.
@@ -68,7 +71,7 @@ _Avoid_: capability owner, maintainer, DRI
 **Needs you**: Everything waiting on one person: sign-offs their stakes require, questions and asks addressed to them, their ideas that need shaping or are withering, their bets that hit a circuit breaker, guardrail trips and decay reviews on capabilities they steward, and map proposals on their PRs. The home screen, and the only thing that notifies.
 _Avoid_: inbox, activity feed
 
-**Rollback**: Undoing something, cheapest first: turn its flag off, when flags are on; revert its changes; reverse its decision and list what relied on it. Every rollback is recorded with who and why, and weakens the strength of what was rolled back.
+**Rollback**: Undoing something, cheapest first: turn its flag off, when earned release is on; revert its changes; reverse its decision and list what relied on it. Every rollback is recorded with who and why, and weakens the strength of what was rolled back.
 
 **Appetite**: How many tokens a team is willing to spend on a pitch, counted from when the bet is made and building starts. A budget, never an estimate. Time plays no part.
 _Avoid_: estimate, points, story points, time box
@@ -118,7 +121,7 @@ _Avoid_: question (that is the map's), prompt, interrupt
 **Run**: One execution of a harness on a spike or a change, from start to its end state.
 _Avoid_: job
 
-**Strength**: How much real flow an idea or capability carries: attention before code, then usage, rollout, signal results, stability and citations. Measured, never set by hand. Not a judgment of quality: an idea nobody has tried yet is weak however good it is. How strict the process is and how much agents may do follow from it, by the team's own policy.
+**Strength**: How much real flow an idea or capability carries: attention before code, then usage, rollout, signal results, stability and citations. Measured, never set by hand. Not a judgment of quality: an idea nobody has tried yet is weak however good it is. Always on, and shown as experimental until calibration has data. How strict the process is and how much agents may do follow from it, by the team's own policy.
 _Avoid_: mode, maturity, confidence score
 
 **Decay**: How knowledge and work that are not used, reaffirmed or bet on lose standing until reviewed or removed.

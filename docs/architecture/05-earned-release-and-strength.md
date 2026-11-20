@@ -1,16 +1,16 @@
-# Architecture 05: flags, signals and strength
+# Architecture 05: earned release, signals and strength
 
-Draft 0.3, 2026-11-20. Uses `.physa/glossary.md` terms only. Builds on 01–04. Items marked (Q) are open questions for the owner.
+Draft 0.4, 2026-11-20. Uses `.physa/glossary.md` terms only. Builds on 01–04. Items marked (Q) are open questions for the owner.
 
 Everything so far leans on strength: stakes multiply by it, policy follows from it, decay lowers it, the network view draws it. This design says where its evidence comes from (flags and signals in the running product, git and CI, people) and how it is worked out. It answers the map's open question `strength-formula` with a first model.
 
-**Strength is one of Physa's core differentiators and also highly experimental** (the owner). It starts **opt-in** (§6.0), and its weights, decay and thresholds are built to be tuned and customized per team (§6.5). Flags, signals, results and rollback do not depend on it.
+**Strength is one of Physa's core differentiators and also highly experimental** (the owner). It is **always on**, shown as experimental until calibration has data (§6.0), and its weights, decay and thresholds are built to be tuned and customized per team (§6.5).
 
-**The whole flags feature is opt-in too, off by default** (the owner: "If I as a solo developer just want to YOLO everything, I don't care about going through all of that ceremony"). It comes with the product signals that need it: `physa serve`, the provider, a flag per idea, experiments, guardrails and automatic rollback. **Engineering evidence is always on, whatever else is switched on or off** (§4.1).
+**Earned release is opt-in, as one switch, off by default** (the owner: "If I as a solo developer just want to YOLO everything, I don't care about going through all of that ceremony"). It is the single mechanism that lets anyone ship agent-written code with trust (the owner): code lands dark, reaches people only as far as its evidence and the stakes bar allow, and is withdrawn instantly. It covers `physa serve`, the provider, a flag per idea, experiments, guardrails, automatic rollback and the product signals that need them. Flags are the switch it uses. **Engineering evidence is always on, whatever else is switched on or off** (§4.1).
 
 ## 1. Constraints
 
-- **Ceremony is opt-in** (`ceremony-opt-in`). A solo developer runs none of this; flags, product signals and strength are switched on when a team wants them.
+- **Ceremony is opt-in** (`ceremony-opt-in`). A solo developer runs none of the production side; earned release is switched on when a team wants it.
 - **Measure only what ideas claim** (`claims-only`). Never general analytics.
 - **One SDK for flags and signal events** (`one-sdk`), so exposure and outcome join on the same person.
 - **Own the meaning, integrate the switch** (`openfeature`): evaluation through OpenFeature; teams keep their vendor.
@@ -23,7 +23,7 @@ Everything so far leans on strength: stakes multiply by it, policy follows from 
 
 ## 2. Where things run
 
-The engine runs on a developer's laptop or a CI machine. A production app cannot ask a laptop whether a flag is on. So, with flags on, one part of Physa has to run next to production (Q1):
+The engine runs on a developer's laptop or a CI machine. A production app cannot ask a laptop whether a flag is on. So, with earned release on, one part of Physa has to run next to production (Q1):
 
 ```
  production app                       next to production                 laptop / CI
@@ -40,11 +40,11 @@ The engine runs on a developer's laptop or a CI machine. A production app cannot
 - **The engine drives it** through its API with a token: widening a rollout, turning a flag off for a guardrail, reading results. People do the same through the CLI.
 - **It holds no code, no map and no personal data** (§5.3).
 
-## 3. Flags
+## 3. Earned release and its flags
 
 ### 3.1 One flag per idea
 
-- With flags on, when an idea is bet on, the engine creates its flag. **The flag's key is the idea's slug** (Q4). Every change in the bet that adds behaviour checks that flag.
+- With earned release on, when an idea is bet on, the engine creates its flag. **The flag's key is the idea's slug** (Q4). Every change in the bet that adds behaviour checks that flag.
 - **Audiences**: off, internal, a percentage, everyone (glossary: Flag). "Internal" is a team setting: a list of targeting keys or an attribute rule (for example an email domain), kept in `physa serve`.
 - **Percentages are deterministic**: a hash of the flag key and the person's targeting key, so a person stays in or out as the percentage widens.
 - **An experiment is one flag with a variant per idea** (glossary: Experiment). The ideas share the flag; each variant belongs to its idea.
@@ -88,7 +88,7 @@ A signal is named during shaping, before code (glossary: Signal). Three shapes c
 | **Engineering** | architecture ideas | reverts, rework, defects or lead time on the changes behind the flag; error rate or latency from OpenTelemetry, expected **no worse** or **better** |
 
 - A signal names its event (or engineering measure), what it is counted per (a person, a request), the direction it expects, and what it is compared with: the flag off, or the other variants of an experiment.
-- **Engineering signals need no events in the app, and are always on** (`engineering-always-on`), with flags on or off. Git, PRs and CI give reverts, rework, defects and lead time (`engineering-evidence`); OpenTelemetry gives errors and latency, split by the flag through OpenTelemetry's feature flag attributes on spans, which the Physa hook sets.
+- **Engineering signals need no events in the app, and are always on** (`engineering-always-on`), with earned release on or off. Git, PRs and CI give reverts, rework, defects and lead time (`engineering-evidence`); OpenTelemetry gives errors and latency, split by the flag through OpenTelemetry's feature flag attributes on spans, which the Physa hook sets.
 - **A guardrail is a signal with "no worse" that never decays** while its capability lives (glossary: Guardrail).
 
 ### 4.2 Results, honestly
@@ -130,15 +130,12 @@ A signal is named during shaping, before code (glossary: Signal). Three shapes c
 
 ## 6. Strength
 
-### 6.0 Experimental and opt-in
+### 6.0 Always on, shown as experimental
 
-- **Evidence is always recorded**, whether strength is on or not: every contribution in §6.2 is written as a fact (what happened, to which idea or capability, how much of it, when). It is small, and it is what lets strength be switched on later, or its settings tested, against real history (Q14).
-- **Computing strength is opt-in** (Q13), per repo, while the model is experimental. Until it is on, nothing shows a strength number, and nothing that would follow from it happens on its own.
-- **Without strength, everything else still works** (Q15):
-  - stakes are worked out from exposure and how easily a change is undone, as if every capability were equally strong;
-  - ideas are proposed established by the conditions in §7.1, which need no strength, and withered only by a clear result against them;
-  - no decay proposals; the index and slices show facts (live flags, recent rollbacks) instead of strength;
-  - the network view draws capabilities and ideas without thickness.
+- **Strength is only the number** worked out from evidence. Evidence is always recorded (attention, engineering evidence, reverts and rollbacks, judgment, and, with earned release on, signal results and exposure), so strength is always on (Q19).
+- **Earned release feeds it and needs it**: release widens as far as an idea's strength and the stakes bar allow.
+- **Shown as experimental** in every view until calibration has real data behind it, so nobody takes early numbers as settled.
+- Earlier this design made strength opt-in (Q13). That was reversed: once strength means only the number, switching it off switched off nothing but a reading of what already happens.
 
 ### 6.1 The rule
 
@@ -203,9 +200,9 @@ With strength on (§6.0). Strength never moves anything by itself. It produces p
 
 ### 7.1 Established
 
-With flags off, an idea is **proposed established** once its bet's changes have landed with no revert for 14 days; a revert counts against it.
+With earned release off, an idea is **proposed established** once its bet's changes have landed with no revert for 14 days; a revert counts against it.
 
-With flags on, an idea is **proposed established** (Q11) when all hold:
+With earned release on, an idea is **proposed established** (Q11) when all hold:
 
 - its flag is on for everyone;
 - its signal has a clear result for it, or a named judgment for it where the signal cannot tell;
@@ -243,15 +240,17 @@ Guardrails are the one part of signals that enters the map: they are promises an
 - **Q7** Minimal events, untracked ones dropped and counted, raw events kept 7 days.
 - **Q8** Strength as decaying contributions with a running value. The weights and decay "need to be carefully architected because it will definitely need to be tuned, and potentially customized by each team", as advanced settings (§6.5).
 - **Q9–Q12** As proposed: the starting weights, half-lives of 14 and 90 days, established and withered as proposals, capability strength with "usage unknown".
-- Strength is experimental and opt-in to begin with (the owner: "one of the core differentiators, and also a highly experimental feature … it should be opt-in to begin with").
+- (Reversed by Q19.) Strength experimental and opt-in to begin with (the owner: "one of the core differentiators, and also a highly experimental feature … it should be opt-in to begin with").
 
-- **Flags are opt-in, off by default**, with the product signals that need them. With flags off: landing is exposing (one bar); rollback starts at revert; no automatic rollback; an idea is proposed established once its bet's changes have landed with no revert for 14 days.
+- **Earned release (then called flags) is opt-in, off by default**, with the product signals that need it. With it off: landing is exposing (one bar); rollback starts at revert; no automatic rollback; an idea is proposed established once its bet's changes have landed with no revert for 14 days.
 - **Engineering evidence is always on** (the owner: "it should be always on no matter what").
-- **Ceremony is opt-in**: the map and the engine are the core; flags, product signals, strength, shaping and sign-offs are off for a solo developer; appetite and its circuit breaker stay on.
+- **Ceremony is opt-in**: the map and the engine are the core; earned release, shaping and sign-offs are off for a solo developer; appetite, its circuit breaker, engineering evidence and strength stay on.
 
-- **Q13** Strength is opt-in per repo while it is experimental.
-- **Q14** Evidence is always recorded, even with strength off, and kept for a year.
-- **Q15** With strength off, nothing shows a strength number: stakes from exposure and reversibility; no decay proposals; facts instead of thickness in the index, slices and network view.
+- **Q13** (Reversed by Q19.) Strength opt-in per repo while experimental.
+- **Q14** Evidence is always recorded and kept for a year.
+- **Q15** (Moot after Q19.) What shows with strength off.
 - **Q16** Strength settings are one versioned file (weights with shapes, half-lives, thresholds); changing them recomputes once; `physa strength preview` before adopting.
 - **Q17** The settings live in the repo only when a team changes a default, as `.physa/strength.toml`, reviewed in PRs; with no file, the defaults apply.
 - **Q18** Strength's glossary entry says it is not a judgment of quality.
+- **Q19** Strength is always on, shown as experimental until calibration has data (the owner: "In that world, strength can just always be on").
+- **Q20** The opt-in mechanism is **earned release**, a glossary term; flags are the switch it uses (the owner: "We're using flags as a means to an end. It's a bigger idea than that"; "It's the single mechanism that allows anyone to ship code with agents with trust"). The `flags` capability is now `earned-release`.

@@ -130,7 +130,7 @@ Agents and people confuse each other when the same thing has three names. The gl
 4. **Changes.** A pitch's scope, its breadth, is set during shaping, often helped by spikes: agent-built working or partial code that teaches the pitch something. A bet is delivered as the small changes its pitch plans, built by a harness. A pitch too broad for one bet becomes more than one idea.
 5. **Progress.** Shape Up's hill does not fit: the figuring out now happens in shaping. How a bet's progress is described and shown is still open.
 6. **Circuit breaker.** When a bet runs out of appetite, its work stops and goes back to shaping. Appetites are never extended automatically.
-7. **Flow decides.** With flags on, built ideas ship behind a flag and are measured against their signal; without them, engineering evidence and reverts are the measure. Either way, they thicken into a capability or wither.
+7. **Flow decides.** With earned release on, built ideas land dark, earn their reach and are measured against their signal; without them, engineering evidence and reverts are the measure. Either way, they thicken into a capability or wither.
 
 Rabbit holes and no-gos found during shaping are kept in the map as rules or rejected options, so they outlive the pitch.
 
@@ -145,11 +145,11 @@ Physa measures **only what ideas claim**. It never becomes general analytics.
 - **Honesty about small numbers**: when there is not enough flow to tell, Physa says so, and never presents noise as a result.
 - **Signal events decay with their idea**: when the idea is established or withers, its events are proposed for removal. No stale tracking.
 
-## 7. Flags, experiments and rollback
+## 7. Earned release, experiments and rollback
 
-- **Flags** decide who sees an idea's code: off, internal, a percentage, everyone. Opt-in: with flags on, built ideas ship behind one; teams set exemptions. A flag lives exactly as long as its idea: removed when the idea is established, removed with its code when it withers. No stale flags.
+- **Earned release** is the single mechanism that lets anyone ship agent-written code with trust: code lands dark, its reach widens (no one, internal, a percentage, everyone) only as its evidence and the stakes bar allow, it is watched against its signal and guardrails, and it is withdrawn instantly. Opt-in, as one switch; teams set exemptions. **Flags** are the switch it uses. A flag lives exactly as long as its idea: removed when the idea is established, removed with its code when it withers. No stale flags.
 - **Experiments** split a flag's audience between ideas tried against the same signal. The result is recorded as a decision.
-- **Rollback**, cheapest first: turn the flag off (with flags on); revert the anchored changes; reverse the decision and list what relied on it. Every rollback is recorded with who and why, and counts as evidence against what was rolled back.
+- **Rollback**, cheapest first: turn the flag off (with earned release on); revert the anchored changes; reverse the decision and list what relied on it. Every rollback is recorded with who and why, and counts as evidence against what was rolled back.
 - **Physa owns the meaning, not the switch.** It owns the link between an idea and its flag, the flag's lifetime, signals, the rollback ladder and the decisions. Flag evaluation goes through OpenFeature: teams already on LaunchDarkly, Statsig or PostHog keep them and Physa drives their flags.
 - The open-source core includes a small self-hosted flag service as the default OpenFeature provider, so instant rollback works without the hosted layer or any vendor.
 
@@ -158,10 +158,10 @@ Physa measures **only what ideas claim**. It never becomes general analytics.
 Confidence costs most where mistakes cost most.
 
 - **Stakes** are strength × exposure × reversibility, worked out by the engine. A change to an established capability behind a flag that is off has low stakes to land; the stakes rise when the flag widens.
-- **With flags on, landing code and exposing users are separate steps**, each with its own bar. Most of the speed comes from this separation. With flags off, landing is exposing, and the one bar includes everyone the change reaches.
+- **With earned release on, landing code and exposing users are separate steps**, each with its own bar. Most of the speed comes from this separation. With it off, landing is exposing, and the one bar includes everyone the change reaches.
 - **Every change carries its case**: what it is for, its stakes, the rules at stake and whether the reviewer found them respected, what was checked, and the way back. The engine re-runs the checks itself and never takes an agent's word for them.
 - **Teams set the bar; the engine enforces it.** Policy maps stakes to required evidence: for example, low lands on its own when checks pass, medium also needs a sign-off, high also needs a staged rollout with guardrails.
-- **Guardrails roll back automatically.** Established capabilities declare signals that must not get worse; if one degrades during a rollout, the engine turns the flag off and records the rollback. It carries out a rule the team set in advance; it does not judge.
+- **Guardrails roll back automatically.** Established capabilities declare signals that must not get worse; if one degrades while an idea earns its release, the engine turns the flag off and records the rollback. It carries out a rule the team set in advance; it does not judge.
 - **Calibration**: Physa tracks how each policy level performs (rollbacks, defects that reached users, guardrail trips) and proposes widening or tightening it. The team decides.
 - **Fewer, meaningful sign-offs.** People are asked to sign off only when the stakes require it. Physa never tracks how people review.
 
@@ -229,7 +229,7 @@ Pricing is postponed until the product exists.
 8. Every change can be undone, cheapest first.
 9. One word for one thing, enforced by the glossary.
 10. Grow the surface only when real use asks for it.
-11. Ceremony is opt-in. The map and the engine are the core; a solo developer's path is idea, bet, changes, landed, and a team switches on flags, signals, strength, shaping and sign-offs as it needs them. Engineering evidence and appetite are always on.
+11. Ceremony is opt-in. The map and the engine are the core; a solo developer's path is idea, bet, changes, landed, and a team switches on earned release, shaping and sign-offs as it needs them. Engineering evidence, strength and appetite are always on.
 
 ## 12. Lessons carried from v1 (Rhiza)
 

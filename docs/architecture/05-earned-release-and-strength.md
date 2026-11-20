@@ -6,7 +6,7 @@ Everything so far leans on strength: stakes multiply by it, policy follows from 
 
 **Strength is one of Physa's core differentiators and also highly experimental** (the owner). It is **always on**, shown as experimental until calibration has data (§6.0), and its weights, decay and thresholds are built to be tuned and customized per team (§6.5).
 
-**Earned release is opt-in, as one switch, off by default** (the owner: "If I as a solo developer just want to YOLO everything, I don't care about going through all of that ceremony"). It is the single mechanism that lets anyone ship agent-written code with trust (the owner): code lands dark, reaches people only as far as its evidence and the stakes bar allow, and is withdrawn instantly. It covers `physa serve`, the provider, a flag per idea, experiments, guardrails, automatic rollback and the product signals that need them. Flags are the switch it uses. **Engineering evidence is always on, whatever else is switched on or off** (§4.1).
+**Earned release is opt-in, as one switch, off by default** (the owner: "If I as a solo developer just want to YOLO everything, I don't care about going through all of that ceremony"). It is the single mechanism that lets anyone ship agent-written code with trust (the owner): code lands dark, reaches people only as far as its evidence and the stakes bar allow, and is withdrawn instantly. It covers `physa release serve`, the provider, a flag per idea, experiments, guardrails, automatic rollback and the product signals that need them. Flags are the switch it uses. **Engineering evidence is always on, whatever else is switched on or off** (§4.1).
 
 ## 1. Constraints
 
@@ -28,7 +28,7 @@ The engine runs on a developer's laptop or a CI machine. A production app cannot
 ```
  production app                       next to production                 laptop / CI
 ┌──────────────────────┐  evaluate   ┌─────────────────────────┐  API   ┌──────────────┐
-│ OpenFeature SDK      │────────────▶│ physa serve             │◀──────▶│ engine       │
+│ OpenFeature SDK      │────────────▶│ physa release serve             │◀──────▶│ engine       │
 │  + Physa provider    │  track      │  flags · signal events  │ token  │ strength,    │
 │  (or vendor + hook)  │────────────▶│  one SQLite file        │        │ policy,      │
 └──────────────────────┘             └─────────────────────────┘        │ Needs you    │
@@ -36,7 +36,7 @@ The engine runs on a developer's laptop or a CI machine. A production app cannot
         └──────────────▶ the team's own telemetry backend ───── queried for guardrails ──┘
 ```
 
-- **`physa serve`** is the same Go binary, run as a server: flag evaluation and signal events, one SQLite file, deployable anywhere a container or a binary runs. The hosted layer runs it for teams that don't want to.
+- **`physa release serve`** is the same Go binary, run as a server: flag evaluation and signal events, one SQLite file, deployable anywhere a container or a binary runs. The hosted layer runs it for teams that don't want to.
 - **The engine drives it** through its API with a token: widening a release, turning a flag off for a guardrail, reading results. People do the same through the CLI.
 - **It holds no code, no map and no personal data** (§5.3).
 
@@ -45,7 +45,7 @@ The engine runs on a developer's laptop or a CI machine. A production app cannot
 ### 3.1 One flag per idea
 
 - With earned release on, when an idea is bet on, the engine creates its flag. **The flag's key is the idea's slug** (Q4). Every change in the bet that adds behaviour checks that flag.
-- **Audiences**: off, internal, a percentage, everyone (glossary: Flag). "Internal" is a team setting: a list of targeting keys or an attribute rule (for example an email domain), kept in `physa serve`.
+- **Audiences**: off, internal, a percentage, everyone (glossary: Flag). "Internal" is a team setting: a list of targeting keys or an attribute rule (for example an email domain), kept in `physa release serve`.
 - **Percentages are deterministic**: a hash of the flag key and the person's targeting key, so a person stays in or out as the percentage widens.
 - **An experiment is one flag with a variant per idea** (glossary: Experiment). The ideas share the flag; each variant belongs to its idea.
 
@@ -63,21 +63,21 @@ Every change to a flag is recorded with who and why, and turning off is a rollba
 
 Physa writes **no SDK of its own** (Q2). It uses OpenFeature's:
 
-- **Evaluation** goes through OpenFeature's standard SDKs with a Physa provider. `physa serve` speaks the **OpenFeature Remote Evaluation Protocol (OFREP)**, so the generic OFREP providers that already exist for the main languages work with it, and a Physa provider per language is a thin wrapper that adds caching and the event batching below.
-- **Signal events** go through OpenFeature's **tracking API** (`track(event, context, details)`), which the Physa provider sends to `physa serve` in batches.
+- **Evaluation** goes through OpenFeature's standard SDKs with a Physa provider. `physa release serve` speaks the **OpenFeature Remote Evaluation Protocol (OFREP)**, so the generic OFREP providers that already exist for the main languages work with it, and a Physa provider per language is a thin wrapper that adds caching and the event batching below.
+- **Signal events** go through OpenFeature's **tracking API** (`track(event, context, details)`), which the Physa provider sends to `physa release serve` in batches.
 - **One SDK** therefore means the OpenFeature SDK the team already uses or adopts, so exposure and outcome join on the same targeting key, which is what `one-sdk` asked for.
 
 Teams with a flag vendor (Q3):
 
 - They keep the vendor's OpenFeature provider for evaluation.
 - They add Physa's **OpenFeature hook**, which records exposure after each evaluation of a Physa-linked flag, and send `track` events to Physa alongside.
-- Physa changes the vendor's flags through the vendor's API: one small driver per vendor, in the hosted layer. The open-source core drives only `physa serve`.
+- Physa changes the vendor's flags through the vendor's API: one small driver per vendor, in the hosted layer. The open-source core drives only `physa release serve`.
 
 Checked 2026-11-20 (Q2):
 
 - **Evaluation**: OFREP providers exist for JavaScript (web and Node.js), Go, Python, .NET, Java and Rust. Ruby was not among them.
 - **Tracking**: OFREP has no tracking endpoint, so `track()` through a generic OFREP provider is not forwarded.
-- So **the Physa provider is not just a wrapper**: per language, it reuses the OFREP provider for evaluation and adds its own `track()` that sends events to `physa serve` (a small endpoint of ours, beside OFREP). For Ruby it is a whole provider of our own, small, since OFREP evaluation is a few HTTP calls.
+- So **the Physa provider is not just a wrapper**: per language, it reuses the OFREP provider for evaluation and adds its own `track()` that sends events to `physa release serve` (a small endpoint of ours, beside OFREP). For Ruby it is a whole provider of our own, small, since OFREP evaluation is a few HTTP calls.
 - Languages first: Ruby (the owner's Rails apps, and the likely first teams), then TypeScript and Go.
 
 ## 4. Signals
@@ -118,7 +118,7 @@ A signal is named during shaping, before code (glossary: Signal). Three shapes c
 { event, idea, variant, key_hash, time, value? }
 ```
 
-- Only events a live signal names are kept. `physa serve` drops any other `track` call and counts the drops, so a team sees tracking that no idea claims.
+- Only events a live signal names are kept. `physa release serve` drops any other `track` call and counts the drops, so a team sees tracking that no idea claims.
 - `idea` and `variant` are filled by the provider from the evaluation it already did for that person.
 
 ### 5.2 Aggregated on arrival
@@ -131,7 +131,7 @@ A signal is named during shaping, before code (glossary: Signal). Three shapes c
 
 - The targeting key is hashed with a per-installation secret before it is stored. No names, emails, IPs or free text.
 - `details` from `track` keep only a number (`value`); anything else is dropped.
-- So `physa serve` holds nothing a team would need a data processing agreement for, beyond hashed keys.
+- So `physa release serve` holds nothing a team would need a data processing agreement for, beyond hashed keys.
 
 ## 6. Strength
 
@@ -231,16 +231,16 @@ Accepting it: its lesson is written into the map as a decision with the idea as 
 
 | What | Where |
 |---|---|
-| Flag state, audiences, signal events and daily counts | `physa serve` (one SQLite file), or the hosted layer |
+| Flag state, audiences, signal events and daily counts | `physa release serve` (one SQLite file), or the hosted layer |
 | Contributions, running strength, proposals | the engine's store (03 §4) |
 | Signal definitions | the pitch, in the engine's store; a guardrail's definition is a rule in the capability's map file |
-| Results | computed by `physa serve` from daily counts; pulled by the engine |
+| Results | computed by `physa release serve` from daily counts; pulled by the engine |
 
 Guardrails are the one part of signals that enters the map: they are promises an established capability makes, not experiments.
 
 ## 9. Settled with the owner (2026-11-20)
 
-- **Q1–Q5** As proposed: `physa serve` next to production; no SDK of our own (OpenFeature with a thin Physa provider, OFREP and tracking; language coverage to verify); vendors kept with Physa's hook, vendor drivers in the hosted layer; one flag per idea keyed by its slug; three signal shapes.
+- **Q1–Q5** As proposed: `physa release serve` next to production; no SDK of our own (OpenFeature with a thin Physa provider, OFREP and tracking; language coverage to verify); vendors kept with Physa's hook, vendor drivers in the hosted layer; one flag per idea keyed by its slug; three signal shapes.
 - **Q6** Bayesian comparison, no p-values. The clear-result threshold is set by each team or developer, 95% by default (the owner: "that is for individuals/teams to decide").
 - **Q7** Minimal events, untracked ones dropped and counted, raw events kept 7 days.
 - **Q8** Strength as decaying contributions with a running value. The weights and decay "need to be carefully architected because it will definitely need to be tuned, and potentially customized by each team", as advanced settings (§6.5).

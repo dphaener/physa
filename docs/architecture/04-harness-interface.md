@@ -70,7 +70,7 @@ An **adapter** is the other half: what starts and talks to one kind of agent (Cl
 When a bet starts, the harness's conduct role (the conductor, for the owner's harness) writes the plan through the API:
 
 ```
-physa plan set <<'EOF'
+physa bet plan set <<'EOF'
 {"changes":[
   {"name":"retry-queue","capability":"delivery",
    "what":"Retries go through the queue",
@@ -85,7 +85,7 @@ EOF
 - Each planned change names exactly one capability. A plan with a change that names two is refused (the glossary: it should have been split).
 - **Acceptance** is runnable, scoped to the change's own tests, and holds a failure case or a stated reason why none applies (spec E1).
 - `after` orders changes that depend on each other (Q2).
-- Revising the plan is `physa plan set` again with a reason; the engine keeps every revision (03 §10a).
+- Revising the plan is `physa bet plan set` again with a reason; the engine keeps every revision (03 §10a).
 - No file lists: agents are good at finding files, and the map holds why, not what. The acceptance is the contract.
 
 ### 3.2 A change's path
@@ -192,7 +192,7 @@ Enforced by the engine, not asked of the prompt (`enforce-promises`, spec §3.4)
 
 ### 5.4 Briefs
 
-A session's prompt is: the role's prompt from the harness, then the brief. A brief is assembled by the engine in fixed sections: the change's plan entry, the slice for its capability (`physa slice --change`), the role's inputs from §5.3, and the conductor's line. Team and machine notes are appended last (spec port note 5).
+A session's prompt is: the role's prompt from the harness, then the brief. A brief is assembled by the engine in fixed sections: the change's plan entry, the slice for its capability (`physa map slice --change`), the role's inputs from §5.3, and the conductor's line. Team and machine notes are appended last (spec port note 5).
 
 ## 6. Records
 

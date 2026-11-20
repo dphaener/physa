@@ -32,4 +32,4 @@ jobs:
         run: go run ./tools/codecheck
 
       - name: Check the map
-        run: go run ./cmd/physa check
+        run: go run ./cmd/physa check map

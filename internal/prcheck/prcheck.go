@@ -1,9 +1,9 @@
 // Package prcheck runs the PR check of design 07 section 5 on a range: every
 // change names exactly one capability whose slug is in the map as that change
-// leaves it, and the map passes physa check. It holds the result, each commit
-// with the capability it names, the trailer findings and the map's problems,
-// and renders it as a short markdown summary. It reports; whether a finding
-// blocks is the caller's policy.
+// leaves it, and the map passes physa check map. It holds the result, each
+// commit with the capability it names, the trailer findings and the map's
+// problems, and renders it as a short markdown summary. It reports; whether a
+// finding blocks is the caller's policy.
 package prcheck
 
 import (
@@ -175,7 +175,7 @@ func WriteMarkdown(w io.Writer, r Result) error {
 		b.WriteString("\n")
 	}
 	if len(r.Map.Problems) == 0 {
-		b.WriteString("The map passes physa check.\n\n")
+		b.WriteString("The map passes physa check map.\n\n")
 	} else {
 		b.WriteString("Map problems:\n\n")
 		for _, p := range r.Map.Problems {

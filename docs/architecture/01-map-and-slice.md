@@ -30,7 +30,7 @@ From the vision:
 
 - **One file per capability** (Q2). A capability's rules, decisions and questions live in its file. A person reads one page to understand one area; a slice for a capability is mostly that file. Two PRs touching different capabilities never conflict; two touching the same one usually change different entries, which git merges.
 - **product.md** holds what belongs to no single capability: the product's own promise, product-wide rules (for example "never log customer emails"), product-level decisions, and questions.
-- **The index is not stored.** `physa index` derives it from the capability files. Storing it would duplicate every promise.
+- **The index is not stored.** `physa map index` derives it from the capability files. Storing it would duplicate every promise.
 - **Nothing else is in the repo.** Strength, slice records, usage and decay timers live in the local store (and the hosted layer).
 
 ## 3. A capability file
@@ -125,17 +125,39 @@ Added by `physa init` between markers, and nothing else:
 
 ```markdown
 <!-- physa -->
-Before changing code, run `physa index`, then `physa slice <capabilities>` for the ones your task touches.
+Before changing code, run `physa map index`, then `physa map slice <capabilities>` for the ones your task touches.
 No CLI? Read .physa/README.md.
 <!-- /physa -->
 ```
 
 ## 8. Commands
 
-### 8.1 `physa index`
+Settled with the owner on 2026-11-20 (`grouped-cli`): "Rather than having 100 commands, we should have grouped commands that have sub commands." Four principles:
+
+1. Groups are glossary nouns and subcommands are verbs.
+2. Very few top-level commands: only what a person or agent runs constantly or once per repo.
+3. A bare group does its most common job.
+4. One way to do each thing, with no aliases.
+
+The full planned tree. Only `check` and `map` are built today; everything else is planned.
+
+- `physa init` (02), planned.
+- `physa check [map | changes [range]]` (07 §5), built. Bare `check` runs the map check and, when a range is given or `origin/main..HEAD` resolves, the change check on it.
+- `physa map [index | slice | changes | records]` (01, 07 §4.1), built. Bare `map` prints the index.
+- `physa sync` (07 §7), planned, after the engine.
+- `physa engine start|status|stop` (03), planned.
+- `physa run <bet>` and `physa watch` (03 §7.5), planned, top-level like `check`.
+- `physa ask ...` (03 §9), planned.
+- `physa harness install|show|settings` (04 §2), planned.
+- `physa bet plan ...` (03 §10a), planned; a plan is set with `physa bet plan set`.
+- `physa strength` and `physa strength preview` (05 §6.5), planned.
+- `physa release serve|flags ...` (05), planned and opt-in; it replaces `physa serve`.
+- `physa version` and `physa help`; `--help` on every group and subcommand.
+
+### 8.1 `physa map index`
 
 ```
-$ physa index
+$ physa map index
 delivery   Webhooks reach customers at least once, in order per endpoint.    3 rules · 2 decisions · 1 question
 billing    Customers are charged exactly once per period, in their currency.   5 rules · 4 decisions
 ...
@@ -143,11 +165,11 @@ billing    Customers are charged exactly once per period, in their currency.   5
 
 One line per capability, sorted by name. With local data available it adds strength and a marker for capabilities with growing ideas or recent rollbacks. Measured cost: about 140 bytes a line.
 
-### 8.2 `physa slice`
+### 8.2 `physa map slice`
 
 ```
-physa slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]
-physa slice --change <bet>     (for planned work: the capabilities were chosen when it was shaped)
+physa map slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]
+physa map slice --change <bet>     (for planned work: the capabilities were chosen when it was shaped)
 ```
 
 Output sections, always in this order:
@@ -179,7 +201,7 @@ Product rules, promises and the capabilities' rules are never cut, nor decisions
 
 **JSON**: the same content as structured data, used by harnesses and by the hosted layer.
 
-### 8.3 `physa check`
+### 8.3 `physa check map`
 
 Runs locally and in CI. It fails on:
 
@@ -193,10 +215,10 @@ Settled with the owner (2026-11-20):
 
 - A `from <path>` anchor must name a file in the repo.
 - Commit-hash anchors resolve against the local repo: an anchor naming no commit fails, as does one in a directory that is not a git repository. A shallow clone is named in the message, since its history may be missing the commit.
-- `#N` PR anchors resolve against GitHub through `gh`; an anchor naming no PR fails. When `gh` is missing, unauthenticated or unreachable, `physa check` says so and checks them for form only, never failing on that alone.
+- `#N` PR anchors resolve against GitHub through `gh`; an anchor naming no PR fails. When `gh` is missing, unauthenticated or unreachable, `physa check map` says so and checks them for form only, never failing on that alone.
 - Over a size budget fails the check, with a message that proposes a merge or a prune. The §9 defaults are read as hard limits: a capability file over 150 lines, product.md over 100 lines. (The limit of more than 50 capability files was dropped the same day: `measure-before-budget`.)
 
-**Slug references** (Q7): a reference from one entry to another needs a written form before `physa check` can find references to slugs that do not exist. Until it has one, the check tests only slug shape and uniqueness.
+**Slug references** (Q7): a reference from one entry to another needs a written form before `physa check map` can find references to slugs that do not exist. Until it has one, the check tests only slug shape and uniqueness.
 
 ## 9. Size budgets (Q5)
 
@@ -215,7 +237,7 @@ Lesson from v1: its model was an append-only event log (about 27,000 entries, 12
 
 - **The map's files are its current state.** Reading the map never replays history. Superseded entries are edited in place; git is the archive.
 - **What really aggregates history uses the engine's SQLite store from day one**: strength and decay (from slice records, PR outcomes, signal events and rollbacks), the slice's current-state section, and anchor checks against git.
-- **A latency budget is a test from day one**: `physa index` and `physa slice` answer in under 50 ms on a generated map of 100 capabilities.
+- **A latency budget is a test from day one**: `physa map index` and `physa map slice` answer in under 50 ms on a generated map of 100 capabilities.
 - **No cache until that test fails.** If it does, the cache is keyed by file content hashes and rebuilt automatically, never a second source of truth.
 
 ## 10. Settled with the owner (2026-11-19)

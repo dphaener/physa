@@ -15,7 +15,7 @@ import (
 func runPRCheck(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(append([]string{"pr-check"}, args...), &stdout, &stderr)
+	code := run(append([]string{"check", "changes"}, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -83,9 +83,13 @@ func TestPRCheckNoGHFallsBack(t *testing.T) {
 	}
 }
 
-func TestUsageNamesPRCheck(t *testing.T) {
-	if want := "physa pr-check [<range>] [--json] [--strict]"; !strings.Contains(usage, want) {
-		t.Errorf("usage = %q, want it to name %q", usage, want)
+func TestCheckHelpNamesChanges(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"check", "--help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("code = %d, want 0", code)
+	}
+	if want := "physa check changes [<range>] [--json] [--strict]"; !strings.Contains(stdout.String(), want) {
+		t.Errorf("help = %q, want it to name %q", stdout.String(), want)
 	}
 }
 
@@ -131,7 +135,7 @@ func TestPRCheckNotARepo(t *testing.T) {
 	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(t.TempDir()))
 	t.Chdir(tempMap(t, "r from docs/d.md"))
 	code, _, errOut := runPRCheck(t, "HEAD~1..HEAD")
-	if code != 2 || errOut != "physa pr-check: not a git repository\n" {
+	if code != 2 || errOut != "physa check changes: not a repository under version control\n" {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
@@ -142,7 +146,7 @@ func TestPRCheckUsageErrors(t *testing.T) {
 		{"--check-run"}, {"--pr", "7"}, {"--review"}, {"--skip-review", "x"}, {"--bogus"}, {"a..b", "c..d"}, {"--json=1"},
 	} {
 		code, _, errOut := runPRCheck(t, args...)
-		if code != 2 || errOut != usage {
+		if code != 2 || !strings.HasPrefix(errOut, "usage: physa check changes") {
 			t.Errorf("%v: code %d, stderr %q", args, code, errOut)
 		}
 	}
@@ -151,7 +155,7 @@ func TestPRCheckUsageErrors(t *testing.T) {
 func TestPRCheckBadRange(t *testing.T) {
 	t.Chdir(trailersRepo(t))
 	code, _, errOut := runPRCheck(t, "not-a-ref..HEAD")
-	if code != 2 || !strings.HasPrefix(errOut, "physa pr-check: ") {
+	if code != 2 || !strings.HasPrefix(errOut, "physa check changes: ") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
@@ -160,7 +164,7 @@ func checkWithAnchor(t *testing.T, anchor string) (int, string, string) {
 	t.Helper()
 	root := tempMap(t, "`r` · from docs/d.md · "+anchor)
 	var stdout, stderr bytes.Buffer
-	code := check(root, &stdout, &stderr)
+	code := checkMap(root, "physa check map", &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -182,10 +186,67 @@ func TestCheckFormOnlyWithoutGH(t *testing.T) {
 	}
 	t.Cleanup(func() { newGitHub = old })
 	code, _, errOut := checkWithAnchor(t, "#10")
-	if code != 0 || !strings.Contains(errOut, "physa check: PR anchors checked for form only: gh is not installed") {
+	if code != 0 || !strings.Contains(errOut, "physa check map: PR anchors checked for form only: gh is not installed") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
 // errNoGH is what the real runner returns when gh is not on PATH.
 var errNoGH = &exec.Error{Name: "gh", Err: exec.ErrNotFound}
+
+func runCheck(t *testing.T, args ...string) (int, string, string) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	code := run(append([]string{"check"}, args...), &stdout, &stderr)
+	return code, stdout.String(), stderr.String()
+}
+
+func TestBareCheckWithoutRepositoryChecksTheMap(t *testing.T) {
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(t.TempDir()))
+	t.Chdir(tempMap(t, "`r` · from docs/d.md"))
+	code, out, errOut := runCheck(t)
+	if code != 0 || out != "physa check: ok (1 capabilities, 1 entries)\n" || errOut != "" {
+		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+}
+
+func TestBareCheckWithoutOriginMainChecksTheMap(t *testing.T) {
+	t.Chdir(trailersRepo(t))
+	write(t, ".", ".physa/capabilities/a.md", "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` \u00b7 from docs/d.md\nBecause: y.\n")
+	code, out, _ := runCheck(t)
+	if code != 0 || !strings.HasPrefix(out, "physa check: ok") {
+		t.Errorf("code %d, stdout %q", code, out)
+	}
+}
+
+func TestBareCheckRangeRunsTheChangeCheck(t *testing.T) {
+	t.Chdir(trailersRepo(t))
+	code, out, errOut := runCheck(t, "HEAD~4..HEAD")
+	if code != 1 {
+		t.Fatalf("a map with problems: code %d, want 1; stderr %q", code, errOut)
+	}
+	for _, want := range []string{"feat: ok", "feat: odd", "nosuch"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("markdown lacks %q:\n%s", want, out)
+		}
+	}
+	write(t, ".", ".physa/capabilities/a.md", "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` \u00b7 from docs/d.md\nBecause: y.\n")
+	if code, _, errOut := runCheck(t, "HEAD~4..HEAD"); code != 0 {
+		t.Errorf("sound map with findings: code %d, want 0; stderr %q", code, errOut)
+	}
+	if code, _, _ := runCheck(t, "HEAD~4..HEAD", "--strict"); code != 1 {
+		t.Errorf("strict with findings: code %d, want 1", code)
+	}
+}
+
+func TestBareCheckBadRangeAndUsage(t *testing.T) {
+	t.Chdir(trailersRepo(t))
+	if code, _, errOut := runCheck(t, "not-a-ref..HEAD"); code != 2 || !strings.HasPrefix(errOut, "physa check: ") {
+		t.Errorf("bad range: code %d, stderr %q", code, errOut)
+	}
+	for _, args := range [][]string{{"--json"}, {"a..b", "c..d"}, {"--bogus"}} {
+		if code, _, errOut := runCheck(t, args...); code != 2 || !strings.HasPrefix(errOut, "usage: physa check") {
+			t.Errorf("%v: code %d, stderr %q", args, code, errOut)
+		}
+	}
+}

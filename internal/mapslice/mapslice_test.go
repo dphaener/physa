@@ -320,7 +320,7 @@ func TestWithDecisionsKeepsThem(t *testing.T) {
 		t.Errorf("left out %v, want %v", got, want)
 	}
 	for _, l := range s.LeftOut {
-		if l.Command != "physa slice alpha" {
+		if l.Command != "physa map slice alpha" {
 			t.Errorf("command %q", l.Command)
 		}
 	}
@@ -415,11 +415,11 @@ func TestLeftOutLines(t *testing.T) {
 	s := build(t, m, r)
 	out := md(t, s)
 	want := "## Left out\n\n" +
-		"- `go-core` (product): the entry. Show it with `physa slice alpha beta`.\n" +
-		"- `pricing` (product): the entry. Show it with `physa slice alpha beta`.\n" +
-		"- `alpha-decision` (alpha): its rejected options. Show it with `physa slice alpha beta`.\n" +
-		"- `beta-decision` (beta): its rejected options. Show it with `physa slice alpha beta`.\n" +
-		"- `Cache` (glossary): the term. Show it with `physa slice alpha beta`.\n\n"
+		"- `go-core` (product): the entry. Show it with `physa map slice alpha beta`.\n" +
+		"- `pricing` (product): the entry. Show it with `physa map slice alpha beta`.\n" +
+		"- `alpha-decision` (alpha): its rejected options. Show it with `physa map slice alpha beta`.\n" +
+		"- `beta-decision` (beta): its rejected options. Show it with `physa map slice alpha beta`.\n" +
+		"- `Cache` (glossary): the term. Show it with `physa map slice alpha beta`.\n\n"
 	if !strings.Contains(out, want) {
 		t.Errorf("want\n%s\nin:\n%s", want, out)
 	}
@@ -445,7 +445,7 @@ func TestTrailers(t *testing.T) {
 
 func TestUnknownCapability(t *testing.T) {
 	_, err := Build(fixture(), Request{Capabilities: []string{"alpha", "x"}})
-	if err == nil || err.Error() != `unknown capability "x"; run physa index to see them` {
+	if err == nil || err.Error() != `unknown capability "x"; run physa map index to see them` {
 		t.Errorf("got %v", err)
 	}
 	if _, err := Build(fixture(), Request{Capabilities: []string{"product"}}); err == nil {

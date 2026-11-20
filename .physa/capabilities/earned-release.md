@@ -28,7 +28,7 @@ Rejected:
 
 ### Earned release is opt-in
 `flags-opt-in` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/05-earned-release-and-strength.md
-Earned release as a whole (physa serve, the provider, flags, experiments, guardrails, automatic rollback, and the product signals that need them) is one opt-in switch, off by default.
+Earned release as a whole (physa release serve, the provider, flags, experiments, guardrails, automatic rollback, and the product signals that need them) is one opt-in switch, off by default.
 Because: "If I as a solo developer just want to YOLO everything, I don't care about going through all of that ceremony."
 Rejected:
 - Built ideas behind a flag by default.
@@ -47,5 +47,5 @@ Because: instant rollback must work for a solo developer with no vendor and no h
 
 ### One server next to production, no SDK of our own
 `physa-serve` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/architecture/05-earned-release-and-strength.md
-`physa serve` (the same binary, one SQLite file) evaluates flags and takes signal events. Apps use OpenFeature SDKs with a thin Physa provider: OFREP to evaluate, OpenFeature's tracking API for events. One flag per idea, keyed by its slug.
+`physa release serve` (the same binary, one SQLite file) evaluates flags and takes signal events. Apps use OpenFeature SDKs with a thin Physa provider: OFREP to evaluate, OpenFeature's tracking API for events. One flag per idea, keyed by its slug.
 Because: a production app cannot ask a laptop whether a flag is on, and teams should not adopt a new SDK to try Physa.

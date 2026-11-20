@@ -24,14 +24,14 @@ Because: they are what an agent most needs; if they alone don't fit, the map is 
 
 ### Fast from day one
 `fifty-ms` · from docs/architecture/01-map-and-slice.md
-`physa index` and `physa slice` answer in under 50 ms on a generated map of 100 capabilities, enforced by a test.
+`physa map index` and `physa map slice` answer in under 50 ms on a generated map of 100 capabilities, enforced by a test.
 Because: Rhiza only got its speed target after the pain.
 
 ## Decisions
 
 ### The index is derived, not stored
 `derived-index` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/01-map-and-slice.md
-`physa index` builds the index from the capability files on every call.
+`physa map index` builds the index from the capability files on every call.
 Because: storing it would duplicate every promise.
 
 ### Pull at the start, check at the PR

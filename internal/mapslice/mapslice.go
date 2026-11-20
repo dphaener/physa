@@ -156,7 +156,7 @@ func newAssembler(m *mapfile.Map, r Request) (*assembler, error) {
 		return nil, errors.New("no map to slice")
 	}
 	if len(r.Capabilities) == 0 {
-		return nil, errors.New("no capabilities named; run physa index to see them")
+		return nil, errors.New("no capabilities named; run physa map index to see them")
 	}
 	if r.Budget < 0 {
 		return nil, fmt.Errorf("budget must be positive, got %d", r.Budget)
@@ -169,7 +169,7 @@ func newAssembler(m *mapfile.Map, r Request) (*assembler, error) {
 	var names []string
 	for _, n := range r.Capabilities {
 		if byName[n] == nil {
-			return nil, fmt.Errorf("unknown capability %q; run physa index to see them", n)
+			return nil, fmt.Errorf("unknown capability %q; run physa map index to see them", n)
 		}
 		if !seen[n] {
 			seen[n] = true
@@ -178,7 +178,7 @@ func newAssembler(m *mapfile.Map, r Request) (*assembler, error) {
 	}
 	sort.Strings(names)
 	a := &assembler{req: r, names: names, budget: r.Budget, terms: m.Glossary,
-		command: "physa slice " + strings.Join(names, " ")}
+		command: "physa map slice " + strings.Join(names, " ")}
 	if m.Product != nil {
 		a.secs, a.prod = append(a.secs, toSection(m.Product)), true
 	}

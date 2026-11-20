@@ -151,7 +151,7 @@ func TestDocAnchors(t *testing.T) {
 	expect(t, r, p, 13, "stay inside the repo")
 	expect(t, r, p, 17, "stay inside the repo")
 	expect(t, r, p, 21, "does not name a file")
-	expect(t, r, p, 25, `anchor "1a2b3c4" cannot resolve: not a git repository`)
+	expect(t, r, p, 25, `anchor "1a2b3c4" cannot resolve: not a repository under version control`)
 	if len(r.Problems) != 5 {
 		t.Errorf("want 5 problems, got %v", r.Problems)
 	}

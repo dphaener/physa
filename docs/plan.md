@@ -83,7 +83,7 @@ Each step: what lands, what the owner can do with it, and when it is done.
 
 ### 10. Earned release
 
-- **Lands:** `physa serve`; flags per idea; the Ruby provider (OFREP evaluation plus Physa's tracking), then TypeScript and Go; product signals and results; guardrails and automatic rollback; experiments (05 §2–§5).
+- **Lands:** `physa release serve`; flags per idea; the Ruby provider (OFREP evaluation plus Physa's tracking), then TypeScript and Go; product signals and results; guardrails and automatic rollback; experiments (05 §2–§5).
 - **Tried on:** nebari, a real Rails app with real users.
 - **The owner can:** land agent-written changes to nebari dark and release them as far as their evidence earns.
 - **Release:** **v1.0, open source** (Q3): the map, the engine, harnesses, strength and earned release.

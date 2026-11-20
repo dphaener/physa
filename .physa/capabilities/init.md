@@ -24,7 +24,7 @@ Because: it spends the customer's tokens.
 
 ### A known footprint
 `init-footprint` · from docs/architecture/02-init-and-learning.md
-Init adds only the map, two or three marked lines in AGENTS.md, and `.github/workflows/physa.yml`.
+Init adds only the map and two or three marked lines in AGENTS.md.
 Because: teams with existing agent docs must not find Physa rewriting them.
 
 ## Decisions

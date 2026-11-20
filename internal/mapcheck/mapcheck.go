@@ -1,5 +1,5 @@
 // Package mapcheck checks a product's map against its format and size
-// budgets: the rules `physa check` enforces. It builds on the reader's
+// budgets: the rules `physa check map` enforces. It builds on the reader's
 // problems and adds what each kind of entry must carry, that slugs and terms
 // are unique, that document anchors name files in the repo, that commit
 // anchors name changes in the repo's history, read through version control,
@@ -232,7 +232,7 @@ func (c *checker) commitAnchor(f *mapfile.File, line int, hash string) {
 	}
 	switch {
 	case c.repoErr != nil:
-		// vcs.ErrNotRepo reads "not a git repository".
+		// vcs.ErrNotRepo reads "not a repository under version control".
 		c.add(f.Path, line, "anchor %q cannot resolve: %v", hash, c.repoErr)
 	case !c.repo.HasChange(hash):
 		hint := ""

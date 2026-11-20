@@ -48,7 +48,7 @@ func withName(r mapslice.Request) string {
 func recordSlice(dir string, req mapslice.Request, stderr io.Writer) {
 	s, err := openStore(dir)
 	if err != nil {
-		fmt.Fprintf(stderr, "physa slice: not recorded: %v\n", err)
+		fmt.Fprintf(stderr, "physa map slice: not recorded: %v\n", err)
 		return
 	}
 	defer s.Close()
@@ -60,7 +60,7 @@ func recordSlice(dir string, req mapslice.Request, stderr io.Writer) {
 		Session:      os.Getenv("CLAUDE_CODE_SESSION_ID"),
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "physa slice: not recorded: %v\n", err)
+		fmt.Fprintf(stderr, "physa map slice: not recorded: %v\n", err)
 	}
 }
 
@@ -80,13 +80,13 @@ func parseRecords(args []string) (asJSON, ok bool) {
 func records(dir string, asJSON bool, stdout, stderr io.Writer) int {
 	s, err := openStore(dir)
 	if err != nil {
-		fmt.Fprintf(stderr, "physa records: %v\n", err)
+		fmt.Fprintf(stderr, "physa map records: %v\n", err)
 		return 2
 	}
 	defer s.Close()
 	recs, err := s.SliceRecords()
 	if err != nil {
-		fmt.Fprintf(stderr, "physa records: %v\n", err)
+		fmt.Fprintf(stderr, "physa map records: %v\n", err)
 		return 2
 	}
 	if asJSON {
@@ -94,7 +94,7 @@ func records(dir string, asJSON bool, stdout, stderr io.Writer) int {
 			recs = []store.SliceRecord{}
 		}
 		if err := json.NewEncoder(stdout).Encode(recs); err != nil {
-			fmt.Fprintf(stderr, "physa records: %v\n", err)
+			fmt.Fprintf(stderr, "physa map records: %v\n", err)
 			return 2
 		}
 		return 0

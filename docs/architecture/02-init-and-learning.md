@@ -9,7 +9,7 @@ The map is only worth something if it gets created on a real codebase and keeps 
 From the vision and 01:
 
 - Agents always run on the customer's side, with the customer's own agent and keys. Physa never runs an agent of its own.
-- Agents judge; Physa gathers, checks and records. Nothing deterministic guesses, and nothing an agent produces is trusted without `physa check`.
+- Agents judge; Physa gathers, checks and records. Nothing deterministic guesses, and nothing an agent produces is trusted without `physa check map`.
 - Nothing changes silently: every map change arrives as a proposal a person accepts.
 - Small footprint: what init adds to the repo is listed exactly (§2.6).
 - The open-source core must work without the hosted layer, including measuring slice misses and excess.
@@ -60,7 +60,7 @@ Sessions are independent, so they can run in parallel.
 
 ### 2.5 Check (deterministic)
 
-`physa check` (01 §8.3) validates every file. An agent's output that fails is sent back to the same session with the errors, up to two times. After that, the failing entries are dropped and listed in the review summary.
+`physa check map` (01 §8.3) validates every file. An agent's output that fails is sent back to the same session with the errors, up to two times. After that, the failing entries are dropped and listed in the review summary.
 
 ### 2.6 Review as a PR (a person)
 
@@ -98,7 +98,7 @@ With nothing to recover, init asks the person a short round of questions (number
 Deterministic first, then one agent session:
 
 1. **Trailers**: every commit names exactly one capability, and the slug exists. A commit with none gets a suggested trailer from the reviewer. Settled with the owner (2026-11-20): trailers are read from every final paragraph made only of `Key: value` lines, so a squash merge that adds its own trailers (such as `Co-authored-by:`) after a blank line reads like the branch commit, and `physa trailers` reports these findings.
-2. **Map changes in the PR** pass `physa check`.
+2. **Map changes in the PR** pass `physa check map`.
 3. **The reviewer agent** receives the diff, the PR title and body, the index, and the slices for the capabilities the trailers name. It returns structured output:
    - the capabilities the change actually touches;
    - the rules at stake, and whether each looks respected;
@@ -160,7 +160,7 @@ Each agent step uses a skill Physa ships and teams can replace:
 | reviewing | the open-PR check and `physa review` |
 | learning | the after-merge step |
 
-They use only glossary terms and return structured output that `physa check` validates.
+They use only glossary terms and return structured output that `physa check map` validates.
 
 ## 5. Settled with the owner (2026-11-19)
 

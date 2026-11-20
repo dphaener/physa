@@ -90,7 +90,7 @@ func md(t *testing.T, r Result) string {
 
 func TestMarkdownClean(t *testing.T) {
 	got := md(t, clean())
-	for _, want := range []string{"## 1 commit", "| Commit | Subject | Capability |\n", "| abc1234 | feat: x | learning |", "No trailer findings.", "The map passes physa check.", "checked against GitHub"} {
+	for _, want := range []string{"## 1 commit", "| Commit | Subject | Capability |\n", "| abc1234 | feat: x | learning |", "No trailer findings.", "The map passes physa check map.", "checked against GitHub"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}

@@ -14,7 +14,7 @@ import "errors"
 
 // ErrNotRepo is returned by an adapter's Open when the directory is not under
 // version control.
-var ErrNotRepo = errors.New("not a git repository")
+var ErrNotRepo = errors.New("not a repository under version control")
 
 // Change is one change in the history.
 type Change struct {

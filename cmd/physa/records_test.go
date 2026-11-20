@@ -25,7 +25,7 @@ func useStore(t *testing.T) string {
 func listed(t *testing.T) []store.SliceRecord {
 	t.Helper()
 	var out, errb bytes.Buffer
-	if code := run([]string{"records", "--json"}, &out, &errb); code != 0 {
+	if code := run([]string{"map", "records", "--json"}, &out, &errb); code != 0 {
 		t.Fatalf("records code = %d; stderr %q", code, errb.String())
 	}
 	var recs []struct {
@@ -57,11 +57,11 @@ func TestSliceRecordsEachPrintedSlice(t *testing.T) {
 	useStore(t)
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "s-1")
 	var out, errb bytes.Buffer
-	if code := run([]string{"slice", "slices", "map", "--with", "all", "--budget", "9000"}, &out, &errb); code != 0 {
+	if code := run([]string{"map", "slice", "slices", "map", "--with", "all", "--budget", "9000"}, &out, &errb); code != 0 {
 		t.Fatalf("code = %d; stderr %q", code, errb.String())
 	}
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
-	if code := run([]string{"slice", "map"}, &out, &errb); code != 0 {
+	if code := run([]string{"map", "slice", "map"}, &out, &errb); code != 0 {
 		t.Fatalf("code = %d; stderr %q", code, errb.String())
 	}
 	recs := listed(t)
@@ -75,12 +75,12 @@ func TestSliceRecordsEachPrintedSlice(t *testing.T) {
 		t.Errorf("oldest = %+v, want slices,map with all budget 9000 session s-1", r)
 	}
 	var js, e bytes.Buffer
-	run([]string{"records", "--json"}, &js, &e)
+	run([]string{"map", "records", "--json"}, &js, &e)
 	if !strings.Contains(js.String(), `"session":null`) || !strings.Contains(js.String(), `"budget":null`) {
 		t.Errorf("json = %q, want null session and budget", js.String())
 	}
 	var txt bytes.Buffer
-	run([]string{"records"}, &txt, &e)
+	run([]string{"map", "records"}, &txt, &e)
 	lines := strings.Split(strings.TrimSpace(txt.String()), "\n")
 	if len(lines) != 2 || !strings.Contains(lines[0], " — map") || !strings.HasSuffix(lines[1], "s-1 slices,map with all budget 9000") {
 		t.Errorf("records = %q", txt.String())
@@ -91,7 +91,7 @@ func TestSliceWithDecisionsAndQuestionsRecorded(t *testing.T) {
 	t.Chdir("../..")
 	useStore(t)
 	for _, w := range []string{"decisions", "questions"} {
-		if code := run([]string{"slice", "map", "--with", w}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+		if code := run([]string{"map", "slice", "map", "--with", w}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
 			t.Fatalf("code = %d", code)
 		}
 	}
@@ -116,18 +116,18 @@ func TestFailingStoreStillPrintsSlice(t *testing.T) {
 	t.Chdir("../..")
 	useStore(t)
 	var want bytes.Buffer
-	run([]string{"slice", "map"}, &want, &bytes.Buffer{})
+	run([]string{"map", "slice", "map"}, &want, &bytes.Buffer{})
 	old := openStore
 	openStore = func(string) (*store.Store, error) { return nil, errors.New("disk on fire") }
 	t.Cleanup(func() { openStore = old })
 	var out, errb bytes.Buffer
-	if code := run([]string{"slice", "map"}, &out, &errb); code != 0 {
+	if code := run([]string{"map", "slice", "map"}, &out, &errb); code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
 	if out.String() != want.String() {
 		t.Errorf("stdout differs when the store fails")
 	}
-	if got := errb.String(); got != "physa slice: not recorded: disk on fire\n" {
+	if got := errb.String(); got != "physa map slice: not recorded: disk on fire\n" {
 		t.Errorf("stderr = %q, want one warning line", got)
 	}
 }
@@ -136,11 +136,11 @@ func TestRecordsEmpty(t *testing.T) {
 	t.Chdir("../..")
 	useStore(t)
 	var out bytes.Buffer
-	if code := run([]string{"records"}, &out, &bytes.Buffer{}); code != 0 || out.String() != "No slice records.\n" {
+	if code := run([]string{"map", "records"}, &out, &bytes.Buffer{}); code != 0 || out.String() != "No slice records.\n" {
 		t.Errorf("code %d, out %q", code, out.String())
 	}
 	out.Reset()
-	if code := run([]string{"records", "--json"}, &out, &bytes.Buffer{}); code != 0 || out.String() != "[]\n" {
+	if code := run([]string{"map", "records", "--json"}, &out, &bytes.Buffer{}); code != 0 || out.String() != "[]\n" {
 		t.Errorf("code %d, out %q", code, out.String())
 	}
 }
@@ -151,11 +151,11 @@ func TestRecordsOutsideRepoAndBadUsage(t *testing.T) {
 	openStore = gitStore // the real opener: a temp dir is no repo
 	t.Cleanup(func() { openStore = old })
 	var out, errb bytes.Buffer
-	if code := run([]string{"records"}, &out, &errb); code != 2 || !strings.HasPrefix(errb.String(), "physa records: ") {
+	if code := run([]string{"map", "records"}, &out, &errb); code != 2 || !strings.HasPrefix(errb.String(), "physa map records: ") {
 		t.Errorf("code %d, stderr %q", code, errb.String())
 	}
 	errb.Reset()
-	if code := run([]string{"records", "--bad"}, &out, &errb); code != 2 || !strings.Contains(errb.String(), "physa records [--json]") {
+	if code := run([]string{"map", "records", "--bad"}, &out, &errb); code != 2 || !strings.Contains(errb.String(), "physa map records [--json]") {
 		t.Errorf("code %d, stderr %q", code, errb.String())
 	}
 }

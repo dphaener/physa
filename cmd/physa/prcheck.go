@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/dphaener/physa/internal/github"
 	"github.com/dphaener/physa/internal/prcheck"
@@ -16,7 +15,7 @@ import (
 // so that none of them reaches GitHub.
 var newGitHub = func(dir string) *github.Client { return github.New(dir) }
 
-// prResolver returns the function physa check uses to resolve #N anchors. A
+// prResolver returns the function physa check map uses to resolve #N anchors. A
 // missing or unauthenticated gh becomes a plain reason, so the check falls
 // back to form only.
 func prResolver(dir string) func(n int) (bool, error) {
@@ -33,40 +32,14 @@ func prResolver(dir string) func(n int) (bool, error) {
 	}
 }
 
-// prCheckOptions is a parsed physa pr-check command line.
-type prCheckOptions struct {
-	rng          string
-	json, strict bool
-}
-
-// parsePRCheck reads the arguments after "pr-check": at most one range and the
-// flags --json and --strict, in any order. It reports false for anything else.
-func parsePRCheck(args []string) (prCheckOptions, bool) {
-	o := prCheckOptions{rng: defaultRange}
-	seen := false
-	for _, a := range args {
-		switch {
-		case a == "--json":
-			o.json = true
-		case a == "--strict":
-			o.strict = true
-		case strings.HasPrefix(a, "--") || seen:
-			return o, false
-		default:
-			o.rng, seen = a, true
-		}
-	}
-	return o, true
-}
-
-// prCheck runs the PR check on the range of o against the map in dir. It
-// reports: 0 whatever it finds, 1 when o.strict and it found something, and
-// 2 when the map, the history or the range cannot be read or the output
+// runChanges runs the PR check on the range of o against the map in dir and
+// writes its report. It reports false after printing an error that starts
+// with name: the map, the history or the range cannot be read, or the output
 // cannot be written.
-func prCheck(dir string, o prCheckOptions, stdout, stderr io.Writer) int {
-	fail := func(err error) int {
-		fmt.Fprintf(stderr, "physa pr-check: %v\n", err)
-		return 2
+func runChanges(dir, name string, o changesOptions, stdout, stderr io.Writer) (prcheck.Result, bool) {
+	fail := func(err error) (prcheck.Result, bool) {
+		fmt.Fprintf(stderr, "%s: %v\n", name, err)
+		return prcheck.Result{}, false
 	}
 	repo, err := git.Open(dir)
 	if err != nil {
@@ -84,7 +57,18 @@ func prCheck(dir string, o prCheckOptions, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	if o.strict && !r.Clean() {
+	return r, true
+}
+
+// checkChanges is physa check changes. It returns 0 whatever it finds, 1 when
+// o.strict and it found something, and 2 when the map, the history or the
+// range cannot be read or the output cannot be written.
+func checkChanges(dir, name string, o changesOptions, stdout, stderr io.Writer) int {
+	r, ok := runChanges(dir, name, o, stdout, stderr)
+	switch {
+	case !ok:
+		return 2
+	case o.strict && !r.Clean():
 		return 1
 	}
 	return 0

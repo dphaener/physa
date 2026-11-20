@@ -45,7 +45,7 @@ Earned release has its own production signals (05 §3–§4) and is not part of 
 |---|---|---|---|---|
 | F1 the capability a change serves | U1 U2 U3 U6 | the `Capability:` trailer; the engine writes it on work it runs | version control | version control |
 | F2 landed, reverted, rolled back | U1 U3 U5 U6 | version control (rollbacks: 05) | version control | version control |
-| F3 the slices each agent had | U2 U5 | `physa slice` recording each call; the engine recording each brief | the store | a digest (§7) |
+| F3 the slices each agent had | U2 U5 | `physa map slice` recording each call; the engine recording each brief | the store | a digest (§7) |
 | F4 tokens per session, tied to its bet | U3 | the engine, from the session | the store | a digest |
 | F5 rework: findings, fix rounds, failing tests | U1 U2 U5 | the engine and its records (03 §8a) | the store | a digest |
 | F6 asks and human interventions | U4 U5 | the engine (03 §9) | the store | a digest |
@@ -57,22 +57,22 @@ Left out on purpose, because no use needs them: which files were read, capabilit
 
 ### 4.1 Slice records (F3)
 
-- `physa slice` writes a slice record to the store on every call: the capabilities, `--with` and the budget, the time, and the calling session when the agent says it (Claude Code: `CLAUDE_CODE_SESSION_ID`). This works before the engine exists.
+- `physa map slice` writes a slice record to the store on every call: the capabilities, `--with` and the budget, the time, and the calling session when the agent says it (Claude Code: `CLAUDE_CODE_SESSION_ID`). This works before the engine exists.
 - Inside a session, which subagent made a call is found by joining the record with that session's logs on time and arguments. Under the engine every role is its own session (04 §5), so a role's slice records are exact without the join.
 - **Map usefulness** (U2) compares the slices an agent had with the capability its change served (F1): served but never loaded, or loaded and never served. Over many changes, a capability that keeps being served without being loaded is a sign its index line or promise doesn't draw agents in. It is a signal about the map, never a judgment of an agent.
 
 ### 4.2 Outside the engine
 
-Work done outside the engine (a person's commits, someone's own agent) has F1, F2 and F8 from version control, and F3 where `physa slice` ran on that machine. F4–F7 and F9 are unknown and shown as unknown.
+Work done outside the engine (a person's commits, someone's own agent) has F1, F2 and F8 from version control, and F3 where `physa map slice` ran on that machine. F4–F7 and F9 are unknown and shown as unknown.
 
 ## 5. What is verified
 
 Only F1 and the map. Both are deterministic and rerun from the repo:
 
 - every change names exactly one capability, and the slug exists in the map as the change leaves it (a change that adds a capability names it);
-- the map passes `physa check`.
+- the map passes `physa check map`.
 
-`physa pr-check` runs both on a range. It runs as an engine gate before a PR, and by hand (or in a team's own CI) for work outside the engine. It reports; it blocks only where a team's policy says so (02 Q5).
+`physa check changes` runs both on a range. It runs as an engine gate before a PR, and by hand (or in a team's own CI) for work outside the engine. It reports; it blocks only where a team's policy says so (02 Q5).
 
 Everything else is recorded (F2–F8) or learning's judgment (F9).
 

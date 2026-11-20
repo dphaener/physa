@@ -83,6 +83,13 @@ Because: a solo developer "just want[s] to YOLO everything" (the owner); a team 
 Rejected:
 - The full process by default, with exemptions.
 
+### Grouped commands
+`grouped-cli` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/01-map-and-slice.md
+Commands come in groups named by glossary nouns, with verbs as subcommands, and a bare group does its most common job. Only what is run constantly or once per repo is top-level, and each thing has one way to do it, with no aliases.
+Because: "Rather than having 100 commands, we should have grouped commands that have sub commands."
+Rejected:
+- A flat list of top-level commands: it grows with every feature and hides how commands relate.
+
 ## Questions
 
 ### How is the hosted layer priced?

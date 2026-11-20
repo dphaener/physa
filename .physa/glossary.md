@@ -121,7 +121,7 @@ _Avoid_: question (that is the map's), prompt, interrupt
 **Run**: One execution of a harness on a spike or a change, from start to its end state.
 _Avoid_: job
 
-**Strength**: How much real flow an idea or capability carries: attention before code, then usage, rollout, signal results, stability and citations. Measured, never set by hand. Not a judgment of quality: an idea nobody has tried yet is weak however good it is. Always on, and shown as experimental until calibration has data. How strict the process is and how much agents may do follow from it, by the team's own policy.
+**Strength**: How much real flow an idea or capability carries: attention before code, then usage, earned release, signal results, stability and citations. Measured, never set by hand. Not a judgment of quality: an idea nobody has tried yet is weak however good it is. Always on, and shown as experimental until calibration has data. How strict the process is and how much agents may do follow from it, by the team's own policy.
 _Avoid_: mode, maturity, confidence score
 
 **Decay**: How knowledge and work that are not used, reaffirmed or bet on lose standing until reviewed or removed.

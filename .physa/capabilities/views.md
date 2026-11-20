@@ -79,6 +79,13 @@ Because: it answers "why is it like this?" in the map's own words, and never hid
 An idea's page shows its bet's progress, changes and review rounds, its pitch, and every piece of evidence behind its strength. A withering idea's lesson is drafted there and editable before it is accepted.
 Because: strength must always be explainable, and a lesson becomes a decision the person should own the words of.
 
+### Watching says why a session is quiet
+`watch-readable` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/architecture/06-views-and-the-network.md
+Watching a session shows the run's state as running, waiting on a workflow, or stalled, each visibly different, then a stream written for a person with raw output one tap away. Stepping in says first that it counts as an intervention.
+Because: headless sessions end their turn while workflows run, and a waiting run that looks finished or stuck sends a person after the wrong thing.
+
+## Questions
+
 ### Do capabilities connect to each other?
 `capability-tubes` · raised by dphaener · 2026-11-20
 A tube between two capabilities needs a word and evidence that thickens it. Not drawn until decided.

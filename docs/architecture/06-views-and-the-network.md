@@ -1,6 +1,6 @@
 # Architecture 06: views and the network
 
-Draft 0.4, 2026-11-20. Uses `.physa/glossary.md` terms only. Builds on vision §3.1 and 05 §6. Items marked (Q) are open questions for the owner.
+Draft 0.5, 2026-11-20. Uses `.physa/glossary.md` terms only. Builds on vision §3.1 and 05 §6. Items marked (Q) are open questions for the owner.
 
 The web views are server-rendered Go templates: Needs you is the home screen, the network view is the signature, and the single-user phone web is a real view, not a shrunk desktop. This design settles how they look, and how the network is drawn.
 
@@ -89,6 +89,17 @@ An idea's page says whose it is, what it extends, how strong it is and why, and 
 - **The pitch** when it was shaped: problem, appetite, solution, scope and no-gos, signal, rabbit holes.
 - **Why it is this strong**: every piece of evidence, what it added and what it still counts after decay, summing to the strength shown (05 §6.1). Strength is explained on every idea's page.
 - **Its story**, newest first.
+
+## 8. Watching a live session
+
+Watching follows a run as it works (03 §7.5), on the phone web as in a terminal or a Rex pane.
+
+- **The run's state comes first, in one of three visibly different states.** Running: what is working and on what. Waiting on a workflow: the session ended its turn while checks run, so silence is expected and is not a stall. Stalled: no output, record or tool activity for 15 minutes, with the time it stopped, its place in Needs you, and the actions to stop the run or step in. Each shows time in, last activity and tokens against appetite.
+- **The run's sessions** are listed by role kind (conduct, build, check, fix), each with its state; any one can be watched.
+- **The stream is written for a person**: what ran and its result, what changed, what the agent said, what was recorded. Raw output is one tap away, never the default. A quiet session says why it is quiet.
+- **Watching is read-only.** Stepping in first says that it counts as an intervention (03 §8), then opens the session.
+
+With this, the core's phone web is complete: Needs you with Running now, the network, a capability's page, an idea's page, and watching a session. Progress across a team, and "is our process working?", wait for the hosted layer.
 
 ## Questions
 

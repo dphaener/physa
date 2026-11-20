@@ -254,7 +254,7 @@ What the engine needs from an agent, and nothing more (Q10):
 | report tokens used | from the stream's usage |
 | report blocked (usage limit, permission) | from the stream and exit status |
 | turn the agent's question into an ask | its hook |
-| load only the subagent definitions the engine allows (§5.1) | `--plugin-dir` for the installed plugin, `--setting-sources` limited so no other copy loads, and a deny rule `Agent(<role>)` per role subagent. Verified 2026-11-20 (Claude Code 2.1.323): a denied subagent is refused with "Agent type 'verifier' has been denied by permission rule", and other subagents run normally |
+| load only the subagent definitions the engine allows (§5.1) | `--plugin-dir` for the installed plugin, `--setting-sources` limited so no other copy loads, and a deny rule `Agent(<role>)` per role subagent. Verified 2026-11-20 (Claude Code 2.1.323), for subagents given with `--agents` and for subagents from a plugin, where the rule uses the plugin's namespaced name (`Agent(<plugin>:<role>)`): a denied subagent is not offered, a direct attempt is refused with "denied by permission rule", and other subagents run normally |
 | end the session | close input; signal the process group |
 
 An adapter is one Go package behind one interface. A second adapter (Codex or opencode) is the test that the interface is not Claude-shaped.

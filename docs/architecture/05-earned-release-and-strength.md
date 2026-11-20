@@ -73,7 +73,12 @@ Teams with a flag vendor (Q3):
 - They add Physa's **OpenFeature hook**, which records exposure after each evaluation of a Physa-linked flag, and send `track` events to Physa alongside.
 - Physa changes the vendor's flags through the vendor's API: one small driver per vendor, in the hosted layer. The open-source core drives only `physa serve`.
 
-To verify before building: which languages have a working OFREP provider and support `track` today (Q2).
+Checked 2026-11-20 (Q2):
+
+- **Evaluation**: OFREP providers exist for JavaScript (web and Node.js), Go, Python, .NET, Java and Rust. Ruby was not among them.
+- **Tracking**: OFREP has no tracking endpoint, so `track()` through a generic OFREP provider is not forwarded.
+- So **the Physa provider is not just a wrapper**: per language, it reuses the OFREP provider for evaluation and adds its own `track()` that sends events to `physa serve` (a small endpoint of ours, beside OFREP). For Ruby it is a whole provider of our own, small, since OFREP evaluation is a few HTTP calls.
+- Languages first: Ruby (the owner's Rails apps, and the likely first teams), then TypeScript and Go.
 
 ## 4. Signals
 

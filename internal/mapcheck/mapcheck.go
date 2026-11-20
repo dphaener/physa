@@ -20,12 +20,10 @@ import (
 const (
 	MaxCapabilityLines = 150
 	MaxProductLines    = 100
-	MaxCapabilities    = 50
 )
 
 const (
 	glossaryPath = ".physa/glossary.md"
-	capsPath     = ".physa/capabilities"
 )
 
 var hows = []string{"in their words", "choosing an option", "accepting a proposal"}
@@ -184,9 +182,6 @@ func (c *checker) budgets(m *mapfile.Map) {
 		if f.Lines > MaxCapabilityLines {
 			c.over(f.Path, f.Lines, MaxCapabilityLines)
 		}
-	}
-	if n := len(m.Capabilities); n > MaxCapabilities {
-		c.add(capsPath, 0, "%d capability files, budget is %d: propose a merge or a prune", n, MaxCapabilities)
 	}
 }
 

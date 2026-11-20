@@ -162,18 +162,14 @@ func TestBudgets(t *testing.T) {
 	expect(t, r, ".physa/product.md", 0, "101 lines, budget is 100: propose a merge or a prune")
 }
 
-func TestCapabilityCountBudget(t *testing.T) {
+// The map has no limit on how many capabilities it holds.
+func TestNoCapabilityCountLimit(t *testing.T) {
 	root := newMap(t, "", "")
-	for i := 0; i < MaxCapabilities; i++ {
+	for i := 0; i < 60; i++ {
 		write(t, root, ".physa/capabilities/c"+strings.Repeat("x", i+1)+".md", front)
 	}
-	// 1 + 50 = 51 files
-	expect(t, check(t, root), ".physa/capabilities", 0, "51 capability files, budget is 50")
-	os.Remove(filepath.Join(root, ".physa/capabilities/a.md"))
-	for _, p := range check(t, root).Problems {
-		if strings.Contains(p.Message, "capability files") {
-			t.Errorf("at budget should pass, got %v", p)
-		}
+	if r := check(t, root); len(r.Problems) != 0 {
+		t.Errorf("61 capabilities should pass, got %v", r.Problems)
 	}
 }
 

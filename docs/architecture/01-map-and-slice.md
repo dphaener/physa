@@ -141,7 +141,7 @@ billing    Customers are charged exactly once per period, in their currency.   5
 ...
 ```
 
-One line per capability, sorted by name. With local data available it adds strength and a marker for capabilities with growing ideas or recent rollbacks. Target: under ~2,000 tokens for about 50 capabilities.
+One line per capability, sorted by name. With local data available it adds strength and a marker for capabilities with growing ideas or recent rollbacks. Measured cost: about 140 bytes a line.
 
 ### 8.2 `physa slice`
 
@@ -160,7 +160,18 @@ Output sections, always in this order:
 6. **Left out**: entries cut by the budget, each with the command that shows it.
 7. **How to anchor**: the trailers to use for this work.
 
-**Budget order** when the slice is too big, cut from the bottom first: rejected options, then questions, then decisions' `Because:` lines, then decisions, then current state. Product rules, promises and rules are never cut; if they alone exceed the budget, the map is over its size budget and `physa check` says so.
+**Budget**: a slice has no default budget. Without `--budget` it holds everything for the requested capabilities, cuts nothing and has no Left out section.
+
+**Cut order** when `--budget` is given and the slice is too big, the pieces lowest in the output first within each step:
+
+1. product.md's decisions and questions;
+2. rejected options;
+3. terms, whole entries;
+4. questions;
+5. decisions' `Because:` lines;
+6. decisions.
+
+Product rules, promises and the capabilities' rules are never cut, nor decisions or questions the request asked for with `--with`. If those alone exceed the budget, the slice says so and names what they hold. Terms count only when they appear in the requested capabilities' own text, never in product.md's.
 
 **Determinism**: sections 1–3 and 5–7 depend only on the map and the request. Section 4 is a dated snapshot.
 
@@ -176,13 +187,13 @@ Runs locally and in CI. It fails on:
 - a duplicate slug, or a reference to a slug that does not exist;
 - a rule or decision without an anchor or a `Because:` line;
 - an anchor that does not resolve to a commit or PR in this repo;
-- a capability file or the whole map over its size budget.
+- a capability file or product.md over its size budget.
 
 Settled with the owner (2026-11-20):
 
 - A `from <path>` anchor must name a file in the repo.
 - `#N` PR and commit-hash anchors are checked for form only, until plan step 2 resolves them against git and GitHub.
-- Over a size budget fails the check, with a message that proposes a merge or a prune. The §9 defaults are read as hard limits: a capability file over 150 lines, product.md over 100 lines, more than 50 capability files.
+- Over a size budget fails the check, with a message that proposes a merge or a prune. The §9 defaults are read as hard limits: a capability file over 150 lines, product.md over 100 lines. (The limit of more than 50 capability files was dropped the same day: `measure-before-budget`.)
 
 **Slug references** (Q7): a reference from one entry to another needs a written form before `physa check` can find references to slugs that do not exist. Until it has one, the check tests only slug shape and uniqueness.
 
@@ -192,8 +203,8 @@ Settled with the owner (2026-11-20):
 |---|---|
 | A capability file | about 150 lines |
 | product.md | about 100 lines |
-| Capabilities in the index | about 50; beyond that, propose merging |
-| A slice | about 3,000 tokens |
+
+Slices have no default budget: an agent passes `--budget` when it wants one. There is no limit on how many capabilities a map holds; budgets get tuned from run data (`measure-before-budget` in .physa/capabilities/slices.md).
 
 Teams can change them. Going over a budget never blocks work; it produces a proposed merge or prune on the next PR.
 
@@ -203,7 +214,7 @@ Lesson from v1: its model was an append-only event log (about 27,000 entries, 12
 
 - **The map's files are its current state.** Reading the map never replays history. Superseded entries are edited in place; git is the archive.
 - **What really aggregates history uses the engine's SQLite store from day one**: strength and decay (from slice records, PR outcomes, signal events and rollbacks), the slice's current-state section, and anchor checks against git.
-- **A latency budget is a test from day one**: `physa index` and `physa slice` answer in under 50 ms on a generated map at twice the default budget (100 capabilities).
+- **A latency budget is a test from day one**: `physa index` and `physa slice` answer in under 50 ms on a generated map of 100 capabilities.
 - **No cache until that test fails.** If it does, the cache is keyed by file content hashes and rebuilt automatically, never a second source of truth.
 
 ## 10. Settled with the owner (2026-11-19)

@@ -29,7 +29,7 @@ func (r *reader) glossary(m *Map) {
 			cur = nil
 		case termRe.MatchString(line):
 			t := termRe.FindStringSubmatch(line)
-			m.Glossary = append(m.Glossary, Term{Name: strings.TrimSpace(t[1]), Line: no})
+			m.Glossary = append(m.Glossary, Term{Name: strings.TrimSpace(t[1]), Definition: strings.TrimSpace(t[2]), Line: no})
 			cur = &m.Glossary[len(m.Glossary)-1]
 		case strings.HasPrefix(line, "_Avoid_:"):
 			if cur == nil {

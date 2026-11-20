@@ -70,11 +70,13 @@ type Entry struct {
 	How      string // text after the person's comma, e.g. "accepting a proposal"
 	Date     string
 	Anchors  []Anchor
+	Body     string // prose between the meta line and Because:/Rejected:, blank lines dropped
 	Because  string
 	Rejected []string
 	MetaHas  Meta
 
 	rejectedLine int
+	bodyDone     bool
 }
 
 // File is product.md or one capability file.
@@ -90,9 +92,10 @@ type File struct {
 
 // Term is one glossary term.
 type Term struct {
-	Name  string
-	Avoid []string
-	Line  int
+	Name       string
+	Definition string // text after "**Name**: "
+	Avoid      []string
+	Line       int
 }
 
 // Map is everything read from a product's .physa directory.
@@ -342,12 +345,14 @@ func (r *reader) frontMatter(f *File, lines []string) int {
 func (r *reader) body(p string, no int, line string, e *Entry, inReject bool) bool {
 	switch {
 	case strings.HasPrefix(line, "Because:"):
+		e.bodyDone = true
 		e.Because = strings.TrimSpace(strings.TrimPrefix(line, "Because:"))
 		if e.Because == "" {
 			r.add(p, no, "Because: has no text")
 		}
 		return false
 	case strings.TrimSpace(line) == "Rejected:":
+		e.bodyDone = true
 		e.Rejected, e.rejectedLine = []string{}, no
 		return true
 	case inReject && strings.HasPrefix(line, "- "):
@@ -355,6 +360,11 @@ func (r *reader) body(p string, no int, line string, e *Entry, inReject bool) bo
 		return true
 	case inReject && strings.TrimSpace(line) == "":
 		return true
+	case !e.bodyDone && strings.TrimSpace(line) != "":
+		if e.Body != "" {
+			e.Body += "\n"
+		}
+		e.Body += line
 	}
 	return false
 }

@@ -19,12 +19,12 @@ Because: agents and people must be able to trust and reproduce what was loaded.
 
 ### Product rules and promises are never cut
 `never-cut` · from docs/architecture/01-map-and-slice.md
-When a slice is over budget, rejected options go first, then questions, reasons, decisions and current state. Product rules, promises and rules stay.
+When a slice is over its budget, product.md's decisions and questions go first, then rejected options, terms, questions, reasons and decisions. Product rules, promises and rules stay.
 Because: they are what an agent most needs; if they alone don't fit, the map is too big.
 
 ### Fast from day one
 `fifty-ms` · from docs/architecture/01-map-and-slice.md
-`physa index` and `physa slice` answer in under 50 ms on a map twice the default budget, enforced by a test.
+`physa index` and `physa slice` answer in under 50 ms on a generated map of 100 capabilities, enforced by a test.
 Because: Rhiza only got its speed target after the pain.
 
 ## Decisions
@@ -41,3 +41,11 @@ Because: hooks are not universal across agents, but every agent's work ends at a
 Rejected:
 - Hooks that inject context as files are touched: not universal.
 - Generated AGENTS.md files as the main delivery: loads everything along a path, whatever the task.
+
+### Measure before setting budgets
+`measure-before-budget` · decided by dphaener, in their words · 2026-11-20 · #10
+A slice has no default budget and the map has no limit on how many capabilities it holds. Budgets get tuned from run data.
+Because: if we collect run data we will know from real runs how to tune these things as the product matures.
+Rejected:
+- A 3,000-token default slice budget: it cut the capability's own reasons first.
+- A limit of about 50 capabilities: it would force merging real promises.

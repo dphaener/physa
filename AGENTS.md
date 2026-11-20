@@ -2,10 +2,10 @@
 
 Physa is product management rebuilt for agents: a product is a network of ideas whose strength comes from evidence. This repo holds the open-source core (Go). The hosted team layer (Rails) lives in its own repo.
 
-The repo is early: the Go module, `cmd/physa`, its code rules, the map reader, `physa check` and `physa index` exist; slices and the store do not yet.
+The repo is early: the Go module, `cmd/physa`, its code rules, the map reader, `physa check`, `physa index` and `physa slice` exist; the store does not yet.
 
 <!-- physa -->
-Before changing code, run `go run ./cmd/physa index`, then read the files in .physa/capabilities/ your task touches.
+Before changing code, run `go run ./cmd/physa index`, then `go run ./cmd/physa slice <capabilities>` for the ones your task touches.
 No CLI? Read .physa/README.md.
 <!-- /physa -->
 

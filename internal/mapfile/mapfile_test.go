@@ -81,7 +81,10 @@ func TestGoodMap(t *testing.T) {
 	if !reflect.DeepEqual(d.Rejected, []string{"Unlimited retries: floods endpoints.", "Three attempts: too short."}) {
 		t.Errorf("rejected: %v", d.Rejected)
 	}
-	want := []Term{{"Map", []string{"model", "graph"}, 7}, {"Rule", []string{"constraint"}, 10}}
+	want := []Term{
+		{Name: "Map", Definition: "The product's knowledge.", Avoid: []string{"model", "graph"}, Line: 7},
+		{Name: "Rule", Definition: "Something that must hold, with its reason.", Avoid: []string{"constraint"}, Line: 10},
+	}
 	if !reflect.DeepEqual(m.Glossary, want) {
 		t.Errorf("glossary: %+v", m.Glossary)
 	}
@@ -179,4 +182,64 @@ func TestOwnMap(t *testing.T) {
 	if len(m.Glossary) < 40 {
 		t.Errorf("got %d terms", len(m.Glossary))
 	}
+}
+
+func TestBodyAndDefinition(t *testing.T) {
+	m, _ := mustRead(t, "testdata/good")
+	rule, q := m.Product.Entries[0], m.Product.Entries[1]
+	if rule.Body != "Never log customer emails." {
+		t.Errorf("rule body = %q", rule.Body)
+	}
+	if q.Body != "" {
+		t.Errorf("question without body has Body %q", q.Body)
+	}
+	c := m.Capabilities[0]
+	if c.Entries[0].Body != "Retry only by enqueueing a job." || c.Entries[1].Body != "Six attempts, then dead-letter." {
+		t.Errorf("bodies = %q, %q", c.Entries[0].Body, c.Entries[1].Body)
+	}
+	if m.Glossary[1].Definition != "Something that must hold, with its reason." {
+		t.Errorf("definition = %q", m.Glossary[1].Definition)
+	}
+}
+
+func TestBodyJoinsLinesAndDropsBlanks(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".physa")
+	if err := os.MkdirAll(filepath.Join(dir, "capabilities"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := "---\npromise: p\n---\n\n# T\n\n## Rules\n\n### H\n`h`\n\nfirst\n\nsecond\n```\nfenced\n```\nBecause: x\n"
+	if err := os.WriteFile(filepath.Join(dir, "product.md"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := mustRead(t, root)
+	if got := m.Product.Entries[0].Body; got != "first\nsecond" {
+		t.Errorf("body = %q", got)
+	}
+}
+
+func TestBrokenBodyNoPanic(t *testing.T) {
+	m, _ := mustRead(t, "testdata/broken")
+	if len(m.Capabilities) == 0 {
+		t.Fatal("no capabilities read")
+	}
+}
+
+func TestOwnMapBody(t *testing.T) {
+	m, _ := mustRead(t, "../..")
+	for _, c := range m.Capabilities {
+		if c.Name != "slices" {
+			continue
+		}
+		for _, e := range c.Entries {
+			if e.Slug == "deterministic-slice" {
+				want := "Everything in a slice except its current-state section depends only on the map and the request."
+				if e.Body != want {
+					t.Errorf("body = %q", e.Body)
+				}
+				return
+			}
+		}
+	}
+	t.Error("deterministic-slice not found")
 }

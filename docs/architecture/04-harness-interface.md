@@ -1,6 +1,6 @@
 # Architecture 04: the harness interface
 
-Draft 0.2, 2026-11-19. Uses `.physa/glossary.md` terms only. Builds on 01–03 and on `docs/research/harness-spec.md` (cited as "the spec", with its contract items E1–E16). Items marked (Q) are open questions for the owner.
+Draft 0.3, 2026-11-20. Uses `.physa/glossary.md` terms only. Builds on 01–03 and on `docs/research/harness-spec.md` (cited as "the spec", with its contract items E1–E16). Items marked (Q) are open questions for the owner.
 
 The owner's harness is trusted because of thirteen mechanisms (spec §4). Most of them are not in its prompts: they are gates and records the runtime enforced. This design keeps every one of them, moves them into the engine where the prompts only promised them, and leaves judgment to the harness.
 
@@ -11,25 +11,46 @@ The owner's harness is trusted because of thirteen mechanisms (spec §4). Most o
 - **What prompts promise, the engine enforces** (`enforce-promises`): isolation, engine-built check briefs, caps.
 - **Done needs a record** (03 §7.1).
 - **The core never imports a plugin** (`no-plugin-imports`). A harness is files plus calls to the public API.
+- **Bring the harness you already have.** Developers package workflows today as skills and plugins for their agent (Agent Skills, Agent Plugins, Claude Code plugins). Physa installs those as they are; nobody rewrites a harness into Physa's format.
 - **Bring your own agents**: Claude Code first, others through adapters; agents run on the customer's side.
 - **Physa's words at the boundary.** A harness names its roles as it likes; the engine sees only role kinds, changes, findings and the records below. "Leaf", "change set" and "Evidence" for a verifier's pass do not cross the boundary.
 
 ## 2. What a harness is
 
-A **harness** is a directory:
+### 2.1 The skeleton
+
+Every harness runs in one skeleton the engine owns:
+
+- the four role kinds (conduct, build, check, fix);
+- **every role is its own session started by the engine**, in the workspace its kind gets (§5.3);
+- done needs a record, caps, gates and shipping (§6–§8).
+
+**Physa's default harness** is that skeleton with Physa's own prompts in every role: a conductor, a builder, one check and a fixer. It works on day one for a developer with no harness at all.
+
+### 2.2 Installing a harness
+
+A developer's existing plugin fills the skeleton (Q14):
 
 ```
-afk/
-  harness.toml        the manifest (§4)
-  roles/
-    conductor.md      one prompt per role, with shared blocks already expanded
-    builder.md
-    ...
+physa harness install <git URL or path>
 ```
 
-- No code. A harness that needs logic puts it in its prompts or in the project's own commands; the engine runs no harness code.
-- **Installed per machine** under `~/.config/physa/harnesses/<name>/` from a git URL at a pinned commit. A repo chooses its harness in machine settings (Q12).
-- **Versioned by commit.** Every run records the harness commit it used, so rework numbers (03 §8a) can be compared across harness versions. That is how a team sees whether a prompt change saved tokens.
+1. **Read the plugin**: its subagent definitions (name, prompt, tools, model), skills, commands and hooks. A subagent without edit or write tools is already shaped like a check.
+2. **An agent proposes an overlay**: which subagents are roles, each role's kind, the record it must leave before done, the caps. Roles the plugin does not provide are filled by Physa's default prompts. A plugin with only skills fills fewer roles, and its skills are loaded into the roles that use them.
+3. **The developer reviews the overlay once**: each mapping, and every prompt line that spawns a role natively (§5.1), so a prompt that relies on it is visible before it stumbles.
+4. **The plugin's prompts are never edited.** Upstream updates still apply: updating the plugin proposes the overlay's diff for review.
+
+On disk, one harness per machine (Q13):
+
+```
+~/.config/physa/harness/
+  plugin/             the developer's plugin, at a pinned commit, untouched
+  overlay.toml        the reviewed mapping (§4)
+```
+
+- **No harness code runs in the engine.** Logic lives in prompts or in the project's own commands.
+- **Versioned by the plugin's commit and the overlay's.** Every run records both, so rework numbers (03 §8a) can be compared across harness versions. That is how a developer sees whether a prompt change saved tokens.
+- **The owner's harness is installed the same way as anyone's**, with no special path. It is the first test of the installer.
 
 An **adapter** is the other half: what starts and talks to one kind of agent (Claude Code, Codex, opencode). Adapters are part of the core, compiled in, one small package each (Q10).
 
@@ -42,10 +63,11 @@ An **adapter** is the other half: what starts and talks to one kind of agent (Cl
 | one PR per change set | **one PR per change** (glossary: a change is usually one commit in its own PR) |
 | "Evidence" written by the verifier | a **pass** record (Q4) |
 | question to the arbiter | **ask** (03 §9) |
+| `harness.toml` written for Physa | the developer's own plugin plus a reviewed **overlay** (§2.2) |
 
 ### 3.1 The plan
 
-When a bet starts, the harness's entry role (the conductor, for the owner's harness) writes the plan through the API:
+When a bet starts, the harness's conduct role (the conductor, for the owner's harness) writes the plan through the API:
 
 ```
 physa plan set <<'EOF'
@@ -78,49 +100,43 @@ planned ─► building ─► verified ─► checked ─► (sign-off if stake
 - Each change has its own branch off main (or off the change it comes `after`, once that one has landed: Q2), its own worktree under the run's directory, and its own PR.
 - **How the PR merges is the team's choice** (squash, merge commit or rebase), a team setting (Q1). The engine anchors the change by its PR number either way, and every commit a session makes carries the change's trailers, so nothing depends on the merge method.
 
-## 4. The manifest
+## 4. The overlay
 
-The owner's harness, ported (spec §5.2, in Physa's terms):
+What install proposes and the developer reviews. The owner's harness, as its overlay would read:
 
 ```toml
 [harness]
-name  = "afk"
-entry = "conductor"               # started once per bet; spawns the rest
-spike = "spiker"                  # started once per spike (optional)
+plugin = "github.com/dphaener/afk-harness@<commit>"
+conduct = "conductor"             # started once per bet; its prompt is the plugin's, unedited
+spike   = "spiker"                # started once per spike (optional)
 
-[roles]                           # every role, with its kind (Q5)
+[roles]                           # plugin subagents that are roles; everything else stays native (§5.1)
 conductor = { kind = "conduct" }
-spiker    = { kind = "build" }
-builder   = { kind = "build" }
-verifier  = { kind = "check", workspace = "readonly@change" }
-plan      = { kind = "check", workspace = "readonly@change", check = true }
-code      = { kind = "check", workspace = "readonly@change", check = true }
-qa        = { kind = "check", workspace = "readonly@change", check = true }
-critic    = { kind = "check", workspace = "readonly@change" }
-fixer     = { kind = "fix" }
-ci-fix    = { kind = "fix" }
-gate-fix  = { kind = "fix" }
-conflict-fix = { kind = "fix" }
+builder   = { kind = "build", done = "commit" }
+verifier  = { kind = "check", done = "pass | findings" }
+plan      = { kind = "check", check = true, done = "round" }
+code      = { kind = "check", check = true, done = "round" }
+qa        = { kind = "check", check = true, done = "round" }
+critic    = { kind = "check", done = "verdicts" }
+fixer     = { kind = "fix",   done = "commit" }
+ci-fix    = { kind = "fix",   done = "commit" }
+gate-fix  = { kind = "fix",   done = "commit" }
+conflict-fix = { kind = "fix", done = "commit" }
 arbiter   = { kind = "conduct" }
-plan-reviewer = { kind = "check" }       # optional plan review (Q11)
-plan-critic   = { kind = "check" }
+plan-reviewer = { kind = "check", done = "round" }   # optional plan review (Q11)
+plan-critic   = { kind = "check", done = "verdicts" }
 plan-reviser  = { kind = "fix" }
+spiker    = { kind = "build", done = "commit" }
+# filled by Physa's default prompts: none
 
 [findings]                        # the harness's grading (Q6)
 levels  = ["blocker","major","minor","nit"]
 serious = ["blocker","major"]     # what critics judge and gates count
 
-[done]                            # the engine refuses done without these (03 §7.1)
-verifier = "pass | findings"
-check    = "round"                # every role with check = true
-critic   = "verdicts"
-builder  = "commit"
-fixer    = "commit"
-
 [gates]                           # all must hold before a change's PR opens
 before_pr = ["passed", "reviewed", "covered", "checks-block", "command:local_gate"]
 
-[routes]                          # failure -> role; the engine hands the failure to the entry role
+[routes]                          # failure -> role; the engine hands the failure to the conduct role
 passed       = "verifier|builder"
 reviewed     = "critic,fixer"
 local_gate   = "gate-fix"
@@ -133,6 +149,9 @@ build_attempts = 3                # per change
 fix_cycles     = 2                # per change
 handbacks      = 3                # per change
 command_budget = "4m"
+
+[review]                          # what the developer saw when accepting
+native_spawn_lines = []           # prompt lines that spawn a role natively
 ```
 
 ## 5. Sessions
@@ -143,9 +162,12 @@ command_budget = "4m"
 physa spawn <role> --change <name> [--check <name>] [--brief -] [--model <m>]
 ```
 
-- Only a `conduct` role can spawn. The engine starts the session through the adapter, in the workspace the role declares, and returns at once. **No sleeping, no polling** (spec §2.10).
+- **Starting a role always goes through the engine.** Only a conduct role can spawn. The engine starts the session through the adapter, in the workspace its kind gets, and returns at once. **No sleeping, no polling** (spec §2.10).
+- **A role's subagent definition is not loaded natively** in any session: the verifier, the checks and the critic exist only through `physa spawn`. No hook is needed; the engine decides which subagent definitions each session loads.
+- **Native subagents are normal inside a role** (Q15). A planner sending out research agents, or a builder sending one to read the code, is part of that role's work. They run inside its session and inherit its workspace (a check's subagent reads the same read-only checkout), its identity (their tokens are credited to the role, from the agent's stream) and its records (only the role itself can record findings, a pass or done).
+- **A native subagent can never stand in for a role.** If a conductor tells a generic subagent to verify the build, its output is part of the conductor's session and cannot be a pass: the `passed` gate counts only a pass from an engine-started check session that wrote no commits. Trust comes from records and gates, not from policing what agents do.
 - When a child ends, the engine sends its parent a message: role, change, outcome, and what it recorded (spec E11).
-- **The entry role is one session per bet**, woken by messages, as today. If it is lost, the engine starts a fresh one with the bet's state from the store, so nothing depends on a session's memory (03 §5.2).
+- **The conduct role is one session per bet**, woken by messages, as today. If it is lost, the engine starts a fresh one with the bet's state from the store, so nothing depends on a session's memory (03 §5.2).
 
 ### 5.2 Identity
 
@@ -208,7 +230,7 @@ Pure functions over records and git. A harness chooses which apply; it cannot ch
 
 ## 8. Failures, caps and hand-back
 
-- When a gate fails, or CI is red, or the PR conflicts, the engine **hands the failure back** to the entry role with a structured failure (spec E13): which gate, its output, the failing commands and the files in conflict. The harness's `[routes]` tell the conductor which role to spawn; the engine does not choose.
+- When a gate fails, or CI is red, or the PR conflicts, the engine **hands the failure back** to the conduct role with a structured failure (spec E13): which gate, its output, the failing commands and the files in conflict. The harness's `[routes]` tell the conductor which role to spawn; the engine does not choose.
 - **Caps are the engine's** (Q7). A change that reaches `build_attempts`, `fix_cycles` or `handbacks` stops and goes to Needs you with its findings. The spec's gap ("no cap on conductor retries") is closed here.
 - **Appetite still bounds everything**: caps stop one change looping; the appetite's circuit breaker stops the bet.
 - **The engine ships**: push, PR, CI wait, merge. No role pushes, rebases, forces or merges (spec §2.10).
@@ -232,6 +254,7 @@ What the engine needs from an agent, and nothing more (Q10):
 | report tokens used | from the stream's usage |
 | report blocked (usage limit, permission) | from the stream and exit status |
 | turn the agent's question into an ask | its hook |
+| load only the subagent definitions the engine allows (§5.1) | to verify: Claude Code's per-session agent and plugin settings |
 | end the session | close input; signal the process group |
 
 An adapter is one Go package behind one interface. A second adapter (Codex or opencode) is the test that the interface is not Claude-shaped.
@@ -242,15 +265,15 @@ An adapter is one Go package behind one interface. A second adapter (Codex or op
 - Its branch stays with the idea (glossary: Spike). A bet can start from it: the conductor sees it in its brief.
 - A harness without a spike role cannot run spikes; nothing else changes.
 
-## 12. Porting the owner's harness
+## 12. Installing the owner's harness
 
-Changes to the role prompts, in order:
+The owner's harness is installed like anyone's (§2.2). What install has to deal with:
 
-1. Replace Rhiza's words with Physa's: change, bet, plan, pass, ask, findings levels. Keep the content: the six-section briefs, the severity block, the never-list, the command budget, test scope, the flake rule.
-2. Replace `rhiza ...` calls with the §6 records and `physa spawn`, `physa plan`, `physa ask`, `physa done`.
-3. Remove what the engine now enforces: "never read the run status" (refused), "detached checkout" (given), retry counting (capped), pushing and landing (the engine's).
-4. Drop what no longer exists: `.rhiza` model writes, render, land, overlaps, model checks, lint-fix, model conflicts. The map is written only through learning (02).
-5. Plan review (reviewer, critic, reviser) stays as optional roles (Q11). When a harness declares them, they review the bet's plan after the conductor writes it and before building starts, against the pitch and the slice, not a model.
+1. **Its Rhiza calls.** Its prompts call `rhiza run findings`, `rhiza run spawn` and the like. The engine adds a short "how to record" section to every role's brief naming Physa's calls, and the overlay review lists every prompt line that still names a Rhiza call. Lines that cannot work (writes to `.rhiza`, render, land, overlaps, model checks, lint-fix) are shown so the owner can update the plugin upstream, in its own repo, not through Physa.
+2. **What the engine now does.** "Never read the run status" is a refused call, "detached checkout" is given, retries are capped, pushing and landing are the engine's. The prompts can keep saying so; it costs a few lines.
+3. **Plan review** (reviewer, critic, reviser) stays as optional roles (Q11): they review the bet's plan after the conductor writes it and before building starts.
+
+Because the plugin is never edited by Physa, the owner's harness and Rhiza can run side by side until the switch.
 
 ## 13. Settled with the owner (2026-11-19)
 
@@ -260,11 +283,13 @@ Changes to the role prompts, in order:
 - **Q4** The verifier's record is a **pass**, not Evidence.
 - **Q5** Four role kinds: conduct, build, check, fix.
 - **Q6** Findings have **levels** the harness names; the harness says which are serious. Not "severity".
-- **Q7** Caps per change in the manifest, enforced by the engine; reaching one goes to Needs you.
+- **Q7** Caps per change in the overlay, enforced by the engine; reaching one goes to Needs you.
 - **Q8** Check roles get a read-only checkout and engine-built briefs; their reads of build records are refused.
 - **Q9** The engine re-runs the `Checks:` block and acceptance itself; the verifier still judges the diff.
 - **Q10** Adapters compiled into the core, one package each; Claude Code first; a second adapter early.
 - **Q11** Plan review stays, as optional roles that review the bet's plan before building starts.
 - **Q12** Harnesses are installed per machine. (Which harness a repo uses is still open: Q13.)
 
+- **Q14** Every harness runs in Physa's skeleton. Install maps an existing plugin's subagents and skills onto roles; Physa's default prompts fill any role the plugin lacks; the developer reviews the overlay once; the plugin's prompts are never edited. (The owner: "Why not just do that for everything?")
+- **Q15** Native subagents are allowed inside any role and share its workspace, identity and records (the owner: research agents when planning "should 100% be a normal thing that is allowed"). Only starting a role goes through `physa spawn`; a role's subagent definition is not loaded natively. No hooks.
 - **Q13** One harness per machine, the developer's choice; every repo on the machine uses it and nothing about it enters the repo. A team's bar lives in its stakes policy and the PR check, not in the harness. A per-repo override waits until someone needs it; a team default and harness comparison belong to the hosted layer.

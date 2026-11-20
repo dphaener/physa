@@ -1,11 +1,13 @@
 // Package mapcheck checks a product's map against its format and size
 // budgets: the rules `physa check` enforces. It builds on the reader's
 // problems and adds what each kind of entry must carry, that slugs and terms
-// are unique, that document anchors name files in the repo, and that the map
-// stays within its budgets.
+// are unique, that document anchors name files in the repo, that commit
+// anchors name commits in the repo's git history, and that the map stays
+// within its budgets.
 package mapcheck
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -13,6 +15,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dphaener/physa/internal/history"
 	"github.com/dphaener/physa/internal/mapfile"
 )
 
@@ -73,6 +76,10 @@ func Check(root string) (Result, error) {
 type checker struct {
 	root     string
 	problems []mapfile.Problem
+
+	repo     *history.Repo // opened when the first commit anchor is met
+	repoErr  error
+	repoOpen bool
 }
 
 func (c *checker) add(p string, line int, format string, args ...any) {
@@ -130,8 +137,11 @@ func (c *checker) entry(f *mapfile.File, e *mapfile.Entry, seen map[string]strin
 		}
 	}
 	for _, a := range e.Anchors {
-		if a.Kind == mapfile.Doc {
+		switch a.Kind {
+		case mapfile.Doc:
 			c.docAnchor(f, meta, a.Value)
+		case mapfile.Commit:
+			c.commitAnchor(f, meta, a.Value)
 		}
 	}
 }
@@ -159,6 +169,27 @@ func (c *checker) docAnchor(f *mapfile.File, line int, p string) {
 	info, err := os.Stat(filepath.Join(c.root, filepath.FromSlash(clean)))
 	if err != nil || !info.Mode().IsRegular() {
 		c.add(f.Path, line, "anchor %q does not name a file in the repo", p)
+	}
+}
+
+// commitAnchor checks that a commit-hash anchor names a commit in the repo.
+// Git runs only when the first commit anchor is met.
+func (c *checker) commitAnchor(f *mapfile.File, line int, hash string) {
+	if !c.repoOpen {
+		c.repoOpen = true
+		c.repo, c.repoErr = history.Open(c.root)
+	}
+	switch {
+	case errors.Is(c.repoErr, history.ErrNotRepo):
+		c.add(f.Path, line, "anchor %q cannot resolve: not a git repository", hash)
+	case c.repoErr != nil:
+		c.add(f.Path, line, "anchor %q cannot resolve: %v", hash, c.repoErr)
+	case !c.repo.HasCommit(hash):
+		hint := ""
+		if c.repo.Shallow() {
+			hint = " (the clone is shallow; fetch its full history)"
+		}
+		c.add(f.Path, line, "anchor %q does not name a commit in this repo%s", hash, hint)
 	}
 }
 

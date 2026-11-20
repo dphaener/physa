@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -367,5 +368,171 @@ func TestSliceOverBudget(t *testing.T) {
 	}
 	if got, want := stderr.String(), "physa slice: over budget: what is never cut is "; !strings.HasPrefix(got, want) || !strings.HasSuffix(got, " tokens, over the 10-token budget\n") {
 		t.Errorf("stderr = %q, want %q... tokens, over the 10-token budget", got, want)
+	}
+}
+
+const trailersUsage = "physa trailers [<range>] [--json] [--strict]"
+
+func TestUsageNamesTrailers(t *testing.T) {
+	if !strings.Contains(usage, trailersUsage) {
+		t.Errorf("usage = %q, want it to name %q", usage, trailersUsage)
+	}
+}
+
+// gitIn runs git in dir with the user's git config ignored and returns its output.
+func gitIn(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "commit.gpgsign=false"}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return string(out)
+}
+
+// trailersRepo is a repo with a small map and four commits on top of a base:
+// one sound, one without a trailer, one naming two capabilities and one
+// naming a slug the map lacks.
+func trailersRepo(t *testing.T) string {
+	t.Helper()
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_AUTHOR_NAME", "t")
+	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "t")
+	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
+	root := tempMap(t, "r from docs/d.md")
+	write(t, root, ".physa/capabilities/b.md", "---\npromise: y\n---\n# B\n\n")
+	gitIn(t, root, "init", "-q")
+	gitIn(t, root, "add", ".")
+	gitIn(t, root, "commit", "-q", "-m", "base")
+	for _, msg := range []string{
+		"feat: ok\n\nCapability: a\nLoaded: a, b",
+		"feat: bare",
+		"feat: two\n\nCapability: a, b",
+		"feat: odd\n\nCapability: nosuch",
+	} {
+		gitIn(t, root, "commit", "-q", "--allow-empty", "-m", msg)
+	}
+	return root
+}
+
+func runTrailers(t *testing.T, args ...string) (int, string, string) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	code := run(append([]string{"trailers"}, args...), &stdout, &stderr)
+	return code, stdout.String(), stderr.String()
+}
+
+func TestTrailersText(t *testing.T) {
+	t.Chdir(trailersRepo(t))
+	code, out, errOut := runTrailers(t, "HEAD~4..HEAD")
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr %q", code, errOut)
+	}
+	for _, want := range []string{
+		"feat: odd\n  capability: nosuch \u00b7 loaded: \u2014\n",
+		"feat: bare\n  capability: \u2014 \u00b7 loaded: \u2014\n",
+		"feat: ok\n  capability: a \u00b7 loaded: a, b\n",
+		"\n3 findings:\n",
+		": no Capability trailer\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout = %q, want it to contain %q", out, want)
+		}
+	}
+	if strings.Index(out, "feat: odd") > strings.Index(out, "feat: ok") {
+		t.Errorf("stdout = %q, want newest first", out)
+	}
+}
+
+func TestTrailersOk(t *testing.T) {
+	t.Chdir(trailersRepo(t))
+	code, out, _ := runTrailers(t, "HEAD~4..HEAD~3", "--strict")
+	if code != 0 || !strings.HasSuffix(out, "\nphysa trailers: ok (1 commits)\n") {
+		t.Errorf("code = %d, stdout = %q, want 0 and ok", code, out)
+	}
+}
+
+func TestTrailersJSON(t *testing.T) {
+	t.Chdir(trailersRepo(t))
+	code, out, _ := runTrailers(t, "--json", "HEAD~4..HEAD")
+	if code != 0 {
+		t.Fatalf("code = %d, want 0", code)
+	}
+	if strings.Count(out, "\n") != 1 {
+		t.Errorf("stdout = %q, want one line", out)
+	}
+	var v struct {
+		Range    string
+		Commits  []map[string]any
+		Findings []map[string]any
+	}
+	if err := json.Unmarshal([]byte(out), &v); err != nil {
+		t.Fatalf("stdout is not JSON: %v", err)
+	}
+	if v.Range != "HEAD~4..HEAD" || len(v.Commits) != 4 || len(v.Findings) != 3 {
+		t.Errorf("json = %+v, want the range, 4 commits and 3 findings", v)
+	}
+	code, out, _ = runTrailers(t, "HEAD~4..HEAD~3", "--json")
+	if code != 0 || !strings.Contains(out, `"findings":[]`) || strings.Contains(out, "null") {
+		t.Errorf("code = %d, stdout = %q, want empty findings and no null", code, out)
+	}
+	code, out, _ = runTrailers(t, "HEAD..HEAD", "--json")
+	if code != 0 || !strings.Contains(out, `"commits":[]`) {
+		t.Errorf("code = %d, stdout = %q, want empty commits", code, out)
+	}
+}
+
+func TestTrailersStrict(t *testing.T) {
+	t.Chdir(trailersRepo(t))
+	if code, _, _ := runTrailers(t, "HEAD~4..HEAD", "--strict"); code != 1 {
+		t.Errorf("strict with findings: code = %d, want 1", code)
+	}
+	if code, _, _ := runTrailers(t, "HEAD~4..HEAD"); code != 0 {
+		t.Errorf("without strict: code = %d, want 0", code)
+	}
+}
+
+func TestTrailersDefaultRange(t *testing.T) {
+	t.Chdir(trailersRepo(t))
+	code, _, errOut := runTrailers(t)
+	if code != 2 || !strings.HasPrefix(errOut, "physa trailers: ") {
+		t.Errorf("code = %d, stderr = %q, want 2 for a missing origin/main", code, errOut)
+	}
+}
+
+func TestTrailersBadRange(t *testing.T) {
+	t.Chdir(trailersRepo(t))
+	code, out, errOut := runTrailers(t, "nosuch..HEAD")
+	if code != 2 || out != "" || !strings.HasPrefix(errOut, "physa trailers: ") {
+		t.Errorf("code = %d, stdout = %q, stderr = %q, want 2 and a git error", code, out, errOut)
+	}
+}
+
+func TestTrailersNotARepo(t *testing.T) {
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(t.TempDir()))
+	t.Chdir(tempMap(t, "r from docs/d.md"))
+	code, _, errOut := runTrailers(t, "HEAD~1..HEAD")
+	if code != 2 || !strings.Contains(errOut, "not a git repository") {
+		t.Errorf("code = %d, stderr = %q, want 2 and not a git repository", code, errOut)
+	}
+}
+
+func TestTrailersNoMapIsError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	code, _, errOut := runTrailers(t, "HEAD~1..HEAD")
+	if code != 2 || !strings.HasPrefix(errOut, "physa trailers: ") {
+		t.Errorf("code = %d, stderr = %q, want 2", code, errOut)
+	}
+}
+
+func TestTrailersBadUsage(t *testing.T) {
+	for _, args := range [][]string{{"a", "b"}, {"--bogus"}, {"--json=1"}} {
+		var stdout, stderr bytes.Buffer
+		code := run(append([]string{"trailers"}, args...), &stdout, &stderr)
+		if code != 2 || stderr.String() != usage || stdout.Len() != 0 {
+			t.Errorf("%v: code = %d, stderr = %q, want 2 and usage", args, code, stderr.String())
+		}
 	}
 }

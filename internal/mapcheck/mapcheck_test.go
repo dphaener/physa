@@ -2,6 +2,7 @@ package mapcheck
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -145,8 +146,63 @@ func TestDocAnchors(t *testing.T) {
 	expect(t, r, p, 13, "stay inside the repo")
 	expect(t, r, p, 17, "stay inside the repo")
 	expect(t, r, p, 21, "does not name a file")
-	if len(r.Problems) != 4 {
-		t.Errorf("want 4 problems, got %v", r.Problems)
+	expect(t, r, p, 25, `anchor "1a2b3c4" cannot resolve: not a git repository`)
+	if len(r.Problems) != 5 {
+		t.Errorf("want 5 problems, got %v", r.Problems)
+	}
+}
+
+// gitIn runs git in dir, isolated from the user's configuration, and returns
+// its trimmed output.
+func gitIn(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	full := append([]string{"-C", dir, "-c", "user.name=T", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)
+	out, err := exec.Command("git", full...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func commitCap(hash string) string {
+	return "## Rules\n\n### A\n`a` · from docs/d.md · " + hash + "\nBecause: y.\n"
+}
+
+func TestCommitAnchorsResolve(t *testing.T) {
+	root := newMap(t, "", "")
+	gitIn(t, root, "init", "-q")
+	gitIn(t, root, "add", ".")
+	gitIn(t, root, "commit", "-q", "-m", "first")
+	full := gitIn(t, root, "rev-parse", "HEAD")
+	for _, h := range []string{full[:7], full} {
+		write(t, root, ".physa/capabilities/a.md", front+commitCap(h))
+		if r := check(t, root); len(r.Problems) != 0 {
+			t.Errorf("anchor %s: want none, got %v", h, r.Problems)
+		}
+	}
+}
+
+func TestCommitAnchorMissing(t *testing.T) {
+	root := newMap(t, "", "")
+	gitIn(t, root, "init", "-q")
+	gitIn(t, root, "add", ".")
+	gitIn(t, root, "commit", "-q", "-m", "first")
+	write(t, root, ".physa/capabilities/a.md", front+commitCap("deadbee"))
+	r := check(t, root)
+	expect(t, r, ".physa/capabilities/a.md", 9, `anchor "deadbee" does not name a commit in this repo`)
+	if len(r.Problems) != 1 || strings.Contains(r.Problems[0].Message, "shallow") {
+		t.Errorf("want one problem without a shallow hint, got %v", r.Problems)
+	}
+}
+
+// Without commit anchors no git is needed: a map with only #N anchors passes
+// in a directory that is not a repo.
+func TestPRAnchorsNeedNoGit(t *testing.T) {
+	cap := "## Rules\n\n### A\n`a` · from docs/d.md · #12\nBecause: y.\n"
+	if r := check(t, newMap(t, "", cap)); len(r.Problems) != 0 {
+		t.Errorf("want none, got %v", r.Problems)
 	}
 }
 

@@ -1,15 +1,18 @@
 // Command physa is Physa's command line. It checks the map with check, lists
 // its capabilities with index, prints the slice of the map a task needs with
-// slice and prints the version of the build with version.
+// slice, lists the trailers of the commits of a range with trailers and prints
+// the version of the build with version.
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 
+	"github.com/dphaener/physa/internal/history"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfile"
 	"github.com/dphaener/physa/internal/mapindex"
@@ -20,7 +23,8 @@ import (
 var version = "dev"
 
 const usage = "usage: physa check [dir] | physa index [dir] | physa version\n" +
-	"       physa slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]\n"
+	"       physa slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]\n" +
+	"       physa trailers [<range>] [--json] [--strict]\n"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -55,6 +59,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 			opts, ok := parseSlice(args[1:])
 			if ok {
 				return slice(".", opts, stdout, stderr)
+			}
+		case "trailers":
+			opts, ok := parseTrailers(args[1:])
+			if ok {
+				return trailers(".", opts, stdout, stderr)
 			}
 		}
 	}
@@ -186,4 +195,100 @@ func slice(dir string, o sliceOptions, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "physa slice: over budget: what is never cut is %d tokens, over the %d-token budget\n", s.Used, s.Budget)
 	}
 	return 0
+}
+
+// defaultRange is the range physa trailers reads when none is given.
+const defaultRange = "origin/main..HEAD"
+
+// trailersOptions is a parsed physa trailers command line.
+type trailersOptions struct {
+	rng          string
+	json, strict bool
+}
+
+// parseTrailers reads the arguments after "trailers": at most one range and the
+// flags --json and --strict, in any order. It reports false for anything else.
+func parseTrailers(args []string) (trailersOptions, bool) {
+	o := trailersOptions{rng: defaultRange}
+	seen := false
+	for _, a := range args {
+		switch {
+		case a == "--json":
+			o.json = true
+		case a == "--strict":
+			o.strict = true
+		case strings.HasPrefix(a, "--") || seen:
+			return o, false
+		default:
+			o.rng, seen = a, true
+		}
+	}
+	return o, true
+}
+
+// trailers lists the commits of a range with their capability and what they
+// loaded, then the findings against the map in dir. It returns 0 whatever the
+// findings, 1 when o.strict and there are findings, and 2 when the map or the
+// history cannot be read or the output cannot be written.
+func trailers(dir string, o trailersOptions, stdout, stderr io.Writer) int {
+	m, problems, err := mapfile.Read(dir)
+	if err != nil {
+		fmt.Fprintf(stderr, "physa trailers: %v\n", err)
+		return 2
+	}
+	if n := len(problems); n == 1 {
+		fmt.Fprintln(stderr, "physa trailers: the map has 1 problem; run physa check")
+	} else if n > 1 {
+		fmt.Fprintf(stderr, "physa trailers: the map has %d problems; run physa check\n", n)
+	}
+	slugs := make(map[string]bool, len(m.Capabilities))
+	for _, c := range m.Capabilities {
+		slugs[c.Name] = true
+	}
+	repo, err := history.Open(dir)
+	if err != nil {
+		fmt.Fprintf(stderr, "physa trailers: %v\n", err)
+		return 2
+	}
+	commits, err := repo.Log(o.rng)
+	if err != nil {
+		fmt.Fprintf(stderr, "physa trailers: %v\n", err)
+		return 2
+	}
+	findings := history.Check(commits, func(slug string) bool { return slugs[slug] })
+	if o.json {
+		out := struct {
+			Range    string            `json:"range"`
+			Commits  []history.Commit  `json:"commits"`
+			Findings []history.Finding `json:"findings"`
+		}{o.rng, commits, findings}
+		if err := json.NewEncoder(stdout).Encode(out); err != nil {
+			fmt.Fprintf(stderr, "physa trailers: %v\n", err)
+			return 2
+		}
+	} else {
+		for _, c := range commits {
+			fmt.Fprintf(stdout, "%s %s\n  capability: %s \u00b7 loaded: %s\n", c.Short, c.Subject, slugList(c.Capabilities), slugList(c.Loaded))
+		}
+		if len(findings) == 0 {
+			fmt.Fprintf(stdout, "\nphysa trailers: ok (%d commits)\n", len(commits))
+		} else {
+			fmt.Fprintf(stdout, "\n%d findings:\n", len(findings))
+			for _, f := range findings {
+				fmt.Fprintf(stdout, "%s: %s\n", f.Commit, f.Message)
+			}
+		}
+	}
+	if o.strict && len(findings) > 0 {
+		return 1
+	}
+	return 0
+}
+
+// slugList joins slugs for display, or gives a dash when there are none.
+func slugList(slugs []string) string {
+	if len(slugs) == 0 {
+		return "\u2014"
+	}
+	return strings.Join(slugs, ", ")
 }

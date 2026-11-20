@@ -485,6 +485,9 @@ func (a *assembler) assemble(k int) (*Slice, int) {
 	for _, n := range a.names {
 		s.Trailers = append(s.Trailers, "Capability: "+n)
 	}
+	if len(a.names) > 0 {
+		s.Trailers = append(s.Trailers, "Loaded: "+strings.Join(a.names, ", "))
+	}
 	a.buf.Reset()
 	writeBody(&a.buf, s)
 	return s, tokens(a.buf.Len())

@@ -430,14 +430,14 @@ func TestLeftOutLines(t *testing.T) {
 
 func TestTrailers(t *testing.T) {
 	s := build(t, fixture(), Request{Capabilities: []string{"beta", "alpha", "beta"}})
-	if want := []string{"Capability: alpha", "Capability: beta"}; !reflect.DeepEqual(s.Trailers, want) {
+	if want := []string{"Capability: alpha", "Capability: beta", "Loaded: alpha, beta"}; !reflect.DeepEqual(s.Trailers, want) {
 		t.Errorf("trailers %v, want %v", s.Trailers, want)
 	}
 	if want := []string{"alpha", "beta"}; !reflect.DeepEqual(s.Capabilities, want) {
 		t.Errorf("capabilities %v, want %v", s.Capabilities, want)
 	}
 	out := md(t, s)
-	want := "## How to anchor\n\nAnchor each commit to the one capability it serves with a trailer:\n\n- `Capability: alpha`\n- `Capability: beta`\n"
+	want := "## How to anchor\n\nAnchor each commit to the one capability it serves, and record what this slice loaded, with trailers:\n\n- `Capability: alpha`\n- `Capability: beta`\n- `Loaded: alpha, beta`\n"
 	if !strings.HasSuffix(out, want) {
 		t.Errorf("want suffix\n%s\ngot:\n%s", want, out)
 	}
@@ -583,7 +583,7 @@ func TestOwnMap(t *testing.T) {
 	out := md(t, s)
 	inOrder(t, out, "# Slice: map, slices\n", "## Product: Physa", "`no-adr`", "## Map\n", "## Slices\n",
 		"Everything in a slice except its current-state section depends only on the map and the request.",
-		"## Terms\n", "**Slice**", "## How to anchor", "`Capability: slices`")
+		"## Terms\n", "**Slice**", "## How to anchor", "`Capability: map`", "`Capability: slices`", "`Loaded: map, slices`")
 }
 
 func put(t *testing.T, root, rel, text string) {

@@ -95,7 +95,7 @@ With nothing to recover, init asks the person a short round of questions (number
 
 Deterministic first, then one agent session:
 
-1. **Trailers**: every commit names exactly one capability, and the slug exists. A commit with none gets a suggested trailer from the reviewer.
+1. **Trailers**: every commit names exactly one capability, and the slug exists. A commit with none gets a suggested trailer from the reviewer. Settled with the owner (2026-11-20): trailers are read from every final paragraph made only of `Key: value` lines, so a squash merge that adds its own trailers (such as `Co-authored-by:`) after a blank line reads like the branch commit, and `physa trailers` reports these findings.
 2. **Map changes in the PR** pass `physa check`.
 3. **The reviewer agent** receives the diff, the PR title and body, the index, and the slices for the capabilities the trailers name. It returns structured output:
    - the capabilities the change actually touches;
@@ -120,7 +120,7 @@ One agent session per merged PR reads what the review added:
 
 CI has no access to a developer's local store, so the slice record travels with the work (Q6):
 
-- When an agent loads a slice, the skill tells it to add a trailer listing what it loaded: `Loaded: delivery queue`. Harnesses add it themselves.
+- When an agent loads a slice, the skill tells it to add a trailer listing what it loaded, comma-separated: `Loaded: delivery, queue`. Harnesses add it themselves.
 - The PR check compares `Loaded:` with the capabilities the reviewer found touched:
   - **miss**: touched but not loaded;
   - **excess**: loaded but not touched.

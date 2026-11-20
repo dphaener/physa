@@ -76,6 +76,7 @@ Each step: what lands, what the owner can do with it, and when it is done.
 ### 9. Strength
 
 - **Lands:** strength computed from the evidence recorded since step 5 (05 §6), shown as experimental; the strength settings file and `physa strength preview` (05 §6.5); decay proposals; strength in the index and slices; stakes worked out from it.
+- **Also lands:** the network view (06 §3), as a bet that starts from the spike on `spike/network-view`: its drawing becomes the core package `internal/network` (577 lines today, under the 800-line budget), with the spike's snapshot tests and fixtures, built by the owner's harness. Alternative for the owner: the drawing needs only numbers, so it could be built earlier against fixture strengths, after step 5, for the phone web in step 8.
 - **The owner can:** see which of Physa's ideas and capabilities carry flow, with the breakdown, and tune the settings against real history.
 - **Done when:** the strengths on Physa and nebari match the owner's sense of them often enough to argue with, and preview explains every surprise.
 

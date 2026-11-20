@@ -24,15 +24,26 @@ Because: nothing changes silently.
 
 ## Decisions
 
-### What was loaded travels in a trailer
-`loaded-trailer` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/02-init-and-learning.md
-Agents add `Loaded: <capabilities>` to their commits, so CI can measure slice misses and excess with no store.
-Because: CI cannot see a developer's local store.
+### The PR check does not review code
+`no-code-review` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/07-records-and-verification.md
+The PR check verifies only the capability each change serves and the map. No agent judges the change; what needs judgment is learned after merge.
+Because: "We shouldn't care about reviewing someone else's code, that's their problem."
+Rejected:
+- A reviewer agent in the PR check: an unverified opinion, tokens on every push, and a second pass over what the team's own checks already did.
 
-### GitHub keeps results in the open-source core
-`results-in-checks` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/02-init-and-learning.md
-Each PR check writes its structured results into the check run; `physa sync` pulls them into the local store.
-Because: results feed strength and must not live in the repo; the open core must work without the hosted layer.
+### Physa records what it observes
+`record-observed` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/07-records-and-verification.md
+Slice records, tokens, rework and asks come from `physa slice` and the engine's sessions, not from agents reporting them. Agents declare only intent, in `Capability:`.
+Because: "Physa has access to every agent log correct? It knows what the agent did, right? That can be used can it not?"
+Rejected:
+- A `Loaded:` trailer: a claim, and it overstated; in #12 none of the agents that wrote the code loaded a slice.
+
+### Checks and sync run here
+`checks-run-here` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/07-records-and-verification.md
+The PR check and `physa sync` run on the developer's machine, before or after a PR; facts come from version control, and digests travel through it.
+Because: "I feel like that piece and the sync need to happen here, either before or after a PR."
+Rejected:
+- Results kept in GitHub check runs: ties the core to one forge and to CI Physa doesn't control.
 
 ### Recurring findings become proposed rules
 `findings-to-rules` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/03-engine-and-store.md

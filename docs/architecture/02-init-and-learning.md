@@ -84,6 +84,8 @@ With nothing to recover, init asks the person a short round of questions (number
 
 ## 3. Around every PR
 
+> **Revised 2026-11-20 by [07](07-records-and-verification.md).** The PR check no longer runs a reviewer agent, the `Loaded:` trailer is replaced by slice records, results are no longer kept in GitHub check runs, and checks and sync run on the developer's machine. Where this section and 07 disagree, 07 holds.
+
 ### 3.1 Two moments
 
 | Moment | Purpose | Output |

@@ -30,9 +30,10 @@ Each step: what lands, what the owner can do with it, and when it is done.
 
 ### 2. Trailers and the PR check
 
-- **Lands:** reading `Capability:` and `Loaded:` trailers; anchor checks against git and GitHub; the PR check as a GitHub Action writing its results into the check run (02 §3, `results-in-checks`); `physa sync` into a local store (only the tables this needs).
-- **The owner can:** see on each Physa PR which capabilities it touched, whether the slice loaded was missing anything or carried too much, and which rules it may have broken.
-- **Done when:** the check runs, non-blocking, on every Physa PR, and its misses and excess are believable.
+- **Lands:** reading `Capability:` trailers; anchor checks against version control and, when present, the forge; `physa pr-check` verifying F1 and the map (07 §5); slice records written by `physa slice` (07 §4.1); the version-control interface with git as its adapter (07 §6); the store with only the tables these need.
+- **The owner can:** run `physa pr-check` on any branch, here, before or after a PR, and see each change's capability and whether the map holds; see which slices each session loaded.
+- **Done when:** `physa pr-check` runs as a step of every Physa build, and the slice records of real builds show which agents loaded which slices.
+- **Revised 2026-11-20** by 07: the reviewer agent, the `Loaded:` trailer and the GitHub Action with check-run results were built (#11–#13) and are removed.
 
 ### 3. Learning
 

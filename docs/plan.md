@@ -6,7 +6,7 @@ Draft 0.1, 2026-11-20. Uses `.physa/glossary.md` terms only. Builds on `docs/vis
 
 - **Every step is something the owner uses the day it lands.** No step is only foundation.
 - **The wedge first.** The map is what wins developers' trust (vision §4), and it needs no engine. The engine comes after the map has proved itself on real repos.
-- **Physa builds Physa.** Each step is used on Physa's own repos before anyone else's, then on nebari (a 534-commit Rails app) as the brownfield test.
+- **Physa builds Physa.** Each step is used on Physa's own repos before anyone else's, then on nebari (a 534-commit Rails app) as the brownfield test and woodshop as the greenfield one.
 - **The owner's harness builds it from day one** (`owner-harness-first`). Until Physa's engine can host it (step 7), it runs as a plain Claude Code plugin, the way afk did. **Rhiza is retired and plays no part in building Physa** (the owner: "I don't want Rhiza involved in building this AT ALL").
 - **Small, with budgets.** Every package has a size budget from its first commit; the engine is the part most likely to grow by accretion (03 §13).
 - **YAGNI.** Nothing in a step that a later step needs but this one does not.
@@ -43,7 +43,7 @@ Each step: what lands, what the owner can do with it, and when it is done.
 ### 4. Init, and the first public release
 
 - **Lands:** `physa init` (02 §2): gather, propose capabilities, recover per capability, check, the PR on `physa/init`, with its token appetite.
-- **Tried on:** nebari.
+- **Tried on:** nebari (brownfield), after a first change in nebari removes everything Rhiza put there (its 15 MB `.rhiza/`, and Rhiza's traces in README, CLAUDE.md, `bin/gate` and its specs, to be listed exactly before removing); then woodshop (greenfield).
 - **The owner can:** put a living map on any repo in one command.
 - **Release:** **v0.1, open source** (Q3). The wedge, complete: init, slices, the PR check, learning.
 - **Done when:** nebari's init PR is good enough to merge with light edits, and its PR check stays useful for two weeks.
@@ -101,6 +101,6 @@ So that no step grows: no views before step 8 beyond the CLI, no strength number
 - **Q1** Until step 7, the slimmed harness runs as a plain Claude Code plugin to build Physa. Rhiza is not involved.
 - **Q2** The wedge (steps 1–4) comes before the engine (steps 5–7), as the vision's wedge decision implies.
 - **Q3** Two public releases: v0.1 after step 4 (the wedge), v1.0 after step 10. Nothing is pushed publicly before v0.1, and the research notes with the owner's words are checked before any push.
-- **Q4** nebari is the brownfield test for init (step 4) and the first app for earned release (step 10).
+- **Q4** nebari, with Rhiza removed from it first, is the brownfield test for init (step 4) and the first app for earned release (step 10); woodshop is the greenfield test (the owner).
 - **Q6** The slimmed harness, built from afk and forge, becomes its own plugin repo: used directly in Claude Code from step 0, and installed into Physa at step 7.
 - **Q5** Ruby is the first provider for earned release, because the owner's apps and the likely first teams are Rails.

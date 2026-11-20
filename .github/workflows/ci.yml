@@ -28,3 +28,6 @@ jobs:
 
       - name: Check the code rules (import rule, size budgets and package docs)
         run: go run ./tools/codecheck
+
+      - name: Check the map
+        run: go run ./cmd/physa check

@@ -62,6 +62,7 @@ Rejected:
 ### Named Physa
 `name` · decided by dphaener, choosing an option · 2026-11-19 · from docs/vision.md
 The product is Physa, after Physarum.
+Because: Physarum, the slime mold whose networks inspired the design.
 Rejected:
 - Rhiza: no longer fits the product.
 - Hypha: an existing developer CLI uses it, with the same metaphor.

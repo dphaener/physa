@@ -178,6 +178,14 @@ Runs locally and in CI. It fails on:
 - an anchor that does not resolve to a commit or PR in this repo;
 - a capability file or the whole map over its size budget.
 
+Settled with the owner (2026-11-20):
+
+- A `from <path>` anchor must name a file in the repo.
+- `#N` PR and commit-hash anchors are checked for form only, until plan step 2 resolves them against git and GitHub.
+- Over a size budget fails the check, with a message that proposes a merge or a prune. The §9 defaults are read as hard limits: a capability file over 150 lines, product.md over 100 lines, more than 50 capability files.
+
+**Slug references** (Q7): a reference from one entry to another needs a written form before `physa check` can find references to slugs that do not exist. Until it has one, the check tests only slug shape and uniqueness.
+
 ## 9. Size budgets (Q5)
 
 | What | Default budget |

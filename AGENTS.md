@@ -2,7 +2,7 @@
 
 Physa is product management rebuilt for agents: a product is a network of ideas whose strength comes from evidence. This repo holds the open-source core (Go). The hosted team layer (Rails) lives in its own repo.
 
-The repo is early: the Go module, `cmd/physa` and its code rules exist; the map, index and slices do not yet.
+The repo is early: the Go module, `cmd/physa`, its code rules, the map reader and `physa check` exist; index, slices and the store do not yet.
 
 ## Read first
 

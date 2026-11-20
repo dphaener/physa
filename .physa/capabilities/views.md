@@ -92,6 +92,8 @@ Rejected:
 - A shared design repo used by both apps: a third thing to version, and anchors across repos, for a handful of files.
 - Loading fonts from Google Fonts: the phone web would call a third party and lose its faces offline.
 
+## Questions
+
 ### Do capabilities connect to each other?
 `capability-tubes` · raised by dphaener · 2026-11-20
 A tube between two capabilities needs a word and evidence that thickens it. Not drawn until decided.

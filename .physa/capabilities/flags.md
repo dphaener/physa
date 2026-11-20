@@ -30,3 +30,8 @@ Rejected:
 `own-flag-service` · decided by dphaener, choosing an option · 2026-11-19 · from docs/vision.md
 The open-source core includes a small flag service as the default OpenFeature provider.
 Because: instant rollback must work for a solo developer with no vendor and no hosted layer.
+
+### One server next to production, no SDK of our own
+`physa-serve` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/architecture/05-flags-signals-strength.md
+`physa serve` (the same binary, one SQLite file) evaluates flags and takes signal events. Apps use OpenFeature SDKs with a thin Physa provider: OFREP to evaluate, OpenFeature's tracking API for events. One flag per idea, keyed by its slug.
+Because: a production app cannot ask a laptop whether a flag is on, and teams should not adopt a new SDK to try Physa.

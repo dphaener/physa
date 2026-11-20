@@ -41,3 +41,10 @@ Because: exposure and outcome must join on the same person.
 Rejected:
 - Building product analytics.
 - Integrating only with existing analytics: leaves solo developers with nothing.
+
+### Teams set when a result is clear
+`clear-threshold` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/05-flags-signals-strength.md
+Results come from a Bayesian comparison; a result is clear past a probability each team or developer sets, 95% by default.
+Because: "that is for individuals/teams to decide".
+Rejected:
+- p-values and significance language.

@@ -1,0 +1,103 @@
+/* Physa components: plain CSS for server-rendered Go templates. No script needed.
+   Every class starts px-. Every colour, length and face comes from tokens.css beside it. */
+.px-btn{display:inline-flex;align-items:center;gap:var(--space-2);min-height:40px;padding:0 var(--space-4);border-radius:var(--radius-m);border:1px solid transparent;font:600 14px/1 var(--font-sans);cursor:pointer;text-decoration:none;transition:background .12s,border-color .12s}
+.px-btn:focus-visible,.px-row:focus-visible,.px-cap:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.px-btn--primary{background:var(--accent);color:var(--on-accent)}
+.px-btn--primary:hover{background:var(--accent-hover)}
+.px-btn--quiet{background:var(--surface-raised);color:var(--ink);border-color:var(--line-strong)}
+.px-btn--quiet:hover{background:var(--accent-soft)}
+.px-btn--danger{background:var(--surface-raised);color:var(--danger);border-color:var(--danger)}
+.px-btn--danger:hover{background:var(--danger-soft)}
+.px-btn[disabled]{opacity:.45;cursor:not-allowed}
+
+.px-chip{display:inline-flex;align-items:center;gap:var(--space-1);padding:2px var(--space-2);border-radius:var(--radius-s);font:600 11.5px/16px var(--font-sans);letter-spacing:.07em;text-transform:uppercase;background:var(--surface-sunk);color:var(--ink-muted);white-space:nowrap}
+.px-chip--accent{background:var(--accent-soft);color:var(--accent)}
+.px-chip--lesson{background:var(--lesson-soft);color:var(--lesson-ink)}
+.px-chip--danger{background:var(--danger-soft);color:var(--danger)}
+.px-chip--steady{background:var(--steady-soft);color:var(--steady)}
+.px-chip--experimental{background:transparent;color:var(--ink-muted);border:1px dashed var(--line-strong)}
+
+/* Strength: a short tube whose thickness uses the network's scale, then the figure. */
+.px-strength{display:inline-flex;align-items:center;gap:var(--space-2);font:500 13px/18px var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink)}
+.px-strength__tube{display:block;width:40px;height:var(--w,4px);min-height:1.5px;border-radius:var(--radius-tube);background:var(--tube-capability)}
+.px-strength--idea .px-strength__tube{background:var(--tube-idea)}
+.px-strength--faded .px-strength__tube{background:var(--tube-faded)}
+.px-strength--faded{color:var(--ink-muted)}
+.px-strength__trend{font-size:11px;color:var(--ink-muted)}
+.px-strength__exp{border-bottom:1px dashed var(--line-strong);cursor:help}
+
+/* Tube key: the network view's legend. Each entry is a drawn sample, then a word. */
+.px-key{display:flex;flex-wrap:wrap;gap:var(--space-3) var(--space-5);font:400 13px/19px var(--font-sans);color:var(--ink-muted)}
+.px-key__item{display:inline-flex;align-items:center;gap:var(--space-2)}
+.px-key svg{display:block;overflow:visible}
+.px-key .t-cap{stroke:var(--tube-capability)}
+.px-key .t-idea{stroke:var(--tube-idea)}
+.px-key .t-faded{stroke:var(--tube-faded)}
+.px-key .t-lesson{stroke:var(--lesson);fill:var(--surface)}
+
+/* Needs you: one row per thing waiting on this person. */
+.px-needs{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--radius-l);background:var(--surface-raised);overflow:hidden}
+.px-row{display:grid;grid-template-columns:auto 1fr auto;gap:var(--space-2) var(--space-4);align-items:center;padding:var(--space-3) var(--space-4);border-top:1px solid var(--line);color:var(--ink);text-decoration:none}
+.px-row:first-child{border-top:0}
+.px-row:hover{background:var(--accent-soft)}
+.px-row__glyph{width:28px;height:28px;display:grid;place-items:center}
+.px-row__main{min-width:0;display:flex;flex-direction:column;gap:2px}
+.px-row__title{font:600 16px/22px var(--font-sans);overflow-wrap:anywhere}
+.px-row__meta{font:400 13px/19px var(--font-sans);color:var(--ink-muted)}
+.px-row__act{display:flex;gap:var(--space-2)}
+@media (max-width:560px){.px-row{grid-template-columns:auto 1fr}.px-row__act{grid-column:2}}
+
+/* Capability row: a capability in the index, with its promise and strength. */
+.px-cap{display:grid;grid-template-columns:1fr auto;gap:var(--space-1) var(--space-4);padding:var(--space-4);border-top:1px solid var(--line);color:var(--ink);text-decoration:none}
+.px-cap:hover{background:var(--accent-soft)}
+.px-cap__name{font:650 17px/22px var(--font-display);letter-spacing:-.01em}
+.px-cap__promise{grid-column:1/-1;font:400 15px/23px var(--font-sans);color:var(--ink-muted);max-width:65ch}
+.px-cap__ideas{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:var(--space-2)}
+.px-cap--fading .px-cap__name{color:var(--ink-muted)}
+
+/* Empty state: Needs you when nothing needs you. Empty is the goal. */
+.px-empty{display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-3);padding:var(--space-6);border-radius:var(--radius-l);background:var(--surface-raised);border:1px solid var(--line)}
+.px-empty__title{font:700 30px/36px var(--font-display);letter-spacing:-.015em;margin:0;color:var(--ink)}
+.px-empty__text{font:400 15px/23px var(--font-sans);color:var(--ink-muted);margin:0;max-width:52ch}
+
+/* Run progress: where a bet's run stands. Always phase, what is running, last activity, tokens against appetite. */
+.px-run{display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-3);border-radius:var(--radius-m);background:var(--surface-sunk)}
+.px-run__phases{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-1);font:600 11px/14px var(--font-sans);letter-spacing:.05em;text-transform:uppercase;color:var(--ink-muted)}
+.px-run__phases span{display:flex;flex-direction:column;gap:var(--space-1)}
+.px-run__phases span::before{content:"";height:5px;border-radius:var(--radius-tube);background:var(--line)}
+.px-run__phases .is-done::before{background:var(--tube-capability)}
+.px-run__phases .is-now{color:var(--ink)}
+.px-run__phases .is-now::before{background:var(--tube-idea)}
+.px-run__line{display:flex;flex-wrap:wrap;justify-content:space-between;gap:var(--space-1) var(--space-3);font:400 13.5px/19px var(--font-sans)}
+.px-run__state{display:inline-flex;align-items:center;gap:var(--space-2);font-weight:600}
+.px-run__dot{width:8px;height:8px;border-radius:50%;background:var(--tube-idea)}
+.px-run--waiting .px-run__dot{background:transparent;border:2px solid var(--tube-idea)}
+.px-run--stalled .px-run__dot{background:var(--danger)}
+.px-run__fig{font:500 12.5px/18px var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink-muted)}
+.px-run__appetite{height:6px;border-radius:var(--radius-tube);background:var(--line);overflow:hidden}
+.px-run__appetite i{display:block;height:100%;width:var(--used,0%);background:var(--tube-capability)}
+.px-run--spent .px-run__appetite i{background:var(--danger)}
+
+/* Calls: the small choices a run made for a person to check, each accepted or sent back on its own. */
+.px-calls{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--space-2)}
+.px-call{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-2);align-items:center;padding:var(--space-2) 10px;border-radius:var(--radius-m);background:var(--surface-sunk);font:400 13.5px/19px var(--font-sans);color:var(--ink)}
+.px-call__because{display:block;color:var(--ink-muted);font-size:12.5px}
+.px-call__acts{display:flex;gap:6px}
+.px-call--checked{opacity:.55}
+
+/* Evidence: why something is as strong as it is. Each piece, what it added, what it still counts. */
+.px-evidence{list-style:none;margin:0;padding:0}
+.px-evidence li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;padding:var(--space-2) var(--space-4);border-top:1px solid var(--line);font:400 13.5px/19px var(--font-sans);align-items:baseline}
+.px-evidence li:first-child{border-top:0}
+.px-evidence__when{color:var(--ink-muted)}
+.px-evidence__amt,.px-evidence__now{font:500 12.5px/18px var(--font-mono);font-variant-numeric:tabular-nums;text-align:right;min-width:48px}
+.px-evidence__amt.is-against{color:var(--danger)}
+.px-evidence__total{font-weight:600;background:var(--surface-sunk)}
+
+/* Stream event: one line of a watched session, written for a person. */
+.px-event{display:grid;grid-template-columns:52px 20px minmax(0,1fr);gap:var(--space-2);padding:9px var(--space-4);border-top:1px solid var(--line);font:400 14px/20px var(--font-sans);color:var(--ink)}
+.px-event:first-child{border-top:0}
+.px-event__time{font:500 11.5px/20px var(--font-mono);color:var(--ink-muted)}
+.px-event__detail{display:block;color:var(--ink-muted);font-size:13px;line-height:18px}
+.px-event--record{background:var(--steady-soft)}
+.px-event--quiet{display:block;border-top:1px dashed var(--line-strong);color:var(--ink-muted)}

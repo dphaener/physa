@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Needs You</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400..600&display=swap">
+<style>
+/* Layout: the home screen. A top bar, then Needs you (one column of rows, one action each) beside Running now (bets that don't need you).
+   On a phone: one column, Running now after Needs you. Tokens and components are Physa's design system. */
+:root{--shadow:0 8px 24px rgba(11,26,51,0.18); --surface:#f4f8ff; --surface-raised:#ffffff; --surface-sunk:#e7eefb; --line:#d2ddf0; --line-strong:#7487aa; --ink:#0b1a33; --ink-muted:#47597a; --accent:#1757f5; --accent-hover:#0f45d1; --on-accent:#ffffff; --accent-soft:#dce7ff; --tube-capability:#1238c4; --tube-idea:#0a87dc; --tube-faded:#9aaccb; --tube-ground:#c9d7f0; --lesson:#b06a00; --lesson-ink:#8a5200; --lesson-soft:#fbefd9; --danger:#ad380b; --danger-soft:#fde6dc; --steady:#086a75; --steady-soft:#d5f3f3; --focus:#1757f5}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--shadow:0 8px 24px rgba(0,0,0,0.5); --surface:#0a1322; --surface-raised:#101c31; --surface-sunk:#060d19; --line:#22324d; --line-strong:#6680a6; --ink:#e9f0ff; --ink-muted:#9fb2d4; --accent:#6d9bff; --accent-hover:#93b6ff; --on-accent:#06112a; --accent-soft:#16295a; --tube-capability:#4f7dff; --tube-idea:#8fe3ff; --tube-faded:#3c4f70; --tube-ground:#1a2a45; --lesson:#f2b54a; --lesson-ink:#f6c46d; --lesson-soft:#3a2a0c; --danger:#ff8a5c; --danger-soft:#3d1a0e; --steady:#3fd0d6; --steady-soft:#0c3236; --focus:#93b6ff; color-scheme:dark}}
+:root[data-theme="dark"]{--shadow:0 8px 24px rgba(0,0,0,0.5); --surface:#0a1322; --surface-raised:#101c31; --surface-sunk:#060d19; --line:#22324d; --line-strong:#6680a6; --ink:#e9f0ff; --ink-muted:#9fb2d4; --accent:#6d9bff; --accent-hover:#93b6ff; --on-accent:#06112a; --accent-soft:#16295a; --tube-capability:#4f7dff; --tube-idea:#8fe3ff; --tube-faded:#3c4f70; --tube-ground:#1a2a45; --lesson:#f2b54a; --lesson-ink:#f6c46d; --lesson-soft:#3a2a0c; --danger:#ff8a5c; --danger-soft:#3d1a0e; --steady:#3fd0d6; --steady-soft:#0c3236; --focus:#93b6ff; color-scheme:dark}
+
+:root{--font-display:"Bricolage Grotesque","Instrument Sans",system-ui,sans-serif;--font-sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;--font-mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+body{background:var(--surface);color:var(--ink);font:400 15px/23px var(--font-sans);margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 64px}
+.studio-bar{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;margin-bottom:16px}
+.studio-bar p{margin:0;color:var(--ink-muted);font-size:14px;max-width:64ch}
+.seg{display:flex;gap:4px;padding:4px;border-radius:10px;background:var(--surface-sunk)}
+.seg button{font:600 13.5px/20px var(--font-sans);border:0;background:transparent;color:var(--ink-muted);padding:6px 12px;border-radius:7px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface-raised);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+button:focus-visible,a:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+
+/* the screen itself */
+.stage{display:flex;justify-content:center}
+.screen{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.phone .screen{width:390px;max-width:100%;height:800px;border:10px solid var(--ink);border-radius:38px;display:flex;flex-direction:column}
+.phone .scroll{overflow-y:auto;flex:1}
+.topbar{display:flex;align-items:center;gap:20px;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--surface-raised)}
+.phone .topbar{padding:10px 16px;gap:12px}
+.mark{font:750 20px/1 var(--font-display);letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+.mark svg{display:block}
+.nav{display:flex;gap:4px;margin-left:auto}
+.nav a{font:600 14px/20px var(--font-sans);color:var(--ink-muted);text-decoration:none;padding:6px 10px;border-radius:8px;display:flex;gap:6px;align-items:center}
+.nav a[aria-current="page"]{color:var(--ink);background:var(--accent-soft)}
+.count{font:600 11px/16px var(--font-mono);background:var(--accent);color:var(--on-accent);border-radius:999px;padding:0 6px;min-width:18px;text-align:center}
+.phone .nav .wide{display:none}
+.body{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:32px;padding:28px 24px 40px;align-items:start}
+.phone .body{grid-template-columns:minmax(0,1fr);gap:28px;padding:18px 16px 32px}
+@media (max-width:860px){.body{grid-template-columns:minmax(0,1fr)}}
+h1{font:750 30px/36px var(--font-display);letter-spacing:-.02em;margin:0;text-wrap:balance}
+.phone h1{font-size:26px;line-height:32px}
+.sub{color:var(--ink-muted);font-size:14px;margin:2px 0 16px}
+h2{font:650 17px/22px var(--font-display);margin:0 0 4px}
+
+/* Needs you rows */
+.needs{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;background:var(--surface-raised);overflow:hidden}
+.row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:6px 14px;padding:14px 16px;border-top:1px solid var(--line);align-items:start;transition:opacity .25s,background .2s}
+.row:first-child{border-top:0}
+.row.leaving{opacity:0}
+.phone .row{grid-template-columns:24px minmax(0,1fr);padding:14px 14px}
+.glyph{padding-top:2px}
+.main{min-width:0;display:flex;flex-direction:column;gap:3px}
+.top{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+.where{font:500 12px/16px var(--font-sans);color:var(--ink-muted)}
+.title{font:600 16px/22px var(--font-sans);overflow-wrap:anywhere}
+.meta{font:400 13px/19px var(--font-sans);color:var(--ink-muted)}
+.why{font:400 13px/19px var(--font-sans);color:var(--ink-muted)}
+.why b{color:var(--ink);font-weight:600}
+.acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-self:center}
+.phone .acts{grid-column:2;justify-content:flex-start}
+@media (max-width:560px){.row{grid-template-columns:24px minmax(0,1fr)}.acts{grid-column:2;justify-content:flex-start}}
+.btn{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 13px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-raised);color:var(--ink);font:600 13.5px/1 var(--font-sans);cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--accent-soft)}
+.btn.primary{background:var(--accent);color:var(--on-accent);border-color:transparent}
+.btn.primary:hover{background:var(--accent-hover)}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.btn.danger:hover{background:var(--danger-soft)}
+.chip{display:inline-flex;align-items:center;padding:2px 7px;border-radius:4px;font:600 11px/16px var(--font-sans);letter-spacing:.07em;text-transform:uppercase;background:var(--surface-sunk);color:var(--ink-muted);white-space:nowrap}
+.chip.accent{background:var(--accent-soft);color:var(--accent)}
+.chip.danger{background:var(--danger-soft);color:var(--danger)}
+.chip.lesson{background:var(--lesson-soft);color:var(--lesson-ink)}
+.chip.steady{background:var(--steady-soft);color:var(--steady)}
+.chip.unnamed{background:transparent;border:1px dashed var(--lesson);color:var(--lesson-ink)}
+.repo{font:500 11.5px/16px var(--font-mono);color:var(--ink-muted)}
+/* a choice made for you, inside its row */
+.choices{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.choices li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 10px;border-radius:8px;background:var(--surface-sunk);font-size:13.5px;line-height:19px}
+.choices li.ok{opacity:.55}
+.choices li .because{display:block;color:var(--ink-muted);font-size:12.5px}
+.choices .mini{font:600 12.5px/1 var(--font-sans);border:1px solid var(--line-strong);background:var(--surface-raised);color:var(--ink);border-radius:6px;padding:6px 9px;cursor:pointer;white-space:nowrap}
+/* a run's progress: phase, what is running, last activity, tokens against appetite */
+.run{display:flex;flex-direction:column;gap:6px;margin-top:6px;padding:10px 12px;border-radius:8px;background:var(--surface-sunk)}
+.phases{display:flex;gap:4px}
+.phases span{flex:1;height:4px;border-radius:999px;background:var(--line)}
+.phases span.done{background:var(--tube-capability)}
+.phases span.now{background:var(--tube-idea)}
+.runline{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;font-size:13px;line-height:18px}
+.runline .fig{font:500 12.5px/18px var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink-muted)}
+.state{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--tube-idea)}
+.dot.wait{background:transparent;border:2px solid var(--tube-idea)}
+.dot.stall{background:var(--danger)}
+.appetite{height:6px;border-radius:999px;background:var(--line);overflow:hidden}
+.appetite i{display:block;height:100%;background:var(--tube-capability);border-radius:999px}
+.appetite.full i{background:var(--danger)}
+.strength{display:inline-flex;align-items:center;gap:6px;font:500 12.5px/18px var(--font-mono)}
+.strength i{display:block;width:28px;border-radius:999px;background:var(--tube-faded)}
+/* running now */
+.running{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--surface-raised);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+.card .title{font-size:15px}
+.note{font-size:12.5px;line-height:18px;color:var(--ink-muted)}
+/* empty */
+.empty{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:28px;border-radius:14px;background:var(--surface-raised);border:1px solid var(--line)}
+.empty h2{font:750 28px/34px var(--font-display);letter-spacing:-.015em;margin:0}
+.empty p{margin:0;color:var(--ink-muted);max-width:52ch}
+.toast{position:sticky;bottom:12px;margin:12px auto 0;width:max-content;max-width:calc(100% - 24px);background:var(--ink);color:var(--surface);border-radius:10px;padding:10px 12px 10px 16px;display:flex;gap:14px;align-items:center;font-size:14px;box-shadow:var(--shadow)}
+.toast button{background:none;border:0;color:var(--accent-soft);font:600 14px/1 var(--font-sans);cursor:pointer;text-decoration:underline}
+.legend{margin-top:20px;font-size:13px;color:var(--ink-muted);max-width:76ch;display:flex;flex-direction:column;gap:6px}
+.legend b{color:var(--ink)}
+@media (prefers-reduced-motion:reduce){.row{transition:none}}
+</style>
+
+<div class="wrap">
+  <div class="studio-bar">
+    <p>Needs you, the home screen, on a realistic day of Physa's own work and the nebari tests. Every action works; clear them all to reach the empty state.</p>
+    <div class="controls">
+      <div class="seg" aria-label="Screen"><button id="b-desk" aria-pressed="false">Desktop</button><button id="b-phone" aria-pressed="true">Phone</button></div>
+      <div class="seg" aria-label="Theme"><button id="b-light" aria-pressed="false">Light</button><button id="b-dark" aria-pressed="false">Dark</button></div>
+      <div class="seg"><button id="b-reset" aria-pressed="false">Start the day again</button></div>
+    </div>
+  </div>
+
+  <div class="stage phone" id="stage">
+    <div class="screen">
+      <div class="topbar">
+        <span class="mark"><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="5" fill="var(--tube-capability)"/><path d="M11 6V1M15.5 13.5l4 3M6.5 13.5l-4 3" stroke="var(--tube-capability)" stroke-width="2.6" stroke-linecap="round"/><path d="M15.5 8.5l4-2.5" stroke="var(--tube-idea)" stroke-width="1.6" stroke-linecap="round"/></svg>Physa</span>
+        <nav class="nav" aria-label="Views"><a href="#" aria-current="page">Needs you <span class="count" id="count">10</span></a><a href="#">Network</a><a href="#" class="wide">Capabilities</a></nav>
+      </div>
+      <div class="scroll">
+        <div class="body">
+          <section aria-labelledby="h-needs">
+            <h1 id="h-needs">Needs you</h1>
+            <p class="sub" id="sub">10 things are waiting on you, most urgent first.</p>
+            <div id="list"></div>
+            <div id="toast-slot"></div>
+          </section>
+          <aside aria-labelledby="h-running">
+            <h2 id="h-running">Running now</h2>
+            <p class="sub" style="margin-bottom:12px">Bets working on their own. Nothing here needs you, and nothing here notifies.</p>
+            <div class="running" id="running"></div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><b>Order:</b> guardrail trips, then what a running bet is waiting on (asks, stalls), sign-offs, calls, circuit breakers, questions, map proposals, withering ideas, decay reviews.</span>
+    <span><b>Calls</b> are the small choices a run made on your behalf to keep going: not asks, since the run did not wait, and not decisions.</span>
+    <span>Data: Physa's own map and plan, and nebari, the owner's Rails app where earned release is on. Times, tokens and strengths are examples.</span>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+var G={
+ trip:'<svg width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="var(--danger)" stroke-width="2.5"/><path d="M12 7v6M12 16.5v.5" stroke="var(--danger)" stroke-width="2.5" stroke-linecap="round"/></svg>',
+ ask:'<svg width="24" height="24" aria-hidden="true"><path d="M3 12h11" stroke="var(--tube-capability)" stroke-width="5" stroke-linecap="round"/><circle cx="18.5" cy="12" r="3.5" fill="none" stroke="var(--tube-idea)" stroke-width="2.4"/></svg>',
+ stall:'<svg width="24" height="24" aria-hidden="true"><path d="M3 12h9" stroke="var(--tube-capability)" stroke-width="5" stroke-linecap="round"/><path d="M15 8v8M20 8v8" stroke="var(--danger)" stroke-width="2.6" stroke-linecap="round"/></svg>',
+ sign:'<svg width="24" height="24" aria-hidden="true"><path d="M3 12h18" stroke="var(--tube-capability)" stroke-width="7" stroke-linecap="round"/></svg>',
+ chose:'<svg width="24" height="24" aria-hidden="true"><path d="M3 15h8" stroke="var(--tube-capability)" stroke-width="4" stroke-linecap="round"/><path d="M11 15l8-7M11 15l8 3" stroke="var(--tube-idea)" stroke-width="2" stroke-linecap="round"/></svg>',
+ breaker:'<svg width="24" height="24" aria-hidden="true"><path d="M3 12h8" stroke="var(--tube-idea)" stroke-width="4" stroke-linecap="round"/><path d="M15 12h6" stroke="var(--tube-faded)" stroke-width="4" stroke-linecap="round"/><path d="M13 7v10" stroke="var(--danger)" stroke-width="2" stroke-linecap="round"/></svg>',
+ question:'<svg width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="var(--ink-muted)" stroke-width="2"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.5M12 16.5v.5" stroke="var(--ink-muted)" stroke-width="2" stroke-linecap="round" fill="none"/></svg>',
+ proposal:'<svg width="24" height="24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2" fill="none" stroke="var(--ink-muted)" stroke-width="2"/><path d="M9 9h6M9 13h6M9 17h3" stroke="var(--ink-muted)" stroke-width="2" stroke-linecap="round"/></svg>',
+ wither:'<svg width="24" height="24" aria-hidden="true"><path d="M3 15 C9 15 13 12 16 9" stroke="var(--tube-faded)" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 3" fill="none"/><circle cx="18.5" cy="8" r="3.5" fill="var(--surface-raised)" stroke="var(--lesson)" stroke-width="2"/></svg>',
+ decay:'<svg width="24" height="24" aria-hidden="true"><path d="M3 12h18" stroke="var(--tube-faded)" stroke-width="6" stroke-linecap="round"/></svg>'
+};
+function run(r){
+  var ph=["conduct","build","check","fix"].map(function(p,i){return '<span class="'+(i<r.phase?"done":(i===r.phase?"now":""))+'" title="'+p+'"></span>';}).join("");
+  var dot=r.state==="stalled"?"stall":(r.state==="waiting"?"wait":"");
+  var pct=Math.min(100,Math.round(r.tokens/r.appetite*100));
+  return '<div class="run"><div class="phases" aria-label="Phase '+(r.phase+1)+' of 4: '+["conduct","build","check","fix"][r.phase]+'">'+ph+'</div>'+
+    '<div class="runline"><span class="state"><span class="dot '+dot+'"></span>'+r.doing+'</span><span class="fig">'+r.elapsed+' · last activity '+r.last+'</span></div>'+
+    '<div class="appetite'+(pct>=100?" full":"")+'" role="img" aria-label="'+r.tokens+'k of '+r.appetite+'k tokens"><i style="width:'+pct+'%"></i></div>'+
+    '<div class="runline"><span class="fig">'+r.tokens+'k of '+r.appetite+'k tokens</span>'+(r.rounds?'<span class="fig">'+r.rounds+'</span>':"")+'</div></div>';
+}
+var DAY=[
+ {id:"trip",g:"trip",chip:["danger","Guardrail trip"],repo:"nebari",where:"Invitations",title:"Sign-in errors rose while the new invite email reached 10%",
+  why:"The engine turned the flag off 4 minutes ago and recorded the rollback. <b>You steward Invitations.</b>",
+  acts:[["primary","See the case","Opened the case"],["","Leave it off","Left off"]]},
+ {id:"ask",g:"ask",chip:["accent","Ask"],repo:"nebari",where:"Remove Rhiza from nebari · your bet",title:"The weekly announcement depends on Rhiza. Keep it or retire it?",
+  why:"A product choice the run can't make for you. It waits here; the rest of the run carries on.",
+  run:{phase:2,doing:"Checking: running the test suite",elapsed:"52 min in",last:"40 s ago",tokens:412,appetite:600,rounds:"review round 2 of 3",state:"running"},
+  acts:[["primary","Keep it","Answered: keep it"],["","Retire it","Answered: retire it"]]},
+ {id:"stall",g:"stall",chip:["danger","Stalled"],repo:"physa",where:"physa watch · your bet",title:"No progress for 22 minutes, and it isn't waiting on a workflow",
+  why:"The build session stopped writing after its last test run. One automatic restart was already tried.",
+  run:{phase:1,doing:"Stalled in build",elapsed:"1 h 08 min in",last:"22 min ago",tokens:188,appetite:300,state:"stalled"},
+  acts:[["primary","Watch the session","Opened the session"],["danger","Stop the run","Stopped the run"]]},
+ {id:"sign",g:"sign",chip:["accent","Sign-off"],repo:"physa",where:"Slices",title:"Land the slice cache",
+  why:"Stakes need you: it touches Slices, Physa's second-strongest capability. Checks re-run by the engine: 41 passed.",
+  acts:[["primary","Sign off","Signed off"],["","See the case","Opened the case"]]},
+ {id:"chose",g:"chose",chip:["","Calls"],repo:"nebari",where:"Remove Rhiza from nebari · finished 20 min ago",title:"2 calls the run made for you to check",
+  why:"Small choices it made to keep going. Accept each one or send it back.",
+  choices:[["Kept bin/gate and removed only its Rhiza calls","bin/gate also runs RuboCop, which nebari still uses."],["Deleted spec/rhiza/ (14 files) instead of moving them","Nothing else requires them."]],
+  acts:[["primary","Both look right","Both accepted"]]},
+ {id:"breaker",g:"breaker",chip:["","Circuit breaker"],repo:"physa",where:"Claude Code adapter · your bet",title:"Used its whole appetite of 300k tokens. Work stopped and went back to shaping",
+  why:"Its pitch needs a smaller scope or a new appetite. It never extends on its own.",
+  run:{phase:3,doing:"Stopped in fix",elapsed:"2 h 14 min",last:"1 h ago",tokens:300,appetite:300,rounds:"3 review rounds",state:"stalled"},
+  acts:[["primary","Shape it again","Back in shaping"],["","Let it wither","Left to wither"]]},
+ {id:"question",g:"question",chip:["","Question"],repo:"physa",where:"Init · raised by you",title:"What does the person see while init runs?",
+  why:"It shapes the next bet on Init.",
+  acts:[["","Answer","Opened the question"]]},
+ {id:"proposal",g:"proposal",chip:["","Map proposal"],repo:"physa",where:"Views · on your PR #4",title:"A new rule: labels in the network never overlap",
+  why:"Learned from the PR's review. Nothing changes until you accept it.",
+  acts:[["primary","Accept","Accepted into the map"],["","Refuse","Refused"]]},
+ {id:"wither",g:"wither",chip:["lesson","Withering idea"],repo:"physa",where:"Earned release · your idea",title:"Ruby provider over OFREP",
+  why:'<span class="strength"><i style="height:2.9px"></i>0.5 flow</span> · under the floor for 12 days',
+  acts:[["","Keep it","Kept"],["","Accept the lesson","Lesson kept in the map"]]},
+ {id:"decay",g:"decay",chip:["","Decay review"],repo:"physa",where:"Rollback · you steward it",title:"Rollback has thinned for 6 weeks",
+  why:'<span class="strength"><i style="height:6px"></i>5.0 flow ↓</span> · usage unknown: it has no guardrail',
+  acts:[["","Review it","Opened the review"]]}
+];
+var RUNNING=[
+ {title:"Slim dharness's review prompts",repo:"physa",where:"Harnesses · your bet",run:{phase:2,doing:"Waiting on the review workflow",elapsed:"31 min in",last:"3 min ago",tokens:126,appetite:250,rounds:"review round 1",state:"waiting"},note:"Waiting, not stalled: the review runs as a workflow after the session ends its turn."},
+ {title:"Remove Rhiza from nebari",repo:"nebari",where:"your bet",run:{phase:2,doing:"Checking: running the test suite",elapsed:"52 min in",last:"40 s ago",tokens:412,appetite:600,rounds:"review round 2 of 3",state:"running"},note:"Also waiting on your answer above; it keeps checking meanwhile."}
+];
+var open=DAY.slice(),choiceOk={},lastDone=null,phone=true;
+function rowHTML(it){
+  var h='<div class="row" id="r-'+it.id+'"><div class="glyph">'+G[it.g]+'</div><div class="main">'+
+    '<div class="top"><span class="chip '+it.chip[0]+'"'+(it.chip[0]==="unnamed"?' title="No glossary word yet"':"")+'>'+it.chip[1]+'</span><span class="repo">'+it.repo+'</span><span class="where">'+it.where+'</span></div>'+
+    '<div class="title">'+it.title+'</div><div class="why">'+it.why+'</div>';
+  if(it.choices){h+='<ul class="choices">'+it.choices.map(function(c,i){var ok=choiceOk[it.id+i];return '<li class="'+(ok?"ok":"")+'"><span>'+c[0]+'<span class="because">'+c[1]+'</span></span>'+(ok?'<span class="note">'+ok+'</span>':'<span style="display:flex;gap:6px"><button class="mini" data-c="'+it.id+'|'+i+'|ok">Right</button><button class="mini" data-c="'+it.id+'|'+i+'|change">Change</button></span>')+'</li>';}).join("")+'</ul>';}
+  if(it.run)h+=run(it.run);
+  h+='</div><div class="acts">'+it.acts.map(function(a,i){return '<button class="btn '+a[0]+'" data-a="'+it.id+'|'+i+'">'+a[1]+'</button>';}).join("")+'</div></div>';
+  return h;
+}
+function render(){
+  var list=document.getElementById("list");
+  if(!open.length){
+    list.innerHTML='<div class="empty"><svg width="120" height="28" aria-hidden="true"><path d="M4 20 C30 20 40 8 70 8 S104 14 116 14" stroke="var(--tube-capability)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M52 11 C58 4 66 3 74 2" stroke="var(--tube-idea)" stroke-width="2" stroke-linecap="round" fill="none"/></svg><h2>Nothing needs you.</h2><p>Physa will tell you when a sign-off, an ask or a guardrail trip is yours. Until then, the network keeps growing without you.</p><a class="btn" href="#">See the network</a></div>';
+  } else list.innerHTML='<div class="needs">'+open.map(rowHTML).join("")+'</div>';
+  document.getElementById("count").textContent=open.length;
+  document.getElementById("count").hidden=!open.length;
+  document.getElementById("sub").textContent=open.length?(open.length===1?"1 thing is waiting on you.":open.length+" things are waiting on you, most urgent first."):"Empty is the goal.";
+  document.getElementById("running").innerHTML=RUNNING.map(function(r){return '<div class="card"><div class="top"><span class="repo">'+r.repo+'</span><span class="where">'+r.where+'</span></div><div class="title">'+r.title+'</div>'+run(r.run)+'<div class="note">'+r.note+'</div></div>';}).join("");
+  var ts=document.getElementById("toast-slot");
+  ts.innerHTML=lastDone?'<div class="toast" role="status"><span>'+lastDone.msg+'</span><button id="undo">Undo</button></div>':"";
+  var u=document.getElementById("undo");if(u)u.onclick=function(){open.splice(lastDone.index,0,lastDone.item);lastDone=null;render();};
+  list.querySelectorAll("[data-a]").forEach(function(b){b.onclick=function(){var p=b.getAttribute("data-a").split("|");done(p[0],DAY.filter(function(x){return x.id===p[0];})[0].acts[+p[1]][2]);};});
+  list.querySelectorAll("[data-c]").forEach(function(b){b.onclick=function(){var p=b.getAttribute("data-c").split("|");choiceOk[p[0]+p[1]]=p[2]==="ok"?"Accepted":"Sent back to change";
+    var it=DAY.filter(function(x){return x.id===p[0];})[0];if(it.choices.every(function(c,i){return choiceOk[p[0]+i];}))done(p[0],"Checked both calls");else render();};});
+  document.getElementById("b-desk").setAttribute("aria-pressed",String(!phone));document.getElementById("b-phone").setAttribute("aria-pressed",String(phone));
+  var th=document.documentElement.getAttribute("data-theme");
+  document.getElementById("b-light").setAttribute("aria-pressed",String(th==="light"));document.getElementById("b-dark").setAttribute("aria-pressed",String(th==="dark"));
+}
+function done(id,msg){
+  var i=open.findIndex(function(x){return x.id===id;});if(i<0)return;
+  var el=document.getElementById("r-"+id);if(el)el.classList.add("leaving");
+  setTimeout(function(){lastDone={item:open[i],index:i,msg:msg};open.splice(i,1);
+    if(id==="chose"&&!msg.indexOf("Both")){DAY[4].choices.forEach(function(c,k){choiceOk["chose"+k]="Accepted";});}
+    render();},matchMedia("(prefers-reduced-motion: reduce)").matches?0:220);
+}
+document.getElementById("b-desk").onclick=function(){phone=false;document.getElementById("stage").classList.remove("phone");render();};
+document.getElementById("b-phone").onclick=function(){phone=true;document.getElementById("stage").classList.add("phone");render();};
+document.getElementById("b-light").onclick=function(){document.documentElement.setAttribute("data-theme","light");render();};
+document.getElementById("b-dark").onclick=function(){document.documentElement.setAttribute("data-theme","dark");render();};
+document.getElementById("b-reset").onclick=function(){open=DAY.slice();choiceOk={};lastDone=null;render();};
+render();
+})();
+</script>
+
+</html>

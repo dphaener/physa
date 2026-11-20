@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watch a Session</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400..600&display=swap">
+<style>
+/* Layout: watching a live session. The run's state first (running, waiting, stalled), then its sessions, then the chosen
+   session's stream as readable events, with raw output one tap away. Desktop puts the sessions beside the stream. */
+:root{--shadow:0 8px 24px rgba(11,26,51,0.18); --surface:#f4f8ff; --surface-raised:#ffffff; --surface-sunk:#e7eefb; --line:#d2ddf0; --line-strong:#7487aa; --ink:#0b1a33; --ink-muted:#47597a; --accent:#1757f5; --accent-hover:#0f45d1; --on-accent:#ffffff; --accent-soft:#dce7ff; --tube-capability:#1238c4; --tube-idea:#0a87dc; --tube-faded:#9aaccb; --tube-ground:#c9d7f0; --lesson:#b06a00; --lesson-ink:#8a5200; --lesson-soft:#fbefd9; --danger:#ad380b; --danger-soft:#fde6dc; --steady:#086a75; --steady-soft:#d5f3f3; --focus:#1757f5}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--shadow:0 8px 24px rgba(0,0,0,0.5); --surface:#0a1322; --surface-raised:#101c31; --surface-sunk:#060d19; --line:#22324d; --line-strong:#6680a6; --ink:#e9f0ff; --ink-muted:#9fb2d4; --accent:#6d9bff; --accent-hover:#93b6ff; --on-accent:#06112a; --accent-soft:#16295a; --tube-capability:#4f7dff; --tube-idea:#8fe3ff; --tube-faded:#3c4f70; --tube-ground:#1a2a45; --lesson:#f2b54a; --lesson-ink:#f6c46d; --lesson-soft:#3a2a0c; --danger:#ff8a5c; --danger-soft:#3d1a0e; --steady:#3fd0d6; --steady-soft:#0c3236; --focus:#93b6ff; color-scheme:dark}}
+:root[data-theme="dark"]{--shadow:0 8px 24px rgba(0,0,0,0.5); --surface:#0a1322; --surface-raised:#101c31; --surface-sunk:#060d19; --line:#22324d; --line-strong:#6680a6; --ink:#e9f0ff; --ink-muted:#9fb2d4; --accent:#6d9bff; --accent-hover:#93b6ff; --on-accent:#06112a; --accent-soft:#16295a; --tube-capability:#4f7dff; --tube-idea:#8fe3ff; --tube-faded:#3c4f70; --tube-ground:#1a2a45; --lesson:#f2b54a; --lesson-ink:#f6c46d; --lesson-soft:#3a2a0c; --danger:#ff8a5c; --danger-soft:#3d1a0e; --steady:#3fd0d6; --steady-soft:#0c3236; --focus:#93b6ff; color-scheme:dark}
+
+:root{--font-display:"Bricolage Grotesque","Instrument Sans",system-ui,sans-serif;--font-sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;--font-mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+body{background:var(--surface);color:var(--ink);font:400 15px/23px var(--font-sans);margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 64px}
+.studio-bar{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;margin-bottom:16px}
+.studio-bar p{margin:0;color:var(--ink-muted);font-size:14px;max-width:56ch}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+.seg{display:flex;gap:4px;padding:4px;border-radius:10px;background:var(--surface-sunk)}
+.seg button{font:600 13.5px/20px var(--font-sans);border:0;background:transparent;color:var(--ink-muted);padding:6px 12px;border-radius:7px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface-raised);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+button:focus-visible,a:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.stage{display:flex;justify-content:center}
+.screen{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.phone .screen{width:390px;max-width:100%;height:820px;border:10px solid var(--ink);border-radius:38px;display:flex;flex-direction:column}
+.phone .scroll{overflow-y:auto;flex:1}
+.topbar{display:flex;align-items:center;gap:20px;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--surface-raised)}
+.phone .topbar{padding:10px 16px;gap:12px}
+.mark{font:750 20px/1 var(--font-display);letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+.nav{display:flex;gap:4px;margin-left:auto}
+.nav a{font:600 14px/20px var(--font-sans);color:var(--ink-muted);text-decoration:none;padding:6px 10px;border-radius:8px;display:flex;gap:6px;align-items:center}
+.count{font:600 11px/16px var(--font-mono);background:var(--accent);color:var(--on-accent);border-radius:999px;padding:0 6px}
+.phone .nav .wide{display:none}
+.page{padding:24px 24px 48px}
+.phone .page{padding:16px 16px 40px}
+.crumb{font:500 13px/18px var(--font-sans);color:var(--ink-muted)}
+.crumb a{color:var(--accent);text-decoration:none}
+h1{font:750 28px/34px var(--font-display);letter-spacing:-.02em;margin:4px 0 12px;text-wrap:balance}
+.phone h1{font-size:24px;line-height:30px}
+h2{font:650 17px/22px var(--font-display);margin:0 0 8px}
+.panel{background:var(--surface-raised);border:1px solid var(--line);border-radius:14px}
+.statecard{padding:14px 16px;display:flex;flex-direction:column;gap:6px;border-width:1px}
+.statecard.running{border-color:var(--tube-idea)}
+.statecard.waiting{border-color:var(--line-strong);border-style:dashed}
+.statecard.stalled{border-color:var(--danger)}
+.statehead{display:flex;align-items:center;gap:10px;font:650 17px/22px var(--font-display)}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--tube-idea);flex:none}
+.dot.wait{background:transparent;border:2px solid var(--tube-idea)}
+.dot.stall{background:var(--danger)}
+.dot.done{background:var(--steady)}
+@media (prefers-reduced-motion:no-preference){.dot.live{animation:breathe 2.4s ease-in-out infinite}@keyframes breathe{50%{opacity:.35}}}
+.small{font-size:13px;line-height:19px}
+.muted{color:var(--ink-muted)}
+.fig{font:500 12.5px/18px var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink-muted)}
+.facts{display:flex;flex-wrap:wrap;gap:4px 14px}
+.appetite{height:6px;border-radius:999px;background:var(--line);overflow:hidden}
+.appetite i{display:block;height:100%;background:var(--tube-capability)}
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.btn{display:inline-flex;align-items:center;min-height:36px;padding:0 13px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-raised);color:var(--ink);font:600 13.5px/1 var(--font-sans);cursor:pointer}
+.btn:hover{background:var(--accent-soft)}
+.btn.primary{background:var(--accent);color:var(--on-accent);border-color:transparent}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.cols{display:grid;grid-template-columns:300px minmax(0,1fr);gap:24px;margin-top:20px;align-items:start}
+.phone .cols{grid-template-columns:minmax(0,1fr);gap:20px;margin-top:16px}
+@media (max-width:860px){.cols{grid-template-columns:minmax(0,1fr)}}
+.sessions{list-style:none;margin:0;padding:0}
+.sessions li button{width:100%;display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 14px;border:0;border-top:1px solid var(--line);background:none;text-align:left;color:var(--ink);font:400 14px/19px var(--font-sans);cursor:pointer}
+.sessions li:first-child button{border-top:0}
+.sessions li button[aria-current="true"]{background:var(--accent-soft)}
+.sessions .role{font:600 11px/16px var(--font-sans);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-muted)}
+.sessions .indent{padding-left:28px}
+.streamhead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.stream{max-height:520px;overflow-y:auto;position:relative}
+.phone .stream{max-height:none}
+.ev{display:grid;grid-template-columns:52px 20px minmax(0,1fr);gap:8px;padding:9px 14px;border-top:1px solid var(--line);font-size:14px;line-height:20px;align-items:start}
+.ev:first-child{border-top:0}
+.ev .t{font:500 11.5px/20px var(--font-mono);color:var(--ink-muted)}
+.ev .what b{font-weight:600}
+.ev .detail{display:block;color:var(--ink-muted);font-size:13px;line-height:18px}
+.ev.say .what{color:var(--ink)}
+.ev.record{background:var(--steady-soft)}
+.ev.new{animation:none}
+@media (prefers-reduced-motion:no-preference){.ev.new{animation:arrive .5s ease-out}@keyframes arrive{from{background:var(--accent-soft)}}}
+.raw{margin:0;padding:12px 14px;font:400 12px/18px var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink);background:var(--surface-sunk);border-radius:0 0 14px 14px}
+.quiet{padding:16px;display:flex;flex-direction:column;gap:6px;color:var(--ink-muted);font-size:14px;border-top:1px dashed var(--line-strong)}
+.follow{position:sticky;bottom:8px;display:flex;justify-content:center;pointer-events:none}
+.follow button{pointer-events:auto;box-shadow:var(--shadow)}
+.legend{margin-top:20px;font-size:13px;color:var(--ink-muted);max-width:76ch}
+.stepin{margin-top:12px;padding:12px 14px;border-radius:10px;background:var(--surface-sunk);font-size:13.5px;line-height:20px;color:var(--ink-muted)}
+</style>
+
+<div class="wrap">
+  <div class="studio-bar">
+    <p>Watching a live session, in the three states a quiet session can be in. In Running, new events arrive as the session works.</p>
+    <div class="controls">
+      <div class="seg" aria-label="State"><button data-s="running" aria-pressed="true">Running</button><button data-s="waiting" aria-pressed="false">Waiting</button><button data-s="stalled" aria-pressed="false">Stalled</button></div>
+      <div class="seg" aria-label="Screen"><button id="b-desk" aria-pressed="false">Desktop</button><button id="b-phone" aria-pressed="true">Phone</button></div>
+      <div class="seg" aria-label="Theme"><button id="b-light" aria-pressed="false">Light</button><button id="b-dark" aria-pressed="false">Dark</button></div>
+    </div>
+  </div>
+  <div class="stage phone" id="stage">
+    <div class="screen">
+      <div class="topbar">
+        <span class="mark"><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="5" fill="var(--tube-capability)"/><path d="M11 6V1M15.5 13.5l4 3M6.5 13.5l-4 3" stroke="var(--tube-capability)" stroke-width="2.6" stroke-linecap="round"/><path d="M15.5 8.5l4-2.5" stroke="var(--tube-idea)" stroke-width="1.6" stroke-linecap="round"/></svg>Physa</span>
+        <nav class="nav" aria-label="Views"><a href="#">Needs you <span class="count">10</span></a><a href="#">Network</a><a href="#" class="wide">Capabilities</a></nav>
+      </div>
+      <div class="scroll" id="scroll"><div class="page" id="page"></div></div>
+    </div>
+  </div>
+  <p class="legend">Events are written the way a person reads them: what ran, what changed, what was recorded. Raw output is one tap away. Timings, tokens and outputs are examples shaped by real harness runs.</p>
+</div>
+
+<script>
+(function(){
+"use strict";
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+var I={
+ run:'<svg width="18" height="18"><path d="M5 4l9 5-9 5z" fill="var(--tube-idea)"/></svg>',
+ edit:'<svg width="18" height="18"><path d="M4 14l2-5 7-7 3 3-7 7z" fill="none" stroke="var(--tube-capability)" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+ read:'<svg width="18" height="18"><rect x="4" y="3" width="10" height="12" rx="1.5" fill="none" stroke="var(--ink-muted)" stroke-width="1.6"/><path d="M7 7h4M7 10h4" stroke="var(--ink-muted)" stroke-width="1.6"/></svg>',
+ say:'<svg width="18" height="18"><path d="M3 4h12v8H8l-3 3v-3H3z" fill="none" stroke="var(--ink-muted)" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+ rec:'<svg width="18" height="18"><circle cx="9" cy="9" r="7" fill="var(--steady)"/><path d="M5.5 9.3l2.2 2.2 4.6-4.8" stroke="var(--surface-raised)" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
+ fail:'<svg width="18" height="18"><circle cx="9" cy="9" r="7" fill="none" stroke="var(--danger)" stroke-width="1.8"/><path d="M9 5v5M9 12.5v.5" stroke="var(--danger)" stroke-width="1.8" stroke-linecap="round"/></svg>'
+};
+var SESS=[
+ {id:"conduct",role:"Conduct",what:"Leads the run",st:"waiting",indent:false},
+ {id:"b1",role:"Build",what:"Change 1: .rhiza/ and its log",st:"done",indent:true},
+ {id:"b2",role:"Fix",what:"Change 2: bin/gate and specs, round 2",st:"done",indent:true},
+ {id:"tests",role:"Check",what:"Tests: the full suite",st:"running",indent:true},
+ {id:"plan",role:"Check",what:"Plan: acceptance as written",st:"done",indent:true},
+ {id:"code",role:"Check",what:"Code: the change's impact",st:"queued",indent:true}
+];
+var STREAMS={
+ tests:[["9:58","read","Read the change's acceptance","4 checks, written before the code"],["9:58","run","<b>bin/rails test</b>","Full suite: 1,284 tests"],["10:02","say","\"Suite is about half way. No failures so far; the slow part is the system tests.\"",""],["10:05","run","<b>bin/rails test</b> finished","1,284 tests, 0 failures, 6 min 41 s (was 6 min 52 s)"],["10:05","run","<b>bin/gate</b>","RuboCop and the security check: clean"],["10:06","rec","Recorded: acceptance check 1 of 4 passed","re-run by the engine"]],
+ conduct:[["9:14","read","Loaded the slice","Build and test, with 3 rules and 2 decisions"],["9:15","say","\"Three changes: the folder, the gate and specs, the docs. The weekly announcement depends on Rhiza, so I'll ask before touching the docs.\"",""],["9:16","rec","Recorded: the plan, 3 changes","each with its acceptance"],["9:52","rec","Recorded: ask sent to you","Keep or retire the weekly announcement"],["9:55","say","\"Started the review workflow for change 2. Ending my turn while it runs.\"",""]],
+ b1:[["9:18","edit","Removed <b>.rhiza/</b>","15 MB, 2,140 files"],["9:24","rec","Recorded: change 1 built",""]],
+ b2:[["9:41","edit","Removed the glossary entry the review flagged","docs/glossary.md −6 lines"],["9:47","rec","Recorded: finding fixed",""]],
+ plan:[["9:57","read","Compared change 2 with its acceptance","4 of 4 checks covered"],["9:58","rec","Recorded: plan check passed","no findings"]],
+ code:[],
+ stall:[["10:19","run","<b>go test ./internal/watch/...</b>","ok, 3.1 s"],["10:20","say","\"Now wiring the stream into the API handler.\"",""],["10:21","edit","Edited <b>internal/api/watch.go</b>","+48 −3"]]
+};
+var MORE=[["10:06","run","<b>bin/rails test test/system</b>","Re-running the system tests against the engine's checkout"],["10:07","say","\"System tests are the slow part again; nothing has failed.\"",""],["10:09","rec","Recorded: acceptance check 2 of 4 passed","re-run by the engine"],["10:09","read","Read <b>spec/gate_spec.rb</b>","checking that bin/gate still runs RuboCop"],["10:10","rec","Recorded: acceptance check 3 of 4 passed",""]];
+var state="running",phone=true,chosen="tests",raw=false,follow=true,timer=null,added=0;
+function stateCard(){
+  if(state==="running") return '<div class="panel statecard running"><div class="statehead"><span class="dot live"></span>Running</div><div class="small">Check session working: <b>running the test suite</b>.</div><div class="facts"><span class="fig">52 min in</span><span class="fig">last activity just now</span><span class="fig">review round 2 of 3</span></div><div class="appetite"><i style="width:69%"></i></div><span class="fig">412k of 600k tokens</span></div>';
+  if(state==="waiting") return '<div class="panel statecard waiting"><div class="statehead"><span class="dot wait"></span>Waiting on the review workflow</div><div class="small">The conductor ended its turn at 9:55 while three checks run. Silence from it is expected, and it isn\'t counted as stalled.</div><div class="facts"><span class="fig">checks: 1 done, 1 running, 1 queued</span><span class="fig">last activity 3 min ago (tests)</span></div><div class="appetite"><i style="width:69%"></i></div><span class="fig">412k of 600k tokens</span></div>';
+  return '<div class="panel statecard stalled"><div class="statehead"><span class="dot stall"></span>Stalled</div><div class="small">No output, record or tool activity for <b>22 minutes</b>, and it isn\'t waiting on a workflow. One automatic restart was already tried. It is in your Needs you.</div><div class="facts"><span class="fig">1 h 08 min in</span><span class="fig">last activity 10:21</span></div><div class="appetite"><i style="width:63%"></i></div><span class="fig">188k of 300k tokens</span><div class="acts"><button class="btn danger" id="stop">Stop the run</button><button class="btn" id="stepin">Step in</button></div><div id="stepnote"></div></div>';
+}
+function sessions(){
+  var list=state==="stalled"?[{id:"stall",role:"Build",what:"Change 1: stream the session to the API",st:"stalled",indent:false}]:SESS.map(function(s){var x=Object.assign({},s);if(state==="waiting"&&x.id==="tests"){x.st="running";}return x;});
+  return '<ul class="sessions">'+list.map(function(s){var dot=s.st==="done"?"done":(s.st==="waiting"?"wait":(s.st==="stalled"?"stall":(s.st==="queued"?"wait":"")));
+    return '<li><button data-sess="'+s.id+'" aria-current="'+(s.id===chosen)+'"'+(s.indent?' class="indent"':"")+'><span class="dot '+dot+(s.st==="running"?" live":"")+'" style="width:9px;height:9px"></span><span><span class="role">'+s.role+'</span><br>'+esc(s.what)+'</span><span class="fig">'+(s.st==="queued"?"queued":s.st)+'</span></button></li>';}).join("")+'</ul>';
+}
+function streamHTML(){
+  var ev=(STREAMS[chosen]||[]).slice();
+  if(chosen==="tests"&&state==="running") ev=ev.concat(MORE.slice(0,added));
+  if(raw){
+    var txt=ev.map(function(e){return "["+e[0]+"] "+e[2].replace(/<[^>]+>/g,"")+(e[3]?"\n        "+e[3]:"");}).join("\n");
+    if(chosen==="tests") txt+="\n\nRunning via Spring preloader in process 48211\nRun options: --seed 31877\n\n# Running:\n\n....................................................................\n....................................................................";
+    return '<pre class="raw">'+esc(txt)+'</pre>';
+  }
+  var h=ev.map(function(e,i){var cls=e[1]==="say"?"say":(e[1]==="rec"?"record":"");var isNew=chosen==="tests"&&state==="running"&&i>=STREAMS.tests.length&&i===ev.length-1;
+    return '<div class="ev '+cls+(isNew?" new":"")+'"><span class="t">'+e[0]+'</span>'+I[e[1]]+'<span class="what">'+e[2]+(e[3]?'<span class="detail">'+esc(e[3])+'</span>':"")+'</span></div>';}).join("");
+  if(!ev.length) h='<div class="quiet">Queued: it starts when the tests check finishes.</div>';
+  if(chosen==="conduct"&&state!=="stalled") h+='<div class="quiet"><b style="color:var(--ink)">Waiting on the review workflow since 9:55.</b>Its checks are working; pick one to watch it.</div>';
+  if(state==="stalled") h+='<div class="quiet"><b style="color:var(--danger)">Nothing since 10:21.</b>The last thing it did was edit the API handler. No tool is running.</div>';
+  return h;
+}
+function render(){
+  if(state==="stalled")chosen="stall";else if(chosen==="stall")chosen=state==="waiting"?"conduct":"tests";
+  var h='<div class="crumb"><a href="#">Remove Rhiza from nebari</a> › Run</div>';
+  if(state==="stalled") h='<div class="crumb"><a href="#">physa watch</a> › Run</div>';
+  h+='<h1>'+(state==="stalled"?"Watching physa watch":"Watching Remove Rhiza from nebari")+'</h1>'+stateCard();
+  h+='<div class="cols"><section><h2>Sessions</h2><div class="panel">'+sessions()+'</div></section>';
+  var cur=(state==="stalled"?{role:"Build",what:"Change 1: stream the session to the API"}:SESS.filter(function(s){return s.id===chosen;})[0]);
+  h+='<section><div class="streamhead"><h2 style="margin:0">'+cur.role+' · '+esc(cur.what)+'</h2><div class="seg"><button id="v-read" aria-pressed="'+(!raw)+'">Readable</button><button id="v-raw" aria-pressed="'+raw+'">Raw output</button></div></div><div class="panel stream" id="stream">'+streamHTML()+'</div>';
+  if(state==="running"&&chosen==="tests"&&!follow) h+='<div class="follow"><button class="btn primary" id="latest">Jump to latest</button></div>';
+  h+='<p class="small muted" style="margin:10px 0 0">Watching is read-only. Stepping in counts as needing a person.</p></section></div>';
+  document.getElementById("page").innerHTML=h;
+  document.querySelectorAll("[data-sess]").forEach(function(b){b.onclick=function(){chosen=b.getAttribute("data-sess");follow=true;render();};});
+  document.getElementById("v-read").onclick=function(){raw=false;render();};
+  document.getElementById("v-raw").onclick=function(){raw=true;render();};
+  var l=document.getElementById("latest");if(l)l.onclick=function(){follow=true;render();scrollEnd();};
+  var si=document.getElementById("stepin");if(si)si.onclick=function(){document.getElementById("stepnote").innerHTML='<div class="stepin">Stepping in opens the session for typing. It is counted as an intervention: this run will show it needed a person. <button class="btn" style="margin-top:8px">Open the session</button></div>';};
+  var st=document.getElementById("stop");if(st)st.onclick=function(){st.textContent="Stopped. Its work so far is kept on its branch";st.disabled=true;};
+  var s=document.getElementById("stream");if(s){s.onscroll=function(){var atEnd=s.scrollTop+s.clientHeight>=s.scrollHeight-8;if(follow!==atEnd&&!phone){follow=atEnd;}};}
+  document.querySelectorAll("[data-s]").forEach(function(b){b.setAttribute("aria-pressed",String(b.getAttribute("data-s")===state));});
+  document.getElementById("b-desk").setAttribute("aria-pressed",String(!phone));document.getElementById("b-phone").setAttribute("aria-pressed",String(phone));
+  var th=document.documentElement.getAttribute("data-theme");document.getElementById("b-light").setAttribute("aria-pressed",String(th==="light"));document.getElementById("b-dark").setAttribute("aria-pressed",String(th==="dark"));
+  if(follow)scrollEnd();
+}
+function scrollEnd(){var s=document.getElementById("stream");if(s)s.scrollTop=s.scrollHeight;}
+function tick(){if(state==="running"&&added<MORE.length){added++;var keep=follow;render();if(keep)scrollEnd();}}
+timer=setInterval(tick,3500);
+document.querySelectorAll("[data-s]").forEach(function(b){b.onclick=function(){state=b.getAttribute("data-s");chosen=state==="waiting"?"conduct":"tests";render();};});
+document.getElementById("b-desk").onclick=function(){phone=false;document.getElementById("stage").classList.remove("phone");render();};
+document.getElementById("b-phone").onclick=function(){phone=true;document.getElementById("stage").classList.add("phone");render();};
+document.getElementById("b-light").onclick=function(){document.documentElement.setAttribute("data-theme","light");render();};
+document.getElementById("b-dark").onclick=function(){document.documentElement.setAttribute("data-theme","dark");render();};
+render();
+})();
+</script>
+
+</html>

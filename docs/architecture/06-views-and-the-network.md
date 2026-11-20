@@ -1,6 +1,6 @@
 # Architecture 06: views and the network
 
-Draft 0.5, 2026-11-20. Uses `.physa/glossary.md` terms only. Builds on vision §3.1 and 05 §6. Items marked (Q) are open questions for the owner.
+Draft 0.6, 2026-11-20. Uses `.physa/glossary.md` terms only. Builds on vision §3.1 and 05 §6. Items marked (Q) are open questions for the owner.
 
 The web views are server-rendered Go templates: Needs you is the home screen, the network view is the signature, and the single-user phone web is a real view, not a shrunk desktop. This design settles how they look, and how the network is drawn.
 
@@ -14,7 +14,16 @@ The owner asked for something brighter than Rhiza, built on blues ("I do NOT lik
 - **Lessons are the only warm colour** (amber, `#b06a00` light, `#f2b54a` dark), and amber means nothing else. Guardrail trips and rollbacks are orange; a clear result for an idea is teal. Neither is red or green, and both always carry a word.
 - **Type:** Bricolage Grotesque for headings, Instrument Sans for text, JetBrains Mono for strength figures and other numbers. All from Google Fonts, with system fallbacks.
 - Every text and mark pair meets WCAG contrast (4.5:1 text, 3:1 marks) in both themes.
-- Components are plain HTML and CSS, so templates need no script: buttons, chips, the strength meter, the tube key, Needs you rows, capability rows and the empty Needs you ("Nothing needs you.").
+- Components are plain HTML and CSS, so templates need no script: buttons, chips, the strength meter, the tube key, Needs you rows, capability rows, the empty Needs you ("Nothing needs you."), run progress, calls, the evidence breakdown and stream events.
+
+### 1.1 Where the look lives
+
+- **`internal/design` is the only source**: `tokens.css` (every colour, face, space, radius and shadow, in light and dark), `components.css` (the `px-` classes), the fonts, and the brand book (`README.md`), embedded so the views serve them with no network. Its tests check that every token the components use exists, that every colour has its dark value, and that the brand book's contrast pairs hold in both themes.
+- **The fonts are vendored**: Latin variable woff2, 138 KB in all, under the SIL Open Font License, each with its licence. The phone web works offline and calls no third party.
+- **Kept by hand, one source per value.** No token file is generated from another.
+- **The hosted layer gets the same files from the core**, at the core version it already pins, rather than keeping a copy (Q2). The design system artifact is a read-only view of `internal/design`.
+- **`docs/design/`** holds a live gallery of the components and the prototypes each view was settled on, frozen as they were.
+- A shared design repo was considered and set aside for now: it would add a third thing to version and anchors across repos for a handful of files, and the look can be extracted later if something without the core needs it (the owner: "It can always be extracted if need be").
 
 ## 2. Thickness
 
@@ -104,3 +113,4 @@ With this, the core's phone web is complete: Needs you with Running now, the net
 ## Questions
 
 - **Q1. Do capabilities connect to each other?** A tube between two capabilities needs a word and evidence that thickens it; slices that load both together are already counted and are one candidate. Not drawn until the owner decides.
+- **Q2. How does the hosted layer get the look?** Likely a core command such as `physa design export` that writes the CSS and fonts at build time. Decided when the hosted layer starts.

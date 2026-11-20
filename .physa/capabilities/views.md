@@ -84,7 +84,13 @@ Because: strength must always be explainable, and a lesson becomes a decision th
 Watching a session shows the run's state as running, waiting on a workflow, or stalled, each visibly different, then a stream written for a person with raw output one tap away. Stepping in says first that it counts as an intervention.
 Because: headless sessions end their turn while workflows run, and a waiting run that looks finished or stuck sends a person after the wrong thing.
 
-## Questions
+### The look lives in the core
+`design-in-core` · decided by dphaener, choosing an option · 2026-11-20 · from docs/architecture/06-views-and-the-network.md
+The design system's tokens, component styles, fonts and brand book live in the core as one embedded package, the only source. The hosted layer gets them from the core; fonts are vendored so no view calls a third party.
+Because: both apps need one look, the hosted layer already depends on the core, and the look "can always be extracted if need be" (the owner).
+Rejected:
+- A shared design repo used by both apps: a third thing to version, and anchors across repos, for a handful of files.
+- Loading fonts from Google Fonts: the phone web would call a third party and lose its faces offline.
 
 ### Do capabilities connect to each other?
 `capability-tubes` · raised by dphaener · 2026-11-20

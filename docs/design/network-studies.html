@@ -1,0 +1,844 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Network Studies</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400..600&display=swap">
+<style>
+/* Layout: a header, a tab strip of three studies, a stage (the drawing) beside a sheet (the selected tube), then notes and the comparison.
+   Tokens are Physa's design system, copied from its tokens.json. */
+:root{--sheet-shadow:0 -8px 24px rgba(11,26,51,0.12); --surface:#f4f8ff; --surface-raised:#ffffff; --surface-sunk:#e7eefb; --line:#d2ddf0; --line-strong:#7487aa; --ink:#0b1a33; --ink-muted:#47597a; --accent:#1757f5; --accent-hover:#0f45d1; --on-accent:#ffffff; --accent-soft:#dce7ff; --tube-capability:#1238c4; --tube-idea:#0a87dc; --tube-faded:#9aaccb; --tube-ground:#c9d7f0; --lesson:#b06a00; --lesson-ink:#8a5200; --lesson-soft:#fbefd9; --danger:#ad380b; --danger-soft:#fde6dc; --steady:#086a75; --steady-soft:#d5f3f3; --focus:#1757f5}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--sheet-shadow:0 -8px 24px rgba(0,0,0,0.5); --surface:#0a1322; --surface-raised:#101c31; --surface-sunk:#060d19; --line:#22324d; --line-strong:#6680a6; --ink:#e9f0ff; --ink-muted:#9fb2d4; --accent:#6d9bff; --accent-hover:#93b6ff; --on-accent:#06112a; --accent-soft:#16295a; --tube-capability:#4f7dff; --tube-idea:#8fe3ff; --tube-faded:#3c4f70; --tube-ground:#1a2a45; --lesson:#f2b54a; --lesson-ink:#f6c46d; --lesson-soft:#3a2a0c; --danger:#ff8a5c; --danger-soft:#3d1a0e; --steady:#3fd0d6; --steady-soft:#0c3236; --focus:#93b6ff; color-scheme:dark}}
+:root[data-theme="dark"]{--sheet-shadow:0 -8px 24px rgba(0,0,0,0.5); --surface:#0a1322; --surface-raised:#101c31; --surface-sunk:#060d19; --line:#22324d; --line-strong:#6680a6; --ink:#e9f0ff; --ink-muted:#9fb2d4; --accent:#6d9bff; --accent-hover:#93b6ff; --on-accent:#06112a; --accent-soft:#16295a; --tube-capability:#4f7dff; --tube-idea:#8fe3ff; --tube-faded:#3c4f70; --tube-ground:#1a2a45; --lesson:#f2b54a; --lesson-ink:#f6c46d; --lesson-soft:#3a2a0c; --danger:#ff8a5c; --danger-soft:#3d1a0e; --steady:#3fd0d6; --steady-soft:#0c3236; --focus:#93b6ff; color-scheme:dark}
+
+:root{--font-display:"Bricolage Grotesque","Instrument Sans",system-ui,sans-serif;--font-sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;--font-mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+body{background:var(--surface);color:var(--ink);font:400 15px/23px var(--font-sans);margin:0}
+.wrap{max-width:1240px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 64px}
+h1{font:750 44px/48px var(--font-display);letter-spacing:-.025em;margin:0;text-wrap:balance}
+h2{font:700 26px/32px var(--font-display);letter-spacing:-.015em;margin:0;text-wrap:balance}
+h3{font:650 17px/22px var(--font-display);margin:0}
+p{margin:0;max-width:68ch}
+.muted{color:var(--ink-muted)}
+.lede{font-size:17px;line-height:26px;color:var(--ink-muted);max-width:70ch}
+header{display:flex;flex-direction:column;gap:12px;margin-bottom:24px}
+.eyebrow{font:600 11.5px/16px var(--font-sans);letter-spacing:.07em;text-transform:uppercase;color:var(--accent)}
+.bar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin:20px 0 12px}
+.tabs,.seg{display:flex;gap:4px;padding:4px;border-radius:10px;background:var(--surface-sunk);flex-wrap:wrap}
+.tabs button,.seg button{font:600 14px/20px var(--font-sans);border:0;background:transparent;color:var(--ink-muted);padding:7px 14px;border-radius:7px;cursor:pointer}
+.tabs button[aria-selected="true"],.seg button[aria-pressed="true"]{background:var(--surface-raised);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+.tabs button:focus-visible,.seg button:focus-visible,.px-btn:focus-visible,.idea-li:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.tabs .k{font-family:var(--font-mono);font-size:12px;color:var(--accent);margin-right:6px}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+.studio{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+@media (max-width:900px){.studio{grid-template-columns:minmax(0,1fr)}}
+.well{background:var(--surface-sunk);border-radius:14px;padding:12px;min-width:0;position:relative}
+.stage{display:flex;justify-content:center}
+.stage svg{display:block;width:100%;height:auto;touch-action:manipulation}
+.phone .stage{padding:8px 0}
+.device{width:100%}
+.phone .device{width:390px;max-width:100%;border-radius:36px;border:10px solid var(--ink);background:var(--surface);overflow:hidden;position:relative;height:760px;display:flex;flex-direction:column}
+.device-top{display:none}
+.phone .device-top{display:flex;justify-content:space-between;align-items:center;padding:12px 16px 4px;font:600 13px/18px var(--font-sans)}
+.phone .device-scroll{overflow-y:auto;flex:1}
+.device-head{display:none}
+.phone .device-head{display:flex;flex-direction:column;gap:2px;padding:4px 16px 8px}
+.phone .device-head b{font:700 22px/28px var(--font-display);letter-spacing:-.01em}
+.phone-list{display:none}
+.phone-list .idea-li{width:100%}
+.studio.phone > aside.sheet{display:none}
+.studio.phone{grid-template-columns:minmax(0,1fr)}
+.phone .phone-list{display:block;border-top:1px solid var(--line)}
+.sheet{background:var(--surface-raised);border:1px solid var(--line);border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.phone-sheet{display:none}
+.phone .phone-sheet:not([hidden]){display:flex;position:absolute;left:0;right:0;bottom:0;max-height:46%;overflow:auto;border-radius:14px 14px 0 0;border:0;border-top:1px solid var(--line);box-shadow:var(--sheet-shadow);z-index:3}
+.sheet .kind{font:600 11.5px/16px var(--font-sans);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-muted)}
+.sheet .name{font:700 22px/28px var(--font-display);letter-spacing:-.01em}
+.sheet .close{align-self:flex-end;margin-bottom:-8px}
+.ideas-list{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.idea-li{display:grid;grid-template-columns:28px 1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);background:none;border-left:0;border-right:0;border-top:0;text-align:left;color:var(--ink);font:400 14px/19px var(--font-sans);cursor:pointer}
+.idea-li:hover{background:var(--accent-soft)}
+.idea-li small{display:block;color:var(--ink-muted);font-size:12.5px;line-height:17px}
+.lesson-text{color:var(--lesson-ink)}
+.fig{font:500 13px/18px var(--font-mono);font-variant-numeric:tabular-nums}
+/* components from the design system */
+.px-btn{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 14px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-raised);color:var(--ink);font:600 13.5px/1 var(--font-sans);cursor:pointer}
+.px-btn:hover{background:var(--accent-soft)}
+.px-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font:600 11px/16px var(--font-sans);letter-spacing:.07em;text-transform:uppercase;background:var(--surface-raised);color:var(--ink-muted);white-space:nowrap}
+.px-chip--experimental{background:transparent;border:1px dashed var(--line-strong)}
+.px-chip--lesson{background:var(--lesson-soft);color:var(--lesson-ink)}
+.px-chip--accent{background:var(--accent-soft);color:var(--accent)}
+.px-strength{display:inline-flex;align-items:center;gap:8px;font:500 13px/18px var(--font-mono);font-variant-numeric:tabular-nums}
+.px-strength__tube{display:block;width:40px;min-height:1.5px;border-radius:999px;background:var(--tube-capability)}
+.px-strength--idea .px-strength__tube{background:var(--tube-idea)}
+.px-strength--faded .px-strength__tube{background:var(--tube-faded)}
+.px-strength__exp{border-bottom:1px dashed var(--line-strong);cursor:help}
+.px-key{display:flex;flex-wrap:wrap;gap:10px 22px;font:400 13px/19px var(--font-sans);color:var(--ink-muted);padding:12px 4px 2px}
+.px-key__item{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.phone .px-key{padding:10px 16px;gap:8px 14px;font-size:12px}
+/* drawing classes, shared by all three studies */
+.t-cap{stroke:var(--tube-capability);fill:none;stroke-linecap:round;stroke-linejoin:round}
+.t-idea{stroke:var(--tube-idea);fill:none;stroke-linecap:round}
+.t-faded{stroke:var(--tube-faded);fill:none;stroke-linecap:round}
+.t-wither{stroke:var(--tube-faded);fill:none;stroke-linecap:round;stroke-dasharray:2 4}
+.f-cap{fill:var(--tube-capability)}
+.f-idea{fill:var(--tube-idea)}
+.f-faded{fill:var(--tube-faded)}
+.knot{fill:var(--surface-sunk);stroke:var(--lesson)}
+.ground{stroke:var(--tube-ground);fill:none}
+.ground-f{fill:var(--tube-ground)}
+.lbl{fill:var(--ink);font-family:var(--font-sans);font-weight:600;paint-order:stroke;stroke:var(--surface-sunk);stroke-width:4px;stroke-linejoin:round}
+.lbl-m{fill:var(--ink-muted);font-family:var(--font-sans);paint-order:stroke;stroke:var(--surface-sunk);stroke-width:4px;stroke-linejoin:round}
+.lbl-fig{fill:var(--ink-muted);font-family:var(--font-mono)}
+.lbl-lesson{fill:var(--lesson-ink);font-family:var(--font-sans);paint-order:stroke;stroke:var(--surface-sunk);stroke-width:4px;stroke-linejoin:round}
+.hit{stroke:transparent;fill:none;cursor:pointer;pointer-events:stroke}
+.hitf{fill:transparent;cursor:pointer}
+.halo{stroke:var(--accent-soft);fill:none;stroke-linecap:round}
+.sel-ring{stroke:var(--accent);fill:none}
+g.dim{opacity:.28;transition:opacity .2s}
+.leader{stroke:var(--ink-muted);stroke-width:.8;stroke-opacity:.6}
+.flow{fill:none;stroke:var(--surface);stroke-opacity:.8;stroke-linecap:round;stroke-dasharray:.5 11}
+@media (prefers-reduced-motion:no-preference){.flow{animation:shuttle 3.2s ease-in-out infinite alternate}}
+@media (prefers-reduced-motion:reduce){.flow{display:none}}
+@keyframes shuttle{from{stroke-dashoffset:0}to{stroke-dashoffset:-46}}
+g.item{transition:opacity .2s}
+@media (prefers-reduced-motion:no-preference){.grow{animation:grow .9s ease-out both}@keyframes grow{from{stroke-dashoffset:var(--len)}to{stroke-dashoffset:0}}}
+/* notes and comparison */
+.notes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}
+@media (max-width:900px){.notes{grid-template-columns:minmax(0,1fr)}}
+.note{background:var(--surface-raised);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.note ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.note .lab{font:600 11.5px/16px var(--font-sans);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-muted)}
+section{margin-top:48px;display:flex;flex-direction:column;gap:16px}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--surface-raised)}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:14px;line-height:20px}
+th,td{text-align:left;padding:10px 14px;border-top:1px solid var(--line);vertical-align:top}
+thead th{border-top:0;font:600 11.5px/16px var(--font-sans);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-muted)}
+tbody th{font:650 15px/20px var(--font-display)}
+.good{color:var(--steady);font-weight:600}
+.weak{color:var(--danger);font-weight:600}
+.rec{background:var(--surface-raised);border:1px solid var(--line);border-radius:14px;padding:24px;display:flex;flex-direction:column;gap:12px}
+.rec h2{color:var(--accent)}
+.rec ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;max-width:76ch}
+.foot{font-size:13px;color:var(--ink-muted);margin-top:24px}
+</style>
+
+<div class="wrap">
+<header>
+  <span class="eyebrow">Physa · network view · studies</span>
+  <h1>Drawing the tubes</h1>
+  <p class="lede">Each study draws Physa's own map: its 13 capabilities and the ideas around them. Thickness is strength by one rule everywhere (1.5 px + 2 px × √strength). Growing ideas are thin and bright, fading parts dim, withered ideas leave a lesson knot, established ideas merge into their capability. Tap or click any tube.</p>
+</header>
+
+<div class="bar">
+  <div class="tabs" role="tablist" aria-label="Studies">
+    <button role="tab" id="tab-grown" data-v="grown" aria-selected="true"><span class="k">A4</span>Grown</button>
+    <button role="tab" id="tab-calm" data-v="calm" aria-selected="false"><span class="k">A3</span>Calm</button>
+    <button role="tab" id="tab-plasmo" data-v="plasmo" aria-selected="false"><span class="k">A2</span>Plasmodium</button>
+    <button role="tab" id="tab-plate" data-v="plate" aria-selected="false"><span class="k">A1</span>Plate</button>
+    <button role="tab" id="tab-mesh" data-v="mesh" aria-selected="false"><span class="k">B</span>Mesh</button>
+    <button role="tab" id="tab-strands" data-v="strands" aria-selected="false"><span class="k">C</span>Strands</button>
+  </div>
+  <div class="controls">
+    <div class="seg" aria-label="Screen"><button id="b-desk" aria-pressed="true">Desktop</button><button id="b-phone" aria-pressed="false">Phone</button></div>
+    <div class="seg" aria-label="Theme"><button id="b-light" aria-pressed="false">Light</button><button id="b-dark" aria-pressed="false">Dark</button></div>
+  </div>
+</div>
+
+<div class="studio" id="studio">
+  <div class="well">
+    <div class="stage">
+      <div class="device">
+        <div class="device-top"><span>9:41</span><span class="muted">physa.local</span></div>
+        <div class="device-scroll">
+          <div class="device-head"><span class="muted" style="font-size:13px">Physa · network</span><b>The product</b></div>
+          <div id="draw"></div>
+          <div class="px-key" id="key"></div>
+          <div class="phone-list" id="plist"></div>
+        </div>
+        <div class="sheet phone-sheet" id="psheet" hidden></div>
+      </div>
+    </div>
+  </div>
+  <aside class="sheet" id="sheet" aria-live="polite"></aside>
+</div>
+
+<div class="notes" id="notes"></div>
+
+<section id="compare">
+  <h2>How they compare</h2>
+  <div class="tbl"><table>
+    <thead><tr><th></th><th>A · Plate</th><th>B · Mesh</th><th>C · Strands</th></tr></thead>
+    <tbody>
+      <tr><th>What a tube connects</th><td>An idea to the capability it extends; a capability to the product</td><td>Capabilities to each other, by what they share</td><td>An idea to its capability, over time</td></tr>
+      <tr><th>Fits the model as settled</th><td><span class="good">Exactly.</span> An idea extends one capability; a change anchors to one</td><td><span class="weak">Needs a new concept:</span> a tube between capabilities, and the evidence that feeds it</td><td><span class="good">Exactly,</span> and shows decay as it happens</td></tr>
+      <tr><th>"What is the product?" at a glance</th><td><span class="good">Best.</span> Thick and thin read in one look</td><td>Good, once you learn where things sit</td><td>Weaker: reads as a chart, not a product</td></tr>
+      <tr><th>"What is growing, what is withering?"</th><td>Now only</td><td>Now only</td><td><span class="good">Best:</span> the trend is the drawing</td></tr>
+      <tr><th>Stable between visits</th><td><span class="good">Yes:</span> each capability keeps its angle</td><td><span class="weak">No:</span> a force layout moves when strength changes</td><td>Yes: lanes by strength, can reorder</td></tr>
+      <tr><th>Phone</th><td><span class="good">Good:</span> a disc fits the width; tap a capability to zoom in</td><td><span class="weak">Weak:</span> needs pan and pinch</td><td><span class="good">Good:</span> lanes stack and scroll</td></tr>
+      <tr><th>Server-rendered in Go</th><td><span class="good">Easy:</span> polar geometry, no simulation</td><td>Possible, layout precomputed by the engine</td><td><span class="good">Easy:</span> it is a chart</td></tr>
+      <tr><th>Scales to 60 capabilities</th><td>Two rings, or sectors that zoom</td><td>Hairball risk</td><td>Long scroll; filter needed</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="rec">
+    <span class="eyebrow">Recommendation</span>
+    <h2>A4, the grown Plasmodium, as the network view; Strands on each capability's page</h2>
+    <ol>
+      <li><b>The network view is A4:</b> A3's layout drawn as one fused, tapering body. A1's structure (each idea grows from one capability, each capability from the product, fixed angles) in the organism's body: one translucent sheet, meandering veins, growing fronts, slime trails for lessons. At rest only thickness and kind compete for attention; a capability's food dots and loops (A2's detail) appear when it is tapped. Still plain geometry the Go core can draw as SVG with no script.</li>
+      <li><b>Each capability's page uses C, Strands</b> (the owner's call): that capability's tube over time, with its ideas joining, withering and growing.</li>
+      <li><b>B, the Mesh, waits</b> until the owner decides whether capabilities connect to each other.</li>
+    </ol>
+  </div>
+</section>
+
+<p class="foot">Data: Physa's 13 capabilities and their promises from <code>.physa/capabilities/</code>. Withered ideas and their lessons are the rejected options recorded on Physa's decisions. Growing ideas come from <code>docs/plan.md</code>, with a few invented for range. Physa has no evidence recorded yet, so every strength here is a sample.</p>
+</div>
+
+<script>
+(function(){
+"use strict";
+var W = function(s){ return Math.min(22, 1.5 + 2*Math.sqrt(Math.max(0,s))); };
+// ---- data: Physa's own map --------------------------------------------------
+var CAPS = [
+ {id:"map",name:"Map",s:46,tr:2.1,promise:"A team's product knowledge (why the product is the way it is) lives in their repo, small, readable and reviewable like code.",ideas:[
+  {n:"Superseded decisions fold into their replacement",st:"established",s:3},
+  {n:"Flagging avoided words in commits and PRs",st:"withered",lesson:"Polices people, mostly false alarms: 27 on the first map, nearly all ordinary English."},
+  {n:"A visible physa/ directory",st:"withered",lesson:"More clutter for little gain; the map lives in a hidden directory."}]},
+ {id:"slices",name:"Slices",s:41,tr:1.8,promise:"An agent gets exactly the product knowledge its task needs, in one call, before it starts.",ideas:[
+  {n:"A 50 ms slice on a generated map",st:"growing",s:7.5,fact:"bet"},
+  {n:"Slice cache in the CLI",st:"growing",s:2.1,fact:"shaped"},
+  {n:"Hooks that inject context as files are touched",st:"withered",lesson:"Not universal across agents."}]},
+ {id:"learning",name:"Learning",s:19,tr:1.2,promise:"The map gets better with every PR, without anyone curating it.",ideas:[
+  {n:"The batched physa/learn PR",st:"growing",s:8.4,fact:"bet"},
+  {n:"Recurring findings become proposed rules",st:"established",s:4}]},
+ {id:"init",name:"Init",s:16,tr:0.9,promise:"A team with an existing codebase gets a cited, reviewable map in minutes, without writing anything first.",ideas:[
+  {n:"physa init on nebari",st:"growing",s:5.6,fact:"shaped"},
+  {n:"Progress while init runs",st:"growing",s:1.4,fact:"idea"}]},
+ {id:"engine",name:"Engine",s:34,tr:1.5,promise:"Work keeps moving through its lifecycle without a person or an orchestrating agent pushing it.",ideas:[
+  {n:"Durable intents for side effects",st:"established",s:5},
+  {n:"physa watch",st:"growing",s:4.2,fact:"shaped"},
+  {n:"A deterministic 56-step workflow",st:"withered",lesson:"About 75 minutes per run, and 76% of runs needed a second review cycle."},
+  {n:"Replaying an event log to answer reads",st:"withered",lesson:"Rhiza's 127 MB log made a check take 15 seconds."}]},
+ {id:"harnesses",name:"Harnesses",s:29,tr:2.4,promise:"Teams bring their own agent workflows, skills and agents, and Physa hosts them.",ideas:[
+  {n:"dharness, the slimmed harness",st:"growing",s:13,fact:"bet"},
+  {n:"Claude Code adapter",st:"growing",s:3.1,fact:"shaped"},
+  {n:"Native subagents inside a role",st:"established",s:4},
+  {n:"A harness format written for Physa",st:"withered",lesson:"A rewrite nobody makes."}]},
+ {id:"ideas",name:"Ideas",s:22,tr:0.2,promise:"Anyone can start an idea, and it grows through shaping and bets within an appetite, never through estimates.",ideas:[
+  {n:"Spikes with their own appetite",st:"established",s:3},
+  {n:"Agent-drafted pitches",st:"growing",s:2.2,fact:"idea"},
+  {n:"Six-week cycles and cooldown",st:"withered",lesson:"Sized to human building speed."}]},
+ {id:"views",name:"Views",s:10,tr:1.1,promise:"Each person sees what needs them, and anyone can see the product as a living network.",ideas:[
+  {n:"Needs you on the phone web",st:"growing",s:6.3,fact:"shaped"},
+  {n:"Rex view plugin",st:"growing",s:4.9,fact:"shaped"},
+  {n:"The network view",st:"growing",s:2.6,fact:"idea"}]},
+ {id:"strength",name:"Strength",s:12,tr:0.1,promise:"Every idea and capability shows how much real flow it carries, and what stops carrying flow fades.",ideas:[
+  {n:"physa strength preview",st:"growing",s:3.8,fact:"shaped"},
+  {n:"Explore and stable modes",st:"withered",lesson:"Set by hand, and mixed four ideas into one switch. Strength replaces mode."},
+  {n:"Strength opt-in while experimental",st:"withered",lesson:"Made turning off strength sound like turning off flags."}]},
+ {id:"confidence",name:"Confidence",s:9,tr:0.3,promise:"Changes land and reach users at a bar set by what is at stake, with the evidence for each one in plain sight.",ideas:[
+  {n:"Stakes worked out from strength",st:"growing",s:2.0,fact:"idea"},
+  {n:"Recording whether a person looked at the case",st:"withered",lesson:"Intrusive to developers."}]},
+ {id:"earned-release",name:"Earned release",s:6,tr:-0.6,promise:"Anyone can ship agent-written code with trust: it lands dark, reaches people only as far as its evidence and the stakes allow, and is withdrawn instantly when it misbehaves.",ideas:[
+  {n:"physa serve, the flag service",st:"growing",s:1.6,fact:"idea"},
+  {n:"Ruby provider over OFREP",st:"fading",s:0.5,fact:"withering in 6 days"},
+  {n:"Built ideas behind a flag by default",st:"withered",lesson:"Earned release is opt-in instead, as one switch."}]},
+ {id:"signals",name:"Signals",s:7,tr:-0.8,promise:"Every idea is measured against the signal it claimed, and nothing else.",ideas:[
+  {n:"Runtime evidence through OpenTelemetry",st:"fading",s:0.8,fact:"withering in 11 days"},
+  {n:"p-values and significance language",st:"withered",lesson:"Teams set when a result is clear, in plain words."}]},
+ {id:"rollback",name:"Rollback",s:5,tr:-0.5,promise:"Any change, idea or decision can be undone as a unit, cheapest way first.",ideas:[
+  {n:"Show dependents before reverting",st:"established",s:2}]}
+];
+// shared flow between capabilities, for the Mesh: how often each one's map entries cite the other
+var LINKS=[["confidence","engine",4],["confidence","rollback",1],["confidence","strength",1],["earned-release","ideas",2],["earned-release","rollback",3],["earned-release","signals",4],["earned-release","strength",7],["engine","map",1],["engine","harnesses",12],["engine","ideas",1],["engine","learning",1],["harnesses","views",1],["ideas","map",4],["ideas","signals",3],["ideas","strength",1],["ideas","views",1],["init","confidence",1],["init","learning",10],["init","map",5],["init","slices",1],["learning","map",5],["learning","strength",1],["learning","slices",1],["map","rollback",1],["map","strength",1],["map","slices",8],["rollback","strength",1],["signals","strength",3],["strength","views",1]];
+var byId={}; CAPS.forEach(function(c){byId[c.id]=c; c.fading = c.tr<0;});
+function hash(str){var h=2166136261;for(var i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619);}return ((h>>>0)%10000)/10000;}
+
+// ---- state ----------------------------------------------------------------
+var view="grown", lastView=null, lastPhone=null, phone=false, sel=null; // sel: {cap:id, idea:index|null}
+var NS="http://www.w3.org/2000/svg";
+function el(tag,attrs,parent){var e=document.createElementNS(NS,tag);for(var k in attrs){e.setAttribute(k,attrs[k]);}if(parent)parent.appendChild(e);return e;}
+function fmt(s){return s.toFixed(1);}
+function capCls(c){return c.fading?"t-faded":"t-cap";}
+function ideaCls(i){return i.st==="fading"?"t-faded":(i.st==="established"?"t-cap":(i.st==="withered"?"t-wither":"t-idea"));}
+function ideaS(i){return i.st==="withered"?0.3:(i.s||0.5);}
+
+// ---- A: Plate -------------------------------------------------------------
+function bez(p0,p1,p2,p3,t){var u=1-t;return [u*u*u*p0[0]+3*u*u*t*p1[0]+3*u*t*t*p2[0]+t*t*t*p3[0],u*u*u*p0[1]+3*u*u*t*p1[1]+3*u*t*t*p2[1]+t*t*t*p3[1]];}
+function bezT(p0,p1,p2,p3,t){var u=1-t;return [3*u*u*(p1[0]-p0[0])+6*u*t*(p2[0]-p1[0])+3*t*t*(p3[0]-p2[0]),3*u*u*(p1[1]-p0[1])+6*u*t*(p2[1]-p1[1])+3*t*t*(p3[1]-p2[1])];}
+function pol(r,a){return [r*Math.cos(a),r*Math.sin(a)];}
+function P(p){return p[0].toFixed(1)+" "+p[1].toFixed(1);}
+function drawPlate(svg){
+  var R0=64, n=CAPS.length, focus=sel&&phone?byId[sel.cap]:null;
+  var fs=phone?30:13, ifs=phone?20:11;
+  var geo=[];
+  CAPS.forEach(function(c,i){
+    var a=-Math.PI/2+i*2*Math.PI/n, d=(hash(c.id)-.5)*0.22, L=200+c.ideas.length*18;
+    var p0=pol(R0-4,a),p1=pol(R0+L*.35,a+d),p2=pol(R0+L*.7,a-d*.8),p3=pol(R0+L,a+d*.3);
+    geo.push({c:c,a:a,p:[p0,p1,p2,p3],L:L});
+  });
+  var g0=el("g",{},svg);
+  // ground rings
+  [150,260,360].forEach(function(r){el("circle",{cx:0,cy:0,r:r,class:"ground","stroke-width":1,"stroke-dasharray":"1 7",opacity:.8},g0);});
+  geo.forEach(function(G){
+    var c=G.c, p=G.p, isSel=sel&&sel.cap===c.id;
+    var g=el("g",{class:"item"+(sel&&!isSel?" dim":""),"data-cap":c.id},svg);
+    var d="M"+P(p[0])+" C"+P(p[1])+" "+P(p[2])+" "+P(p[3]);
+    // ideas first, under the capability
+    var m=c.ideas.length;
+    c.ideas.forEach(function(it,k){
+      var t=0.42+0.5*(k+0.5)/m, b=bez(p[0],p[1],p[2],p[3],t), tg=bezT(p[0],p[1],p[2],p[3],t);
+      var ang=Math.atan2(tg[1],tg[0]), side=(k%2?1:-1), off=it.st==="established"?0.9:0.62;
+      var len=it.st==="withered"?40:(it.st==="established"?34:Math.min(120,46+ideaS(it)*6));
+      var a2=ang+side*off, e=[b[0]+Math.cos(a2)*len,b[1]+Math.sin(a2)*len];
+      var cpt=[b[0]+Math.cos(ang+side*off*.35)*len*.55,b[1]+Math.sin(ang+side*off*.35)*len*.55];
+      if(it.st==="established"){ // merges in: comes from outside and joins along the tube
+        cpt=[b[0]+Math.cos(ang)*len*.7,b[1]+Math.sin(ang)*len*.7];
+      }
+      var dd="M"+P(b)+" Q"+P(cpt)+" "+P(e);
+      if(it.st==="established"){ // a tributary: runs beside the tube and joins it tangentially
+        var nx=-Math.sin(ang)*side, ny=Math.cos(ang)*side, tx0=Math.cos(ang), ty0=Math.sin(ang);
+        e=[b[0]-tx0*46+nx*16,b[1]-ty0*46+ny*16];
+        dd="M"+P(e)+" Q"+P([b[0]-tx0*16+nx*2,b[1]-ty0*16+ny*2])+" "+P(b);
+      }
+      var w=it.st==="withered"?2:W(ideaS(it));
+      var gi=el("g",{class:"item"+(sel&&isSel&&sel.idea!=null&&sel.idea!==k?" dim":""),"data-cap":c.id,"data-idea":k},g);
+      if(isSel&&sel.idea===k) el("path",{d:dd,class:"halo","stroke-width":w+10},gi);
+      var path=el("path",{d:dd,class:ideaCls(it),"stroke-width":w},gi);
+      if(it.st==="withered") el("circle",{cx:e[0],cy:e[1],r:phone?7:5.5,class:"knot","stroke-width":phone?3.5:2.5},gi);
+      el("path",{d:dd,class:"hit","stroke-width":18},gi);
+      if(focus===c||(!phone&&isSel)){
+        var lx=e[0]+Math.cos(a2)*8, ly=e[1]+Math.sin(a2)*8, anc=Math.cos(a2)>0.2?"start":(Math.cos(a2)<-0.2?"end":"middle");
+        var tx=el("text",{x:lx,y:ly+4,"font-size":ifs,"text-anchor":anc,class:it.st==="withered"?"lbl-lesson":"lbl-m"},gi);
+        tx.textContent=it.n.length>34?it.n.slice(0,32)+"…":it.n;
+      }
+    });
+    if(isSel&&sel.idea==null) el("path",{d:d,class:"halo","stroke-width":W(c.s)+12},g);
+    var tube=el("path",{d:d,class:capCls(c),"stroke-width":W(c.s)},g);
+    el("path",{d:d,class:"hit","stroke-width":Math.max(24,W(c.s)+10)},g);
+    // label
+    var la=Math.atan2(p[3][1],p[3][0]), lp=pol(Math.hypot(p[3][0],p[3][1])+18,la);
+    var anc=Math.cos(la)>0.25?"start":(Math.cos(la)<-0.25?"end":"middle");
+    var ly=lp[1]+(Math.sin(la)>0.6?fs:(Math.sin(la)<-0.6?-4:5));
+    var t1=el("text",{x:lp[0],y:ly,"font-size":fs,"text-anchor":anc,class:"lbl"},g); t1.textContent=c.name;
+    if(!phone){var t2=el("text",{x:lp[0],y:ly+15,"font-size":11,"text-anchor":anc,class:"lbl-fig"},g); t2.textContent=fmt(c.s)+(c.fading?" ↓":"");}
+    g.addEventListener("click",function(ev){var gi=ev.target.closest("[data-idea]");select(c.id,gi?+gi.getAttribute("data-idea"):null);});
+  });
+  // the product, at the centre
+  el("circle",{cx:0,cy:0,r:R0,class:"ground","stroke-width":10},svg);
+  el("circle",{cx:0,cy:0,r:R0-5,fill:"var(--surface-sunk)"},svg);
+  var t=el("text",{x:0,y:phone?2:-2,"text-anchor":"middle","font-size":phone?28:22,class:"lbl",style:"font-family:var(--font-display);font-weight:750"},svg); t.textContent="Physa";
+  if(!phone){var t3=el("text",{x:0,y:16,"text-anchor":"middle","font-size":10.5,class:"lbl-m"},svg); t3.textContent="the product";}
+  // viewBox: whole disc, or zoomed to the selected capability on phone
+  if(focus){var G=geo.filter(function(x){return x.c===focus;})[0];var cx=G.p[3][0]*.6,cy=G.p[3][1]*.6;svg.setAttribute("viewBox",(cx-330)+" "+(cy-190)+" 660 600");}
+  else svg.setAttribute("viewBox",phone?"-580 -540 1160 1080":"-520 -470 1040 940");
+}
+
+// Labels that never overlap: each tries its preferred spot, then steps away along its own direction and sideways, with a leader line when moved.
+function placeLabels(L,parent,vb){
+  var boxes=[];
+  function box(x,y,w,h,anc){var x0=anc==="start"?x:(anc==="end"?x-w:x-w/2);return [x0-3,y-h*.8,x0+w+3,y+h*.3];}
+  function hits(b){return boxes.some(function(o){return !(b[2]<o[0]||b[0]>o[2]||b[3]<o[1]||b[1]>o[3]);});}
+  L.forEach(function(l){
+    var text=l.t.length>38?l.t.slice(0,36)+"…":l.t,w=text.length*l.fs*.55,h=l.fs*1.25,ca=Math.cos(l.a),sa=Math.sin(l.a);
+    var anc=ca>.3?"start":(ca<-.3?"end":"middle"),best=null;
+    if(vb){var x0=l.px+ca*l.off;if(anc==="end"&&x0-w<vb[0]+6)anc="start";else if(anc==="start"&&x0+w>vb[0]+vb[2]-6)anc="end";else if(anc==="middle"){if(x0-w/2<vb[0]+6)anc="start";else if(x0+w/2>vb[0]+vb[2]-6)anc="end";}}
+    var tries=[0];for(var i=1;i<10;i++){tries.push(i,-i);}
+    for(var t=0;t<tries.length&&!best;t++){var k=tries[t],x=l.px+ca*l.off,y=l.py+sa*l.off+l.fs*.35+k*h*.9;var b=box(x,y,w,h,anc);if(!hits(b))best={x:x,y:y,b:b,k:k};}
+    if(!best){var x2=l.px+ca*l.off,y2=l.py+l.fs*.35;best={x:x2,y:y2,b:box(x2,y2,w,h,anc),k:0};}
+    boxes.push(best.b);
+    if(best.k!==0) el("line",{x1:l.px,y1:l.py,x2:best.x-(anc==="start"?2:(anc==="end"?-2:0)),y2:best.y-l.fs*.35,class:"leader"},l.g);
+    var tx=el("text",{x:best.x,y:best.y,"font-size":l.fs,"text-anchor":anc,class:l.cls},l.g);tx.textContent=text;
+  });
+}
+// ---- A4: Grown -------------------------------------------------------------
+// One body. Every vein is a tapering filled shape; all of them are fused into one silhouette by a blur-and-threshold
+// filter (a mask), so joins fillet like real tubes and nothing floats. Colour is painted inside that silhouette.
+function sampleCR(pts,step){ // dense points along the same Catmull-Rom curve crPath draws
+  var n=pts.length,out=[pts[0]];
+  for(var i=0;i<n-1;i++){
+    var p0=pts[Math.max(0,i-1)],p1=pts[i],p2=pts[i+1],p3=pts[Math.min(n-1,i+2)];
+    var c1=[p1[0]+(p2[0]-p0[0])/6,p1[1]+(p2[1]-p0[1])/6],c2=[p2[0]-(p3[0]-p1[0])/6,p2[1]-(p3[1]-p1[1])/6];
+    var k=Math.max(2,Math.ceil(Math.hypot(p2[0]-p1[0],p2[1]-p1[1])/step));
+    for(var j=1;j<=k;j++)out.push(bez(p1,c1,c2,p2,j/k));
+  }
+  return out;
+}
+function tubeD(d,r0,r1){ // a filled tube along dense points d, radius r0 at the start easing to r1 at the end
+  var L=[],R=[],n=d.length;
+  for(var i=0;i<n;i++){
+    var a=d[Math.max(0,i-1)],b=d[Math.min(n-1,i+1)],dx=b[0]-a[0],dy=b[1]-a[1],l=Math.hypot(dx,dy)||1,t=i/(n-1),r=r0+(r1-r0)*Math.pow(t,.85);
+    L.push([d[i][0]-dy/l*r,d[i][1]+dx/l*r]);R.push([d[i][0]+dy/l*r,d[i][1]-dx/l*r]);
+  }
+  var s="M"+L.map(P).join(" L");
+  var e=d[n-1],st=d[0];
+  s+=" A"+r1.toFixed(2)+" "+r1.toFixed(2)+" 0 0 0 "+P(R[n-1])+" L"+R.reverse().map(P).join(" L")+" A"+r0.toFixed(2)+" "+r0.toFixed(2)+" 0 0 0 "+P(L[0])+"Z";
+  return s;
+}
+function lineD(d){return "M"+d.map(P).join(" L");}
+var NOANIM=false;
+function drawGrown(svg){
+  var R0=52,fs=phone?30:13,ifs=phone?20:11,focus=sel?byId[sel.cap]:null,LB=[];
+  var wts=CAPS.map(function(c){return 1+Math.sqrt(c.s)/3;}),tot=wts.reduce(function(a,b){return a+b;},0),acc=-Math.PI/2-Math.PI*wts[0]/tot;
+  var S=CAPS.map(function(c,i){var hw=Math.PI*wts[i]/tot,a=acc+hw;acc+=2*hw;return {c:c,a:a,hw:hw,R:(165+33*Math.sqrt(c.s))*(c.fading?.86:1),r:rng(c.id)};});
+  S.forEach(function(sx){var m=sx.c.ideas.length;sx.ia=sx.c.ideas.map(function(it,k){return sx.a+((k+.5)/m-.5)*sx.hw*1.5+(hash(it.n)-.5)*sx.hw*.15;});});
+  function angDiff(x,y){var d=x-y;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;return d;}
+  function reach(a){
+    var num=0,den=0;S.forEach(function(sx){var d=angDiff(a,sx.a),w=Math.exp(-Math.pow(d/(sx.hw*.9),2));num+=w*sx.R;den+=w;});
+    var r=num/den*(1+.035*Math.sin(a*11+1.3)+.025*Math.sin(a*23+.4)+.012*Math.sin(a*41+2));
+    S.forEach(function(sx){sx.c.ideas.forEach(function(it,k){if(it.st==="growing"||it.st==="fading"){var d=angDiff(a,sx.ia[k]),b=(it.st==="fading"?8:16)+9*Math.sqrt(it.s);r+=.7*b*Math.exp(-Math.pow(d/.08,2));}});});
+    return r;
+  }
+  var defs=el("defs",{},svg);
+  var f=el("filter",{id:"goo",x:"-5%",y:"-5%",width:"110%",height:"110%","color-interpolation-filters":"sRGB"},defs);
+  el("feGaussianBlur",{stdDeviation:2.2},f);el("feColorMatrix",{values:"0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 18 -7.5"},f);
+  var mask=el("mask",{id:"veins",maskUnits:"userSpaceOnUse",x:-1500,y:-1500,width:3000,height:3000},defs);
+  var mg=el("g",{filter:"url(#goo)",fill:"#fff"},mask);
+  var trailMask=el("mask",{id:"trails",maskUnits:"userSpaceOnUse",x:-1500,y:-1500,width:3000,height:3000},defs);
+  var tg=el("g",{filter:"url(#goo)",fill:"#fff"},trailMask);
+  // the body
+  var body=[];for(var i=0;i<200;i++){var a0=i/200*2*Math.PI;body.push(pol(reach(a0),a0));}
+  el("path",{d:crPath(body,true),fill:"var(--tube-idea)","fill-opacity":.09,stroke:"var(--tube-idea)","stroke-width":1.5,"stroke-opacity":.45},svg);
+  var gTrail=el("g",{mask:"url(#trails)"},svg),gTrailTop=el("g",{},svg);
+  var gPaint=el("g",{mask:"url(#veins)"},svg),gCore=el("g",{},svg),gHit=el("g",{},svg),gTop=el("g",{},svg);
+  // the product, fused into the network
+  var blob=[];for(var b=0;b<28;b++){var ab=b/28*2*Math.PI;blob.push(pol(R0*(1+.07*Math.sin(ab*3+.7)+.04*Math.sin(ab*5)),ab));}
+  var blobD=crPath(blob,true);el("path",{d:blobD},mg);
+  S.forEach(function(sx){
+    var c=sx.c,isSel=sel&&sel.cap===c.id,dim=sel&&!isSel,r=sx.r,capF=c.fading?"f-faded":"f-cap",capS=c.fading?"t-faded":"t-cap";
+    var gp=el("g",{class:"item"+(dim?" dim":"")},gPaint),gh=el("g",{"data-cap":c.id},gHit);
+    var wMain=W(c.s),tip=pol(sx.R*.9,sx.a+(r()-.5)*sx.hw*.3),mainPts=wob(pol(R0*.5,sx.a),tip,c.id+"m",9,6),md=sampleCR(mainPts,3);
+    var mainShape=tubeD(md,wMain/2,Math.max(1.9,wMain*.28));
+    el("path",{d:mainShape},mg);
+    // map entries and loops, shown when the capability is selected
+    var nodes=[],m=ENTRIES[c.id]||5;for(var j=0;j<m;j++){var rr=R0+(.3+.58*r())*(sx.R*.9-R0),aa=sx.a+(r()*2-1)*sx.hw*.75;nodes.push(pol(rr,aa));}
+    var base=md.slice(Math.floor(md.length*.12)),placed=[],det=[];
+    nodes.forEach(function(nd,j){
+      var best=null,bd=1e9;base.concat(placed).forEach(function(p){var d=Math.hypot(p[0]-nd[0],p[1]-nd[1]);if(d<bd){bd=d;best=p;}});
+      det.push({d:sampleCR(wob(best,nd,c.id+"n"+j,6),3),r0:placed.indexOf(best)>=0?2:Math.max(2.2,wMain*.22),r1:1.8});
+      if(placed.length>1&&r()<.6){var b2=null,d2=1e9;placed.forEach(function(p){var d=Math.hypot(p[0]-nd[0],p[1]-nd[1]);if(p!==best&&d<d2){d2=d;b2=p;}});
+        if(b2&&d2<140)det.push({d:sampleCR(wob(nd,b2,c.id+"l"+j,5),3),r0:1.8,r1:1.8});}
+      placed.push(nd);
+    });
+    // capability paint, wide underneath: it fills the fillets
+    el("path",{d:lineD(md),class:capS,"stroke-width":wMain+10},gp);
+    var hitMain=el("path",{d:lineD(md),class:"hit","stroke-width":Math.max(22,wMain+12)},gh);
+    var ideaTop=[];
+    c.ideas.forEach(function(it,k){
+      var a=sx.ia[k],edge=reach(a),gi=el("g",{class:"item"+(isSel&&sel.idea!=null&&sel.idea!==k?" dim":"")},gp),ghi=el("g",{"data-idea":k},gh);
+      // start on the capability's own vein, beyond its first third, nearest in angle
+      var from=null,fd=1e9,startI=0;md.forEach(function(p,ix){if(ix<md.length*.4)return;var d=Math.abs(angDiff(Math.atan2(p[1],p[0]),a))*220+Math.abs(Math.hypot(p[0],p[1])-edge*.62);if(d<fd){fd=d;from=p;startI=ix;}});
+      var localR=(wMain/2)+((Math.max(1.2,wMain*.28))-(wMain/2))*Math.pow(startI/(md.length-1),.85);
+      var hl=isSel&&sel.idea===k;
+      if(it.st==="withered"){
+        var s0=pol(edge+2,a),s1=pol(edge+46+hash(it.n)*30,a+(hash(it.n+"t")-.5)*.12);
+        var td=sampleCR(wob(from,s0,it.n+"i",6,5).concat(wob(s0,s1,it.n,8,4).slice(1)),3);
+        el("path",{d:tubeD(td,Math.min(localR*.7,2.2),3.2)},tg);
+        el("path",{d:lineD(td),class:"t-faded","stroke-width":10,"stroke-opacity":hl?.9:.5},gTrail);
+        el("circle",{cx:s1[0],cy:s1[1],r:phone?7:5.5,class:"knot","stroke-width":phone?3.5:2.5,opacity:dim?.3:1},gTrailTop);
+        el("path",{d:lineD(td),class:"hit","stroke-width":16},ghi);
+        if(focus===c)LB.push({px:s1[0],py:s1[1],a:a,off:10,t:it.n,cls:"lbl-lesson",fs:ifs,g:gTop});
+        return;
+      }
+      var wI=W(ideaS(it)),r0=Math.min(wI/2,localR*.9);
+      if(it.st==="established"){
+        var en=pol(Math.hypot(from[0],from[1])+44,a),ed=sampleCR(wob(from,en,it.n,6),3);
+        el("path",{d:tubeD(ed,Math.max(1.9,r0),Math.max(1.8,r0*.6))},mg);el("circle",{cx:en[0],cy:en[1],r:3.4},mg);
+        el("path",{d:lineD(ed),class:capS,"stroke-width":wI+8},gi);el("circle",{cx:en[0],cy:en[1],r:7,class:capF},gi);
+        el("path",{d:lineD(ed),class:"hit","stroke-width":16},ghi);return;
+      }
+      var icls=it.st==="fading"?"t-faded":"t-idea",tipI=pol(edge-4,a),idd=sampleCR(wob(from,tipI,it.n,8),3);
+      el("path",{d:tubeD(idd,Math.max(1.9,r0),Math.max(1.7,r0*.7))},mg);
+      el("path",{d:lineD(idd),class:icls,"stroke-width":wI+7},gi);
+      // the growing front: fine veins fanning past the margin
+      var nf=it.st==="fading"?3:4+Math.round(Math.sqrt(it.s)),rf=rng(it.n+"f");
+      for(var q=0;q<nf;q++){var fa=a+((q+.5)/nf-.5)*.3,fl=10+6*Math.sqrt(it.s),fe=pol(edge+fl*(.5+.5*rf()),fa+(rf()-.5)*.05);
+        var fd2=sampleCR(wob(idd[Math.max(0,idd.length-4-Math.floor(rf()*4))],fe,it.n+q,3,3),2.5);
+        el("path",{d:tubeD(fd2,Math.max(1.7,r0*.6),1)},mg);el("path",{d:lineD(fd2),class:icls,"stroke-width":6},gi);}
+      ideaTop.push({d:idd,w:wI,hl:hl});
+      el("path",{d:lineD(idd),class:"hit","stroke-width":18},ghi);
+      if(focus===c){var lpp=pol(edge+12+6*Math.sqrt(it.s),a);LB.push({px:lpp[0],py:lpp[1],a:a,off:8,t:it.n,cls:"lbl-m",fs:ifs,g:gTop});}
+    });
+    // the capability's own tube on top, exact, so ideas flare out of it rather than over it
+    el("path",{d:mainShape,class:capF},gp);
+    // a lighter core: the streaming inside the tube
+    el("path",{d:lineD(md.slice(0,Math.floor(md.length*.9))),stroke:"var(--surface)","stroke-opacity":dim?.05:.16,"stroke-width":Math.max(1,wMain*.28),fill:"none","stroke-linecap":"round"},gCore);
+    // label
+    var la=sx.a,lr=Math.max(reach(la-.1),reach(la),reach(la+.1))+(phone?44:30),lp2=pol(lr,la),anc=Math.cos(la)>.3?"start":(Math.cos(la)<-.3?"end":"middle"),ly=lp2[1]+(Math.sin(la)>.7?fs*.8:(Math.sin(la)<-.7?0:5));
+    var gl=el("g",{class:"item"+(dim?" dim":""),"data-cap":c.id},gTop);
+    if(focus===c)LB.unshift({px:lp2[0],py:ly-5,a:la,off:0,t:c.name,cls:"lbl",fs:fs*1.15,g:gl});
+    else if(!focus){var t1=el("text",{x:lp2[0],y:ly,"font-size":fs,"text-anchor":anc,class:"lbl"},gl);t1.textContent=c.name;
+      if(!phone){var t2=el("text",{x:lp2[0],y:ly+15,"font-size":11,"text-anchor":anc,class:"lbl-fig"},gl);t2.textContent=fmt(c.s)+(c.fading?" ↓":"");}}
+    [gh,gl].forEach(function(x){x.addEventListener("click",function(ev){var gi=ev.target.closest("[data-idea]");select(c.id,gi?+gi.getAttribute("data-idea"):null);});});
+  });
+  // territory hit areas under everything, so a tap anywhere in a capability's part of the body selects it
+  S.forEach(function(sx){var w=[[0,0]];for(var t=-1;t<=1.001;t+=.1){var aa=sx.a+t*sx.hw;w.push(pol(reach(aa),aa));}
+    var hw=el("path",{d:"M"+w.map(P).join(" L")+"Z",class:"hitf","data-cap":sx.c.id},gHit);gHit.insertBefore(hw,gHit.firstChild);
+    hw.addEventListener("click",function(){select(sx.c.id,null);});});
+  el("path",{d:blobD,class:"f-cap"},gPaint);
+  var t=el("text",{x:0,y:phone?9:6,"text-anchor":"middle","font-size":phone?26:19,style:"font-family:var(--font-display);font-weight:750;fill:var(--on-accent);pointer-events:none"},gTop);t.textContent="Physa";
+  var vb;
+  if(focus){var F=S.filter(function(x){return x.c===focus;})[0],cp=pol(F.R*.66,F.a);vb=phone?[cp[0]-300,cp[1]-240,600,600]:[cp[0]-380,cp[1]-340,760,680];}
+  else vb=phone?[-600,-560,1200,1120]:[-560,-500,1120,1000];
+  placeLabels(LB,gTop,vb);
+  svg.setAttribute("viewBox",vb.join(" "));
+}
+
+// ---- A2: Plasmodium -------------------------------------------------------
+// One body, one margin, a vein mesh with loops inside it. Deterministic from names, so the Go core can draw the same picture.
+var ENTRIES={confidence:5,"earned-release":7,engine:13,harnesses:9,ideas:6,init:6,learning:6,map:8,rollback:4,signals:8,slices:6,strength:7,views:4};
+function rng(seed){var a=Math.floor(hash(seed)*4294967295)>>>0;return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function crPath(pts,closed){ // Catmull-Rom through points, as cubic beziers
+  var n=pts.length,d="M"+P(pts[0]);
+  var last=closed?n:n-1;
+  for(var i=0;i<last;i++){
+    var p0=pts[(i-1+n)%n],p1=pts[i],p2=pts[(i+1)%n],p3=pts[(i+2)%n];
+    if(!closed){if(i===0)p0=p1;if(i+2>=n)p3=p2;}
+    d+=" C"+P([p1[0]+(p2[0]-p0[0])/6,p1[1]+(p2[1]-p0[1])/6])+" "+P([p2[0]-(p3[0]-p1[0])/6,p2[1]-(p3[1]-p1[1])/6])+" "+P(p2);
+  }
+  return d+(closed?"Z":"");
+}
+function wob(a,b,seed,amp,k){ // a meandering vein from a to b
+  var r=rng(seed),dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1,nx=-dy/L,ny=dx/L,pts=[a];k=k||Math.max(3,Math.round(L/28));
+  for(var i=1;i<k;i++){var t=i/k,o=(r()-.5)*2*amp*Math.sin(Math.PI*t);pts.push([a[0]+dx*t+nx*o,a[1]+dy*t+ny*o]);}
+  pts.push(b);return pts;
+}
+function drawPlasmo(svg,calm){
+  var R0=52,n=CAPS.length,fs=phone?30:13,ifs=phone?20:11,focus=sel?byId[sel.cap]:null,LB=[];
+  // sectors: wider for stronger capabilities, order fixed by the map
+  var wts=CAPS.map(function(c){return 1+Math.sqrt(c.s)/3;}),tot=wts.reduce(function(a,b){return a+b;},0),acc=-Math.PI/2-Math.PI*wts[0]/tot;
+  var S=CAPS.map(function(c,i){var hw=Math.PI*wts[i]/tot,a=acc+hw;acc+=2*hw;return {c:c,a:a,hw:hw,R:(165+33*Math.sqrt(c.s))*(c.fading?.86:1),r:rng(c.id)};});
+  // ideas' angles and bulges
+  S.forEach(function(sx){var m=sx.c.ideas.length;sx.ia=sx.c.ideas.map(function(it,k){return sx.a+((k+.5)/m-.5)*sx.hw*1.5+(hash(it.n)-.5)*sx.hw*.15;});});
+  function angDiff(x,y){var d=x-y;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;return d;}
+  function reach(a){ // the margin's radius at angle a: blend of neighbouring sectors, noise, and growing ideas' bulges
+    var num=0,den=0;S.forEach(function(sx){var d=angDiff(a,sx.a),w=Math.exp(-Math.pow(d/(sx.hw*.9),2));num+=w*sx.R;den+=w;});
+    var r=num/den*(1+.035*Math.sin(a*11+1.3)+.025*Math.sin(a*23+.4));
+    S.forEach(function(sx){sx.c.ideas.forEach(function(it,k){if(it.st==="growing"||it.st==="fading"){var d=angDiff(a,sx.ia[k]),b=(it.st==="fading"?8:16)+9*Math.sqrt(it.s);r+=(calm?.6:1)*b*Math.exp(-Math.pow(d/.075,2));}});});
+    return r;
+  }
+  var body=[];for(var i=0;i<180;i++){var a=i/180*2*Math.PI;body.push(pol(reach(a),a));}
+  var gBody=el("g",{},svg);
+  el("path",{d:crPath(body,true),fill:"var(--tube-idea)","fill-opacity":.09,stroke:"var(--tube-idea)","stroke-width":2,"stroke-opacity":.5},gBody);
+  var gTrail=el("g",{},svg),gVein=el("g",{},svg),gTop=el("g",{},svg);
+  S.forEach(function(sx){
+    var c=sx.c,isSel=sel&&sel.cap===c.id,dim=sel&&!isSel,r=sx.r,cls=c.fading?"t-faded":"t-cap",dotF=c.fading?"f-faded":"f-cap";
+    var g=el("g",{class:"item"+(dim?" dim":""),"data-cap":c.id},gVein);
+    // hit wedge for the whole territory
+    var wedge=[[0,0]];for(var t=-1;t<=1.001;t+=.1){var aa=sx.a+t*sx.hw;wedge.push(pol(reach(aa),aa));}
+    var hitw=el("path",{d:"M"+wedge.map(P).join(" L")+"Z",class:"hitf"},g);
+    if(isSel&&sel.idea==null&&!calm) el("path",{d:"M"+wedge.map(P).join(" L")+"Z",fill:"var(--tube-idea)","fill-opacity":.08},g);
+    // main vein
+    var tip=pol(sx.R*.9,sx.a+(r()-.5)*sx.hw*.3), mainPts=wob(pol(R0-6,sx.a),tip,c.id+"m",calm?6:14,calm?5:0);
+    var detail=!calm||isSel;
+    var mainD=crPath(mainPts,false), wMain=W(c.s);
+    if(isSel&&sel.idea==null) el("path",{d:mainD,class:"halo","stroke-width":wMain+10},g);
+    // map entries as food: nodes joined to the vein or to each other, with loops
+    var anchors=[];for(var q=0;q<=20;q++){anchors.push(bez.apply(null,[mainPts[0],mainPts[0],mainPts[mainPts.length-1],mainPts[mainPts.length-1],q/20]));}
+    anchors=[];for(var q2=1;q2<mainPts.length;q2++)anchors.push(mainPts[q2]);
+    var nodes=[],m=ENTRIES[c.id]||5;
+    for(var j=0;j<m;j++){var rr=R0+(.25+.62*r())*(sx.R*.9-R0),aa2=sx.a+(r()*2-1)*sx.hw*.78;nodes.push(pol(rr,aa2));}
+    var wSec=Math.max(1.4,wMain*.34), placed=[];
+    nodes.forEach(function(nd,j){
+      var best=null,bd=1e9;anchors.concat(placed).forEach(function(p){var d=Math.hypot(p[0]-nd[0],p[1]-nd[1]);if(d<bd){bd=d;best=p;}});
+      if(detail) el("path",{d:crPath(wob(best,nd,c.id+"n"+j,7),false),class:cls,"stroke-width":placed.indexOf(best)>=0?1.3:wSec},g);
+      // a loop: join to the second-nearest other node when close
+      if(placed.length>1&&r()<.6){var b2=null,d2=1e9;placed.forEach(function(p){var d=Math.hypot(p[0]-nd[0],p[1]-nd[1]);if(p!==best&&d<d2){d2=d;b2=p;}});
+        if(detail&&b2&&d2<140) el("path",{d:crPath(wob(nd,b2,c.id+"l"+j,6),false),class:cls,"stroke-width":1.1},g);}
+      placed.push(nd);
+    });
+    el("path",{d:mainD,class:cls,"stroke-width":wMain},g);
+    if(isSel&&sel.idea==null) el("path",{d:mainD,class:"flow","stroke-width":Math.max(1.5,wMain*.4)},g);
+    if(detail) nodes.forEach(function(nd){el("circle",{cx:nd[0],cy:nd[1],r:3.2,class:dotF},g);});
+    // ideas
+    c.ideas.forEach(function(it,k){
+      var a=sx.ia[k],gi=el("g",{class:"item"+(isSel&&sel.idea!=null&&sel.idea!==k?" dim":""),"data-idea":k},g),edge=reach(a);
+      // nearest vein point to start from
+      var from=null,fd=1e9;(calm?anchors.slice(Math.floor(anchors.length*.45)):anchors.concat(nodes)).forEach(function(p){var ang=Math.atan2(p[1],p[0]);var d=Math.abs(angDiff(ang,a))*200+Math.abs(Math.hypot(p[0],p[1])-edge*.6);if(d<fd){fd=d;from=p;}});
+      var hl=isSel&&sel.idea===k;
+      if(it.st==="withered"){ // slime trail beyond the margin: where the network went and came back from
+        var s0=pol(edge-4,a),s1=pol(edge+46+hash(it.n)*30,a+(hash(it.n+"t")-.5)*.12),outPts=wob(s0,s1,it.n,9,4),inPts=wob(from,s0,it.n+"i",6,4);
+        el("path",{d:crPath(outPts,false),class:"t-faded","stroke-width":calm?7:11,"stroke-opacity":calm?.18:.28},gTrail);
+        var tr=crPath(inPts.concat(outPts.slice(1)),false);
+        if(hl) el("path",{d:tr,class:"halo","stroke-width":16},gi);
+        el("path",{d:tr,class:"t-wither","stroke-width":1.6},gi);
+        el("circle",{cx:s1[0],cy:s1[1],r:phone?7:5.5,class:"knot","stroke-width":phone?3.5:2.5},gi);
+        el("path",{d:tr,class:"hit","stroke-width":18},gi);
+        if(focus===c) LB.push({px:s1[0],py:s1[1],a:a,off:10,t:it.n,cls:"lbl-lesson",fs:ifs,g:gi});
+        return;
+      }
+      if(it.st==="established"){ // just another vein now, with its own food
+        var en=pol(Math.hypot(from[0],from[1])+40,a),dd=crPath(wob(from,en,it.n,6),false);
+        if(hl) el("path",{d:dd,class:"halo","stroke-width":W(it.s)+10},gi);
+        el("path",{d:dd,class:cls,"stroke-width":W(it.s)},gi);el("circle",{cx:en[0],cy:en[1],r:4,class:dotF},gi);el("circle",{cx:from[0],cy:from[1],r:W(it.s)/2+1.5,class:dotF},gi);
+        el("path",{d:dd,class:"hit","stroke-width":16},gi);return;
+      }
+      // growing or fading: a tube to the margin, then the advancing fan
+      var tipI=pol(edge-6,a),di=crPath(wob(from,tipI,it.n,8),false),icls=it.st==="fading"?"t-faded":"t-idea",wI=W(it.s);
+      var front=[];for(var fq=-6;fq<=6;fq++){var fa0=a+fq*.016;front.push(pol(reach(fa0)+3,fa0));}for(var fq2=6;fq2>=-6;fq2--){var fa1=a+fq2*.016;front.push(pol(reach(fa1)-20-Math.abs(fq2)*1.5,fa1));}
+      if(!calm) el("path",{d:crPath(front,true),class:it.st==="fading"?"f-faded":"f-idea","fill-opacity":it.st==="fading"?.25:.3},gi);
+      var fan=el("g",{},gi),nf=calm?(it.st==="fading"?2:3):(it.st==="fading"?3:5+Math.round(Math.sqrt(it.s)*1.5)),rf=rng(it.n+"f");
+      for(var f=0;f<nf;f++){var fa=a+((f+.5)/nf-.5)*(calm?.22:.42),fl=calm?(8+4*Math.sqrt(it.s)):((it.st==="fading"?10:16)+9*Math.sqrt(it.s));var fe=pol(edge-4+fl*(.55+.4*rf()),fa),fs0=tipI;
+        el("path",{d:crPath(wob(fs0,fe,it.n+f,3,3),false),class:icls,"stroke-width":.9+rf()*.6,"stroke-opacity":.85},fan);}
+      if(hl) el("path",{d:di,class:"halo","stroke-width":wI+10},gi);
+      el("path",{d:di,class:icls,"stroke-width":wI},gi);
+      el("circle",{cx:from[0],cy:from[1],r:wI/2+1.2,class:it.st==="fading"?"f-faded":"f-idea"},gi);
+      if(hl) el("path",{d:di,class:"flow","stroke-width":Math.max(1.2,wI*.45)},gi);
+      el("path",{d:di,class:"hit","stroke-width":18},gi);
+      if(focus===c){var lpp=pol(edge+8+(calm?6:9)*Math.sqrt(it.s),a);LB.push({px:lpp[0],py:lpp[1],a:a,off:8,t:it.n,cls:"lbl-m",fs:ifs,g:gi});}
+    });
+    // label outside the margin
+    var la=sx.a,lr=Math.max(reach(la-.1),reach(la),reach(la+.1))+(phone?44:30),lp2=pol(lr,la),anc=Math.cos(la)>.3?"start":(Math.cos(la)<-.3?"end":"middle"),ly=lp2[1]+(Math.sin(la)>.7?fs*.8:(Math.sin(la)<-.7?0:5));
+    var gl=el("g",{class:"item"+(dim?" dim":""),"data-cap":c.id},gTop);
+    if(focus===c){LB.unshift({px:lp2[0],py:ly-5,a:la,off:0,t:c.name,cls:"lbl",fs:fs*1.15,g:gl,fixed:true});}
+    else if(!focus){var t1=el("text",{x:lp2[0],y:ly,"font-size":fs,"text-anchor":anc,class:"lbl"},gl);t1.textContent=c.name;
+    if(!phone){var t2=el("text",{x:lp2[0],y:ly+15,"font-size":11,"text-anchor":anc,class:"lbl-fig"},gl);t2.textContent=fmt(c.s)+(c.fading?" ↓":"");}}
+    [g,gl].forEach(function(x){x.addEventListener("click",function(ev){var gi=ev.target.closest("[data-idea]");select(c.id,gi?+gi.getAttribute("data-idea"):null);});});
+  });
+  // the product: the first food source, where the network started
+  var blob=[];for(var b=0;b<24;b++){var ab=b/24*2*Math.PI;blob.push(pol(R0*(1+.06*Math.sin(ab*3+.7)+.04*Math.sin(ab*5)),ab));}
+  el("path",{d:crPath(blob,true),class:"f-cap"},gTop);
+  var t=el("text",{x:0,y:phone?9:4,"text-anchor":"middle","font-size":phone?26:19,style:"font-family:var(--font-display);font-weight:750;fill:var(--on-accent)"},gTop);t.textContent="Physa";
+  placeLabels(LB,gTop);
+  if(focus){var F=S.filter(function(x){return x.c===focus;})[0],cp=pol(F.R*.66,F.a);
+    if(phone)svg.setAttribute("viewBox",(cp[0]-330)+" "+(cp[1]-190)+" 660 600");
+    else svg.setAttribute("viewBox",(cp[0]-380)+" "+(cp[1]-340)+" 760 680");}
+  else svg.setAttribute("viewBox",phone?"-600 -560 1200 1120":"-560 -500 1120 1000");
+}
+
+// ---- B: Mesh --------------------------------------------------------------
+var meshPos=null;
+function layoutMesh(){
+  // deterministic force layout, run once
+  var N=CAPS.map(function(c,i){var a=i/CAPS.length*Math.PI*2;return {c:c,x:Math.cos(a)*250+hash(c.id)*20,y:Math.sin(a)*200,vx:0,vy:0};});
+  var idx={};N.forEach(function(n,i){idx[n.c.id]=i;});
+  for(var it=0;it<500;it++){
+    for(var i=0;i<N.length;i++)for(var j=i+1;j<N.length;j++){var a=N[i],b=N[j],dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy+.01,d=Math.sqrt(d2),f=26000/d2;a.vx+=dx/d*f;a.vy+=dy/d*f;b.vx-=dx/d*f;b.vy-=dy/d*f;}
+    LINKS.forEach(function(l){var a=N[idx[l[0]]],b=N[idx[l[1]]],dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)+.01,k=0.004*(1+Math.sqrt(l[2])),f=(d-170)*k;a.vx+=dx/d*f;a.vy+=dy/d*f;b.vx-=dx/d*f;b.vy-=dy/d*f;});
+    N.forEach(function(n){n.vx-=n.x*0.004;n.vy-=n.y*0.006;n.x+=n.vx*.5;n.y+=n.vy*.5;n.vx*=.6;n.vy*=.6;});
+  }
+  meshPos={};N.forEach(function(n){meshPos[n.c.id]=[n.x,n.y];});
+}
+function drawMesh(svg){
+  if(!meshPos)layoutMesh();
+  var fs=phone?22:13, ifs=phone?18:11;
+  var cx=0,cy=0;CAPS.forEach(function(c){cx+=meshPos[c.id][0];cy+=meshPos[c.id][1];});cx/=CAPS.length;cy/=CAPS.length;
+  var gl=el("g",{},svg);
+  LINKS.forEach(function(l){
+    var a=meshPos[l[0]],b=meshPos[l[1]],mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2,dx=b[0]-a[0],dy=b[1]-a[1],bend=(hash(l[0]+l[1])-.5)*.3;
+    var d="M"+P(a)+" Q"+P([mx-dy*bend,my+dx*bend])+" "+P(b);
+    var on=sel&&(sel.cap===l[0]||sel.cap===l[1]);
+    var cls=(byId[l[0]].fading&&byId[l[1]].fading)?"t-faded":"t-cap";
+    el("path",{d:d,class:cls,"stroke-width":W(l[2]),opacity:sel&&!on?.22:.9},gl);
+  });
+  CAPS.forEach(function(c){
+    var p=meshPos[c.id], isSel=sel&&sel.cap===c.id, linked=sel&&LINKS.some(function(l){return (l[0]===sel.cap&&l[1]===c.id)||(l[1]===sel.cap&&l[0]===c.id);});
+    var g=el("g",{class:"item"+(sel&&!isSel&&!linked?" dim":""),"data-cap":c.id},svg);
+    var out=Math.atan2(p[1]-cy,p[0]-cx), m=c.ideas.length, r=W(c.s)*1.15+6;
+    c.ideas.forEach(function(it,k){
+      var a=out+(k-(m-1)/2)*0.42, len=it.st==="withered"?34:(it.st==="established"?22:Math.min(90,34+ideaS(it)*5));
+      var s0=[p[0]+Math.cos(a)*r*.8,p[1]+Math.sin(a)*r*.8], e=[p[0]+Math.cos(a)*(r+len),p[1]+Math.sin(a)*(r+len)];
+      var cp=[p[0]+Math.cos(a+.25)*(r+len*.5),p[1]+Math.sin(a+.25)*(r+len*.5)];
+      var dd="M"+P(s0)+" Q"+P(cp)+" "+P(e), w=it.st==="withered"?2:W(ideaS(it));
+      var gi=el("g",{class:"item"+(isSel&&sel.idea!=null&&sel.idea!==k?" dim":""),"data-idea":k},g);
+      if(isSel&&sel.idea===k) el("path",{d:dd,class:"halo","stroke-width":w+10},gi);
+      el("path",{d:dd,class:ideaCls(it),"stroke-width":w},gi);
+      if(it.st==="withered") el("circle",{cx:e[0],cy:e[1],r:phone?6.5:5,class:"knot","stroke-width":phone?3:2.5},gi);
+      el("path",{d:dd,class:"hit","stroke-width":16},gi);
+      if(isSel){var tx=el("text",{x:e[0]+Math.cos(a)*8,y:e[1]+Math.sin(a)*8+4,"font-size":ifs,"text-anchor":Math.cos(a)>0?"start":"end",class:it.st==="withered"?"lbl-lesson":"lbl-m"},gi);tx.textContent=it.n.length>30?it.n.slice(0,28)+"…":it.n;}
+    });
+    if(isSel&&sel.idea==null) el("circle",{cx:p[0],cy:p[1],r:r+7,class:"sel-ring","stroke-width":3},g);
+    el("circle",{cx:p[0],cy:p[1],r:r,class:c.fading?"f-faded":"f-cap"},g);
+    el("circle",{cx:p[0],cy:p[1],r:r+8,class:"hitf"},g);
+    var lb=el("text",{x:p[0],y:p[1]-r-10,"text-anchor":"middle","font-size":fs,class:"lbl"},g); lb.textContent=c.name;
+    if(!phone){var f=el("text",{x:p[0],y:p[1]+4,"text-anchor":"middle","font-size":10.5,class:"lbl-fig",style:"fill:var(--on-accent)"},g);f.textContent=fmt(c.s);}
+    g.addEventListener("click",function(ev){var gi=ev.target.closest("[data-idea]");select(c.id,gi?+gi.getAttribute("data-idea"):null);});
+  });
+  var xs=CAPS.map(function(c){return meshPos[c.id][0];}),ys=CAPS.map(function(c){return meshPos[c.id][1];});
+  var x0=Math.min.apply(0,xs)-150,x1=Math.max.apply(0,xs)+150,y0=Math.min.apply(0,ys)-120,y1=Math.max.apply(0,ys)+120;
+  if(phone){var w=x1-x0;svg.setAttribute("viewBox",x0+" "+y0+" "+w+" "+Math.max(w*1.05,y1-y0));}
+  else svg.setAttribute("viewBox",x0+" "+y0+" "+(x1-x0)+" "+(y1-y0));
+}
+
+// ---- C: Strands -----------------------------------------------------------
+var WEEKS=13;
+function capSeries(c){var out=[];for(var w=0;w<WEEKS;w++){var back=WEEKS-1-w, v=c.s-c.tr*back*(1+ (hash(c.id+w)-.5)*.3);out.push(Math.max(1,v));}return out;}
+function ideaSpan(c,it,k){
+  var h=hash(c.id+it.n), b=Math.floor(h*7), e;
+  if(it.st==="growing"||it.st==="fading") e=WEEKS-1;
+  else if(it.st==="established") e=Math.min(WEEKS-2,b+3+Math.floor(hash(it.n)*4));
+  else e=Math.min(WEEKS-2,b+2+Math.floor(hash(it.n+"w")*4));
+  var vals=[];for(var w=b;w<=e;w++){var t=(w-b)/Math.max(1,e-b),v;
+    if(it.st==="withered") v=2.2*Math.sin(Math.PI*Math.min(1,t*1.2))*(1-t)+0.1;
+    else if(it.st==="fading") v=Math.max(.3,2.4*Math.sin(Math.PI*t*.9)+(it.s||.5)*t);
+    else v=0.5+(ideaS(it)-0.5)*Math.pow(t,1.4);
+    vals.push(Math.max(0.1,v));}
+  return {b:b,e:e,v:vals};
+}
+function band(xs,ys,ws){ // a filled tube of varying thickness along a line
+  var top=[],bot=[];for(var i=0;i<xs.length;i++){top.push([xs[i],ys[i]-ws[i]/2]);bot.push([xs[i],ys[i]+ws[i]/2]);}
+  function smooth(pts){var d="";for(var i=0;i<pts.length;i++){if(i===0){d+=P(pts[0]);continue;}var a=pts[i-1],b=pts[i],mx=(a[0]+b[0])/2;d+=" C"+P([mx,a[1]])+" "+P([mx,b[1]])+" "+P(b);}return d;}
+  var r=bot.slice().reverse(), e0=ws[ws.length-1]/2, s0=ws[0]/2;
+  return "M"+smooth(top)+" A"+e0.toFixed(1)+" "+e0.toFixed(1)+" 0 0 1 "+P(bot[bot.length-1])+" C"+smooth(r).replace(/^[^C]*C/,"")+" A"+s0.toFixed(1)+" "+s0.toFixed(1)+" 0 0 1 "+P(top[0])+"Z";
+}
+function drawStrands(svg){
+  var order=CAPS.slice().sort(function(a,b){return b.s-a.s;});
+  var Wd=phone?400:1000, x0=phone?14:150, x1=phone?Wd-14:Wd-90, lane=phone?96:70, top=phone?30:40;
+  var X=function(w){return x0+(x1-x0)*w/(WEEKS-1);};
+  var H=top+order.length*lane+30;
+  svg.setAttribute("viewBox","0 0 "+Wd+" "+H);
+  // week grid
+  for(var w=0;w<WEEKS;w+=2){el("line",{x1:X(w),x2:X(w),y1:top-14,y2:H-24,class:"ground","stroke-width":1,"stroke-dasharray":"1 6"},svg);
+    var t=el("text",{x:X(w),y:top-20,"text-anchor":"middle","font-size":phone?11:11,class:"lbl-fig"},svg);t.textContent=w===WEEKS-1?"now":((WEEKS-1-w)+"w");}
+  order.forEach(function(c,li){
+    var y=top+li*lane+(phone?62:lane*.66), isSel=sel&&sel.cap===c.id;
+    var g=el("g",{class:"item"+(sel&&!isSel?" dim":""),"data-cap":c.id},svg);
+    var ser=capSeries(c), xs=[],ys=[],ws=[];for(var w=0;w<WEEKS;w++){xs.push(X(w));ys.push(y);ws.push(W(ser[w]));}
+    // ideas above the lane
+    var lift=W(c.s)/2+5;
+    c.ideas.forEach(function(it,k){
+      var sp=ideaSpan(c,it,k), wi=it.st==="withered"?2:W(ideaS(it)), yy=y-lift-wi/2, ix=[],iy=[],iw=[]; lift+=wi+4;
+      for(var w=sp.b;w<=sp.e;w++){ix.push(X(w));iy.push(yy);iw.push(it.st==="withered"?Math.max(1.2,W(sp.v[w-sp.b])*.7):W(sp.v[w-sp.b]));}
+      if(it.st==="established"){iy[iy.length-1]=y;}
+      var gi=el("g",{class:"item"+(isSel&&sel.idea!=null&&sel.idea!==k?" dim":""),"data-idea":k},g);
+      var d="M"+P([ix[0],iy[0]]);for(var i=1;i<ix.length;i++){var mx=(ix[i-1]+ix[i])/2;d+=" C"+P([mx,iy[i-1]])+" "+P([mx,iy[i]])+" "+P([ix[i],iy[i]]);}
+      var wNow=iw[iw.length-1];
+      if(isSel&&sel.idea===k) el("path",{d:d,class:"halo","stroke-width":wNow+9},gi);
+      if(ix.length>1 && it.st!=="withered") el("path",{d:d,class:ideaCls(it),"stroke-width":Math.max(1.5,wNow)},gi);
+      else el("path",{d:d,class:"t-wither","stroke-width":2},gi);
+      if(it.st==="withered") el("circle",{cx:ix[ix.length-1],cy:iy[iy.length-1],r:phone?5.5:5,class:"knot","stroke-width":2.5},gi);
+      if(ix.length===1&&it.st!=="withered") el("circle",{cx:ix[0],cy:iy[0],r:2,class:"f-idea"},gi);
+      el("path",{d:d,class:"hit","stroke-width":12},gi);
+    });
+    if(isSel&&sel.idea==null) el("path",{d:band(xs,ys,ws.map(function(v){return v+10;})),fill:"var(--accent-soft)"},g);
+    el("path",{d:band(xs,ys,ws),class:c.fading?"f-faded":"f-cap"},g);
+    el("path",{d:band(xs,ys,ws.map(function(v){return v+16;})),class:"hitf"},g);
+    var lbl=el("text",phone?{x:x0,y:top+li*lane+14,"font-size":14,class:"lbl"}:{x:x0-14,y:y+5,"text-anchor":"end","font-size":13,class:"lbl"},g);lbl.textContent=c.name;
+    var fig=el("text",phone?{x:x1,y:top+li*lane+14,"text-anchor":"end","font-size":11,class:"lbl-fig"}:{x:x1+16,y:y+4,"font-size":11,class:"lbl-fig"},g);fig.textContent=fmt(c.s)+(c.tr<0?" ↓":" ↑");
+    g.addEventListener("click",function(ev){var gi=ev.target.closest("[data-idea]");select(c.id,gi?+gi.getAttribute("data-idea"):null);});
+  });
+}
+
+// ---- key, sheet, list -----------------------------------------------------
+function keyHTML(){
+  return '<span class="px-key__item"><svg width="44" height="16" aria-hidden="true"><path class="t-cap" d="M2 8h40" stroke-width="12"/></svg>Capability</span>'+
+  '<span class="px-key__item"><svg width="44" height="16" aria-hidden="true"><path class="t-idea" d="M2 11 C16 11 24 6 42 4" stroke-width="3"/></svg>Growing idea</span>'+
+  '<span class="px-key__item"><svg width="44" height="16" aria-hidden="true"><path class="t-faded" d="M2 8h40" stroke-width="6"/></svg>Fading</span>'+
+  '<span class="px-key__item"><svg width="44" height="16" aria-hidden="true"><path class="t-wither" d="M2 8h26" stroke-width="2"/><circle class="knot" cx="35" cy="8" r="4.5" stroke-width="2.5"/></svg>Withered, lesson kept</span>'+
+  '<span class="px-key__item"><svg width="44" height="16" aria-hidden="true"><path class="t-cap" d="M2 8h40" stroke-width="8"/><path class="t-cap" d="M34 1 Q30 8 20 8" stroke-width="3"/></svg>Established</span>'+
+  '<span class="px-chip px-chip--experimental" title="Strength is shown as experimental until calibration has data">Thickness is experimental</span>';
+}
+function meter(s,kind){return '<span class="px-strength'+(kind?" px-strength--"+kind:"")+'"><span class="px-strength__tube" style="height:'+W(s).toFixed(1)+'px"></span><span class="px-strength__exp" title="Strength is experimental until calibration has data">'+fmt(s)+' flow</span></span>';}
+function esc(s){return String(s).replace(/[&<>"]/g,function(ch){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch];});}
+function glyph(it){
+  if(it.st==="withered") return '<svg width="24" height="16" aria-hidden="true"><path class="t-wither" d="M2 8h12" stroke-width="2"/><circle class="knot" cx="18" cy="8" r="4" stroke-width="2.5"/></svg>';
+  return '<svg width="24" height="16" aria-hidden="true"><path class="'+ideaCls(it)+'" d="M3 8h18" stroke-width="'+W(ideaS(it)).toFixed(1)+'"/></svg>';
+}
+function sheetHTML(forPhone){
+  var close=forPhone?'<button class="px-btn close" id="pclose">Close</button>':"";
+  if(!sel){
+    return '<span class="kind">The product</span><span class="name">Physa</span><p class="muted">Teams building with agents decide well, see how their product changes, move fast with confidence, and can undo any mistake.</p>'+
+      '<p class="muted" style="font-size:14px">13 capabilities · '+CAPS.reduce(function(a,c){return a+c.ideas.filter(function(i){return i.st==="growing"||i.st==="fading";}).length;},0)+' growing ideas · '+CAPS.reduce(function(a,c){return a+c.ideas.filter(function(i){return i.st==="withered";}).length;},0)+' lessons</p>'+
+      '<span class="px-chip px-chip--experimental" style="align-self:flex-start">Strength is experimental</span><p class="muted" style="font-size:13.5px;line-height:20px">Select a capability or an idea to see its strength, its promise and what grows from it.</p>';
+  }
+  var c=byId[sel.cap];
+  if(sel.idea!=null){
+    var it=c.ideas[sel.idea];
+    var kind={growing:"Growing idea",fading:"Fading idea",withered:"Withered idea",established:"Established idea"}[it.st];
+    var h=close+'<span class="kind">'+kind+' · '+esc(c.name)+'</span><span class="name">'+esc(it.n)+'</span>';
+    if(it.st==="withered") h+='<span class="px-chip px-chip--lesson" style="align-self:flex-start">Lesson</span><p class="lesson-text">'+esc(it.lesson)+'</p><p class="muted" style="font-size:13.5px">Kept in the map as a decision on '+esc(c.name)+', with this idea as a rejected option. Its code and flag are gone.</p>';
+    else if(it.st==="established") h+=meter(it.s,"")+'<p class="muted">Part of '+esc(c.name)+' now. Its strength was carried into the capability when it was established, and its history stays.</p>';
+    else h+=meter(it.s,it.st==="fading"?"faded":"idea")+'<p class="muted">'+esc(it.fact||"")+' · belongs to dphaener</p>'+(it.st==="fading"?'<p class="muted" style="font-size:13.5px">Under the floor of 1 flow. If nothing flows into it, it is proposed withered in Needs you.</p>':"");
+    h+='<button class="px-btn" id="back" style="align-self:flex-start">Back to '+esc(c.name)+'</button>';
+    return h;
+  }
+  var h2=close+'<span class="kind">Capability'+(c.fading?" · fading":"")+'</span><span class="name">'+esc(c.name)+'</span>'+meter(c.s,c.fading?"faded":"")+
+    '<span class="muted fig" style="font-size:12px">'+(c.tr<0?"↓ ":"↑ ")+Math.abs(c.tr).toFixed(1)+' a week · usage unknown, no guardrail yet</span>'+
+    '<p>'+esc(c.promise)+'</p><div class="ideas-list">';
+  c.ideas.forEach(function(it,k){
+    var sub=it.st==="withered"?'<small class="lesson-text">Lesson: '+esc(it.lesson)+'</small>':'<small>'+(it.st==="established"?"established":esc(it.fact||it.st))+'</small>';
+    h2+='<button class="idea-li" data-k="'+k+'">'+glyph(it)+'<span>'+esc(it.n)+sub+'</span><span class="fig muted">'+(it.st==="withered"?"":fmt(it.s))+'</span></button>';
+  });
+  return h2+'</div>';
+}
+function plural(n,one,many){return n+" "+(n===1?one:many);}
+function listHTML(){
+  return CAPS.slice().sort(function(a,b){return b.s-a.s;}).map(function(c){
+    return '<button class="idea-li" style="padding:12px 16px;grid-template-columns:1fr auto" data-cap="'+c.id+'"><span><b style="font-family:var(--font-display)">'+esc(c.name)+'</b><small>'+plural(c.ideas.filter(function(i){return i.st==="growing";}).length,"growing idea","growing ideas")+' · '+plural(c.ideas.filter(function(i){return i.st==="withered";}).length,"lesson","lessons")+'</small></span>'+meter(c.s,c.fading?"faded":"")+'</button>';
+  }).join("");
+}
+var NOTES={
+ grown:["A4 · Grown","A3's calm layout drawn as one living body. Every vein is a tapering shape, thick where it leaves its parent, and the whole network is fused into one silhouette, so joins fillet the way real tubes do and nothing floats or overlaps. Colour is painted inside the body: capability tubes deep, idea tubes bright, flaring out of their capability. Lessons are slime trails fused to the vein they left. Tap a capability to zoom into it and name its ideas and lessons. Nothing moves.",
+  ["Reads as one organism, not as lines laid on top of each other.","Thickness still reads first: a tube's strength is its width where it leaves its parent.","Still plain SVG (one blur-and-threshold filter), so Go can render it."],
+  ["Heavier to draw than A3: the fused body is a filter over a few hundred shapes.","Width now tapers along a tube, so strength is read at the base, not the tip."]],
+ calm:["A3 · Calm","A2's organic body with A1's clarity. At rest it shows only what answers \"what is the product?\": one body, a gently meandering vein per capability as thick as its strength, ideas branching off it with a small growing front, and lessons as trails. Tap a capability and its real detail appears: the food dots (its rules, decisions and questions), the loops between them, and its ideas' names.",
+  ["Thickness reads first again, because nothing else competes with it.","Ideas branch off their own capability's vein, so no tube crosses another.","Realism where the question is asked: on tap, not at rest."],
+  ["Less striking than A2 at rest.","The detail on tap has to be discovered; the sheet says so."]],
+ plasmo:["A2 · Plasmodium","A1 redrawn after the real organism. The product is the first food source. One translucent body has one margin. Each capability is a meandering main vein in its own territory, and its rules, decisions and questions are the food dots its finer veins loop between. Growing ideas push the margin out as a fan. Withered ideas leave a slime trail beyond the margin, ending in their lesson.",
+  ["Real Physarum uses its slime trail as memory, to avoid going back where it found nothing. That is what a lesson is.","Every vein and dot is data: strength, map entries, ideas.","Same fixed angles as A1, so it stays learnable. Plain geometry seeded by names, so Go can draw it without a script."],
+  ["Busier than A1: at 60 capabilities the dots need to go, leaving veins only.","Territory width follows strength, so a sector slowly widens or narrows as strength changes."]],
+ plate:["A1 · Plate","Physarum on a dish. The product sits at the centre; each capability is a tube growing out from it at a fixed angle, and ideas branch off the capability they extend.",
+  ["Every tube means exactly one thing the map records: an idea extends one capability.","Angles never move, so the picture is learnable.","Phone: the disc fits the width. Tap a capability to zoom into its sector, with idea names."],
+  ["Long names compete for space at the rim.","Shows now, not the trend."]],
+ mesh:["B · Mesh","The literal slime-mold network. Capabilities are junctions sized by strength; tubes between them are as thick as what they share (here, how often their map entries cite each other).",
+  ["Shows connections between capabilities, which the owner asked about.","The most organic and the most like Physarum."],
+  ["A tube between capabilities is not in the glossary, and nothing measures its flow yet.","A force layout moves things when strength changes.","Phone: small and crowded; it needs pan and pinch."]],
+ strands:["C · Strands","Time runs left to right. Each capability is a tube whose thickness over the last 13 weeks is its strength; ideas run above it, join it when established and end in a lesson knot when withered.",
+  ["Shows decay and growth as they happen.","Easy to read as a chart; lanes stack on a phone."],
+  ["Reads as a chart more than as a product.","13 lanes is fine; 60 is a long scroll."]]
+};
+function notesHTML(){
+  return ["grown","calm","plasmo","plate","mesh","strands"].map(function(k){var n=NOTES[k];
+    return '<div class="note"'+(k===view?' style="border-color:var(--accent)"':"")+'><h3>'+n[0]+'</h3><p class="muted" style="font-size:14px;line-height:21px">'+n[1]+'</p><span class="lab">Reads well</span><ul>'+n[2].map(function(x){return "<li>"+x+"</li>";}).join("")+'</ul><span class="lab">Costs</span><ul>'+n[3].map(function(x){return "<li>"+x+"</li>";}).join("")+'</ul></div>';}).join("");
+}
+
+// ---- render ---------------------------------------------------------------
+function render(){
+  document.getElementById("studio").classList.toggle("phone",phone);
+  var host=document.getElementById("draw"),oldSvg=host.querySelector("svg"),prevVB=oldSvg?oldSvg.getAttribute("viewBox"):null; host.innerHTML="";
+  var svg=el("svg",{role:"img","aria-label":"Physa's network: "+CAPS.length+" capabilities drawn as tubes",preserveAspectRatio:"xMidYMid meet"},host);
+  if(view==="grown")drawGrown(svg); else if(view==="calm")drawPlasmo(svg,true); else if(view==="plasmo")drawPlasmo(svg,false); else if(view==="plate")drawPlate(svg); else if(view==="mesh")drawMesh(svg); else drawStrands(svg);
+  svg.addEventListener("click",function(ev){if(!ev.target.closest("[data-cap]"))select(null);});
+  var tgt=svg.getAttribute("viewBox"),reduce=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if(prevVB&&lastView===view&&lastPhone===phone&&prevVB!==tgt&&!reduce&&!NOANIM){var A=prevVB.split(" ").map(Number),B=tgt.split(" ").map(Number),t0=null;svg.setAttribute("viewBox",prevVB);
+    var step=function(ts){if(!t0)t0=ts;var u=Math.min(1,(ts-t0)/450),e=u<.5?2*u*u:1-Math.pow(-2*u+2,2)/2;svg.setAttribute("viewBox",A.map(function(v,i){return (v+(B[i]-v)*e).toFixed(1);}).join(" "));if(u<1&&svg.isConnected)requestAnimationFrame(step);};requestAnimationFrame(step);}
+  lastView=view;lastPhone=phone;
+  document.getElementById("key").innerHTML=keyHTML();
+  document.getElementById("plist").innerHTML=listHTML();
+  var sh=document.getElementById("sheet"), ps=document.getElementById("psheet");
+  sh.innerHTML=sheetHTML(false);
+  if(phone&&sel){ps.hidden=false;ps.innerHTML=sheetHTML(true);}else{ps.hidden=true;ps.innerHTML="";}
+  document.getElementById("notes").innerHTML=notesHTML();
+  [sh,ps].forEach(function(box){
+    box.querySelectorAll(".idea-li[data-k]").forEach(function(b){b.onclick=function(){select(sel.cap,+b.getAttribute("data-k"));};});
+    var bk=box.querySelector("#back"); if(bk)bk.onclick=function(){select(sel.cap,null);};
+    var cl=box.querySelector("#pclose"); if(cl)cl.onclick=function(){select(null);};
+  });
+  document.querySelectorAll("#plist [data-cap]").forEach(function(b){b.onclick=function(){select(b.getAttribute("data-cap"),null);};});
+  document.querySelectorAll(".tabs button").forEach(function(b){b.setAttribute("aria-selected",String(b.getAttribute("data-v")===view));});
+  document.getElementById("b-desk").setAttribute("aria-pressed",String(!phone));
+  document.getElementById("b-phone").setAttribute("aria-pressed",String(phone));
+  var th=document.documentElement.getAttribute("data-theme");
+  document.getElementById("b-light").setAttribute("aria-pressed",String(th==="light"));
+  document.getElementById("b-dark").setAttribute("aria-pressed",String(th==="dark"));
+}
+function select(cap,idea){sel=cap?{cap:cap,idea:idea==null?null:idea}:null;render();}
+document.querySelectorAll(".tabs button").forEach(function(b){b.onclick=function(){view=b.getAttribute("data-v");sel=null;try{history.replaceState(null,"","#"+view);}catch(e){location.hash=view;}render();};});
+document.getElementById("b-desk").onclick=function(){phone=false;render();};
+document.getElementById("b-phone").onclick=function(){phone=true;render();};
+document.getElementById("b-light").onclick=function(){document.documentElement.setAttribute("data-theme","light");render();};
+document.getElementById("b-dark").onclick=function(){document.documentElement.setAttribute("data-theme","dark");render();};
+document.addEventListener("keydown",function(e){if(e.key==="Escape")select(null);});
+function fromHash(){var h=(location.hash||"").slice(1);if(h==="grown"||h==="calm"||h==="plasmo"||h==="plate"||h==="mesh"||h==="strands")view=h;}
+window.addEventListener("hashchange",function(){fromHash();sel=null;render();});
+fromHash();
+if(window.matchMedia&&window.matchMedia("(max-width: 600px)").matches) phone=false;
+render();
+})();
+</script>
+
+</html>

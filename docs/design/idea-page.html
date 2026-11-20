@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Idea Page</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400..600&display=swap">
+<style>
+/* Layout: an idea's page. Who it belongs to and what it extends, what needs you here, then its bet (progress, changes,
+   review rounds), its pitch, its strength and why, and its story. Desktop puts pitch and strength beside the bet. */
+:root{--surface:#f4f8ff; --surface-raised:#ffffff; --surface-sunk:#e7eefb; --line:#d2ddf0; --line-strong:#7487aa; --ink:#0b1a33; --ink-muted:#47597a; --accent:#1757f5; --accent-hover:#0f45d1; --on-accent:#ffffff; --accent-soft:#dce7ff; --tube-capability:#1238c4; --tube-idea:#0a87dc; --tube-faded:#9aaccb; --tube-ground:#c9d7f0; --lesson:#b06a00; --lesson-ink:#8a5200; --lesson-soft:#fbefd9; --danger:#ad380b; --danger-soft:#fde6dc; --steady:#086a75; --steady-soft:#d5f3f3; --focus:#1757f5}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--surface:#0a1322; --surface-raised:#101c31; --surface-sunk:#060d19; --line:#22324d; --line-strong:#6680a6; --ink:#e9f0ff; --ink-muted:#9fb2d4; --accent:#6d9bff; --accent-hover:#93b6ff; --on-accent:#06112a; --accent-soft:#16295a; --tube-capability:#4f7dff; --tube-idea:#8fe3ff; --tube-faded:#3c4f70; --tube-ground:#1a2a45; --lesson:#f2b54a; --lesson-ink:#f6c46d; --lesson-soft:#3a2a0c; --danger:#ff8a5c; --danger-soft:#3d1a0e; --steady:#3fd0d6; --steady-soft:#0c3236; --focus:#93b6ff; color-scheme:dark}}
+:root[data-theme="dark"]{--surface:#0a1322; --surface-raised:#101c31; --surface-sunk:#060d19; --line:#22324d; --line-strong:#6680a6; --ink:#e9f0ff; --ink-muted:#9fb2d4; --accent:#6d9bff; --accent-hover:#93b6ff; --on-accent:#06112a; --accent-soft:#16295a; --tube-capability:#4f7dff; --tube-idea:#8fe3ff; --tube-faded:#3c4f70; --tube-ground:#1a2a45; --lesson:#f2b54a; --lesson-ink:#f6c46d; --lesson-soft:#3a2a0c; --danger:#ff8a5c; --danger-soft:#3d1a0e; --steady:#3fd0d6; --steady-soft:#0c3236; --focus:#93b6ff; color-scheme:dark}
+
+:root{--font-display:"Bricolage Grotesque","Instrument Sans",system-ui,sans-serif;--font-sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;--font-mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+body{background:var(--surface);color:var(--ink);font:400 15px/23px var(--font-sans);margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 64px}
+.studio-bar{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;margin-bottom:16px}
+.studio-bar p{margin:0;color:var(--ink-muted);font-size:14px;max-width:60ch}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+.seg{display:flex;gap:4px;padding:4px;border-radius:10px;background:var(--surface-sunk)}
+.seg button{font:600 13.5px/20px var(--font-sans);border:0;background:transparent;color:var(--ink-muted);padding:6px 12px;border-radius:7px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface-raised);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+button:focus-visible,a:focus-visible,summary:focus-visible,textarea:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.stage{display:flex;justify-content:center}
+.screen{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.phone .screen{width:390px;max-width:100%;height:820px;border:10px solid var(--ink);border-radius:38px;display:flex;flex-direction:column}
+.phone .scroll{overflow-y:auto;flex:1}
+.topbar{display:flex;align-items:center;gap:20px;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--surface-raised)}
+.phone .topbar{padding:10px 16px;gap:12px}
+.mark{font:750 20px/1 var(--font-display);letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+.nav{display:flex;gap:4px;margin-left:auto}
+.nav a{font:600 14px/20px var(--font-sans);color:var(--ink-muted);text-decoration:none;padding:6px 10px;border-radius:8px;display:flex;gap:6px;align-items:center}
+.nav a[aria-current="page"]{color:var(--ink);background:var(--accent-soft)}
+.count{font:600 11px/16px var(--font-mono);background:var(--accent);color:var(--on-accent);border-radius:999px;padding:0 6px}
+.phone .nav .wide{display:none}
+.page{padding:24px 24px 48px}
+.phone .page{padding:16px 16px 40px}
+.crumb{font:500 13px/18px var(--font-sans);color:var(--ink-muted)}
+.crumb a{color:var(--accent);text-decoration:none}
+h1{font:750 32px/38px var(--font-display);letter-spacing:-.02em;margin:4px 0 8px;text-wrap:balance}
+.phone h1{font-size:26px;line-height:32px}
+.facts{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:13.5px;color:var(--ink-muted)}
+.facts b{color:var(--ink);font-weight:600}
+.cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:28px;margin-top:22px;align-items:start}
+.phone .cols{grid-template-columns:minmax(0,1fr);gap:24px;margin-top:18px}
+@media (max-width:860px){.cols{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:24px;min-width:0}
+h2{font:650 18px/24px var(--font-display);margin:0 0 8px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+h2 .n{font:500 12px/16px var(--font-mono);color:var(--ink-muted)}
+.panel{background:var(--surface-raised);border:1px solid var(--line);border-radius:14px}
+.pad{padding:14px 16px}
+.needs-here{border-color:var(--accent);display:flex;flex-direction:column;gap:6px}
+.top{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+.chip{display:inline-flex;align-items:center;padding:2px 7px;border-radius:4px;font:600 11px/16px var(--font-sans);letter-spacing:.07em;text-transform:uppercase;background:var(--surface-sunk);color:var(--ink-muted);white-space:nowrap}
+.chip.accent{background:var(--accent-soft);color:var(--accent)}
+.chip.lesson{background:var(--lesson-soft);color:var(--lesson-ink)}
+.chip.danger{background:var(--danger-soft);color:var(--danger)}
+.chip.steady{background:var(--steady-soft);color:var(--steady)}
+.chip.exp{background:transparent;border:1px dashed var(--line-strong)}
+.title{font:600 16px/22px var(--font-sans)}
+.muted{color:var(--ink-muted)}
+.small{font-size:13px;line-height:19px}
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.btn{display:inline-flex;align-items:center;min-height:36px;padding:0 13px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-raised);color:var(--ink);font:600 13.5px/1 var(--font-sans);cursor:pointer}
+.btn:hover{background:var(--accent-soft)}
+.btn.primary{background:var(--accent);color:var(--on-accent);border-color:transparent}
+.btn.primary:hover{background:var(--accent-hover)}
+.mini{font:600 12.5px/1 var(--font-sans);border:1px solid var(--line-strong);background:var(--surface-raised);color:var(--ink);border-radius:6px;padding:6px 9px;cursor:pointer;white-space:nowrap}
+.meter{display:inline-flex;align-items:center;gap:8px;font:500 13px/18px var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink)}
+.meter i{display:block;width:40px;border-radius:999px;background:var(--tube-idea)}
+.meter.faded i{background:var(--tube-faded)}
+.meter .exp{border-bottom:1px dashed var(--line-strong)}
+.sep{border-top:1px solid var(--line);margin:10px -16px;}
+.choices{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.choices li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 10px;border-radius:8px;background:var(--surface-sunk);font-size:13.5px;line-height:19px}
+.choices li .because{display:block;color:var(--ink-muted);font-size:12.5px}
+.choices li.ok{opacity:.55}
+/* the bet */
+.phasebar{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin:2px 0 6px}
+.phasebar div{display:flex;flex-direction:column;gap:4px;font:600 11px/14px var(--font-sans);letter-spacing:.05em;text-transform:uppercase;color:var(--ink-muted)}
+.phasebar div span{height:5px;border-radius:999px;background:var(--line)}
+.phasebar div.done span{background:var(--tube-capability)}
+.phasebar div.now{color:var(--ink)}
+.phasebar div.now span{background:var(--tube-idea)}
+.runline{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;font-size:13.5px;line-height:19px}
+.fig{font:500 12.5px/18px var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink-muted)}
+.state{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--tube-idea)}
+.appetite{height:7px;border-radius:999px;background:var(--line);overflow:hidden;margin:8px 0 4px}
+.appetite i{display:block;height:100%;background:var(--tube-capability)}
+.changes{list-style:none;margin:0;padding:0}
+.changes li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:4px 10px;padding:11px 16px;border-top:1px solid var(--line);align-items:start;font-size:14px;line-height:20px}
+.changes li:first-child{border-top:0}
+.tick{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;margin-top:1px}
+.tick.ok{background:var(--steady-soft)}
+.tick.now{border:2px solid var(--tube-idea)}
+.tick.wait{border:2px dashed var(--line-strong)}
+.rounds{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:0}
+.rounds li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;padding:10px 16px;border-top:1px solid var(--line);font-size:14px;line-height:20px}
+.rounds li:first-child{border-top:0}
+.finding{font-size:13px;line-height:19px;color:var(--ink-muted);margin-top:2px}
+.finding b{color:var(--ink);font-weight:600}
+dl.pitch{margin:0;display:flex;flex-direction:column}
+dl.pitch div{padding:10px 16px;border-top:1px solid var(--line)}
+dl.pitch div:first-child{border-top:0}
+dl.pitch dt{font:600 11.5px/16px var(--font-sans);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-muted)}
+dl.pitch dd{margin:2px 0 0;font-size:14.5px;line-height:21px;max-width:62ch}
+.contrib{list-style:none;margin:0;padding:0}
+.contrib li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;padding:8px 16px;border-top:1px solid var(--line);font-size:13.5px;line-height:19px;align-items:baseline}
+.contrib li:first-child{border-top:0}
+.contrib .amt{font:500 12.5px/18px var(--font-mono);text-align:right;min-width:44px}
+.contrib .now{font:600 12.5px/18px var(--font-mono);text-align:right;min-width:52px}
+.contrib .neg{color:var(--danger)}
+.contrib li.total{font-weight:600;background:var(--surface-sunk)}
+.story{list-style:none;margin:0;padding:0}
+.story li{display:grid;grid-template-columns:64px minmax(0,1fr);gap:10px;padding:9px 16px;border-top:1px solid var(--line);font-size:14px;line-height:20px}
+.story li:first-child{border-top:0}
+.story .when{font:500 12px/20px var(--font-mono);color:var(--ink-muted)}
+textarea{width:100%;min-height:96px;font:400 14px/21px var(--font-sans);color:var(--ink);background:var(--surface-sunk);border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;resize:vertical}
+.legend{margin-top:20px;font-size:13px;color:var(--ink-muted);max-width:76ch}
+.ok-note{font-size:13px;color:var(--steady);font-weight:600}
+</style>
+
+<div class="wrap">
+  <div class="studio-bar">
+    <p>An idea's page: a running bet with an ask, calls and review rounds, and a withering idea about to leave its lesson.</p>
+    <div class="controls">
+      <div class="seg" aria-label="Idea"><button id="i-bet" aria-pressed="true">Remove Rhiza from nebari</button><button id="i-wither" aria-pressed="false">Ruby provider over OFREP</button></div>
+      <div class="seg" aria-label="Screen"><button id="b-desk" aria-pressed="false">Desktop</button><button id="b-phone" aria-pressed="true">Phone</button></div>
+      <div class="seg" aria-label="Theme"><button id="b-light" aria-pressed="false">Light</button><button id="b-dark" aria-pressed="false">Dark</button></div>
+    </div>
+  </div>
+  <div class="stage phone" id="stage">
+    <div class="screen">
+      <div class="topbar">
+        <span class="mark"><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="5" fill="var(--tube-capability)"/><path d="M11 6V1M15.5 13.5l4 3M6.5 13.5l-4 3" stroke="var(--tube-capability)" stroke-width="2.6" stroke-linecap="round"/><path d="M15.5 8.5l4-2.5" stroke="var(--tube-idea)" stroke-width="1.6" stroke-linecap="round"/></svg>Physa</span>
+        <nav class="nav" aria-label="Views"><a href="#">Needs you <span class="count">10</span></a><a href="#" aria-current="page">Network</a><a href="#" class="wide">Capabilities</a></nav>
+      </div>
+      <div class="scroll"><div class="page" id="page"></div></div>
+    </div>
+  </div>
+  <p class="legend">The bet's ask, calls and first review finding are from a real harness run removing Rhiza from nebari. Its capability name, timings, tokens and strengths are examples. The withering idea is from Physa's own plan.</p>
+</div>
+
+<script>
+(function(){
+"use strict";
+var W=function(s){return Math.min(22,1.5+2*Math.sqrt(Math.max(0,s)));};
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+var cur="bet",phone=true,st={};
+var CHECK='<svg width="12" height="12"><path d="M2.5 6.5l2.3 2.3L9.5 3.8" stroke="var(--steady)" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
+var CROSS='<svg width="12" height="12"><path d="M3 3l6 6M9 3l-6 6" stroke="var(--danger)" stroke-width="2" stroke-linecap="round"/></svg>';
+function meter(s,faded){return '<span class="meter'+(faded?" faded":"")+'"><i style="height:'+W(s).toFixed(1)+'px"></i><span class="exp" title="Strength is experimental until calibration has data">'+s.toFixed(1)+' flow</span></span>';}
+function contrib(rows,total){return '<ul class="contrib"><li class="muted small" style="font-weight:600"><span>Evidence</span><span class="amt">added</span><span class="now">counts now</span></li>'+rows.map(function(r){return '<li><span>'+esc(r[0])+'<span class="muted"> · '+r[1]+'</span></span><span class="amt'+(r[2]<0?" neg":"")+'">'+(r[2]>0?"+":"")+r[2]+'</span><span class="now'+(r[3]<0?" neg":"")+'">'+r[3].toFixed(1)+'</span></li>';}).join("")+'<li class="total"><span>Strength now <span class="muted">· ½ life 14 days</span></span><span></span><span class="now">'+total.toFixed(1)+'</span></li></ul>';}
+function bet(){
+  var h='<div class="crumb"><a href="#">Network</a> › <a href="#">Build and test</a> › Idea</div><h1>Remove Rhiza from nebari</h1>';
+  h+='<div class="facts"><span><b>Your idea</b></span><span>extends <b>Build and test</b></span><span class="repo fig">nebari</span>'+meter(12.7)+'<span class="small">shaped · bet · building</span><span class="chip exp">Experimental</span></div>';
+  h+='<div class="cols"><div class="col">';
+  // needs you here: the ask, then the calls
+  h+='<div class="panel pad needs-here"><div class="top"><span class="chip accent">Needs you here</span><span class="chip accent">Ask</span></div>';
+  if(st.ask) h+='<div class="ok-note">Answered: '+st.ask+'. The run carries on with it.</div> <button class="mini" id="undo-ask" style="align-self:flex-start">Undo</button>';
+  else h+='<div class="title">The weekly announcement depends on Rhiza. Keep it or retire it?</div><div class="small muted">A product choice the run can\'t make for you. The rest of the run carries on meanwhile.</div><div class="acts"><button class="btn primary" data-ask="keep it">Keep it</button><button class="btn" data-ask="retire it">Retire it</button></div>';
+  h+='<div class="sep"></div><div class="top"><span class="chip">Calls</span><span class="small muted">2 small choices the run made to keep going</span></div><ul class="choices">'+
+    [["Kept bin/gate and removed only its Rhiza calls","bin/gate also runs RuboCop, which nebari still uses."],["Deleted spec/rhiza/ (14 files) instead of moving them","Nothing else requires them."]].map(function(c,i){var ok=st["c"+i];return '<li class="'+(ok?"ok":"")+'"><span>'+esc(c[0])+'<span class="because">'+esc(c[1])+'</span></span>'+(ok?'<span class="small muted">'+ok+'</span>':'<span style="display:flex;gap:6px"><button class="mini" data-call="'+i+'|Accepted">Right</button><button class="mini" data-call="'+i+'|Sent back">Change</button></span>')+'</li>';}).join("")+'</ul></div>';
+  // the bet
+  h+='<section><h2>The bet</h2><div class="panel pad">'+
+    '<div class="phasebar">'+["Conduct","Build","Check","Fix"].map(function(p,i){return '<div class="'+(i<2?"done":(i===2?"now":""))+'"><span></span>'+p+'</div>';}).join("")+'</div>'+
+    '<div class="runline"><span class="state"><span class="dot"></span>Checking: running the test suite</span><span class="fig">last activity 40 s ago</span></div>'+
+    '<div class="runline"><span class="small muted">52 min in · started by you at 9:14</span><span class="fig">review round 2 of 3</span></div>'+
+    '<div class="appetite" role="img" aria-label="412k of 600k tokens"><i style="width:69%"></i></div><div class="runline"><span class="fig">412k of 600k tokens</span><span class="fig">188k left</span></div>'+
+    '<div class="acts" style="margin-top:10px"><button class="btn">Watch the session</button></div></div></section>';
+  h+='<section><h2>Changes <span class="n">3</span></h2><div class="panel"><ul class="changes">'+
+    '<li><span class="tick ok">'+CHECK+'</span><span>Remove .rhiza/ and its 15 MB log<br><span class="small muted">acceptance: 2 checks, re-run by the engine</span></span><span class="fig">checked</span></li>'+
+    '<li><span class="tick now"></span><span>Remove Rhiza from bin/gate and its specs<br><span class="small muted">acceptance: 4 checks · in its second review round</span></span><span class="fig">checking</span></li>'+
+    '<li><span class="tick wait"></span><span>Remove Rhiza from README and CLAUDE.md<br><span class="small muted">acceptance: 1 check · waits on your answer</span></span><span class="fig">waiting</span></li></ul></div></section>';
+  h+='<section><h2>Review rounds <span class="n">2</span></h2><div class="panel"><ul class="rounds">'+
+    '<li><span class="tick" style="background:var(--danger-soft)">'+CROSS+'</span><span><b>Round 1 · sent back</b> <span class="fig">38k tokens of rework</span><div class="finding"><b>Finding (check, serious):</b> a glossary entry that no task asked for.</div></span></li>'+
+    '<li><span class="tick now"></span><span><b>Round 2 · checking now</b><div class="finding">The glossary entry was removed; the other checks are re-running.</div></span></li></ul></div></section>';
+  h+='</div><div class="col">';
+  h+='<section><h2>Pitch</h2><div class="panel"><dl class="pitch">'+
+    [["Problem","Rhiza is retired, but nebari still carries its 15 MB .rhiza/ folder and Rhiza calls in its README, CLAUDE.md, bin/gate and specs. Every agent in nebari reads them."],["Appetite","600k tokens"],["Solution","Remove every trace, listed exactly before removing, in three changes: the folder, the gate and specs, the docs."],["Scope","Everything Rhiza put in nebari. No-gos: changing nebari's own behaviour; rewriting bin/gate beyond its Rhiza calls."],["Signal","Engineering evidence: no revert, and the test suite takes no longer than before."],["Rabbit holes","The weekly announcement depends on Rhiza. Settled by an ask, not by the run."]].map(function(r){return '<div><dt>'+r[0]+'</dt><dd>'+esc(r[1])+'</dd></div>';}).join("")+'</dl></div></section>';
+  h+='<section><h2>Why it is this strong</h2><div class="panel">'+contrib([["You bet on it","today",5,5.0],["Pitch written","2 days ago",3,2.7],["A spike on it","4 days ago",2,1.6],["People added to it (3 comments)","this week",3,2.4],["A change landed","today",1,1.0]],12.7)+'</div></section>';
+  h+='<section><h2>Story</h2><div class="panel"><ul class="story">'+[["today","Round 1 sent back; round 2 checking"],["today","You bet on it with 600k tokens"],["2 d","Pitch written"],["4 d","Spike: listed every Rhiza trace"],["6 d","You started the idea"]].map(function(x){return '<li><span class="when">'+x[0]+'</span><span>'+esc(x[1])+'</span></li>';}).join("")+'</ul></div></section>';
+  return h+'</div></div>';
+}
+function wither(){
+  var h='<div class="crumb"><a href="#">Network</a> › <a href="#">Earned release</a> › Idea</div><h1>Ruby provider over OFREP</h1>';
+  h+='<div class="facts"><span><b>Your idea</b></span><span>extends <b>Earned release</b></span><span class="repo fig">physa</span>'+meter(0.5,true)+'<span class="small">not shaped · no bet</span><span class="chip exp">Experimental</span></div>';
+  h+='<div class="cols"><div class="col">';
+  if(st.lesson==="kept"){h+='<div class="panel pad needs-here"><div class="ok-note">Lesson kept in the map, on Earned release. Removing its code and flag is proposed as a small bet.</div><button class="mini" id="undo-lesson" style="align-self:flex-start">Undo</button></div>';}
+  else if(st.lesson==="keep"){h+='<div class="panel pad needs-here"><div class="ok-note">Kept. It needs flow within 14 days, or it is proposed withered again.</div><button class="mini" id="undo-lesson" style="align-self:flex-start">Undo</button></div>';}
+  else h+='<div class="panel pad needs-here"><div class="top"><span class="chip accent">Needs you here</span><span class="chip lesson">Withering idea</span></div><div class="title">Under the floor of 1 flow for 12 days</div><div class="small muted">Nobody has added to it, shaped it or bet on it since early November. Accept its lesson, or keep it and give it attention.</div>'+
+    '<div class="sep"></div><div class="small" style="font-weight:600">The lesson it leaves</div><div class="small muted">Kept in the map as a decision on Earned release, with this idea as a rejected option. Edit it before accepting.</div><textarea id="lesson" aria-label="The lesson">Evaluate flags through OFREP from Ruby with a generic provider. Rejected for now: the Ruby provider list had no OFREP provider, and nebari, the only Ruby user, can call physa serve over HTTP until one exists.</textarea>'+
+    '<div class="acts"><button class="btn primary" data-l="kept">Accept the lesson</button><button class="btn" data-l="keep">Keep it</button><button class="btn">Shape it</button></div></div>';
+  h+='<section><h2>The idea</h2><div class="panel pad"><p style="margin:0;max-width:62ch">Write a Ruby OpenFeature provider that talks OFREP to physa serve, so nebari evaluates flags without a vendor SDK.</p><p class="small muted" style="margin:8px 0 0">Not shaped: no pitch yet. An idea can be bet on with only its text and an appetite.</p></div></section>';
+  h+='</div><div class="col">';
+  h+='<section><h2>Why it is this weak</h2><div class="panel">'+contrib([["You started it","5 weeks ago",1,0.2],["People added to it (2 comments)","4 weeks ago",2,0.3],["Nothing since","3 weeks",0,0]],0.5)+'<p class="small muted" style="margin:0;padding:10px 16px">Each piece of evidence counts half as much every 14 days. Strength is never set by hand.</p></div></section>';
+  h+='<section><h2>Story</h2><div class="panel"><ul class="story">'+[["today","Proposed withered: under the floor for 12 days"],["4 wk","2 comments"],["5 wk","You started the idea"]].map(function(x){return '<li><span class="when">'+x[0]+'</span><span>'+esc(x[1])+'</span></li>';}).join("")+'</ul></div></section>';
+  return h+'</div></div>';
+}
+function render(){
+  var page=document.getElementById("page");page.innerHTML=cur==="bet"?bet():wither();
+  page.querySelectorAll("[data-ask]").forEach(function(b){b.onclick=function(){st.ask=b.getAttribute("data-ask");render();};});
+  page.querySelectorAll("[data-call]").forEach(function(b){b.onclick=function(){var p=b.getAttribute("data-call").split("|");st["c"+p[0]]=p[1];render();};});
+  page.querySelectorAll("[data-l]").forEach(function(b){b.onclick=function(){st.lesson=b.getAttribute("data-l");render();};});
+  var u=document.getElementById("undo-ask");if(u)u.onclick=function(){st.ask=null;render();};
+  var u2=document.getElementById("undo-lesson");if(u2)u2.onclick=function(){st.lesson=null;render();};
+  document.getElementById("i-bet").setAttribute("aria-pressed",String(cur==="bet"));document.getElementById("i-wither").setAttribute("aria-pressed",String(cur!=="bet"));
+  document.getElementById("b-desk").setAttribute("aria-pressed",String(!phone));document.getElementById("b-phone").setAttribute("aria-pressed",String(phone));
+  var th=document.documentElement.getAttribute("data-theme");document.getElementById("b-light").setAttribute("aria-pressed",String(th==="light"));document.getElementById("b-dark").setAttribute("aria-pressed",String(th==="dark"));
+}
+document.getElementById("i-bet").onclick=function(){cur="bet";render();};
+document.getElementById("i-wither").onclick=function(){cur="wither";render();};
+document.getElementById("b-desk").onclick=function(){phone=false;document.getElementById("stage").classList.remove("phone");render();};
+document.getElementById("b-phone").onclick=function(){phone=true;document.getElementById("stage").classList.add("phone");render();};
+document.getElementById("b-light").onclick=function(){document.documentElement.setAttribute("data-theme","light");render();};
+document.getElementById("b-dark").onclick=function(){document.documentElement.setAttribute("data-theme","dark");render();};
+render();
+})();
+</script>
+
+</html>

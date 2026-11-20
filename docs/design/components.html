@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Physa components</title>
+<link rel="stylesheet" href="../../internal/design/tokens.css">
+<link rel="stylesheet" href="../../internal/design/components.css">
+<style>
+body{margin:0;padding:32px max(16px,env(safe-area-inset-left,0px)) 64px}
+main{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:40px}
+h1{font:750 34px/40px var(--font-display);letter-spacing:-.02em;margin:0}
+h2{font:650 19px/24px var(--font-display);margin:0}
+.sub{margin:2px 0 14px;color:var(--ink-muted);font-size:13px}
+.stack{display:flex;flex-direction:column;gap:14px}.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.panel{background:var(--surface-raised);border:1px solid var(--line);border-radius:var(--radius-l);overflow:hidden}
+</style>
+</head>
+<body>
+<main>
+<header><h1>Physa components</h1><p class="sub">Live from internal/design: change tokens.css or components.css and reload. Follows the system theme.</p></header>
+<section><h2>Button</h2><p class="sub">primary · quiet · danger</p>
+<div class="row">
+<button class="px-btn px-btn--primary" type="button">Sign off</button>
+<button class="px-btn px-btn--quiet" type="button">Ask a question</button>
+<button class="px-btn px-btn--danger" type="button">Turn the flag off</button>
+<button class="px-btn px-btn--quiet" type="button" disabled>Bet</button>
+</div>
+</section>
+<section><h2>Chip</h2><p class="sub">kind labels</p>
+<div class="row">
+<span class="px-chip">Question</span>
+<span class="px-chip px-chip--accent">Sign-off</span>
+<span class="px-chip px-chip--danger">Guardrail trip</span>
+<span class="px-chip px-chip--lesson">Lesson</span>
+<span class="px-chip px-chip--steady">Clear result</span>
+<span class="px-chip px-chip--experimental">Experimental</span>
+</div>
+</section>
+<section><h2>StrengthMeter</h2><p class="sub">thickness, figure, trend</p>
+<div class="stack">
+<span class="px-strength"><span class="px-strength__tube" style="--w:14.4px"></span><span class="px-strength__exp" title="Strength is experimental until calibration has data">41.2 flow</span><span class="px-strength__trend">↑ 3.1 this week</span></span>
+<span class="px-strength px-strength--idea"><span class="px-strength__tube" style="--w:6.7px"></span><span class="px-strength__exp" title="Strength is experimental until calibration has data">6.8 flow</span><span class="px-strength__trend">↑ shaped, bet</span></span>
+<span class="px-strength px-strength--idea"><span class="px-strength__tube" style="--w:3.4px"></span><span class="px-strength__exp">0.9 flow</span><span class="px-strength__trend">withering in 9 days</span></span>
+<span class="px-strength px-strength--faded"><span class="px-strength__tube" style="--w:6.0px"></span><span class="px-strength__exp">5.1 flow</span><span class="px-strength__trend">↓ 2.4, usage unknown</span></span>
+<span class="px-chip px-chip--experimental" style="align-self:flex-start">Experimental</span>
+</div>
+</section>
+<section><h2>TubeKey</h2><p class="sub">the network view's legend</p>
+<div class="px-key">
+<span class="px-key__item"><svg width="44" height="16"><path class="t-cap" d="M2 8h40" stroke-width="12" stroke-linecap="round"/></svg>Capability</span>
+<span class="px-key__item"><svg width="44" height="16"><path class="t-idea" d="M2 10 C16 10 24 6 42 4" stroke-width="3" stroke-linecap="round" fill="none"/></svg>Growing idea</span>
+<span class="px-key__item"><svg width="44" height="16"><path class="t-faded" d="M2 8h40" stroke-width="6" stroke-linecap="round"/></svg>Fading</span>
+<span class="px-key__item"><svg width="44" height="16"><path class="t-faded" d="M2 8h26" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 3"/><circle class="t-lesson" cx="35" cy="8" r="4.5" stroke-width="2.5"/></svg>Withered, lesson kept</span>
+<span class="px-key__item"><svg width="44" height="16"><path class="t-cap" d="M2 8h40" stroke-width="8" stroke-linecap="round"/><path class="t-idea" d="M30 2 C30 6 26 8 18 8" stroke-width="2.5" stroke-linecap="round" fill="none"/></svg>Established into a capability</span>
+<span class="px-chip px-chip--experimental">Thickness is experimental</span>
+</div>
+</section>
+<section><h2>NeedsYouItem</h2><p class="sub">rows waiting on one person</p>
+<div class="px-needs">
+<a class="px-row" href="#"><span class="px-row__glyph"><svg width="24" height="24"><circle cx="12" cy="12" r="9" fill="none" stroke="var(--danger)" stroke-width="2.5"/><path d="M12 7v6M12 16v1" stroke="var(--danger)" stroke-width="2.5" stroke-linecap="round"/></svg></span>
+<span class="px-row__main"><span><span class="px-chip px-chip--danger">Guardrail trip</span></span><span class="px-row__title">Checkout completion fell while bulk-invite was at 10%</span><span class="px-row__meta">Earned release · flag turned off 4 minutes ago · you steward it</span></span>
+<span class="px-row__act"><span class="px-btn px-btn--quiet">See the case</span></span></a>
+<a class="px-row" href="#"><span class="px-row__glyph"><svg width="24" height="24"><path d="M3 12h18" stroke="var(--tube-capability)" stroke-width="7" stroke-linecap="round"/></svg></span>
+<span class="px-row__main"><span><span class="px-chip px-chip--accent">Sign-off</span></span><span class="px-row__title">Land the slice cache in the CLI</span><span class="px-row__meta">Slices · stakes need you: it touches a strong capability</span></span>
+<span class="px-row__act"><span class="px-btn px-btn--primary">Sign off</span></span></a>
+<a class="px-row" href="#"><span class="px-row__glyph"><svg width="24" height="24"><path d="M3 15 C9 15 13 12 17 9" stroke="var(--tube-faded)" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 3" fill="none"/><circle cx="19" cy="8" r="3.5" fill="var(--surface-raised)" stroke="var(--lesson)" stroke-width="2"/></svg></span>
+<span class="px-row__main"><span><span class="px-chip px-chip--lesson">Withering idea</span></span><span class="px-row__title">Generated AGENTS.md per directory</span><span class="px-row__meta">Your idea · 0.4 flow, under the floor for 12 days</span></span>
+<span class="px-row__act"><span class="px-btn px-btn--quiet">Keep it</span><span class="px-btn px-btn--quiet">Accept the lesson</span></span></a>
+<a class="px-row" href="#"><span class="px-row__glyph"><svg width="24" height="24"><circle cx="12" cy="12" r="9" fill="none" stroke="var(--ink-muted)" stroke-width="2"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.5M12 16.5v.5" stroke="var(--ink-muted)" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span>
+<span class="px-row__main"><span><span class="px-chip">Question</span></span><span class="px-row__title">What does the person see while init runs?</span><span class="px-row__meta">Init · raised by you · shapes the next bet</span></span>
+<span class="px-row__act"><span class="px-btn px-btn--quiet">Answer</span></span></a>
+</div>
+</section>
+<section><h2>CapabilityRow</h2><p class="sub">a capability with its promise</p>
+<div style="border:1px solid var(--line);border-radius:var(--radius-l);background:var(--surface-raised)">
+<a class="px-cap" href="#" style="border-top:0"><span class="px-cap__name">Slices</span><span class="px-strength"><span class="px-strength__tube" style="--w:14.3px"></span><span class="px-strength__exp">41.0 flow</span></span>
+<span class="px-cap__promise">An agent gets exactly the product knowledge its task needs, in one call, before it starts.</span>
+<span class="px-cap__ideas"><span class="px-chip px-chip--accent">2 growing ideas</span><span class="px-chip px-chip--lesson">1 lesson</span></span></a>
+<a class="px-cap px-cap--fading" href="#"><span class="px-cap__name">Rollback</span><span class="px-strength px-strength--faded"><span class="px-strength__tube" style="--w:6.8px"></span><span class="px-strength__exp">7.0 flow</span><span class="px-strength__trend">↓ usage unknown</span></span>
+<span class="px-cap__promise">Any change, idea or decision can be undone as a unit, cheapest way first.</span></a>
+</div>
+</section>
+<section><h2>EmptyState</h2><p class="sub">nothing needs you</p>
+<div class="px-empty">
+<svg width="120" height="28" aria-hidden="true"><path d="M4 20 C30 20 40 8 70 8 S104 14 116 14" stroke="var(--tube-capability)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M52 11 C58 4 66 3 74 2" stroke="var(--tube-idea)" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+<h2 class="px-empty__title">Nothing needs you.</h2>
+<p class="px-empty__text">Physa will tell you when a sign-off, a question or a guardrail trip is yours. Until then, the network keeps growing without you.</p>
+<a class="px-btn px-btn--quiet" href="#">See the network</a>
+</div>
+</section>
+<section><h2>RunProgress</h2><p class="sub">running · waiting · stalled · spent</p>
+<div class="stack"><div class="px-run "><div class="px-run__phases"><span class="is-done">Conduct</span><span class="is-done">Build</span><span class="is-now">Check</span><span class="">Fix</span></div><div class="px-run__line"><span class="px-run__state"><span class="px-run__dot"></span>Checking: running the test suite</span><span class="px-run__fig">52 min in · last activity 40 s ago</span></div><div class="px-run__appetite"><i style="--used:69%"></i></div><div class="px-run__line"><span class="px-run__fig">412k of 600k tokens</span><span class="px-run__fig">review round 2 of 3</span></div></div><div class="px-run px-run--waiting"><div class="px-run__phases"><span class="is-done">Conduct</span><span class="is-done">Build</span><span class="is-now">Check</span><span class="">Fix</span></div><div class="px-run__line"><span class="px-run__state"><span class="px-run__dot"></span>Waiting on the review workflow</span><span class="px-run__fig">31 min in · last activity 3 min ago</span></div><div class="px-run__appetite"><i style="--used:50%"></i></div><div class="px-run__line"><span class="px-run__fig">126k of 250k tokens</span><span class="px-run__fig">review round 1</span></div></div><div class="px-run px-run--stalled"><div class="px-run__phases"><span class="is-done">Conduct</span><span class="is-now">Build</span><span class="">Check</span><span class="">Fix</span></div><div class="px-run__line"><span class="px-run__state"><span class="px-run__dot"></span>Stalled in build</span><span class="px-run__fig">1 h 08 min in · last activity 22 min ago</span></div><div class="px-run__appetite"><i style="--used:63%"></i></div><div class="px-run__line"><span class="px-run__fig">188k of 300k tokens</span><span class="px-run__fig"></span></div></div><div class="px-run px-run--spent px-run--stalled"><div class="px-run__phases"><span class="is-done">Conduct</span><span class="is-done">Build</span><span class="is-done">Check</span><span class="is-now">Fix</span></div><div class="px-run__line"><span class="px-run__state"><span class="px-run__dot"></span>Stopped in fix: appetite spent</span><span class="px-run__fig">2 h 14 min · last activity 1 h ago</span></div><div class="px-run__appetite"><i style="--used:100%"></i></div><div class="px-run__line"><span class="px-run__fig">300k of 300k tokens</span><span class="px-run__fig">3 review rounds</span></div></div></div>
+</section>
+<section><h2>Calls</h2><p class="sub">small choices a run made for you</p>
+<div class="stack"><ul class="px-calls"><li class="px-call"><span>Kept bin/gate and removed only its Rhiza calls<span class="px-call__because">bin/gate also runs RuboCop, which nebari still uses.</span></span><span class="px-call__acts"><button class="px-btn px-btn--quiet" style="min-height:30px;padding:0 10px">Right</button><button class="px-btn px-btn--quiet" style="min-height:30px;padding:0 10px">Change</button></span></li><li class="px-call px-call--checked"><span>Deleted spec/rhiza/ (14 files) instead of moving them<span class="px-call__because">Nothing else requires them.</span></span><span class="px-run__fig">Accepted</span></li></ul></div>
+</section>
+<section><h2>Evidence</h2><p class="sub">why it is this strong</p>
+<div class="stack"><div class="panel"><ul class="px-evidence"><li><span>You bet on it <span class="px-evidence__when">· today</span></span><span class="px-evidence__amt">+5</span><span class="px-evidence__now">5.0</span></li><li><span>Pitch written <span class="px-evidence__when">· 2 days ago</span></span><span class="px-evidence__amt">+3</span><span class="px-evidence__now">2.7</span></li><li><span>A spike on it <span class="px-evidence__when">· 4 days ago</span></span><span class="px-evidence__amt">+2</span><span class="px-evidence__now">1.6</span></li><li><span>A revert of its changes <span class="px-evidence__when">· 3 weeks ago</span></span><span class="px-evidence__amt is-against">−15</span><span class="px-evidence__now">−5.3</span></li><li class="px-evidence__total"><span>Strength now <span class="px-evidence__when">· ½ life 14 days</span></span><span></span><span class="px-evidence__now">4.0</span></li></ul></div></div>
+</section>
+<section><h2>StreamEvent</h2><p class="sub">a watched session, written for a person</p>
+<div class="stack"><div class="panel"><div class="px-event"><span class="px-event__time">10:05</span><svg width="18" height="18"><path d="M5 4l9 5-9 5z" fill="var(--tube-idea)"/></svg><span><b>bin/rails test</b> finished<span class="px-event__detail">1,284 tests, 0 failures, 6 min 41 s (was 6 min 52 s)</span></span></div><div class="px-event"><span class="px-event__time">10:05</span><svg width="18" height="18"><path d="M3 4h12v8H8l-3 3v-3H3z" fill="none" stroke="var(--ink-muted)" stroke-width="1.6"/></svg><span>"Suite is green; now bin/gate."</span></div><div class="px-event px-event--record"><span class="px-event__time">10:06</span><svg width="18" height="18"><circle cx="9" cy="9" r="7" fill="var(--steady)"/></svg><span>Recorded: acceptance check 1 of 4 passed<span class="px-event__detail">re-run by the engine</span></span></div><div class="px-event px-event--quiet"><b>Waiting on the review workflow since 9:55.</b> Its checks are working.</div></div></div>
+</section>
+</main>
+</body>
+</html>

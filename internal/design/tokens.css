@@ -1,0 +1,113 @@
+/* Physa's tokens: every colour, face, space, radius and shadow the views use.
+   Light is the default; dark follows the system, and data-theme on <html> overrides either way.
+   Kept by hand, one source per value. See README.md for where each one is used. */
+
+@font-face { font-family: "Bricolage Grotesque"; src: url("fonts/BricolageGrotesque.woff2") format("woff2"); font-weight: 500 800; font-display: swap; }
+@font-face { font-family: "Instrument Sans"; src: url("fonts/InstrumentSans.woff2") format("woff2"); font-weight: 400 700; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono.woff2") format("woff2"); font-weight: 400 600; font-display: swap; }
+
+:root {
+  --surface: #f4f8ff;
+  --surface-raised: #ffffff;
+  --surface-sunk: #e7eefb;
+  --line: #d2ddf0;
+  --line-strong: #7487aa;
+  --ink: #0b1a33;
+  --ink-muted: #47597a;
+  --accent: #1757f5;
+  --accent-hover: #0f45d1;
+  --on-accent: #ffffff;
+  --accent-soft: #dce7ff;
+  --tube-capability: #1238c4;
+  --tube-idea: #0a87dc;
+  --tube-faded: #9aaccb;
+  --tube-ground: #c9d7f0;
+  --lesson: #b06a00;
+  --lesson-ink: #8a5200;
+  --lesson-soft: #fbefd9;
+  --danger: #ad380b;
+  --danger-soft: #fde6dc;
+  --steady: #086a75;
+  --steady-soft: #d5f3f3;
+  --focus: #1757f5;
+  --shadow-sheet: 0 1px 2px rgba(11,26,51,0.06), 0 8px 24px rgba(11,26,51,0.08);
+
+  --font-display: "Bricolage Grotesque", "Instrument Sans", system-ui, sans-serif;
+  --font-sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  --radius-s: 4px;
+  --radius-m: 8px;
+  --radius-l: 14px;
+  --radius-tube: 999px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface: #0a1322;
+    --surface-raised: #101c31;
+    --surface-sunk: #060d19;
+    --line: #22324d;
+    --line-strong: #6680a6;
+    --ink: #e9f0ff;
+    --ink-muted: #9fb2d4;
+    --accent: #6d9bff;
+    --accent-hover: #93b6ff;
+    --on-accent: #06112a;
+    --accent-soft: #16295a;
+    --tube-capability: #4f7dff;
+    --tube-idea: #8fe3ff;
+    --tube-faded: #3c4f70;
+    --tube-ground: #1a2a45;
+    --lesson: #f2b54a;
+    --lesson-ink: #f6c46d;
+    --lesson-soft: #3a2a0c;
+    --danger: #ff8a5c;
+    --danger-soft: #3d1a0e;
+    --steady: #3fd0d6;
+    --steady-soft: #0c3236;
+    --focus: #93b6ff;
+    --shadow-sheet: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.45);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --surface: #0a1322;
+  --surface-raised: #101c31;
+  --surface-sunk: #060d19;
+  --line: #22324d;
+  --line-strong: #6680a6;
+  --ink: #e9f0ff;
+  --ink-muted: #9fb2d4;
+  --accent: #6d9bff;
+  --accent-hover: #93b6ff;
+  --on-accent: #06112a;
+  --accent-soft: #16295a;
+  --tube-capability: #4f7dff;
+  --tube-idea: #8fe3ff;
+  --tube-faded: #3c4f70;
+  --tube-ground: #1a2a45;
+  --lesson: #f2b54a;
+  --lesson-ink: #f6c46d;
+  --lesson-soft: #3a2a0c;
+  --danger: #ff8a5c;
+  --danger-soft: #3d1a0e;
+  --steady: #3fd0d6;
+  --steady-soft: #0c3236;
+  --focus: #93b6ff;
+  --shadow-sheet: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.45);
+  color-scheme: dark;
+}
+
+body { background: var(--surface); color: var(--ink); font: 400 15px/23px var(--font-sans); }

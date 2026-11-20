@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capability Page</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400..600&display=swap">
+<style>
+/* Layout: a capability's page. Its promise first, then what needs you here, its strength and Strands, its ideas,
+   then the map's rules, decisions and questions, then its history. Desktop puts the map beside the drawing. */
+:root{--surface:#f4f8ff; --surface-raised:#ffffff; --surface-sunk:#e7eefb; --line:#d2ddf0; --line-strong:#7487aa; --ink:#0b1a33; --ink-muted:#47597a; --accent:#1757f5; --accent-hover:#0f45d1; --on-accent:#ffffff; --accent-soft:#dce7ff; --tube-capability:#1238c4; --tube-idea:#0a87dc; --tube-faded:#9aaccb; --tube-ground:#c9d7f0; --lesson:#b06a00; --lesson-ink:#8a5200; --lesson-soft:#fbefd9; --danger:#ad380b; --danger-soft:#fde6dc; --steady:#086a75; --steady-soft:#d5f3f3; --focus:#1757f5}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--surface:#0a1322; --surface-raised:#101c31; --surface-sunk:#060d19; --line:#22324d; --line-strong:#6680a6; --ink:#e9f0ff; --ink-muted:#9fb2d4; --accent:#6d9bff; --accent-hover:#93b6ff; --on-accent:#06112a; --accent-soft:#16295a; --tube-capability:#4f7dff; --tube-idea:#8fe3ff; --tube-faded:#3c4f70; --tube-ground:#1a2a45; --lesson:#f2b54a; --lesson-ink:#f6c46d; --lesson-soft:#3a2a0c; --danger:#ff8a5c; --danger-soft:#3d1a0e; --steady:#3fd0d6; --steady-soft:#0c3236; --focus:#93b6ff; color-scheme:dark}}
+:root[data-theme="dark"]{--surface:#0a1322; --surface-raised:#101c31; --surface-sunk:#060d19; --line:#22324d; --line-strong:#6680a6; --ink:#e9f0ff; --ink-muted:#9fb2d4; --accent:#6d9bff; --accent-hover:#93b6ff; --on-accent:#06112a; --accent-soft:#16295a; --tube-capability:#4f7dff; --tube-idea:#8fe3ff; --tube-faded:#3c4f70; --tube-ground:#1a2a45; --lesson:#f2b54a; --lesson-ink:#f6c46d; --lesson-soft:#3a2a0c; --danger:#ff8a5c; --danger-soft:#3d1a0e; --steady:#3fd0d6; --steady-soft:#0c3236; --focus:#93b6ff; color-scheme:dark}
+
+:root{--font-display:"Bricolage Grotesque","Instrument Sans",system-ui,sans-serif;--font-sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;--font-mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+body{background:var(--surface);color:var(--ink);font:400 15px/23px var(--font-sans);margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 64px}
+.studio-bar{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;margin-bottom:16px}
+.studio-bar p{margin:0;color:var(--ink-muted);font-size:14px;max-width:60ch}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+.seg{display:flex;gap:4px;padding:4px;border-radius:10px;background:var(--surface-sunk)}
+.seg button{font:600 13.5px/20px var(--font-sans);border:0;background:transparent;color:var(--ink-muted);padding:6px 12px;border-radius:7px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface-raised);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.stage{display:flex;justify-content:center}
+.screen{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.phone .screen{width:390px;max-width:100%;height:820px;border:10px solid var(--ink);border-radius:38px;display:flex;flex-direction:column}
+.phone .scroll{overflow-y:auto;flex:1}
+.topbar{display:flex;align-items:center;gap:20px;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--surface-raised)}
+.phone .topbar{padding:10px 16px;gap:12px}
+.mark{font:750 20px/1 var(--font-display);letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+.nav{display:flex;gap:4px;margin-left:auto}
+.nav a{font:600 14px/20px var(--font-sans);color:var(--ink-muted);text-decoration:none;padding:6px 10px;border-radius:8px;display:flex;gap:6px;align-items:center}
+.nav a[aria-current="page"]{color:var(--ink);background:var(--accent-soft)}
+.count{font:600 11px/16px var(--font-mono);background:var(--accent);color:var(--on-accent);border-radius:999px;padding:0 6px}
+.phone .nav .wide{display:none}
+.page{padding:24px 24px 48px}
+.phone .page{padding:16px 16px 40px}
+.crumb{font:500 13px/18px var(--font-sans);color:var(--ink-muted)}
+.crumb a{color:var(--accent);text-decoration:none}
+h1{font:750 34px/40px var(--font-display);letter-spacing:-.02em;margin:4px 0 6px;text-wrap:balance}
+.phone h1{font-size:28px;line-height:34px}
+.promise{font:400 19px/28px var(--font-sans);margin:0 0 12px;max-width:52ch;text-wrap:pretty}
+.phone .promise{font-size:17px;line-height:25px}
+.facts{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:13.5px;color:var(--ink-muted)}
+.facts b{color:var(--ink);font-weight:600}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px;margin-top:24px;align-items:start}
+.phone .cols{grid-template-columns:minmax(0,1fr);gap:24px;margin-top:18px}
+@media (max-width:860px){.cols{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:24px;min-width:0}
+h2{font:650 18px/24px var(--font-display);margin:0 0 8px;display:flex;align-items:baseline;gap:8px}
+h2 .n{font:500 12px/16px var(--font-mono);color:var(--ink-muted)}
+.panel{background:var(--surface-raised);border:1px solid var(--line);border-radius:14px}
+.needs-here{border-color:var(--accent);padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.needs-here.done{border-color:var(--line)}
+.top{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+.chip{display:inline-flex;align-items:center;padding:2px 7px;border-radius:4px;font:600 11px/16px var(--font-sans);letter-spacing:.07em;text-transform:uppercase;background:var(--surface-sunk);color:var(--ink-muted);white-space:nowrap}
+.chip.accent{background:var(--accent-soft);color:var(--accent)}
+.chip.lesson{background:var(--lesson-soft);color:var(--lesson-ink)}
+.chip.danger{background:var(--danger-soft);color:var(--danger)}
+.chip.exp{background:transparent;border:1px dashed var(--line-strong)}
+.title{font:600 16px/22px var(--font-sans)}
+.muted{color:var(--ink-muted)}
+.small{font-size:13px;line-height:19px}
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.btn{display:inline-flex;align-items:center;min-height:36px;padding:0 13px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-raised);color:var(--ink);font:600 13.5px/1 var(--font-sans);cursor:pointer}
+.btn:hover{background:var(--accent-soft)}
+.btn.primary{background:var(--accent);color:var(--on-accent);border-color:transparent}
+.meter{display:inline-flex;align-items:center;gap:8px;font:500 13px/18px var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink)}
+.meter i{display:block;width:40px;border-radius:999px;background:var(--tube-capability)}
+.meter.faded i{background:var(--tube-faded)}
+.meter .exp{border-bottom:1px dashed var(--line-strong)}
+.strands{padding:12px 12px 8px}
+.strands svg{display:block;width:100%;height:auto}
+.key{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--ink-muted);padding:4px 4px 0}
+.key span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.list{display:flex;flex-direction:column}
+.item{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:4px 10px;padding:12px 16px;border-top:1px solid var(--line);align-items:start}
+.item:first-child{border-top:0}
+.item .fig{font:500 12.5px/20px var(--font-mono);color:var(--ink-muted)}
+.entry{padding:14px 16px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
+.entry:first-child{border-top:0}
+.entry h3{font:600 15.5px/22px var(--font-sans);margin:0}
+.entry p{margin:0;max-width:65ch}
+.because{color:var(--ink-muted);font-size:14px;line-height:21px}
+.because b{color:var(--ink);font-weight:600}
+.cite{font-size:12px;line-height:17px;color:var(--ink-muted)}
+details{margin-top:2px}
+summary{cursor:pointer;font:600 13px/20px var(--font-sans);color:var(--accent);list-style:none;display:inline-flex;align-items:center;gap:6px}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"";width:0;height:0;border-left:5px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+.rejected{list-style:none;padding:0;margin:6px 0 0;display:flex;flex-direction:column;gap:6px}
+.rejected li{display:grid;grid-template-columns:20px minmax(0,1fr);gap:8px;font-size:14px;line-height:20px;padding:8px 10px;border-radius:8px;background:var(--surface-sunk)}
+.empty-note{padding:14px 16px;color:var(--ink-muted);font-size:14px}
+.hist{list-style:none;margin:0;padding:0}
+.hist li{display:grid;grid-template-columns:72px minmax(0,1fr);gap:10px;padding:10px 16px;border-top:1px solid var(--line);font-size:14px;line-height:20px}
+.hist li:first-child{border-top:0}
+.hist .when{font:500 12px/20px var(--font-mono);color:var(--ink-muted)}
+.hist .gap{color:var(--ink-muted);font-style:italic}
+.legend{margin-top:20px;font-size:13px;color:var(--ink-muted);max-width:76ch}
+</style>
+
+<div class="wrap">
+  <div class="studio-bar">
+    <p>A capability's page, on a strong capability (Slices) and a fading one (Rollback). Rules, decisions and promises are word for word from Physa's map.</p>
+    <div class="controls">
+      <div class="seg" aria-label="Capability"><button id="c-slices" aria-pressed="true">Slices</button><button id="c-rollback" aria-pressed="false">Rollback</button></div>
+      <div class="seg" aria-label="Screen"><button id="b-desk" aria-pressed="false">Desktop</button><button id="b-phone" aria-pressed="true">Phone</button></div>
+      <div class="seg" aria-label="Theme"><button id="b-light" aria-pressed="false">Light</button><button id="b-dark" aria-pressed="false">Dark</button></div>
+    </div>
+  </div>
+  <div class="stage phone" id="stage">
+    <div class="screen">
+      <div class="topbar">
+        <span class="mark"><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="5" fill="var(--tube-capability)"/><path d="M11 6V1M15.5 13.5l4 3M6.5 13.5l-4 3" stroke="var(--tube-capability)" stroke-width="2.6" stroke-linecap="round"/><path d="M15.5 8.5l4-2.5" stroke="var(--tube-idea)" stroke-width="1.6" stroke-linecap="round"/></svg>Physa</span>
+        <nav class="nav" aria-label="Views"><a href="#">Needs you <span class="count">10</span></a><a href="#" aria-current="page">Network</a><a href="#" class="wide">Capabilities</a></nav>
+      </div>
+      <div class="scroll"><div class="page" id="page"></div></div>
+    </div>
+  </div>
+  <p class="legend">Strengths, Strands and history are examples: Physa records no evidence yet. Rules, decisions, promises and rejected options are Physa's own map. Entry names in the map's code (like <code>cheapest-first</code>) are internal and never shown.</p>
+</div>
+
+<script>
+(function(){
+"use strict";
+var W=function(s){return Math.min(22,1.5+2*Math.sqrt(Math.max(0,s)));};
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+var CAPS={
+ slices:{name:"Slices",promise:"An agent gets exactly the product knowledge its task needs, in one call, before it starts.",s:41,tr:1.8,fading:false,
+  needs:{chip:["accent","Sign-off"],title:"Land the slice cache",why:"Stakes need you: it touches Slices, Physa's second-strongest capability. Checks re-run by the engine: 41 passed.",acts:[["primary","Sign off","Signed off"],["","See the case","Opened the case"]]},
+  series:[22,24,25,27,28,30,31,33,35,36,38,39,41],
+  ideas:[{n:"A 50 ms slice on a generated map",st:"growing",s:7.5,from:5,fact:"bet · your idea"},{n:"Slice cache in the CLI",st:"growing",s:2.1,from:9,fact:"shaped · your idea"},{n:"Generated AGENTS.md files as the main delivery",st:"withered",from:1,to:5},{n:"Hooks that inject context as files are touched",st:"withered",from:2,to:6}],
+  rules:[["Agents choose, the CLI assembles","The agent reads the index and names the capabilities it needs. The CLI assembles them and never matches or ranks.","the agent knows its task; matching text to capabilities is flaky, and embeddings are heavy.","Architecture 01"],
+   ["Same request, same slice","Everything in a slice except its current-state section depends only on the map and the request.","agents and people must be able to trust and reproduce what was loaded.","Architecture 01"],
+   ["Product rules and promises are never cut","When a slice is over budget, rejected options go first, then questions, reasons, decisions and current state. Product rules, promises and rules stay.","they are what an agent most needs; if they alone don't fit, the map is too big.","Architecture 01"],
+   ["Fast from day one","physa index and physa slice answer in under 50 ms on a map twice the default budget, enforced by a test.","Rhiza only got its speed target after the pain.","Architecture 01"]],
+  decisions:[{t:"Pull at the start, check at the PR",x:"Agents pull a slice when they start; the PR check catches what they missed. Nothing is injected mid-session.",b:"hooks are not universal across agents, but every agent's work ends at a PR.",by:"dphaener, accepting a proposal",on:"19 Nov 2026",src:"Architecture 02",rej:[["Hooks that inject context as files are touched","not universal.",true],["Generated AGENTS.md files as the main delivery","loads everything along a path, whatever the task.",true]]},
+   {t:"The index is derived, not stored",x:"physa index builds the index from the capability files on every call.",b:"storing it would duplicate every promise.",by:"dphaener, accepting a proposal",on:"19 Nov 2026",src:"Architecture 01",rej:[]}],
+  questions:[],
+  history:[["2 days","Add the slice cache behind its sign-off","waiting"],["5 days","Run the 50 ms latency test on every PR",""],["1 wk","Assemble slices from the chosen capabilities",""],["2 wk","Build the index from capability files on each call",""],["3 wk","Read the map from .physa/",""]]},
+ rollback:{name:"Rollback",promise:"Any change, idea or decision can be undone as a unit, cheapest way first.",s:5,tr:-0.5,fading:true,
+  needs:{chip:["","Decay review"],title:"Rollback has thinned for 6 weeks",why:"Nothing has anchored to it since early October, and it has no guardrail, so its usage is unknown. Review it: keep it as it is, or propose removing it.",acts:[["primary","Keep it","Kept: strength stays as measured"],["","Propose removing it","Removal proposed on the next map update"]]},
+  series:[11,10.6,10.1,9.5,9.1,8.6,8.1,7.4,6.9,6.3,5.9,5.4,5.0],
+  ideas:[{n:"Show dependents before reverting",st:"established",s:2,from:0,to:3}],
+  rules:[["Cheapest first","Turn the flag off, when earned release is on; then revert the anchored changes; then reverse the decision and list what relied on it.","most problems are fixed instantly by a flag, with no deploy.","Vision"],
+   ["Every rollback is evidence","A rollback is recorded with who and why, and weakens the strength of what it undid.","what had to be undone should carry less weight next time.","Vision"],
+   ["Show dependents before reverting","Before reverting, Physa shows the later changes that touch what is being undone.","a revert that breaks what came after is a second mistake.","Vision"]],
+  decisions:[{t:"Rollback designed first",x:"Rollback is part of the design from the start, through change anchors and flags.",b:"in Rhiza, how to undo an autonomous run's work stayed an open question for 24 days.",by:"dphaener, accepting a proposal",on:"19 Nov 2026",src:"Rhiza v1 lessons",rej:[]}],
+  questions:[],
+  history:[["9 wk","List later changes that touch a revert",""],["10 wk","Record each rollback with who and why",""],["11 wk","Revert a change set by its anchors","rolled back"]]}
+};
+var cur="slices",phone=true,needsDone=null;
+function strands(c){
+  var Wd=phone?360:560,H=150,x0=8,x1=Wd-8,y=H*.62,N=13,X=function(w){return x0+(x1-x0)*w/(N-1);};
+  var s='<svg viewBox="0 0 '+Wd+' '+H+'" role="img" aria-label="'+esc(c.name)+' over the last 13 weeks">';
+  for(var w=0;w<N-1;w+=4){s+='<line x1="'+X(w)+'" x2="'+X(w)+'" y1="8" y2="'+(H-18)+'" stroke="var(--tube-ground)" stroke-dasharray="1 5"/><text x="'+X(w)+'" y="'+(H-4)+'" text-anchor="middle" font-size="10.5" fill="var(--ink-muted)" font-family="var(--font-mono)">'+(N-1-w)+'w</text>';}
+  s+='<text x="'+X(N-1)+'" y="'+(H-4)+'" text-anchor="end" font-size="10.5" fill="var(--ink-muted)" font-family="var(--font-mono)">now</text>';
+  // the capability's own tube, as thick as its strength each week
+  var top=[],bot=[];c.series.forEach(function(v,i){top.push([X(i),y-W(v)/2]);bot.push([X(i),y+W(v)/2]);});
+  function sm(p){var d="";p.forEach(function(q,i){if(!i){d+=q[0].toFixed(1)+" "+q[1].toFixed(1);return;}var a=p[i-1],mx=(a[0]+q[0])/2;d+=" C"+mx.toFixed(1)+" "+a[1].toFixed(1)+" "+mx.toFixed(1)+" "+q[1].toFixed(1)+" "+q[0].toFixed(1)+" "+q[1].toFixed(1);});return d;}
+  var last=W(c.series[N-1])/2,first=W(c.series[0])/2;
+  var band="M"+sm(top)+" A"+last+" "+last+" 0 0 1 "+bot[N-1][0]+" "+bot[N-1][1]+" C"+sm(bot.slice().reverse()).replace(/^[^C]*C/,"")+" A"+first+" "+first+" 0 0 1 "+top[0][0]+" "+top[0][1]+"Z";
+  // ideas: above the tube, joining it, growing to now, or ending in a lesson knot
+  var lift=W(c.s)/2+8;
+  c.ideas.forEach(function(it,k){
+    var yy=y-lift-k*12,a=it.from,b=it.to==null?N-1:it.to,d="M"+X(a)+" "+yy;
+    if(it.st==="established"){d+=" L"+X(b-1)+" "+yy+" C"+X(b-.4)+" "+yy+" "+X(b-.6)+" "+y+" "+X(b)+" "+y;s+='<path d="'+d+'" fill="none" stroke="var(--tube-capability)" stroke-width="'+W(it.s).toFixed(1)+'" stroke-linecap="round"/>';}
+    else if(it.st==="withered"){d+=" L"+X(b)+" "+yy;s+='<path d="'+d+'" fill="none" stroke="var(--tube-faded)" stroke-width="2" stroke-dasharray="2 4" stroke-linecap="round"/><circle cx="'+X(b)+'" cy="'+yy+'" r="4.5" fill="var(--surface-raised)" stroke="var(--lesson)" stroke-width="2.5"/>';}
+    else{var pts=[];for(var i=a;i<=b;i++)pts.push([X(i),yy]);var wEnd=W(it.s);s+='<path d="M'+X(a)+' '+yy+' L'+X(b)+' '+yy+'" fill="none" stroke="var(--tube-idea)" stroke-width="'+Math.max(1.6,wEnd*.55).toFixed(1)+'" stroke-linecap="round"/><path d="M'+X(Math.max(a,b-2))+' '+yy+' L'+X(b)+' '+yy+'" fill="none" stroke="var(--tube-idea)" stroke-width="'+wEnd.toFixed(1)+'" stroke-linecap="round"/>';}
+  });
+  s+='<path d="'+band+'" fill="'+(c.fading?"var(--tube-faded)":"var(--tube-capability)")+'"/>';
+  s+='<text x="'+x0+'" y="'+(y+W(c.series[0])/2+14)+'" font-size="11" fill="var(--ink-muted)" font-family="var(--font-mono)">'+c.series[0].toFixed(1)+'</text><text x="'+x1+'" y="'+(y+W(c.series[N-1])/2+14)+'" text-anchor="end" font-size="11" fill="var(--ink)" font-family="var(--font-mono)" font-weight="600">'+c.series[N-1].toFixed(1)+' flow</text></svg>';
+  return s;
+}
+function meter(c){return '<span class="meter'+(c.fading?" faded":"")+'"><i style="height:'+W(c.s).toFixed(1)+'px"></i><span class="exp" title="Strength is experimental until calibration has data">'+c.s.toFixed(1)+' flow</span></span>';}
+function render(){
+  var c=CAPS[cur],h='';
+  h+='<div class="crumb"><a href="#">Network</a> › Capability</div><h1>'+esc(c.name)+'</h1><p class="promise">'+esc(c.promise)+'</p>';
+  h+='<div class="facts"><span>Steward <b>dphaener</b></span>'+meter(c)+'<span class="small">'+(c.tr<0?"↓ ":"↑ ")+Math.abs(c.tr).toFixed(1)+' a week</span><span class="small">usage unknown: no guardrail yet</span><span class="chip exp">Experimental</span></div>';
+  h+='<div class="cols"><div class="col">';
+  // needs you here
+  if(c.needs){
+    if(needsDone&&needsDone.cap===cur) h+='<div class="panel needs-here done"><span class="small muted">'+esc(needsDone.msg)+'.</span> <button class="btn" id="undo" style="align-self:flex-start">Undo</button></div>';
+    else h+='<div class="panel needs-here"><div class="top"><span class="chip accent">Needs you here</span><span class="chip '+c.needs.chip[0]+'">'+c.needs.chip[1]+'</span></div><div class="title">'+esc(c.needs.title)+'</div><div class="small muted">'+esc(c.needs.why)+'</div><div class="acts">'+c.needs.acts.map(function(a,i){return '<button class="btn '+a[0]+'" data-n="'+i+'">'+a[1]+'</button>';}).join("")+'</div></div>';
+  }
+  h+='<section><h2>Over 13 weeks</h2><div class="panel strands">'+strands(c)+'<div class="key"><span><svg width="26" height="10"><path d="M2 5h22" stroke="'+(c.fading?"var(--tube-faded)":"var(--tube-capability)")+'" stroke-width="7" stroke-linecap="round"/></svg>'+esc(c.name)+'</span><span><svg width="26" height="10"><path d="M2 5h22" stroke="var(--tube-idea)" stroke-width="3" stroke-linecap="round"/></svg>growing idea</span><span><svg width="26" height="10"><path d="M2 5h12" stroke="var(--tube-faded)" stroke-width="2" stroke-dasharray="2 3"/><circle cx="19" cy="5" r="3.5" fill="var(--surface-raised)" stroke="var(--lesson)" stroke-width="2"/></svg>lesson</span></div></div></section>';
+  h+='<section><h2>Ideas <span class="n">'+c.ideas.length+'</span></h2><div class="panel list">'+c.ideas.map(function(it){
+    var g=it.st==="withered"?'<svg width="24" height="16"><path d="M2 8h11" stroke="var(--tube-faded)" stroke-width="2" stroke-dasharray="2 3"/><circle cx="18" cy="8" r="4" fill="var(--surface-raised)" stroke="var(--lesson)" stroke-width="2.5"/></svg>':'<svg width="24" height="16"><path d="M3 8h18" stroke="'+(it.st==="established"?"var(--tube-capability)":"var(--tube-idea)")+'" stroke-width="'+W(it.s).toFixed(1)+'" stroke-linecap="round"/></svg>';
+    var sub=it.st==="withered"?'<span class="chip lesson">Lesson</span> <span class="small muted">kept as a rejected option below</span>':(it.st==="established"?'<span class="small muted">established: now part of '+esc(c.name)+'</span>':'<span class="small muted">'+esc(it.fact)+'</span>');
+    return '<div class="item">'+g+'<div><div style="font-weight:600;font-size:14.5px;line-height:20px">'+esc(it.n)+'</div>'+sub+'</div><span class="fig">'+(it.s?it.s.toFixed(1):"")+'</span></div>';}).join("")+'</div></section>';
+  h+='</div><div class="col">';
+  h+='<section><h2>Rules <span class="n">'+c.rules.length+'</span></h2><div class="panel">'+c.rules.map(function(r){return '<div class="entry"><h3>'+esc(r[0])+'</h3><p>'+esc(r[1])+'</p><p class="because"><b>Because</b> '+esc(r[2])+'</p><span class="cite">from '+esc(r[3])+'</span></div>';}).join("")+'</div></section>';
+  h+='<section><h2>Decisions <span class="n">'+c.decisions.length+'</span></h2><div class="panel">'+c.decisions.map(function(d){
+    var rej=d.rej.length?'<details><summary>'+d.rej.length+' rejected option'+(d.rej.length>1?"s":"")+(d.rej.some(function(x){return x[2];})?", lessons included":"")+'</summary><ul class="rejected">'+d.rej.map(function(x){return '<li>'+(x[2]?'<svg width="18" height="18"><circle cx="9" cy="9" r="5" fill="var(--surface-sunk)" stroke="var(--lesson)" stroke-width="2.5"/></svg>':'<span></span>')+'<span><b>'+esc(x[0])+'</b>: '+esc(x[1])+(x[2]?' <span class="small" style="color:var(--lesson-ink)">A withered idea\'s lesson.</span>':'')+'</span></li>';}).join("")+'</ul></details>':"";
+    return '<div class="entry"><h3>'+esc(d.t)+'</h3><p>'+esc(d.x)+'</p><p class="because"><b>Because</b> '+esc(d.b)+'</p><span class="cite">Decided by '+esc(d.by)+' · '+d.on+' · from '+esc(d.src)+'</span>'+rej+'</div>';}).join("")+'</div></section>';
+  h+='<section><h2>Questions <span class="n">'+c.questions.length+'</span></h2><div class="panel">'+(c.questions.length?"":'<div class="empty-note">No open questions shape the next work on '+esc(c.name)+'.</div>')+'</div></section>';
+  h+='<section><h2>History</h2><div class="panel"><ul class="hist">'+c.history.map(function(x){return '<li><span class="when">'+x[0]+'</span><span>'+esc(x[1])+(x[2]?' <span class="chip '+(x[2]==="rolled back"?"danger":"accent")+'">'+(x[2]==="waiting"?"Waiting on sign-off":"Rolled back")+'</span>':"")+'</span></li>';}).join("")+(c.fading?'<li><span class="when">since</span><span class="gap">Nothing anchored for 9 weeks.</span></li>':'')+'</ul></div></section>';
+  h+='</div></div>';
+  var page=document.getElementById("page");page.innerHTML=h;
+  page.querySelectorAll("[data-n]").forEach(function(b){b.onclick=function(){needsDone={cap:cur,msg:c.needs.acts[+b.getAttribute("data-n")][2]};render();};});
+  var u=document.getElementById("undo");if(u)u.onclick=function(){needsDone=null;render();};
+  document.getElementById("c-slices").setAttribute("aria-pressed",String(cur==="slices"));document.getElementById("c-rollback").setAttribute("aria-pressed",String(cur==="rollback"));
+  document.getElementById("b-desk").setAttribute("aria-pressed",String(!phone));document.getElementById("b-phone").setAttribute("aria-pressed",String(phone));
+  var th=document.documentElement.getAttribute("data-theme");document.getElementById("b-light").setAttribute("aria-pressed",String(th==="light"));document.getElementById("b-dark").setAttribute("aria-pressed",String(th==="dark"));
+}
+document.getElementById("c-slices").onclick=function(){cur="slices";render();};
+document.getElementById("c-rollback").onclick=function(){cur="rollback";render();};
+document.getElementById("b-desk").onclick=function(){phone=false;document.getElementById("stage").classList.remove("phone");render();};
+document.getElementById("b-phone").onclick=function(){phone=true;document.getElementById("stage").classList.add("phone");render();};
+document.getElementById("b-light").onclick=function(){document.documentElement.setAttribute("data-theme","light");render();};
+document.getElementById("b-dark").onclick=function(){document.documentElement.setAttribute("data-theme","dark");render();};
+render();
+})();
+</script>
+
+</html>

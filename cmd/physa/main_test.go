@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -30,7 +31,7 @@ func TestRunNoArgsPrintsUsage(t *testing.T) {
 	if code != 2 {
 		t.Errorf("run(nil) = %d, want 2", code)
 	}
-	if got, want := stderr.String(), "usage: physa check [dir] | physa version\n"; got != want {
+	if got, want := stderr.String(), usage; got != want {
 		t.Errorf("run(nil) stderr = %q, want %q", got, want)
 	}
 	if stdout.Len() != 0 {
@@ -44,7 +45,7 @@ func TestRunUnknownArgPrintsUsage(t *testing.T) {
 	if code != 2 {
 		t.Errorf("run(bogus) = %d, want 2", code)
 	}
-	if got, want := stderr.String(), "usage: physa check [dir] | physa version\n"; got != want {
+	if got, want := stderr.String(), usage; got != want {
 		t.Errorf("run(bogus) stderr = %q, want %q", got, want)
 	}
 	if stdout.Len() != 0 {
@@ -123,5 +124,77 @@ func TestCheckTooManyArgsPrintsUsage(t *testing.T) {
 	}
 	if got, want := stderr.String(), usage; got != want {
 		t.Errorf("stderr = %q, want %q", got, want)
+	}
+}
+
+func TestIndexGoodMap(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"index", tempMap(t, "`r` · from docs/d.md")}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr %q", code, stderr.String())
+	}
+	if got, want := stdout.String(), "a  x  1 rule\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestIndexMapWithProblem(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"index", tempMap(t, "r from docs/d.md")}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0", code)
+	}
+	if !strings.HasPrefix(stdout.String(), "a  x") {
+		t.Errorf("stdout = %q, want the index still printed", stdout.String())
+	}
+	if got, want := stderr.String(), "physa index: the map has 1 problem; run physa check\n"; got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+}
+
+func TestIndexNoMapIsError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"index", t.TempDir()}, &stdout, &stderr)
+	if code != 2 {
+		t.Errorf("code = %d, want 2", code)
+	}
+	if !strings.HasPrefix(stderr.String(), "physa index: ") {
+		t.Errorf("stderr = %q, want a physa index error", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+func TestIndexTooManyArgsPrintsUsage(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"index", "a", "b"}, &stdout, &stderr)
+	if code != 2 {
+		t.Errorf("code = %d, want 2", code)
+	}
+	if got, want := stderr.String(), usage; got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+}
+
+func TestIndexOwnMap(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"index", "../.."}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr %q", code, stderr.String())
+	}
+	lines := strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n")
+	if len(lines) != 13 {
+		t.Fatalf("got %d lines, want 13:\n%s", len(lines), stdout.String())
+	}
+	var names []string
+	for _, l := range lines {
+		names = append(names, strings.Fields(l)[0])
+	}
+	if !sort.StringsAreSorted(names) {
+		t.Errorf("names not sorted: %v", names)
 	}
 }

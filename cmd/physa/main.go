@@ -1,5 +1,6 @@
-// Command physa is Physa's command line. It checks the map with check and
-// prints the version of the build with version.
+// Command physa is Physa's command line. It checks the map with check, lists
+// its capabilities with index and prints the version of the build with
+// version.
 package main
 
 import (
@@ -8,12 +9,14 @@ import (
 	"os"
 
 	"github.com/dphaener/physa/internal/mapcheck"
+	"github.com/dphaener/physa/internal/mapfile"
+	"github.com/dphaener/physa/internal/mapindex"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
-const usage = "usage: physa check [dir] | physa version\n"
+const usage = "usage: physa check [dir] | physa index [dir] | physa version\n"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -36,6 +39,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 				}
 				return check(dir, stdout, stderr)
 			}
+		case "index":
+			if len(args) <= 2 {
+				dir := "."
+				if len(args) == 2 {
+					dir = args[1]
+				}
+				return index(dir, stdout, stderr)
+			}
 		}
 	}
 	fmt.Fprint(stderr, usage)
@@ -57,5 +68,25 @@ func check(dir string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(stdout, "physa check: ok (%d capabilities, %d entries)\n", res.Capabilities, res.Entries)
+	return 0
+}
+
+// index prints the index of the map in dir: 0 when it printed, even if the map
+// has problems, and 2 when the map cannot be read or the index cannot be written.
+func index(dir string, stdout, stderr io.Writer) int {
+	m, problems, err := mapfile.Read(dir)
+	if err != nil {
+		fmt.Fprintf(stderr, "physa index: %v\n", err)
+		return 2
+	}
+	if err := mapindex.Write(stdout, mapindex.Build(m)); err != nil {
+		fmt.Fprintf(stderr, "physa index: %v\n", err)
+		return 2
+	}
+	if n := len(problems); n == 1 {
+		fmt.Fprintln(stderr, "physa index: the map has 1 problem; run physa check")
+	} else if n > 1 {
+		fmt.Fprintf(stderr, "physa index: the map has %d problems; run physa check\n", n)
+	}
 	return 0
 }

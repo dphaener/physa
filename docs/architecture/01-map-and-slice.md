@@ -141,7 +141,7 @@ billing    Customers are charged exactly once per period, in their currency.   5
 ...
 ```
 
-One line per capability, sorted by name. With local data available it adds strength and a marker for capabilities with growing ideas or recent rollbacks. Target: under ~1,500 tokens for about 50 capabilities.
+One line per capability, sorted by name. With local data available it adds strength and a marker for capabilities with growing ideas or recent rollbacks. Target: under ~2,000 tokens for about 50 capabilities.
 
 ### 8.2 `physa slice`
 

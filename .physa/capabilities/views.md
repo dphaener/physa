@@ -69,7 +69,15 @@ Because: the core is everything one developer needs, and the phone is where they
 Rows are ordered most urgent first, from guardrail trips to decay reviews. A run's progress always shows its phase, what is running, time since its last activity and tokens against its appetite. Calls are checked one by one, apart from decisions. Running now sits beside Needs you and never notifies.
 Because: real bets run for up to an hour or more and end with calls a person should check; a spinner hides both, and waiting must never look like stalled.
 
-## Questions
+### A capability's page explains it
+`capability-page` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/architecture/06-views-and-the-network.md
+A capability's page leads with its promise, then what needs the person there, its Strands and ideas, its rules, decisions and questions, and its anchored history. Rejected options fold away; lessons among them carry the amber knot.
+Because: it answers "why is it like this?" in the map's own words, and never hides what is waiting.
+
+### An idea's page shows its bet and its strength
+`idea-page` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/architecture/06-views-and-the-network.md
+An idea's page shows its bet's progress, changes and review rounds, its pitch, and every piece of evidence behind its strength. A withering idea's lesson is drafted there and editable before it is accepted.
+Because: strength must always be explainable, and a lesson becomes a decision the person should own the words of.
 
 ### Do capabilities connect to each other?
 `capability-tubes` · raised by dphaener · 2026-11-20

@@ -1,6 +1,6 @@
 # Architecture 06: views and the network
 
-Draft 0.3, 2026-11-20. Uses `.physa/glossary.md` terms only. Builds on vision §3.1 and 05 §6. Items marked (Q) are open questions for the owner.
+Draft 0.4, 2026-11-20. Uses `.physa/glossary.md` terms only. Builds on vision §3.1 and 05 §6. Items marked (Q) are open questions for the owner.
 
 The web views are server-rendered Go templates: Needs you is the home screen, the network view is the signature, and the single-user phone web is a real view, not a shrunk desktop. This design settles how they look, and how the network is drawn.
 
@@ -50,7 +50,17 @@ The engine renders the network as SVG text; the browser paints it.
 
 ## 4. A capability's page
 
-A capability's page answers "what is growing, what is withering?" for that capability with **Strands**: its tube over time, left to right, as thick as its strength each week, with its ideas running beside it, joining it when established and ending in their lesson knot when withered (the owner: "I'm in favor of C on each capabilities page").
+A capability's page answers "why is it like this?" From the top, on a phone:
+
+- **Its name and its promise**, word for word from the map, then its steward, strength, weekly trend, whether its usage is known, and the Experimental chip.
+- **Needs you here**: anything in Needs you about this capability, such as a sign-off or a decay review, with its actions. The page never hides what is waiting.
+- **Strands** (below), then **its ideas**: growing ones with their stage and owner, established ones as part of it, withered ones pointing to their lesson.
+- **Rules, decisions and questions**, each with its reason and source. A decision shows who decided and when; its rejected options fold away and open on a tap, and those that are a withered idea's lesson carry the amber knot.
+- **History**: its anchored changes, newest first, rollbacks marked, and the gap when nothing has anchored for a while. Never commit IDs, and never the map's internal entry names.
+
+On desktop the map's rules, decisions and questions sit in a second column beside the drawing.
+
+Strands answers "what is growing, what is withering?" for that capability with **Strands**: its tube over time, left to right, as thick as its strength each week, with its ideas running beside it, joining it when established and ending in their lesson knot when withered (the owner: "I'm in favor of C on each capabilities page").
 
 ## 5. The phone web
 
@@ -68,6 +78,17 @@ Needs you is the home screen: one column of rows, each one thing waiting on this
 - **A run's progress always shows the same four things**: its phase (conduct, build, check, fix), what is running, the time since its last activity, and tokens against its appetite, plus review rounds once there have been any. Runs last up to an hour or more, so a spinner is never enough.
 - **Waiting is not stalled.** A run waiting on a workflow says so; only a session without progress for 15 minutes is stalled (`stalls-need-you`).
 - **Running now** sits beside Needs you on desktop and below it on a phone: the person's bets working on their own. It answers "what is changing right now?" for their own work. Nothing in it needs them, and nothing in it notifies.
+
+## 7. An idea's page
+
+An idea's page says whose it is, what it extends, how strong it is and why, and where its bet stands.
+
+- **Needs you here** first: an ask from its run, its calls one by one, or, for a withering idea, the lesson it would leave.
+- **A withering idea's lesson is drafted and editable before it is accepted**: it becomes a decision on the capability, with the idea as a rejected option, so the person owns its words.
+- **The bet**: its phase (conduct, build, check, fix), what is running, last activity, time in, review round, and tokens against appetite; then its planned changes with their acceptance and state; then its review rounds, each with its findings and, for agents only, its rework in tokens.
+- **The pitch** when it was shaped: problem, appetite, solution, scope and no-gos, signal, rabbit holes.
+- **Why it is this strong**: every piece of evidence, what it added and what it still counts after decay, summing to the strength shown (05 §6.1). Strength is explained on every idea's page.
+- **Its story**, newest first.
 
 ## Questions
 

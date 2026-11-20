@@ -14,8 +14,8 @@ Because: a guessed risk score is an estimate by another name.
 
 ### Landing and exposing are separate bars
 `two-bars` · from docs/vision.md
-Landing code behind an off flag and exposing users each have their own stakes and their own bar.
-Because: most of the speed comes from landing freely and exposing carefully.
+With flags on, landing code behind an off flag and exposing users each have their own stakes and their own bar. With flags off, landing is exposing: one bar, whose stakes include everyone the change reaches.
+Because: most of the speed comes from landing freely and exposing carefully, and without a flag there is nothing in between.
 
 ### The engine re-runs the checks
 `rerun-checks` · from docs/research/harness-spec.md

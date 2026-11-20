@@ -34,7 +34,7 @@ _Avoid_: context pack, context dump
 **Idea**: A person's intent to try something with the product: a PM's feature, a designer's layout, a developer's architecture. It is the thinnest tube in the network from the moment it exists, and it belongs to that person. It thickens as attention and then evidence flow into it, and withers when nothing does. An idea has no named states: its strength and a few facts (shaped, built, flagged to whom) say where it stands. When it withers, its code and flag are removed and its lesson stays in the map as a decision with the idea as a rejected option.
 _Avoid_: ticket, backlog item, story, probe
 
-**Shaping**: Turning an idea into a pitch: working out the problem, the appetite, the solution, the scope, the signal and the no-gos. It can include spikes.
+**Shaping**: Turning an idea into a pitch: working out the problem, the appetite, the solution, the scope, the signal and the no-gos. It can include spikes. Optional: an idea can be bet on with only its text and an appetite.
 _Avoid_: grooming, refinement
 
 **Pitch**: A shaped idea: the problem, the appetite, the solution, its scope, the signal it expects, its rabbit holes and no-gos.
@@ -48,7 +48,7 @@ _Avoid_: KPI, success metric
 **Experiment**: Two or more ideas tried side by side against the same signal, by splitting a flag's audience between them. The one that carries more flow thickens; the result is recorded as a decision.
 _Avoid_: A/B test, bake-off
 
-**Flag**: A switch in the running product that decides who sees an idea's code: off, internal, a percentage, or everyone. Built ideas ship behind one by default, and a flag lives exactly as long as its idea: removed when the idea is established, removed with its code when the idea withers.
+**Flag**: A switch in the running product that decides who sees an idea's code: off, internal, a percentage, or everyone. Opt-in: with flags on, built ideas ship behind one, and a flag lives exactly as long as its idea: removed when the idea is established, removed with its code when the idea withers.
 _Avoid_: feature toggle, kill switch
 
 **Stakes**: What a mistake in a change would cost: the strength of what it touches, times how many people it is exposed to, reduced by how easily it can be undone. Worked out by the engine, never guessed. Landing code and exposing users each have their own stakes.
@@ -68,12 +68,12 @@ _Avoid_: capability owner, maintainer, DRI
 **Needs you**: Everything waiting on one person: sign-offs their stakes require, questions and asks addressed to them, their ideas that need shaping or are withering, their bets that hit a circuit breaker, guardrail trips and decay reviews on capabilities they steward, and map proposals on their PRs. The home screen, and the only thing that notifies.
 _Avoid_: inbox, activity feed
 
-**Rollback**: Undoing something, cheapest first: turn its flag off; revert its changes; reverse its decision and list what relied on it. Every rollback is recorded with who and why, and weakens the strength of what was rolled back.
+**Rollback**: Undoing something, cheapest first: turn its flag off, when flags are on; revert its changes; reverse its decision and list what relied on it. Every rollback is recorded with who and why, and weakens the strength of what was rolled back.
 
 **Appetite**: How many tokens a team is willing to spend on a pitch, counted from when the bet is made and building starts. A budget, never an estimate. Time plays no part.
 _Avoid_: estimate, points, story points, time box
 
-**Bet**: A person's decision to build a pitch within its appetite.
+**Bet**: A person's decision to build an idea within an appetite, shaped into a pitch or not.
 _Avoid_: sprint, commitment
 
 **Scope**: The breadth of a pitch: what it covers. Its no-gos mark the edge. Set during shaping; widening it after the bet goes back to shaping. A pitch too broad for one bet becomes more than one idea.

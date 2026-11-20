@@ -195,7 +195,7 @@ Ideas have no named states (`strength-not-mode`). Everything else the engine run
 | Thing | States |
 |---|---|
 | Bet | active → done, or stopped by its circuit breaker |
-| Change | open → landed → exposed (its flag widening) → established, or reverted |
+| Change | open → landed → exposed (its flag widening, with flags on) → established, or reverted |
 | Run (for a spike or a change) | queued → running → waiting on a person → ended (outcome) |
 | Session | running → done, exited, lost, or stalled |
 

@@ -27,6 +27,11 @@ Because: small products rarely get enough traffic for statistics.
 When an idea is established or withers, its events are proposed for removal.
 Because: tracking plans rot like flags do.
 
+### Engineering evidence is always on
+`engineering-always-on` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/05-flags-signals-strength.md
+Reverts, rework, defects and lead time from git, PRs and CI are recorded whatever else is switched on or off.
+Because: "it should be always on no matter what" (the owner); it needs nothing in the app.
+
 ## Decisions
 
 ### Engineering evidence from git and CI; runtime through OpenTelemetry

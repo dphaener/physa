@@ -1,5 +1,5 @@
 ---
-promise: Every built idea can be shown, widened or turned off for real users without a deploy, and its flag never outlives it.
+promise: With flags on, every built idea can be shown, widened or turned off for real users without a deploy, and its flag never outlives it.
 stewards: [dphaener]
 ---
 
@@ -7,9 +7,9 @@ stewards: [dphaener]
 
 ## Rules
 
-### Behind a flag by default
-`flag-by-default` · from docs/vision.md
-Built ideas ship behind a flag. Teams set exemptions by policy.
+### Flags behind every built idea, once flags are on
+`flag-when-on` · from docs/vision.md
+With flags on, built ideas ship behind a flag; teams set exemptions by policy.
 Because: landing code and exposing users must be separate steps.
 
 ### A flag lives exactly as long as its idea
@@ -18,6 +18,13 @@ Established: removing the flag is proposed. Withered: removing the code is propo
 Because: stale flags are hidden debt; decay removes them by design.
 
 ## Decisions
+
+### Flags are opt-in
+`flags-opt-in` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/05-flags-signals-strength.md
+The whole flags feature (physa serve, the provider, experiments, guardrails, automatic rollback) is opt-in and off by default, with the product signals that need it.
+Because: "If I as a solo developer just want to YOLO everything, I don't care about going through all of that ceremony."
+Rejected:
+- Built ideas behind a flag by default.
 
 ### Own the meaning, integrate the switch
 `openfeature` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/vision.md

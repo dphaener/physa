@@ -2,8 +2,11 @@ package history
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
+
+	"github.com/dphaener/physa/internal/vcs"
 )
 
 // Kinds of finding Check reports.
@@ -23,13 +26,13 @@ type Finding struct {
 
 var trailerLine = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*:\s*\S`)
 
-// readTrailers returns the capabilities of the Capability trailers and of the
-// Loaded trailers in a commit message. The subject paragraph never holds
-// trailers; from the last paragraph back, every paragraph made only of
-// `Key: value` lines does, so a squash merge's own trailers after a blank
-// line read like the branch commit's.
-func readTrailers(message string) (capabilities, loaded []string) {
-	capabilities, loaded = []string{}, []string{}
+// readTrailers returns the capabilities of the Capability trailers in a
+// commit message; every other trailer is ignored. The subject paragraph
+// never holds trailers; from the last paragraph back, every paragraph made
+// only of `Key: value` lines does, so a squash merge's own trailers after a
+// blank line read like the branch commit's.
+func readTrailers(message string) []string {
+	capabilities := []string{}
 	paras := paragraphs(message)
 	first := len(paras)
 	for first > 1 && isTrailerBlock(paras[first-1]) {
@@ -38,15 +41,12 @@ func readTrailers(message string) (capabilities, loaded []string) {
 	for _, para := range paras[first:] {
 		for _, t := range joinContinuations(para) {
 			key, value, _ := strings.Cut(t, ":")
-			switch strings.ToLower(key) {
-			case "capability":
+			if strings.EqualFold(key, "capability") {
 				capabilities = append(capabilities, splitSlugs(value)...)
-			case "loaded":
-				loaded = append(loaded, splitSlugs(value)...)
 			}
 		}
 	}
-	return capabilities, loaded
+	return capabilities
 }
 
 // paragraphs splits a message into runs of lines divided by blank lines.
@@ -110,11 +110,13 @@ func splitSlugs(value string) []string {
 	return slugs
 }
 
-// Check reports the trailer findings of commits against the capability slugs
-// known accepts. Findings follow commit order; for each commit, missing or
-// multiple come before unknown slugs, Capability before Loaded, each in the
-// order written.
-func Check(commits []Commit, known func(slug string) bool) []Finding {
+// Check reports the trailer findings of commits. A slug is known when its
+// file is in the map as that commit leaves it, so a commit that adds a
+// capability may name it, and a slug only a later commit adds is unknown.
+// Findings follow commit order; for each commit, missing or multiple come
+// before unknown slugs, each in the order written. The error is for a commit
+// whose files version control cannot list.
+func Check(repo vcs.Repo, commits []Commit) ([]Finding, error) {
 	findings := []Finding{}
 	for _, c := range commits {
 		add := func(kind, slug, format string, args ...any) {
@@ -126,16 +128,34 @@ func Check(commits []Commit, known func(slug string) bool) []Finding {
 		case len(c.Capabilities) > 1:
 			add(KindMultiple, "", "Capability names %d capabilities (%s); a commit serves one", len(c.Capabilities), strings.Join(c.Capabilities, ", "))
 		}
+		if len(c.Capabilities) == 0 {
+			continue
+		}
+		known, err := slugsAt(repo, c.Hash)
+		if err != nil {
+			return nil, err
+		}
 		for _, s := range c.Capabilities {
-			if !known(s) {
+			if !known[s] {
 				add(KindUnknown, s, "Capability %q is not in the map", s)
 			}
 		}
-		for _, s := range c.Loaded {
-			if !known(s) {
-				add(KindUnknown, s, "Loaded %q is not in the map", s)
-			}
+	}
+	return findings, nil
+}
+
+// slugsAt returns the capability slugs whose files change id leaves in the
+// map.
+func slugsAt(repo vcs.Repo, id string) (map[string]bool, error) {
+	files, err := repo.Files(id, CapabilitiesDir)
+	if err != nil {
+		return nil, fmt.Errorf("cannot list the map's capabilities at %s: %w", id, err)
+	}
+	slugs := make(map[string]bool, len(files))
+	for _, f := range files {
+		if stem, ok := strings.CutSuffix(path.Base(f), ".md"); ok {
+			slugs[stem] = true
 		}
 	}
-	return findings
+	return slugs, nil
 }

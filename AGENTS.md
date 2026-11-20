@@ -2,7 +2,7 @@
 
 Physa is product management rebuilt for agents: a product is a network of ideas whose strength comes from evidence. This repo holds the open-source core (Go). The hosted team layer (Rails) lives in its own repo.
 
-The repo is early: the Go module, `cmd/physa`, its code rules, the map reader, `physa check`, `physa index`, `physa slice`, `physa trailers`, `physa pr-check`, `physa review`, `physa sync`, the adapter for Claude Code and the store exist; the engine does not yet.
+The repo is early: the Go module, `cmd/physa`, its code rules, the map reader, `physa check`, `physa index`, `physa slice`, `physa trailers`, `physa pr-check`, `physa records`, the version-control interface, the adapter for Claude Code and the store exist; the engine does not yet.
 
 <!-- physa -->
 Before changing code, run `go run ./cmd/physa index`, then `go run ./cmd/physa slice <capabilities>` for the ones your task touches.
@@ -17,7 +17,7 @@ No CLI? Read .physa/README.md.
 4. `docs/architecture/`: settled designs, numbered in order.
 5. `docs/research/`: background. Read when a design refers to it.
 
-Anchor commits with `Capability: <capability>` (its file name in .physa/capabilities, without .md) and `Loaded: <the capabilities in your slice>`, comma-separated.
+Anchor commits with `Capability: <capability>` (its file name in .physa/capabilities, without .md).
 
 Commit messages follow Conventional Commits, written with the `commit-style` skill (`type(scope): Subject`, then a short prose body). Older commits in this repo don't; don't copy them.
 

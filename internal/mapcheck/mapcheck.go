@@ -2,8 +2,8 @@
 // budgets: the rules `physa check` enforces. It builds on the reader's
 // problems and adds what each kind of entry must carry, that slugs and terms
 // are unique, that document anchors name files in the repo, that commit
-// anchors name commits in the repo's git history, and that the map stays
-// within its budgets.
+// anchors name changes in the repo's history, read through version control,
+// and that the map stays within its budgets.
 package mapcheck
 
 import (
@@ -16,8 +16,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dphaener/physa/internal/history"
 	"github.com/dphaener/physa/internal/mapfile"
+	"github.com/dphaener/physa/internal/vcs"
 )
 
 // The size budgets of the map. Going over one fails the check.
@@ -29,6 +29,9 @@ const (
 const (
 	glossaryPath = ".physa/glossary.md"
 )
+
+// errNoVCS is why commit anchors are unresolved when no OpenRepo is set.
+var errNoVCS = errors.New("no version control")
 
 var hows = []string{"in their words", "choosing an option", "accepting a proposal"}
 
@@ -58,22 +61,27 @@ type Options struct {
 	// anchors for form only. An error stops resolving for the rest of the
 	// run: PR anchors are then checked for form only.
 	PRExists func(n int) (bool, error)
+	// OpenRepo opens the version control holding root. It is called once,
+	// when the first commit anchor is met. Nil leaves commit anchors
+	// unresolved: each is a problem.
+	OpenRepo func(root string) (vcs.Repo, error)
 }
 
-// Check reads the map under root (the repo root) and checks it. The error is
-// only for a map that cannot be read at all.
+// Check reads the map under root (the repo root) and checks it, with no
+// resolver for #N anchors and no version control for commit anchors. The
+// error is only for a map that cannot be read at all.
 func Check(root string) (Result, error) {
 	return CheckWith(root, Options{})
 }
 
 // CheckWith is Check with options: it resolves #N anchors through
-// o.PRExists when it is set.
+// o.PRExists and commit anchors through o.OpenRepo, when each is set.
 func CheckWith(root string, o Options) (Result, error) {
 	m, problems, err := mapfile.Read(root)
 	if err != nil {
 		return Result{}, err
 	}
-	c := &checker{root: root, problems: problems, prExists: o.PRExists, prKnown: map[int]bool{}}
+	c := &checker{root: root, problems: problems, prExists: o.PRExists, prKnown: map[int]bool{}, openRepo: o.OpenRepo}
 	files := m.Capabilities
 	if m.Product != nil {
 		files = append([]*mapfile.File{m.Product}, files...)
@@ -113,7 +121,8 @@ type checker struct {
 	prKnown  map[int]bool              // resolved numbers
 	prNote   string
 
-	repo     *history.Repo // opened when the first commit anchor is met
+	openRepo func(root string) (vcs.Repo, error)
+	repo     vcs.Repo // opened when the first commit anchor is met
 	repoErr  error
 	repoOpen bool
 }
@@ -210,21 +219,24 @@ func (c *checker) docAnchor(f *mapfile.File, line int, p string) {
 	}
 }
 
-// commitAnchor checks that a commit-hash anchor names a commit in the repo.
-// Git runs only when the first commit anchor is met.
+// commitAnchor checks that a commit-hash anchor names a change in the repo.
+// Version control is opened only when the first commit anchor is met.
 func (c *checker) commitAnchor(f *mapfile.File, line int, hash string) {
 	if !c.repoOpen {
 		c.repoOpen = true
-		c.repo, c.repoErr = history.Open(c.root)
+		if c.openRepo == nil {
+			c.repoErr = errNoVCS
+		} else {
+			c.repo, c.repoErr = c.openRepo(c.root)
+		}
 	}
 	switch {
-	case errors.Is(c.repoErr, history.ErrNotRepo):
-		c.add(f.Path, line, "anchor %q cannot resolve: not a git repository", hash)
 	case c.repoErr != nil:
+		// vcs.ErrNotRepo reads "not a git repository".
 		c.add(f.Path, line, "anchor %q cannot resolve: %v", hash, c.repoErr)
-	case !c.repo.HasCommit(hash):
+	case !c.repo.HasChange(hash):
 		hint := ""
-		if c.repo.Shallow() {
+		if c.repo.Partial() {
 			hint = " (the clone is shallow; fetch its full history)"
 		}
 		c.add(f.Path, line, "anchor %q does not name a commit in this repo%s", hash, hint)

@@ -131,3 +131,15 @@ func TestRealRepoPasses(t *testing.T) {
 		t.Fatalf("repo violates: %v", rules(vs))
 	}
 }
+
+func TestGitOutsideAdapter(t *testing.T) {
+	vs := mustCheck(t, "testdata/gitexec")
+	if got := rules(vs); len(got) != 2 || got[0] != "internal/runner git-adapter-only" || got[1] != "internal/runner git-adapter-only" {
+		t.Fatalf("got %v", got)
+	}
+	for _, v := range vs {
+		if !strings.Contains(v.Message, "runner.go:") || strings.Contains(v.Message, "_test.go") {
+			t.Errorf("message should name the non-test file: %q", v.Message)
+		}
+	}
+}

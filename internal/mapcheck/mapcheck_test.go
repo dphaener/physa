@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dphaener/physa/internal/vcs"
+	"github.com/dphaener/physa/internal/vcs/git"
 )
 
 const front = "---\npromise: x\n---\n# T\n\n"
@@ -34,9 +37,10 @@ func newMap(t *testing.T, product, capability string) string {
 	return root
 }
 
+// check checks the map under root with the git adapter for commit anchors.
 func check(t *testing.T, root string) Result {
 	t.Helper()
-	r, err := Check(root)
+	r, err := CheckWith(root, Options{OpenRepo: git.Open})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,6 +200,49 @@ func TestCommitAnchorMissing(t *testing.T) {
 	if len(r.Problems) != 1 || strings.Contains(r.Problems[0].Message, "shallow") {
 		t.Errorf("want one problem without a shallow hint, got %v", r.Problems)
 	}
+}
+
+// Without version control, a commit anchor cannot resolve.
+func TestCommitAnchorNoVersionControl(t *testing.T) {
+	root := newMap(t, "", commitCap("1a2b3c4"))
+	r, err := Check(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, r, ".physa/capabilities/a.md", 9, `anchor "1a2b3c4" cannot resolve: no version control`)
+	if len(r.Problems) != 1 {
+		t.Errorf("want one problem, got %v", r.Problems)
+	}
+}
+
+// The opener is called once, however many commit anchors the map has, and
+// its error is each anchor's problem.
+func TestCommitAnchorOpenerError(t *testing.T) {
+	cap := commitCap("1a2b3c4") + "\n### B\n`b` · from docs/d.md · 5e6f7a8\nBecause: y.\n"
+	root := newMap(t, "", cap)
+	calls := 0
+	open := func(string) (vcs.Repo, error) { calls++; return nil, errors.New("hg is not installed") }
+	r := checkWith(t, root, Options{OpenRepo: open})
+	if calls != 1 {
+		t.Errorf("opener called %d times, want 1", calls)
+	}
+	expect(t, r, ".physa/capabilities/a.md", 9, `anchor "1a2b3c4" cannot resolve: hg is not installed`)
+	expect(t, r, ".physa/capabilities/a.md", 13, `anchor "5e6f7a8" cannot resolve: hg is not installed`)
+}
+
+// An anchor to a change a shallow clone lacks carries the hint to fetch.
+func TestCommitAnchorShallowHint(t *testing.T) {
+	src := newMap(t, "", "")
+	gitIn(t, src, "init", "-q")
+	gitIn(t, src, "add", ".")
+	gitIn(t, src, "commit", "-q", "-m", "first")
+	first := gitIn(t, src, "rev-parse", "HEAD")
+	gitIn(t, src, "commit", "-q", "--allow-empty", "-m", "second")
+	root := filepath.Join(t.TempDir(), "clone")
+	gitIn(t, src, "clone", "-q", "--depth", "1", "file://"+src, root)
+	write(t, root, ".physa/capabilities/a.md", front+commitCap(first[:7]))
+	r := check(t, root)
+	expect(t, r, ".physa/capabilities/a.md", 9, "(the clone is shallow; fetch its full history)")
 }
 
 // Without commit anchors no git is needed: a map with only #N anchors passes

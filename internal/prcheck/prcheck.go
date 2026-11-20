@@ -1,72 +1,39 @@
-// Package prcheck holds the result of the deterministic PR check: each commit
-// with the capability it names and what it loaded, the trailer findings, and
-// the map's problems as the PR leaves it. It renders the result as a short
-// markdown summary and as the output of the physa check run, and reads that
-// output back. Misses and excess come from the capabilities the reviewer
-// agent says the change touches, set against what the commits loaded; when the
-// reviewer did not run, the result says so and why.
+// Package prcheck runs the PR check of design 07 section 5 on a range: every
+// change names exactly one capability whose slug is in the map as that change
+// leaves it, and the map passes physa check. It holds the result, each commit
+// with the capability it names, the trailer findings and the map's problems,
+// and renders it as a short markdown summary. It reports; whether a finding
+// blocks is the caller's policy.
 package prcheck
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"slices"
 	"strings"
 
-	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/history"
+	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfile"
-	"github.com/dphaener/physa/internal/review"
+	"github.com/dphaener/physa/internal/vcs"
 )
 
-// Version is the version of the result's JSON shape. Version 1 results, which
-// have no reviewer block, still decode.
-const Version = 2
-
-// The versions Decode reads.
-const oldestVersion = 1
-
-// MaxFieldBytes is GitHub's limit for a check run's summary and text.
-const MaxFieldBytes = 65535
+// Version is the version of the result's JSON shape.
+const Version = 3
 
 // How the map's PR anchors were checked.
 const (
-	PRAnchorsGitHub   = "github"
-	PRAnchorsFormOnly = "form-only"
+	PRAnchorsGitHub   = mapcheck.PRAnchorsGitHub
+	PRAnchorsFormOnly = mapcheck.PRAnchorsFormOnly
 )
 
 // Result is what the deterministic PR check found.
 type Result struct {
 	Version  int               `json:"version"`
-	PR       int               `json:"pr,omitempty"`
 	Range    string            `json:"range"`
 	Commits  []history.Commit  `json:"commits"`
 	Findings []history.Finding `json:"findings"`
 	Map      MapResult         `json:"map"`
-	Slice    SliceResult       `json:"slice"`
-	Reviewer ReviewerResult    `json:"reviewer"`
-}
-
-// The values of ReviewerResult.Status.
-const (
-	ReviewerRan     = "ran"
-	ReviewerSkipped = "skipped"
-	ReviewerFailed  = "failed"
-)
-
-// ReviewerResult is what became of the reviewer agent: it ran and its review
-// was valid, it was skipped, or it failed. A failure is reported with its
-// reason, never dropped.
-type ReviewerResult struct {
-	Status string          `json:"status"` // ReviewerRan, ReviewerSkipped or ReviewerFailed
-	Reason string          `json:"reason,omitempty"`
-	Agent  string          `json:"agent,omitempty"`
-	Model  string          `json:"model,omitempty"`
-	Tokens *adapter.Tokens `json:"tokens,omitempty"`
-	Review *review.Review  `json:"review,omitempty"`
 }
 
 // MapResult is the map's check as the PR leaves it.
@@ -83,6 +50,46 @@ type Problem struct {
 	Message string `json:"message"`
 }
 
+// Run checks the range rng of repo against the map under dir, the repo's
+// working directory: the commits' trailers against the map as each commit
+// leaves it, and the map's own check, with commit anchors resolved in repo and
+// #N anchors through prExists (nil checks them for form only). The error is
+// for a map, a history or a range that cannot be read.
+func Run(dir string, repo vcs.Repo, rng string, prExists func(n int) (bool, error)) (Result, error) {
+	res, err := mapcheck.CheckWith(dir, mapcheck.Options{
+		PRExists: prExists,
+		OpenRepo: func(string) (vcs.Repo, error) { return repo, nil },
+	})
+	if err != nil {
+		return Result{}, err
+	}
+	commits, err := history.Read(repo, rng)
+	if err != nil {
+		return Result{}, err
+	}
+	findings, err := history.Check(repo, commits)
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{
+		Version:  Version,
+		Range:    rng,
+		Commits:  commits,
+		Findings: findings,
+		Map: MapResult{
+			Problems:  Problems(res.Problems),
+			PRAnchors: res.PRAnchors,
+			Note:      res.PRNote,
+		},
+	}, nil
+}
+
+// Clean reports whether the check found nothing: no trailer findings and no
+// map problems.
+func (r Result) Clean() bool {
+	return len(r.Findings) == 0 && len(r.Map.Problems) == 0
+}
+
 // Problems converts the map reader's problems.
 func Problems(ps []mapfile.Problem) []Problem {
 	out := make([]Problem, 0, len(ps))
@@ -92,55 +99,6 @@ func Problems(ps []mapfile.Problem) []Problem {
 	return out
 }
 
-// SliceResult is the reviewer agent's part of the check: the capabilities the
-// change touches, the misses (touched but not loaded) and the excess (loaded
-// but not touched). Each list is nil when the reviewer did not run; JSON null
-// means not computed, while [] means computed and none.
-type SliceResult struct {
-	Touched []string `json:"touched"`
-	Misses  []string `json:"misses"`
-	Excess  []string `json:"excess"`
-}
-
-// Measure sets what the commits loaded against the capabilities the reviewer
-// says the change touches. Every list is sorted and never nil.
-func Measure(commits []history.Commit, touched []string) SliceResult {
-	loaded := map[string]bool{}
-	for _, c := range commits {
-		for _, l := range c.Loaded {
-			loaded[l] = true
-		}
-	}
-	t := map[string]bool{}
-	res := SliceResult{Touched: []string{}, Misses: []string{}, Excess: []string{}}
-	for _, name := range touched {
-		if t[name] {
-			continue
-		}
-		t[name] = true
-		res.Touched = append(res.Touched, name)
-		if !loaded[name] {
-			res.Misses = append(res.Misses, name)
-		}
-	}
-	for name := range loaded {
-		if !t[name] {
-			res.Excess = append(res.Excess, name)
-		}
-	}
-	slices.Sort(res.Touched)
-	slices.Sort(res.Misses)
-	slices.Sort(res.Excess)
-	return res
-}
-
-// Output is the output object of a check run.
-type Output struct {
-	Title   string `json:"title"`
-	Summary string `json:"summary"`
-	Text    string `json:"text"`
-}
-
 // MarshalJSON encodes empty commits, findings and problems as [], never null.
 func (r Result) MarshalJSON() ([]byte, error) {
 	type plain Result
@@ -148,13 +106,10 @@ func (r Result) MarshalJSON() ([]byte, error) {
 	if p.Commits == nil {
 		p.Commits = []history.Commit{}
 	} else {
-		p.Commits = append([]history.Commit(nil), p.Commits...)
+		p.Commits = append([]history.Commit{}, p.Commits...)
 		for i, c := range p.Commits {
 			if c.Capabilities == nil {
 				p.Commits[i].Capabilities = []string{}
-			}
-			if c.Loaded == nil {
-				p.Commits[i].Loaded = []string{}
 			}
 		}
 	}
@@ -185,15 +140,6 @@ func (r Result) Title() string {
 		count(len(r.Findings), "trailer finding", "trailer findings"),
 		problems,
 	}
-	switch r.Reviewer.Status {
-	case ReviewerSkipped:
-		parts = append(parts, "reviewer skipped")
-	case ReviewerFailed:
-		parts = append(parts, "reviewer failed")
-	case ReviewerRan:
-		parts = append(parts, fmt.Sprintf("%d touched · %s · %s", len(r.Slice.Touched),
-			count(len(r.Slice.Misses), "miss", "misses"), count(len(r.Slice.Excess), "excess", "excess")))
-	}
 	return strings.Join(parts, " · ")
 }
 
@@ -213,9 +159,9 @@ func WriteMarkdown(w io.Writer, r Result) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## %s\n\n", r.Title())
 	if len(r.Commits) > 0 {
-		b.WriteString("| Commit | Subject | Capability | Loaded |\n| --- | --- | --- | --- |\n")
+		b.WriteString("| Commit | Subject | Capability |\n| --- | --- | --- |\n")
 		for _, c := range r.Commits {
-			fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", cell(c.Short), cell(c.Subject), list(c.Capabilities), list(c.Loaded))
+			fmt.Fprintf(&b, "| %s | %s | %s |\n", cell(c.Short), cell(c.Subject), list(c.Capabilities))
 		}
 		b.WriteString("\n")
 	}
@@ -250,130 +196,6 @@ func WriteMarkdown(w io.Writer, r Result) error {
 		}
 		b.WriteString(".\n\n")
 	}
-	writeReviewer(&b, r)
 	_, err := io.WriteString(w, b.String())
 	return err
-}
-
-func writeReviewer(b *strings.Builder, r Result) {
-	rv := r.Reviewer
-	switch rv.Status {
-	case ReviewerSkipped:
-		fmt.Fprintf(b, "Reviewer: skipped (%s).\n", rv.Reason)
-		return
-	case ReviewerFailed:
-		fmt.Fprintf(b, "Reviewer: failed (%s).\n", rv.Reason)
-		return
-	case ReviewerRan:
-	default:
-		b.WriteString("Reviewer: not recorded.\n")
-		return
-	}
-	fmt.Fprintf(b, "Reviewer: %s", rv.Agent)
-	if rv.Model != "" {
-		fmt.Fprintf(b, ", %s", rv.Model)
-	}
-	if rv.Tokens != nil {
-		fmt.Fprintf(b, ", %s", rv.Tokens)
-	}
-	b.WriteString(".\n\n")
-	fmt.Fprintf(b, "Touched: %s\n\nMisses: %s\n\nExcess: %s\n\n", list(r.Slice.Touched), list(r.Slice.Misses), list(r.Slice.Excess))
-	rv2 := rv.Review
-	if rv2 == nil {
-		return
-	}
-	if len(rv2.Rules) > 0 {
-		b.WriteString("Rules at stake:\n\n| Capability | Rule | Respected | Why |\n| --- | --- | --- | --- |\n")
-		for _, x := range rv2.Rules {
-			fmt.Fprintf(b, "| %s | %s | %s | %s |\n", cell(x.Capability), cell(x.Rule), cell(x.Respected), cell(x.Why))
-		}
-		b.WriteString("\n")
-	}
-	if len(rv2.Contradictions) > 0 {
-		b.WriteString("Contradictions with decisions:\n\n")
-		for _, x := range rv2.Contradictions {
-			fmt.Fprintf(b, "- %s, %s: %s\n", x.Capability, x.Decision, oneLine(x.Why))
-		}
-		b.WriteString("\n")
-	}
-	if len(rv2.Edits) > 0 {
-		b.WriteString("Suggested map edits:\n\n")
-		for _, x := range rv2.Edits {
-			fmt.Fprintf(b, "- %s, %s: %s\n", x.Capability, x.Section, oneLine(x.Why))
-		}
-		b.WriteString("\n")
-	}
-}
-
-func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
-
-const fence = "```"
-
-// CheckRunOutput builds the output of the physa check run: the summary is the
-// markdown, the text is the result as JSON in a fenced block.
-//
-// When the review makes either field too big for GitHub, the output is rebuilt
-// once with the reviewer failed and the reason saying so.
-func CheckRunOutput(r Result) (Output, error) {
-	o, err := checkRunOutput(r)
-	var big *tooBigError
-	if !errors.As(err, &big) || r.Reviewer.Status != ReviewerRan {
-		return o, err
-	}
-	r.Reviewer = ReviewerResult{
-		Status: ReviewerFailed,
-		Reason: fmt.Sprintf("the review is %d bytes; the check run holds %d", big.size, MaxFieldBytes),
-		Agent:  r.Reviewer.Agent, Model: r.Reviewer.Model, Tokens: r.Reviewer.Tokens,
-	}
-	r.Slice = SliceResult{}
-	return checkRunOutput(r)
-}
-
-type tooBigError struct {
-	field string
-	size  int
-}
-
-func (e *tooBigError) Error() string {
-	return fmt.Sprintf("check run %s is %d bytes; GitHub allows %d", e.field, e.size, MaxFieldBytes)
-}
-
-func checkRunOutput(r Result) (Output, error) {
-	var sum bytes.Buffer
-	if err := WriteMarkdown(&sum, r); err != nil {
-		return Output{}, err
-	}
-	data, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		return Output{}, err
-	}
-	o := Output{Title: r.Title(), Summary: sum.String(), Text: fence + "json\n" + string(data) + "\n" + fence + "\n"}
-	if len(o.Summary) > MaxFieldBytes {
-		return Output{}, &tooBigError{"summary", len(o.Summary)}
-	}
-	if len(o.Text) > MaxFieldBytes {
-		return Output{}, &tooBigError{"text", len(o.Text)}
-	}
-	return o, nil
-}
-
-// Decode reads a result back from the text of a check run's output.
-func Decode(text string) (Result, error) {
-	start := strings.Index(text, fence+"json\n")
-	if start < 0 {
-		return Result{}, fmt.Errorf("no ```json block in the check run text")
-	}
-	body := text[start+len(fence)+len("json\n"):]
-	end := strings.LastIndex(body, "\n"+fence)
-	if end < 0 {
-		return Result{}, fmt.Errorf("the ```json block in the check run text is not closed")
-	}
-	var r Result
-	if err := json.Unmarshal([]byte(body[:end]), &r); err != nil {
-		return Result{}, fmt.Errorf("decode check run result: %w", err)
-	}
-	if r.Version < oldestVersion || r.Version > Version {
-		return Result{}, fmt.Errorf("check run result is version %d; this physa reads versions %d and %d", r.Version, oldestVersion, Version)
-	}
-	return r, nil
 }

@@ -2,9 +2,7 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,57 +12,23 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/github"
+	"github.com/dphaener/physa/internal/store"
 )
 
-// TestMain keeps every test off GitHub and off any real agent: unless a test
-// installs its own fake, GitHub knows no PRs, and the agent refuses to start.
+// TestMain keeps every test off GitHub: unless a test installs its own fake,
+// GitHub knows no PRs.
 func TestMain(m *testing.M) {
 	newGitHub = func(dir string) *github.Client { return fakeGitHub(dir, nil) }
-	newAdapter = func() adapter.Adapter { return refusingAdapter{} }
-	os.Exit(m.Run())
-}
-
-// errNoAgentInTests is what an agent no test installed answers.
-var errNoAgentInTests = errors.New("no agent may start in tests")
-
-// refusingAdapter is the agent when a test installs none: it never starts.
-type refusingAdapter struct{}
-
-func (refusingAdapter) Name() string { return "no-agent" }
-func (refusingAdapter) Start(context.Context, adapter.Spec) (adapter.Session, error) {
-	return nil, errNoAgentInTests
-}
-
-// fakeAdapter records each session's Spec and ends every session with result
-// and waitErr, or refuses to start with startErr.
-type fakeAdapter struct {
-	specs    []adapter.Spec
-	result   adapter.Result
-	startErr error
-	waitErr  error
-}
-
-func (f *fakeAdapter) Name() string { return "fake-agent" }
-func (f *fakeAdapter) Start(_ context.Context, s adapter.Spec) (adapter.Session, error) {
-	f.specs = append(f.specs, s)
-	if f.startErr != nil {
-		return nil, f.startErr
+	// Safety net: no test reaches the store of this repository.
+	dir, err := os.MkdirTemp("", "physa-test-store")
+	if err != nil {
+		panic(err)
 	}
-	return fakeSession{f}, nil
-}
-
-type fakeSession struct{ f *fakeAdapter }
-
-func (s fakeSession) Wait() (adapter.Result, error) { return s.f.result, s.f.waitErr }
-
-// useAdapter installs f as the agent for one test.
-func useAdapter(t *testing.T, f *fakeAdapter) {
-	t.Helper()
-	old := newAdapter
-	newAdapter = func() adapter.Adapter { return f }
-	t.Cleanup(func() { newAdapter = old })
+	openStore = func(string) (*store.Store, error) { return store.Open(dir) }
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 // fakeGitHub returns a client whose gh knows exactly the PRs in known (a
@@ -293,6 +257,7 @@ func TestUsageNamesSlice(t *testing.T) {
 
 func TestSliceGoodFixture(t *testing.T) {
 	t.Chdir("../../internal/mapfile/testdata/good")
+	useStore(t)
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"slice", "delivery"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, stderr.String())
@@ -307,6 +272,7 @@ func TestSliceGoodFixture(t *testing.T) {
 
 func TestSliceOwnMap(t *testing.T) {
 	t.Chdir("../..")
+	useStore(t)
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"slice", "slices", "map"}, &stdout, &stderr)
 	if code != 0 {
@@ -322,6 +288,7 @@ func TestSliceOwnMap(t *testing.T) {
 
 func TestSliceJSON(t *testing.T) {
 	t.Chdir("../..")
+	useStore(t)
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"slice", "map", "--format", "json", "--with", "all"}, &stdout, &stderr)
 	if code != 0 {
@@ -338,6 +305,7 @@ func TestSliceJSON(t *testing.T) {
 
 func TestSliceFlagForms(t *testing.T) {
 	t.Chdir("../..")
+	useStore(t)
 	var want bytes.Buffer
 	if code := run([]string{"slice", "slices", "map", "--format", "json", "--budget", "3000", "--with", "all"}, &want, &bytes.Buffer{}); code != 0 {
 		t.Fatalf("code = %d, want 0", code)
@@ -359,6 +327,7 @@ func TestSliceFlagForms(t *testing.T) {
 
 func TestSliceWithKinds(t *testing.T) {
 	t.Chdir("../..")
+	useStore(t)
 	for _, w := range []string{"decisions", "questions", "all"} {
 		var stdout, stderr bytes.Buffer
 		if code := run([]string{"slice", "slices", "--with", w}, &stdout, &stderr); code != 0 {
@@ -369,6 +338,7 @@ func TestSliceWithKinds(t *testing.T) {
 
 func TestSliceBadUsage(t *testing.T) {
 	t.Chdir("../..")
+	useStore(t)
 	for _, args := range [][]string{
 		{"slice"},
 		{"slice", "--format", "json"},
@@ -395,6 +365,7 @@ func TestSliceBadUsage(t *testing.T) {
 
 func TestSliceUnknownCapability(t *testing.T) {
 	t.Chdir("../..")
+	useStore(t)
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"slice", "nope"}, &stdout, &stderr)
 	if code != 2 {
@@ -410,6 +381,7 @@ func TestSliceUnknownCapability(t *testing.T) {
 
 func TestSliceNoMapIsError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	useStore(t)
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"slice", "slices"}, &stdout, &stderr)
 	if code != 2 {
@@ -425,6 +397,7 @@ func TestSliceNoMapIsError(t *testing.T) {
 
 func TestSliceMapWithProblem(t *testing.T) {
 	t.Chdir(tempMap(t, "r from docs/d.md"))
+	useStore(t)
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"slice", "a"}, &stdout, &stderr)
 	if code != 0 {
@@ -440,6 +413,7 @@ func TestSliceMapWithProblem(t *testing.T) {
 
 func TestSliceOverBudget(t *testing.T) {
 	t.Chdir("../..")
+	useStore(t)
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"slice", "slices", "--budget", "10"}, &stdout, &stderr)
 	if code != 0 {
@@ -489,7 +463,7 @@ func trailersRepo(t *testing.T) string {
 	gitIn(t, root, "add", ".")
 	gitIn(t, root, "commit", "-q", "-m", "base")
 	for _, msg := range []string{
-		"feat: ok\n\nCapability: a\nLoaded: a, b",
+		"feat: ok\n\nCapability: a",
 		"feat: bare",
 		"feat: two\n\nCapability: a, b",
 		"feat: odd\n\nCapability: nosuch",
@@ -513,9 +487,10 @@ func TestTrailersText(t *testing.T) {
 		t.Fatalf("code = %d, want 0; stderr %q", code, errOut)
 	}
 	for _, want := range []string{
-		"feat: odd\n  capability: nosuch \u00b7 loaded: \u2014\n",
-		"feat: bare\n  capability: \u2014 \u00b7 loaded: \u2014\n",
-		"feat: ok\n  capability: a \u00b7 loaded: a, b\n",
+		"feat: odd\n  capability: nosuch\n",
+		"feat: bare\n  capability: \u2014\n",
+		"feat: two\n  capability: a, b\n",
+		"feat: ok\n  capability: a\n",
 		"\n3 findings:\n",
 		": no Capability trailer\n",
 	} {
@@ -616,5 +591,20 @@ func TestTrailersBadUsage(t *testing.T) {
 		if code != 2 || stderr.String() != usage || stdout.Len() != 0 {
 			t.Errorf("%v: code = %d, stderr = %q, want 2 and usage", args, code, stderr.String())
 		}
+	}
+}
+
+func TestRemovedCommandsPrintUsage(t *testing.T) {
+	for _, args := range [][]string{{"review"}, {"review", "--json"}, {"sync"}} {
+		var stdout, stderr bytes.Buffer
+		if code := run(args, &stdout, &stderr); code != 2 {
+			t.Errorf("run(%v) = %d, want 2", args, code)
+		}
+		if stderr.String() != usage || stdout.Len() != 0 {
+			t.Errorf("run(%v) stdout %q, stderr %q", args, stdout.String(), stderr.String())
+		}
+	}
+	if !strings.Contains(usage, "physa sync: not yet; it returns with digests, after the engine") {
+		t.Errorf("usage lacks the sync line: %q", usage)
 	}
 }

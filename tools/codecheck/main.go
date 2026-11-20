@@ -1,11 +1,14 @@
 // Command codecheck checks that the core imports nothing above it and that
 // every package stays within its size budget and has a doc comment stating
-// its promise.
+// its promise. It also checks that nothing outside the git adapter
+// (internal/vcs/git) runs git: a non-test file calling exec.Command or
+// exec.CommandContext with the literal program "git" is reported.
 package main
 
 import (
 	"bufio"
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io"
@@ -32,7 +35,11 @@ const (
 	ruleImports = "no-plugin-imports"
 	ruleSize    = "size-budget"
 	ruleDoc     = "package-doc"
+	ruleGit     = "git-adapter-only"
 )
+
+// gitAdapterDir is the one package, relative to the module, that may run git.
+const gitAdapterDir = "internal/vcs/git"
 
 // Violation is one broken rule in one package.
 type Violation struct {
@@ -172,6 +179,11 @@ func checkPackage(root, module string, pk *pkg) ([]Violation, error) {
 		if isTest {
 			continue
 		}
+		if pk.dir != gitAdapterDir {
+			for _, pos := range gitCalls(f) {
+				out = append(out, Violation{pk.dir, ruleGit, fmt.Sprintf("%s:%d runs git; only %s may", name, fset.Position(pos).Line, gitAdapterDir)})
+			}
+		}
 		n, err := countLines(full)
 		if err != nil {
 			return nil, err
@@ -200,6 +212,56 @@ func checkPackage(root, module string, pk *pkg) ([]Violation, error) {
 		out = append(out, Violation{pk.dir, ruleDoc, msg})
 	}
 	return out, nil
+}
+
+// gitCalls returns the positions of calls to os/exec's Command or
+// CommandContext whose program argument is the string literal "git".
+func gitCalls(f *ast.File) []token.Pos {
+	name := ""
+	for _, imp := range f.Imports {
+		if ip, err := strconv.Unquote(imp.Path.Value); err != nil || ip != "os/exec" {
+			continue
+		}
+		name = "exec"
+		if imp.Name != nil {
+			name = imp.Name.Name
+		}
+	}
+	if name == "" || name == "_" || name == "." {
+		return nil
+	}
+	var out []token.Pos
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if id, ok := sel.X.(*ast.Ident); !ok || id.Name != name {
+			return true
+		}
+		prog := 0
+		switch sel.Sel.Name {
+		case "Command":
+		case "CommandContext":
+			prog = 1
+		default:
+			return true
+		}
+		if prog >= len(call.Args) {
+			return true
+		}
+		if lit, ok := call.Args[prog].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+			if v, err := strconv.Unquote(lit.Value); err == nil && v == "git" {
+				out = append(out, call.Pos())
+			}
+		}
+		return true
+	})
+	return out
 }
 
 // forbidden reports whether import path ip is at or under a package above the core.

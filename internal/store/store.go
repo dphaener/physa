@@ -1,18 +1,21 @@
-// Package store keeps the repo's local measures in one SQLite database in
-// git's common directory, shared by every worktree and never committed. It
-// holds the PR check results physa sync pulls from GitHub; schema changes are
-// numbered migrations applied at open.
+// Package store keeps Physa's local records for the repo in one SQLite
+// database, physa.db in the store directory the version-control interface
+// names (shared by every worktree, never committed). It keeps slice records:
+// which capabilities were read, with what, under what budget, when and by
+// which session. Schema changes are numbered migrations applied at open.
 package store
 
 import (
 	"database/sql"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -25,20 +28,9 @@ type Store struct {
 	db *sql.DB
 }
 
-// PRCheck is the result of the physa check run for one PR head. Result is
-// the result JSON as text.
-type PRCheck struct {
-	PR          int
-	HeadSHA     string
-	CheckRunID  int64
-	CompletedAt string
-	Result      string
-}
-
-// Open opens <commonDir>/physa/physa.db, creating it, and applies any
-// migrations it has not seen.
-func Open(commonDir string) (*Store, error) {
-	dir := filepath.Join(commonDir, "physa")
+// Open opens <dir>/physa.db, creating the directory and the file, and
+// applies any migrations it has not seen.
+func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -128,50 +120,83 @@ func apply(db *sql.DB, n int, body string) error {
 	return tx.Commit()
 }
 
-// PutPRCheck stores c, replacing the row for the same PR and head only when
-// something differs. changed says whether the database changed.
-func (s *Store) PutPRCheck(c PRCheck) (changed bool, err error) {
-	res, err := s.db.Exec(`INSERT INTO pr_checks (pr, head_sha, check_run_id, completed_at, result)
-VALUES (?, ?, ?, ?, ?)
-ON CONFLICT (pr, head_sha) DO UPDATE SET
-  check_run_id = excluded.check_run_id,
-  completed_at = excluded.completed_at,
-  result = excluded.result
-WHERE pr_checks.check_run_id IS NOT excluded.check_run_id
-   OR pr_checks.completed_at IS NOT excluded.completed_at
-   OR pr_checks.result IS NOT excluded.result`,
-		c.PR, c.HeadSHA, c.CheckRunID, c.CompletedAt, c.Result)
+// SliceRecord is one printed slice. Budget is 0 when none was set; Session is
+// empty when the calling session is unknown. Both encode as null then.
+type SliceRecord struct {
+	At           time.Time
+	Capabilities []string
+	With         string
+	Budget       int
+	Session      string
+}
+
+// MarshalJSON encodes the record with budget and session null when absent.
+func (r SliceRecord) MarshalJSON() ([]byte, error) {
+	caps := r.Capabilities
+	if caps == nil {
+		caps = []string{}
+	}
+	out := struct {
+		At           string   `json:"at"`
+		Capabilities []string `json:"capabilities"`
+		With         string   `json:"with"`
+		Budget       *int     `json:"budget"`
+		Session      *string  `json:"session"`
+	}{At: r.At.UTC().Format(time.RFC3339), Capabilities: caps, With: r.With}
+	if r.Budget != 0 {
+		out.Budget = &r.Budget
+	}
+	if r.Session != "" {
+		out.Session = &r.Session
+	}
+	return json.Marshal(out)
+}
+
+// PutSliceRecord stores one slice record.
+func (s *Store) PutSliceRecord(r SliceRecord) error {
+	caps := r.Capabilities
+	if caps == nil {
+		caps = []string{}
+	}
+	cj, err := json.Marshal(caps)
 	if err != nil {
-		return false, err
+		return err
 	}
-	n, err := res.RowsAffected()
-	return n > 0, err
+	var budget, session any
+	if r.Budget != 0 {
+		budget = r.Budget
+	}
+	if r.Session != "" {
+		session = r.Session
+	}
+	_, err = s.db.Exec(`INSERT INTO slice_records (at, capabilities, "with", budget, session) VALUES (?, ?, ?, ?, ?)`,
+		r.At.UTC().Format(time.RFC3339), string(cj), r.With, budget, session)
+	return err
 }
 
-// HasPRCheck reports whether a result is stored for the PR at that head.
-func (s *Store) HasPRCheck(pr int, headSHA string) (bool, error) {
-	var one int
-	err := s.db.QueryRow("SELECT 1 FROM pr_checks WHERE pr = ? AND head_sha = ?", pr, headSHA).Scan(&one)
-	if err == sql.ErrNoRows {
-		return false, nil
-	}
-	return err == nil, err
-}
-
-// PRChecks returns every stored result ordered by PR, then head.
-func (s *Store) PRChecks() ([]PRCheck, error) {
-	rows, err := s.db.Query("SELECT pr, head_sha, check_run_id, completed_at, result FROM pr_checks ORDER BY pr, head_sha")
+// SliceRecords returns every slice record, newest first.
+func (s *Store) SliceRecords() ([]SliceRecord, error) {
+	rows, err := s.db.Query(`SELECT at, capabilities, "with", budget, session FROM slice_records ORDER BY at DESC, id DESC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []PRCheck
+	var out []SliceRecord
 	for rows.Next() {
-		var c PRCheck
-		if err := rows.Scan(&c.PR, &c.HeadSHA, &c.CheckRunID, &c.CompletedAt, &c.Result); err != nil {
+		var at, caps, with string
+		var budget sql.NullInt64
+		var session sql.NullString
+		if err := rows.Scan(&at, &caps, &with, &budget, &session); err != nil {
 			return nil, err
 		}
-		out = append(out, c)
+		r := SliceRecord{With: with, Budget: int(budget.Int64), Session: session.String}
+		if r.At, err = time.Parse(time.RFC3339, at); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(caps), &r.Capabilities); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }

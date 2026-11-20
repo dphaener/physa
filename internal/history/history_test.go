@@ -1,22 +1,25 @@
 package history
 
 import (
-	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/dphaener/physa/internal/vcs"
+	"github.com/dphaener/physa/internal/vcs/git"
 )
 
 // newRepo makes a git repo in a temp dir, isolated from the user's git config.
-func newRepo(t *testing.T) (*Repo, string) {
+func newRepo(t *testing.T) (vcs.Repo, string) {
 	t.Helper()
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	dir := t.TempDir()
 	run(t, dir, "init", "-q")
-	r, err := Open(dir)
+	r, err := git.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,48 +43,61 @@ func commit(t *testing.T, dir, message string) string {
 	return run(t, dir, "rev-parse", "HEAD")
 }
 
+// addCapability writes the capability file of slug and commits it with message.
+func addCapability(t *testing.T, dir, slug, message string) {
+	t.Helper()
+	p := filepath.Join(dir, ".physa", "capabilities", slug+".md")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("---\npromise: x\n---\n# "+slug+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, dir, "add", ".")
+	run(t, dir, "commit", "-q", "-m", message)
+}
+
 func TestReadTrailers(t *testing.T) {
 	tests := []struct {
 		name, msg string
-		caps, ld  []string
+		caps      []string
 	}{
-		{"single block", "feat: x\n\nBody text.\n\nCapability: slices\nLoaded: map, slices\n", []string{"slices"}, []string{"map", "slices"}},
-		{"squash merge", "feat(map): Add x (#10)\n\nBody.\n\nCapability: x\n\nCo-authored-by: A <a@b.c>\nCo-authored-by: B <b@b.c>\n", []string{"x"}, []string{}},
-		{"in body text", "feat: x\n\nCapability: x\nmore text after it\n\nNothing here.\n", []string{}, []string{}},
-		{"subject only", "feat: x\n", []string{}, []string{}},
-		{"subject looks like trailer", "Capability: x\n", []string{}, []string{}},
-		{"two loaded lines", "feat: x\n\nCapability: a\nLoaded: a, b\nloaded: c,, d\n", []string{"a"}, []string{"a", "b", "c", "d"}},
-		{"continuation", "feat: x\n\nLoaded: a,\n  b\nCapability: a\n", []string{"a"}, []string{"a", "b"}},
-		{"case insensitive", "feat: x\n\nCAPABILITY: a\n", []string{"a"}, []string{}},
-		{"two capabilities", "feat: x\n\nCapability: a\nCapability: b\n", []string{"a", "b"}, []string{}},
+		{"single block", "feat: x\n\nBody text.\n\nCapability: slices\n", []string{"slices"}},
+		{"squash merge", "feat(map): Add x (#10)\n\nBody.\n\nCapability: x\n\nCo-authored-by: A <a@b.c>\nCo-authored-by: B <b@b.c>\n", []string{"x"}},
+		{"in body text", "feat: x\n\nCapability: x\nmore text after it\n\nNothing here.\n", []string{}},
+		{"subject only", "feat: x\n", []string{}},
+		{"subject looks like trailer", "Capability: x\n", []string{}},
+		{"loaded is ignored", "feat: x\n\nCapability: a\nLoaded: a, b\n", []string{"a"}},
+		{"continuation", "feat: x\n\nCapability: a,\n  b\n", []string{"a", "b"}},
+		{"case insensitive", "feat: x\n\nCAPABILITY: a\n", []string{"a"}},
+		{"two capabilities", "feat: x\n\nCapability: a\nCapability: b,, c\n", []string{"a", "b", "c"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			caps, ld := readTrailers(tt.msg)
-			if !reflect.DeepEqual(caps, tt.caps) || !reflect.DeepEqual(ld, tt.ld) {
-				t.Errorf("got %v %v, want %v %v", caps, ld, tt.caps, tt.ld)
+			if got := readTrailers(tt.msg); !reflect.DeepEqual(got, tt.caps) {
+				t.Errorf("got %v, want %v", got, tt.caps)
 			}
 		})
 	}
 }
 
-func TestLogReadsTrailers(t *testing.T) {
+func TestReadParsesTrailers(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "chore: base")
 	commit(t, dir, "feat: a\n\nBody.\n\nCapability: slices\n\nCo-authored-by: X <x@y.z>")
-	commit(t, dir, "feat: b\n\nCapability: map\nLoaded: map, slices")
+	commit(t, dir, "feat: b\n\nCapability: map")
 	commit(t, dir, "feat: c")
-	got, err := r.Log("HEAD~3..HEAD")
+	got, err := Read(r, "HEAD~3..HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 3 {
 		t.Fatalf("got %d commits, want 3", len(got))
 	}
-	if got[0].Subject != "feat: c" || len(got[0].Capabilities) != 0 {
+	if got[0].Subject != "feat: c" || len(got[0].Capabilities) != 0 || got[0].Capabilities == nil {
 		t.Errorf("newest commit wrong: %+v", got[0])
 	}
-	if !reflect.DeepEqual(got[1].Capabilities, []string{"map"}) || !reflect.DeepEqual(got[1].Loaded, []string{"map", "slices"}) {
+	if !reflect.DeepEqual(got[1].Capabilities, []string{"map"}) {
 		t.Errorf("commit b wrong: %+v", got[1])
 	}
 	if !reflect.DeepEqual(got[2].Capabilities, []string{"slices"}) || got[2].Subject != "feat: a" {
@@ -92,193 +108,99 @@ func TestLogReadsTrailers(t *testing.T) {
 	}
 }
 
-func TestLogBadRange(t *testing.T) {
+func TestReadBadRange(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "chore: base")
-	_, err := r.Log("nosuch..HEAD")
+	_, err := Read(r, "nosuch..HEAD")
 	if err == nil || !strings.Contains(err.Error(), "nosuch") {
 		t.Errorf("want git's error naming the range, got %v", err)
 	}
 }
 
-func TestOpenNotRepo(t *testing.T) {
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	if _, err := Open(t.TempDir()); !errors.Is(err, ErrNotRepo) {
-		t.Errorf("want ErrNotRepo, got %v", err)
-	}
-}
+type fk struct{ subject, kind, slug string }
 
-func TestHasCommit(t *testing.T) {
-	r, dir := newRepo(t)
-	full := commit(t, dir, "chore: base")
-	for _, h := range []string{full, full[:7]} {
-		if !r.HasCommit(h) {
-			t.Errorf("HasCommit(%q) = false", h)
-		}
+// kinds checks the range and returns each finding as its commit's subject,
+// kind and slug.
+func kinds(t *testing.T, r vcs.Repo, rng string) ([]fk, []Finding) {
+	t.Helper()
+	commits, err := Read(r, rng)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, h := range []string{"deadbee", "", "--all"} {
-		if r.HasCommit(h) {
-			t.Errorf("HasCommit(%q) = true", h)
-		}
+	subjects := map[string]string{}
+	for _, c := range commits {
+		subjects[c.Short] = c.Subject
 	}
-	if r.Shallow() {
-		t.Error("a fresh repo is not shallow")
+	got, err := Check(r, commits)
+	if err != nil {
+		t.Fatal(err)
 	}
+	var out []fk
+	for _, f := range got {
+		out = append(out, fk{subjects[f.Commit], f.Kind, f.Slug})
+	}
+	return out, got
 }
 
 func TestCheck(t *testing.T) {
-	known := func(s string) bool { return s == "slices" || s == "map" }
-	commits := []Commit{
-		{Short: "a1", Capabilities: []string{"slices"}, Loaded: []string{"slices", "map"}},
-		{Short: "b2"},
-		{Short: "c3", Capabilities: []string{"slices", "nope"}, Loaded: []string{"gone"}},
-		{Short: "d4", Capabilities: []string{"slices.md"}},
-	}
-	got := Check(commits, known)
-	type fk struct{ commit, kind, slug string }
-	var kinds []fk
-	for _, f := range got {
-		kinds = append(kinds, fk{f.Commit, f.Kind, f.Slug})
-	}
+	r, dir := newRepo(t)
+	addCapability(t, dir, "slices", "chore: slices")
+	addCapability(t, dir, "map", "chore: map")
+	commit(t, dir, "a1\n\nCapability: slices")
+	commit(t, dir, "b2")
+	commit(t, dir, "c3\n\nCapability: slices, nope")
+	commit(t, dir, "d4\n\nCapability: slices.md")
+	commit(t, dir, "e5\n\nCapability: map\nLoaded: gone")
+	got, findings := kinds(t, r, "HEAD~5..HEAD")
 	want := []fk{
-		{"b2", KindMissing, ""},
+		{"d4", KindUnknown, "slices.md"},
 		{"c3", KindMultiple, ""},
 		{"c3", KindUnknown, "nope"},
-		{"c3", KindUnknown, "gone"},
-		{"d4", KindUnknown, "slices.md"},
+		{"b2", KindMissing, ""},
 	}
-	if !reflect.DeepEqual(kinds, want) {
-		t.Fatalf("got %v, want %v", kinds, want)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
-	if !strings.Contains(got[3].Message, "Loaded") || !strings.Contains(got[2].Message, "Capability") {
-		t.Errorf("messages should name the trailer: %q, %q", got[2].Message, got[3].Message)
+	if findings[0].Message != `Capability "slices.md" is not in the map` || findings[3].Message != "no Capability trailer" {
+		t.Errorf("messages: %q, %q", findings[0].Message, findings[3].Message)
 	}
-	if got := Check(nil, known); got == nil || len(got) != 0 {
-		t.Errorf("no commits should give an empty, non-nil list, got %v", got)
+	if !strings.HasPrefix(findings[1].Message, "Capability names 2 capabilities (slices, nope)") {
+		t.Errorf("multiple message: %q", findings[1].Message)
+	}
+	if got, err := Check(r, nil); err != nil || got == nil || len(got) != 0 {
+		t.Errorf("no commits should give an empty, non-nil list, got %v %v", got, err)
 	}
 }
 
-func TestCommonDir(t *testing.T) {
+// The slug must be in the map as the change leaves it: a change that adds a
+// capability may name it; a change naming a slug a later change adds may not,
+// nor one naming a slug only the working tree has.
+func TestCheckMapAsTheChangeLeavesIt(t *testing.T) {
 	r, dir := newRepo(t)
-	commit(t, dir, "first")
-	got, err := r.CommonDir()
-	if err != nil {
+	addCapability(t, dir, "map", "chore: base")
+	commit(t, dir, "early\n\nCapability: later")
+	addCapability(t, dir, "later", "feat: add later\n\nCapability: later")
+	addCapability(t, dir, "new", "feat: add new\n\nCapability: new")
+	p := filepath.Join(dir, ".physa", "capabilities", "loose.md")
+	if err := os.WriteFile(p, []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(got, ".git") {
-		t.Errorf("CommonDir = %q, want it to end in .git", got)
+	commit(t, dir, "untracked\n\nCapability: loose")
+	got, _ := kinds(t, r, "HEAD~4..HEAD")
+	want := []fk{
+		{"untracked", KindUnknown, "loose"},
+		{"early", KindUnknown, "later"},
 	}
-
-	wt := t.TempDir() + "/wt"
-	run(t, dir, "worktree", "add", "-q", wt)
-	wr, err := Open(wt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wgot, err := wr.CommonDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if wgot != got {
-		t.Errorf("worktree CommonDir = %q, want the main repo's %q", wgot, got)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }
 
-func TestDiffUsesMergeBase(t *testing.T) {
+func TestCheckFilesError(t *testing.T) {
 	r, dir := newRepo(t)
-	commit(t, dir, "chore: base")
-	run(t, dir, "branch", "base")
-	run(t, dir, "checkout", "-q", "-b", "topic")
-	os.WriteFile(dir+"/topic.txt", []byte("topic\n"), 0o644)
-	run(t, dir, "add", ".")
-	run(t, dir, "commit", "-q", "-m", "feat: topic")
-	run(t, dir, "checkout", "-q", "base")
-	os.WriteFile(dir+"/other.txt", []byte("other\n"), 0o644)
-	run(t, dir, "add", ".")
-	run(t, dir, "commit", "-q", "-m", "feat: other")
-	run(t, dir, "checkout", "-q", "topic")
-
-	two, err := r.Diff("base..topic")
-	if err != nil {
-		t.Fatal(err)
+	commit(t, dir, "x\n\nCapability: a")
+	_, err := Check(r, []Commit{{Hash: "deadbeefdeadbeef", Short: "deadbee", Capabilities: []string{"a"}}})
+	if err == nil || !strings.Contains(err.Error(), "deadbeefdeadbeef") {
+		t.Errorf("want an error naming the change, got %v", err)
 	}
-	three, err := r.Diff("base...topic")
-	if err != nil {
-		t.Fatal(err)
-	}
-	single, err := r.Diff("base")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(two, "topic.txt") || strings.Contains(two, "other.txt") {
-		t.Errorf("two-dot diff is not against the merge base:\n%s", two)
-	}
-	if two != three || two != single {
-		t.Errorf("diffs differ:\n%s\n---\n%s\n---\n%s", two, three, single)
-	}
-}
-
-func TestDiffBadRange(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "chore: base")
-	_, err := r.Diff("nope..HEAD")
-	if err == nil || !strings.Contains(err.Error(), "nope") {
-		t.Fatalf("want git's message naming the bad rev, got %v", err)
-	}
-}
-
-func TestMessage(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "feat: only subject")
-	subject, body, err := r.Message("HEAD")
-	if err != nil || subject != "feat: only subject" || body != "" {
-		t.Errorf("got %q %q %v", subject, body, err)
-	}
-	commit(t, dir, "feat: with body\n\nFirst line.\n\nSecond para.\n\nCapability: x\n")
-	subject, body, err = r.Message("HEAD")
-	want := "First line.\n\nSecond para.\n\nCapability: x"
-	if err != nil || subject != "feat: with body" || body != want {
-		t.Errorf("got %q %q %v", subject, body, err)
-	}
-	if _, _, err := r.Message("nope"); err == nil {
-		t.Error("want an error for a missing rev")
-	}
-}
-
-func TestDefaultBranch(t *testing.T) {
-	t.Run("origin HEAD", func(t *testing.T) {
-		r, dir := newRepo(t)
-		commit(t, dir, "chore: base")
-		run(t, dir, "update-ref", "refs/remotes/origin/main", "HEAD")
-		run(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-		run(t, dir, "branch", "-m", "main")
-		if got, err := r.DefaultBranch(); err != nil || got != "origin/main" {
-			t.Errorf("got %q %v, want origin/main", got, err)
-		}
-	})
-	t.Run("main", func(t *testing.T) {
-		r, dir := newRepo(t)
-		commit(t, dir, "chore: base")
-		run(t, dir, "branch", "-m", "main")
-		if got, err := r.DefaultBranch(); err != nil || got != "main" {
-			t.Errorf("got %q %v, want main", got, err)
-		}
-	})
-	t.Run("master", func(t *testing.T) {
-		r, dir := newRepo(t)
-		commit(t, dir, "chore: base")
-		run(t, dir, "branch", "-m", "master")
-		if got, err := r.DefaultBranch(); err != nil || got != "master" {
-			t.Errorf("got %q %v, want master", got, err)
-		}
-	})
-	t.Run("none", func(t *testing.T) {
-		r, dir := newRepo(t)
-		commit(t, dir, "chore: base")
-		run(t, dir, "branch", "-m", "trunk")
-		_, err := r.DefaultBranch()
-		if err == nil || !strings.Contains(err.Error(), "no default branch") {
-			t.Errorf("want no default branch error, got %v", err)
-		}
-	})
 }

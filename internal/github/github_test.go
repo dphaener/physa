@@ -43,75 +43,6 @@ func TestPRExists(t *testing.T) {
 	}
 }
 
-func TestPRTitleBody(t *testing.T) {
-	f := &fake{out: `{"title":"feat: x","body":"Some body\n\nCapability: a"}` + "\n"}
-	title, body, err := NewWithRunner(".", f.run).PRTitleBody(12)
-	if err != nil || title != "feat: x" || body != "Some body\n\nCapability: a" {
-		t.Fatalf("got %q, %q, %v", title, body, err)
-	}
-	want := []string{"api", "repos/{owner}/{repo}/pulls/12", "--jq", "{title, body}"}
-	if !reflect.DeepEqual(f.calls[0], want) {
-		t.Errorf("args = %v", f.calls[0])
-	}
-	f.out = `{"title":"t","body":null}`
-	if title, body, err = NewWithRunner(".", f.run).PRTitleBody(12); err != nil || title != "t" || body != "" {
-		t.Errorf("null body: got %q, %q, %v", title, body, err)
-	}
-	for _, out := range []string{"{not json", `{"body":"b"}`} {
-		f.out = out
-		if _, _, err := NewWithRunner(".", f.run).PRTitleBody(12); err == nil {
-			t.Errorf("%q: want an error", out)
-		}
-	}
-	f.out, f.err = "", &Error{Stderr: "gh: Not Found (HTTP 404)", ExitCode: 1}
-	if _, _, err := NewWithRunner(".", f.run).PRTitleBody(12); !errors.Is(err, ErrNotFound) {
-		t.Errorf("404: err = %v", err)
-	}
-}
-
-func TestPullRequests(t *testing.T) {
-	f := &fake{out: `{"number":5,"head":"b","state":"closed","merged_at":null}
-{"number":3,"head":"a","state":"closed","merged_at":"2026-01-01T00:00:00Z"}
-{"number":9,"head":"c","state":"open","merged_at":null}
-{"number":4,"head":"d","state":"closed","merged_at":null}
-`}
-	prs, err := NewWithRunner(".", f.run).PullRequests()
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []PR{{3, "a", "merged"}, {9, "c", "open"}}
-	if !reflect.DeepEqual(prs, want) {
-		t.Errorf("prs = %v", prs)
-	}
-	if got := f.calls[0]; got[1] != "--paginate" || !strings.Contains(got[2], "state=all&per_page=100") {
-		t.Errorf("args = %v", got)
-	}
-	f.out = "{not json"
-	if _, err := NewWithRunner(".", f.run).PullRequests(); err == nil {
-		t.Error("bad JSON should fail")
-	}
-}
-
-func TestCheckRuns(t *testing.T) {
-	f := &fake{out: `{"id":12,"head_sha":"abc","status":"completed","conclusion":"neutral","completed_at":"2026-01-01T00:00:00Z","output":{"title":"T","text":"{}"}}
-{"id":13,"head_sha":"abc","status":"in_progress","conclusion":null,"completed_at":null,"output":{"title":null,"text":null}}
-`}
-	runs, err := NewWithRunner(".", f.run).CheckRuns("abc", "physa")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []CheckRun{
-		{12, "abc", "completed", "neutral", "2026-01-01T00:00:00Z", "T", "{}"},
-		{ID: 13, HeadSHA: "abc", Status: "in_progress"},
-	}
-	if !reflect.DeepEqual(runs, want) {
-		t.Errorf("runs = %+v", runs)
-	}
-	if got := f.calls[0][1]; got != "repos/{owner}/{repo}/commits/abc/check-runs?check_name=physa&per_page=100" {
-		t.Errorf("path = %s", got)
-	}
-}
-
 func TestErrorClasses(t *testing.T) {
 	cases := []struct {
 		name string
@@ -126,13 +57,13 @@ func TestErrorClasses(t *testing.T) {
 	}
 	for _, c := range cases {
 		f := &fake{err: c.err}
-		_, err := NewWithRunner(".", f.run).PullRequests()
+		_, err := NewWithRunner(".", f.run).gh("api", "x")
 		if !errors.Is(err, c.want) {
 			t.Errorf("%s: %v", c.name, err)
 		}
 	}
 	f := &fake{err: &Error{ExitCode: 1, Stderr: "kaput"}}
-	_, err := NewWithRunner(".", f.run).PullRequests()
+	_, err := NewWithRunner(".", f.run).gh("api", "x")
 	var ge *Error
 	if !errors.As(err, &ge) || !strings.Contains(err.Error(), "kaput") {
 		t.Errorf("other: %v", err)

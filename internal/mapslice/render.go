@@ -34,7 +34,7 @@ func WriteMD(w io.Writer, s *Slice) error {
 		}
 	}
 	if len(s.Trailers) > 0 {
-		b.WriteString("\n## How to anchor\n\nAnchor each commit to the one capability it serves, and record what this slice loaded, with trailers:\n\n")
+		b.WriteString("\n## How to anchor\n\nAnchor each commit to the one capability it serves, with a trailer:\n\n")
 		for _, t := range s.Trailers {
 			b.WriteString("- `" + t + "`\n")
 		}

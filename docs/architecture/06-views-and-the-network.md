@@ -1,6 +1,6 @@
 # Architecture 06: views and the network
 
-Draft 0.2, 2026-11-20. Uses `.physa/glossary.md` terms only. Builds on vision §3.1 and 05 §6. Items marked (Q) are open questions for the owner.
+Draft 0.3, 2026-11-20. Uses `.physa/glossary.md` terms only. Builds on vision §3.1 and 05 §6. Items marked (Q) are open questions for the owner.
 
 The web views are server-rendered Go templates: Needs you is the home screen, the network view is the signature, and the single-user phone web is a real view, not a shrunk desktop. This design settles how they look, and how the network is drawn.
 
@@ -51,6 +51,23 @@ The engine renders the network as SVG text; the browser paints it.
 ## 4. A capability's page
 
 A capability's page answers "what is growing, what is withering?" for that capability with **Strands**: its tube over time, left to right, as thick as its strength each week, with its ideas running beside it, joining it when established and ending in their lesson knot when withered (the owner: "I'm in favor of C on each capabilities page").
+
+## 5. The phone web
+
+The core's single-user phone web, served by the engine, holds Needs you, the network, a capability's page, an idea's page with its bet's progress, and watching a live session. Views that need many people's data, such as "is our process working?" and progress across a team, wait for the hosted layer.
+
+Every view is designed phone-first, as working HTML on Physa's own map built from the design system's components, so it carries straight into Go templates. They are designed in this order: Needs you, a capability's page, an idea's page, watching a session, progress of current bets.
+
+## 6. Needs you
+
+Needs you is the home screen: one column of rows, each one thing waiting on this person with the one action it needs, and an Undo after acting. Empty, it says "Nothing needs you."
+
+- **Order**, most urgent first: guardrail trips; what a running bet waits on (asks, stalled runs); sign-offs; calls to check; circuit breakers; questions; map proposals; withering ideas; decay reviews.
+- **Each row** names its kind in a glossary term, the repo, the capability or bet it belongs to, what happened in plain words, and why it is this person's ("you steward it", "your bet", "stakes need you"). Never an internal ID.
+- **Calls** are listed one by one with their reasons, each accepted or sent back on its own, and kept visibly apart from decisions and asks.
+- **A run's progress always shows the same four things**: its phase (conduct, build, check, fix), what is running, the time since its last activity, and tokens against its appetite, plus review rounds once there have been any. Runs last up to an hour or more, so a spinner is never enough.
+- **Waiting is not stalled.** A run waiting on a workflow says so; only a session without progress for 15 minutes is stalled (`stalls-need-you`).
+- **Running now** sits beside Needs you on desktop and below it on a phone: the person's bets working on their own. It answers "what is changing right now?" for their own work. Nothing in it needs them, and nothing in it notifies.
 
 ## Questions
 

@@ -59,6 +59,16 @@ Rejected:
 A capability's page shows its tube over time, with its ideas joining, withering and growing beside it.
 Because: "what is growing, what is withering?" is a question about time, and it belongs where one capability is in view.
 
+### The phone web holds one person's views
+`phone-web-scope` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/architecture/06-views-and-the-network.md
+The core's phone web holds Needs you, the network, a capability's page, an idea's page with its bet's progress, and watching a live session, each designed phone-first. Views that need a team's data wait for the hosted layer.
+Because: the core is everything one developer needs, and the phone is where they keep work moving.
+
+### Needs you shows runs as they really are
+`needs-you-runs` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/architecture/06-views-and-the-network.md
+Rows are ordered most urgent first, from guardrail trips to decay reviews. A run's progress always shows its phase, what is running, time since its last activity and tokens against its appetite. Calls are checked one by one, apart from decisions. Running now sits beside Needs you and never notifies.
+Because: real bets run for up to an hour or more and end with calls a person should check; a spinner hides both, and waiting must never look like stalled.
+
 ## Questions
 
 ### Do capabilities connect to each other?

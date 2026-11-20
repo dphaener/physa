@@ -68,7 +68,7 @@ _Avoid_: LGTM, rubber stamp
 **Steward**: A person a team names to look after a capability: guardrail trips and decay reviews go to them. With no steward named, whoever recently anchored changes to the capability is asked.
 _Avoid_: capability owner, maintainer, DRI
 
-**Needs you**: Everything waiting on one person: sign-offs their stakes require, questions and asks addressed to them, their ideas that need shaping or are withering, their bets that hit a circuit breaker, guardrail trips and decay reviews on capabilities they steward, and map proposals on their PRs. The home screen, and the only thing that notifies.
+**Needs you**: Everything waiting on one person: sign-offs their stakes require, questions and asks addressed to them, their ideas that need shaping or are withering, their bets that hit a circuit breaker or stalled, calls their runs made, guardrail trips and decay reviews on capabilities they steward, and map proposals on their PRs. The home screen, and the only thing that notifies.
 _Avoid_: inbox, activity feed
 
 **Rollback**: Undoing something, cheapest first: turn its flag off, when earned release is on; revert its changes; reverse its decision and list what relied on it. Every rollback is recorded with who and why, and weakens the strength of what was rolled back.
@@ -117,6 +117,9 @@ _Avoid_: churn, iteration
 
 **Ask**: What an agent needs from a person during a run: an answer, a choice, a permission. It stays with its run and expires; its answer becomes a decision only if it passes the decision test.
 _Avoid_: question (that is the map's), prompt, interrupt
+
+**Call**: A small choice a run made on a person's behalf to keep going, with its reason, left for that person to check. The run did not wait for it, so it is not an ask, and it fails the decision test, so it is not a decision. Checking a call accepts it or sends it back to be changed.
+_Avoid_: assumption, judgment call
 
 **Run**: One execution of a harness on a spike or a change, from start to its end state.
 _Avoid_: job

@@ -1,6 +1,6 @@
 # Build plan
 
-Draft 0.1, 2026-11-20. Uses `.physa/glossary.md` terms only. Builds on `docs/vision.md` and architecture 01–05. Items marked (Q) are open questions for the owner.
+Draft 0.2, 2026-11-21. Uses `.physa/glossary.md` terms only. Builds on `docs/vision.md` and architecture 01–07. Items marked (Q) are open questions for the owner.
 
 ## Principles
 
@@ -13,31 +13,35 @@ Draft 0.1, 2026-11-20. Uses `.physa/glossary.md` terms only. Builds on `docs/vis
 
 ## The steps
 
-Each step: what lands, what the owner can do with it, and when it is done.
+Each step: what lands, what the owner can do with it, and when it is done. Commands use the grouped names (`grouped-cli`, 01 §8).
 
 ### 0. Audit and slim the owner's harness
 
-- **Why first:** everything after step 0 is built by this harness, and it has not been audited since several model releases (the owner: "Before we build anything with my harness I want to audit it and slim it down").
-- **Lands:** an audit of afk and forge-cli, the harnesses Rhiza was built on, in `docs/research/harness-audit.md`; a slimmed harness as its own plugin repo (Q6); before-and-after measurements on real tasks.
+- **Status: done** (2026-11-20). The audit is in `docs/research/harness-audit.md`; the slimmed harness is **dharness** (Q6), adopted after a comparison the owner cut short.
+- **Why first:** everything after step 0 is built by this harness, and it had not been audited since several model releases (the owner: "Before we build anything with my harness I want to audit it and slim it down").
+- **Lands:** an audit of afk and forge-cli, the harnesses Rhiza was built on; a slimmed harness as its own plugin repo; before-and-after measurements on real tasks.
 - **The owner can:** build Physa with a harness that is smaller, cheaper in tokens, and no less trusted.
 - **Done when:** the slimmed harness matches or beats the current one on rework and tokens over the same tasks, and every rule left in it has a reason.
 
 ### 1. The map, read by agents
 
-- **Lands:** the Go module and its rules in CI (the import rule, package size budgets, a promise doc per package); `physa check`, `physa index` and `physa slice` over `.physa/` (01 §8); the 50 ms latency test on a generated map (01 §9a).
+- **Status: done** (2026-11-20; #4, #8–#10).
+- **Lands:** the Go module and its rules in CI (the import rule, package size budgets, a promise doc per package); `physa check map`, `physa map index` and `physa map slice` over `.physa/` (01 §8); the 50 ms latency test on a generated map (01 §9a).
 - **The owner can:** have every agent building Physa load slices of Physa's own hand-written map, and have CI reject a malformed map.
-- **Done when:** the harness's builders run `physa slice` instead of reading the map by hand, and `physa check` runs on every PR.
+- **Done when:** the harness's builders run `physa map slice` instead of reading the map by hand, and the map is checked on every PR.
 
-### 2. Trailers and the PR check
+### 2. Changes checked against the map
 
-- **Lands:** reading `Capability:` trailers; anchor checks against version control and, when present, the forge; `physa pr-check` verifying F1 and the map (07 §5); slice records written by `physa slice` (07 §4.1); the version-control interface with git as its adapter (07 §6); the store with only the tables these need.
-- **The owner can:** run `physa pr-check` on any branch, here, before or after a PR, and see each change's capability and whether the map holds; see which slices each session loaded.
-- **Done when:** `physa pr-check` runs as a step of every Physa build, and the slice records of real builds show which agents loaded which slices.
-- **Revised 2026-11-20** by 07: the reviewer agent, the `Loaded:` trailer and the GitHub Action with check-run results were built (#11–#13) and are removed.
+- **Status: landed** (2026-11-20; #11–#17); done when the next builds show it in use.
+- **Lands:** reading `Capability:` trailers; anchor checks against version control and, when present, the forge; `physa check` verifying each change's capability and the map (07 §5), with `physa check changes` and `physa map changes`; slice records written by `physa map slice` and listed by `physa map records` (07 §4.1); the version-control interface with git as its adapter (07 §6); the store with only the tables these need; the grouped commands (`grouped-cli`).
+- **The owner can:** run `physa check` on any branch, here, before or after a PR, and see each change's capability and whether the map holds; see which slices each session loaded.
+- **Done when:** `physa check` runs as a step of every Physa build, and the slice records of real builds show which agents loaded which slices.
+- **Revised 2026-11-20** by 07: the reviewer agent, the `Loaded:` trailer and the GitHub Action with check-run results were built (#11–#13) and removed (#15).
 
 ### 3. Learning
 
-- **Lands:** the learning step after merge, the batched `physa/learn` PR that never merges itself, `physa review`, and the four skills (02 §4).
+- **Needs a design round first:** 02 §3.3 and §3.5 predate 07. Open: what triggers learning (a merge seen locally, a command, later the engine), what it reads (version control, plus the forge's review discussion when there is one), its token appetite, and whether it runs on every merge or only when asked (07 Q4); how a capability is born from building work (07 Q1).
+- **Lands:** the learning step after merge, run on the developer's machine (07 §1), with its own token appetite; the batched `physa/learn` PR that never merges itself; the three skills Physa ships (mapping, recovering, learning; 02 §4).
 - **The owner can:** watch Physa's map improve from its own PRs, reviewing one batched PR instead of writing entries.
 - **Done when:** a week of Physa PRs produces a `physa/learn` PR the owner mostly accepts.
 
@@ -46,18 +50,18 @@ Each step: what lands, what the owner can do with it, and when it is done.
 - **Lands:** `physa init` (02 §2): gather, propose capabilities, recover per capability, check, the PR on `physa/init`, with its token appetite.
 - **Tried on:** nebari (brownfield), after a first change in nebari removes everything Rhiza put there (its 15 MB `.rhiza/`, and Rhiza's traces in README, CLAUDE.md, `bin/gate` and its specs, to be listed exactly before removing); then woodshop (greenfield).
 - **The owner can:** put a living map on any repo in one command.
-- **Release:** **v0.1, open source** (Q3). The wedge, complete: init, slices, the PR check, learning.
-- **Done when:** nebari's init PR is good enough to merge with light edits, and its PR check stays useful for two weeks.
+- **Release:** **v0.1, open source** (Q3). The wedge, complete: init, slices, the change check, learning.
+- **Done when:** nebari's init PR is good enough to merge with light edits, and `physa check` stays useful on it for two weeks.
 
 ### 5. The engine, without agents
 
-- **Lands:** one engine per machine, its socket API, the store at `.git/physa/physa.db` with state tables, events and durable intents (03 §3–§5); ideas, pitches (optional), bets, the plan, appetite in tokens and its circuit breaker; evidence recorded from here on (05 Q14), including engineering evidence from git and CI.
+- **Lands:** one engine per machine, its socket API, the store's state tables, events and durable intents at `.git/physa/physa.db` (03 §3–§5; the store itself landed in step 2); ideas, pitches (optional), bets, the plan (`physa bet plan set`), appetite in tokens and its circuit breaker; evidence recorded from here on (05 Q14), including engineering evidence from version control, and from CI where a team runs one.
 - **The owner can:** keep Physa's own ideas and bets in Physa, from the CLI. No backlog file, no issue tracker.
 - **Done when:** Physa's next ideas live only in Physa, and the engine survives being killed at any moment.
 
 ### 6. Agents run bets: the default harness
 
-- **Lands:** the Claude Code adapter (04 §10); sessions, workspaces and supervision (03 §6–§7); the seven records, gates and caps (04 §6–§8); shipping through `gh` (push, PR, CI wait, merge, with the team's merge method); Physa's default harness (conduct, build, check, fix); asks; interventions counted from the first run (03 §8); rework recorded (03 §8a).
+- **Lands:** the rest of the agent adapter (04 §10; its first rows landed in step 2's #13); sessions, workspaces and supervision (03 §6–§7); the slice delivered in every role's brief and recorded (07 §4.1); the seven records, gates and caps (04 §6–§8), with `physa check` as a gate before the PR; shipping through the forge, GitHub first (push, PR, CI wait, merge, with the team's merge method); Physa's default harness (conduct, build, check, fix); asks; interventions counted from the first run (03 §8); rework recorded (03 §8a); team digests on `refs/notes/physa` and `physa sync` (07 §7).
 - **The owner can:** bet on a small Physa idea and have it built, checked and landed with nobody pushing it.
 - **Done when:** a small Physa bet lands end to end with no intervention.
 
@@ -104,5 +108,5 @@ So that no step grows: no views before step 8 beyond the CLI, no strength number
 - **Q2** The wedge (steps 1–4) comes before the engine (steps 5–7), as the vision's wedge decision implies.
 - **Q3** Two public releases: v0.1 after step 4 (the wedge), v1.0 after step 10. Nothing is pushed publicly before v0.1, and the research notes with the owner's words are checked before any push.
 - **Q4** nebari, with Rhiza removed from it first, is the brownfield test for init (step 4) and the first app for earned release (step 10); woodshop is the greenfield test (the owner).
-- **Q6** The slimmed harness, built from afk and forge, becomes its own plugin repo, **dharness** (`~/code/dharness`, a fresh repo without afk's history; the owner): used directly in Claude Code from step 0, and installed into Physa at step 7.
 - **Q5** Ruby is the first provider for earned release, because the owner's apps and the likely first teams are Rails.
+- **Q6** The slimmed harness, built from afk and forge, becomes its own plugin repo, **dharness** (`~/code/dharness`, a fresh repo without afk's history; the owner): used directly in Claude Code from step 0, and installed into Physa at step 7.

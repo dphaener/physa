@@ -2,8 +2,9 @@
 // checks the map, and the changes of a range against it: check map and check
 // changes. map reads the map: map index lists its capabilities, map slice
 // prints the slice a task needs, map changes lists the capability each change
-// of a range names and map records lists the slice records; a bare map prints
-// the index. version prints the version of the build and help prints the
+// of a range names, map records lists the slice records and map learn
+// --signals finds what the merged changes have to teach the map; a bare map
+// prints the index. version prints the version of the build and help prints the
 // commands. It reads version control only through the git adapter.
 // physa sync is not built yet: it returns with digests, after the engine.
 package main

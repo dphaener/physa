@@ -27,12 +27,20 @@ type Finding struct {
 var trailerLine = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*:\s*\S`)
 
 // readTrailers returns the capabilities of the Capability trailers in a
-// commit message; every other trailer is ignored. The subject paragraph
-// never holds trailers; from the last paragraph back, every paragraph made
-// only of `Key: value` lines does, so a squash merge's own trailers after a
-// blank line read like the branch commit's.
+// commit message; every other trailer is ignored.
 func readTrailers(message string) []string {
-	capabilities := []string{}
+	return Trailers(message, "Capability")
+}
+
+// Trailers returns the comma-split values of every trailer in a commit
+// message whose key equals key, case-insensitively, in the order written. It
+// reads trailers only, never the body: the subject paragraph never holds
+// trailers; from the last paragraph back, every paragraph made only of
+// `Key: value` lines does, so a squash merge's own trailers after a blank
+// line read like the branch commit's. A line that continues a trailer joins
+// its value.
+func Trailers(message, key string) []string {
+	values := []string{}
 	paras := paragraphs(message)
 	first := len(paras)
 	for first > 1 && isTrailerBlock(paras[first-1]) {
@@ -40,13 +48,13 @@ func readTrailers(message string) []string {
 	}
 	for _, para := range paras[first:] {
 		for _, t := range joinContinuations(para) {
-			key, value, _ := strings.Cut(t, ":")
-			if strings.EqualFold(key, "capability") {
-				capabilities = append(capabilities, splitSlugs(value)...)
+			k, value, _ := strings.Cut(t, ":")
+			if strings.EqualFold(k, key) {
+				values = append(values, splitSlugs(value)...)
 			}
 		}
 	}
-	return capabilities
+	return values
 }
 
 // paragraphs splits a message into runs of lines divided by blank lines.

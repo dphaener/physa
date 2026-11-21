@@ -26,6 +26,7 @@ func mapCommand() *cli.Command {
 			"physa map slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]",
 			"physa map changes [<range>] [--json] [--strict]",
 			"physa map records [--json]",
+			"physa map learn --signals [--since <change>] [--json]",
 		},
 		Run: func(args []string, stdout, stderr io.Writer) int {
 			if len(args) > 0 {
@@ -83,6 +84,18 @@ func mapCommand() *cli.Command {
 						return cli.BadUsage
 					}
 					return records(".", asJSON, stdout, stderr)
+				},
+			},
+			{
+				Name:    "learn",
+				Summary: "Find what the merged changes have to teach the map (signals only; drafting is planned).",
+				Usage:   []string{"physa map learn --signals [--since <change>] [--json]"},
+				Run: func(args []string, stdout, stderr io.Writer) int {
+					opts, ok := parseLearn(args)
+					if !ok {
+						return cli.BadUsage
+					}
+					return learnMap(".", opts, stdout, stderr)
 				},
 			},
 		},

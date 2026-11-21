@@ -81,6 +81,31 @@ func TestReadTrailers(t *testing.T) {
 	}
 }
 
+func TestTrailers(t *testing.T) {
+	tests := []struct {
+		name, msg, key string
+		values         []string
+	}{
+		{"repeated key joins", "feat: x\n\nLearned: a, b\nLearned: c\n", "Learned", []string{"a", "b", "c"}},
+		{"continuation", "feat: x\n\nLearned: a,\n  b\n", "Learned", []string{"a", "b"}},
+		{"key case", "feat: x\n\nlearned: a\nLEARNED: b\n", "Learned", []string{"a", "b"}},
+		{"body line ignored", "feat: x\n\nLearned: x\n\nBody text.\n\nLearned: y\n", "Learned", []string{"y"}},
+		{"in body text", "feat: x\n\nLearned: x\nmore text after it\n\nNothing here.\n", "Learned", []string{}},
+		{"prose body before trailer block", "feat: x\n\nLearned: x\nmore prose after it\n\nCapability: a\n", "Learned", []string{}},
+		{"key-only paragraph is a trailer", "feat: x\n\nLearned: x\n\nCapability: a\n", "Learned", []string{"x"}},
+		{"other keys ignored", "feat: x\n\nCapability: a\nLearned: b\n", "Capability", []string{"a"}},
+		{"absent key", "feat: x\n\nCapability: a\n", "Learned", []string{}},
+		{"subject only", "Learned: x\n", "Learned", []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Trailers(tt.msg, tt.key); !reflect.DeepEqual(got, tt.values) {
+				t.Errorf("got %v, want %v", got, tt.values)
+			}
+		})
+	}
+}
+
 func TestReadParsesTrailers(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "chore: base")

@@ -6,27 +6,25 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/dphaener/physa/internal/github"
+	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/forge/github"
 	"github.com/dphaener/physa/internal/prcheck"
 	"github.com/dphaener/physa/internal/vcs/git"
 )
 
-// newGitHub builds the client that reads GitHub through gh. Tests replace it
-// so that none of them reaches GitHub.
-var newGitHub = func(dir string) *github.Client { return github.New(dir) }
+// newForge builds the forge that hosts the repo in dir: GitHub, read through
+// gh. Tests replace it so that none of them reaches GitHub.
+var newForge = func(dir string) forge.Forge { return github.New(dir) }
 
-// prResolver returns the function physa check map uses to resolve #N anchors. A
-// missing or unauthenticated gh becomes a plain reason, so the check falls
-// back to form only.
+// prResolver returns the function physa check map uses to resolve #N anchors.
+// A forge that is unavailable or unauthenticated becomes its plain reason
+// ("gh is not installed"), so the check falls back to form only.
 func prResolver(dir string) func(n int) (bool, error) {
-	client := newGitHub(dir)
+	f := newForge(dir)
 	return func(n int) (bool, error) {
-		ok, err := client.PRExists(n)
-		switch {
-		case errors.Is(err, github.ErrNoGH):
-			return false, errors.New("gh is not installed")
-		case errors.Is(err, github.ErrUnauthenticated):
-			return false, errors.New("gh is not authenticated")
+		ok, err := f.PRExists(n)
+		if errors.Is(err, forge.ErrUnavailable) || errors.Is(err, forge.ErrUnauthenticated) {
+			return false, errors.New(forge.Reason(err))
 		}
 		return ok, err
 	}

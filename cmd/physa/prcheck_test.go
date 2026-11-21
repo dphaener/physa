@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dphaener/physa/internal/github"
+	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/forge/github"
 	"github.com/dphaener/physa/internal/prcheck"
 )
 
@@ -70,12 +71,7 @@ func TestPRCheckMapProblemsStillExitZero(t *testing.T) {
 
 func TestPRCheckNoGHFallsBack(t *testing.T) {
 	t.Chdir(trailersRepo(t))
-	noGH := func(dir string) *github.Client {
-		return github.NewWithRunner(dir, func(string, ...string) ([]byte, error) { return nil, errNoGH })
-	}
-	old := newGitHub
-	newGitHub = noGH
-	t.Cleanup(func() { newGitHub = old })
+	useNoGH(t)
 	write(t, ".", ".physa/capabilities/a.md", "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md · #10\nBecause: y.\n")
 	code, out, _ := runPRCheck(t, "HEAD~4..HEAD", "--json")
 	if code != 0 || !strings.Contains(out, `"pr_anchors":"form-only"`) || !strings.Contains(out, "gh is not installed") {
@@ -180,11 +176,7 @@ func TestCheckResolvesPRAnchors(t *testing.T) {
 }
 
 func TestCheckFormOnlyWithoutGH(t *testing.T) {
-	old := newGitHub
-	newGitHub = func(dir string) *github.Client {
-		return github.NewWithRunner(dir, func(string, ...string) ([]byte, error) { return nil, errNoGH })
-	}
-	t.Cleanup(func() { newGitHub = old })
+	useNoGH(t)
 	code, _, errOut := checkWithAnchor(t, "#10")
 	if code != 0 || !strings.Contains(errOut, "physa check map: PR anchors checked for form only: gh is not installed") {
 		t.Errorf("code %d, stderr %q", code, errOut)
@@ -193,6 +185,30 @@ func TestCheckFormOnlyWithoutGH(t *testing.T) {
 
 // errNoGH is what the real runner returns when gh is not on PATH.
 var errNoGH = &exec.Error{Name: "gh", Err: exec.ErrNotFound}
+
+// useNoGH installs, for one test, a GitHub whose gh is not installed.
+func useNoGH(t *testing.T) {
+	t.Helper()
+	old := newForge
+	newForge = func(dir string) forge.Forge {
+		return github.NewWithRunner(dir, func(string, ...string) ([]byte, error) { return nil, errNoGH })
+	}
+	t.Cleanup(func() { newForge = old })
+}
+
+func TestCheckFormOnlyUnauthenticated(t *testing.T) {
+	old := newForge
+	newForge = func(dir string) forge.Forge {
+		return github.NewWithRunner(dir, func(_ string, args ...string) ([]byte, error) {
+			return nil, &github.Error{Args: args, Stderr: "HTTP 401: Bad credentials", ExitCode: 1}
+		})
+	}
+	t.Cleanup(func() { newForge = old })
+	code, _, errOut := checkWithAnchor(t, "#10")
+	if code != 0 || !strings.Contains(errOut, "physa check map: PR anchors checked for form only: gh is not authenticated\n") {
+		t.Errorf("code %d, stderr %q", code, errOut)
+	}
+}
 
 func runCheck(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
@@ -248,5 +264,15 @@ func TestBareCheckBadRangeAndUsage(t *testing.T) {
 		if code, _, errOut := runCheck(t, args...); code != 2 || !strings.HasPrefix(errOut, "usage: physa check") {
 			t.Errorf("%v: code %d, stderr %q", args, code, errOut)
 		}
+	}
+}
+
+func TestDefaultFakeForgeKnowsNoPR(t *testing.T) {
+	f := newForge(t.TempDir())
+	if ok, err := f.PRExists(1); ok || err != nil {
+		t.Errorf("PRExists: %v, %v", ok, err)
+	}
+	if _, ok, err := f.ChangePR("c0ffee"); ok || err != nil {
+		t.Errorf("ChangePR: %v, %v", ok, err)
 	}
 }

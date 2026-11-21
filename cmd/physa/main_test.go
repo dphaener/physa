@@ -13,14 +13,15 @@ import (
 	"testing"
 
 	"github.com/dphaener/physa/internal/cli"
-	"github.com/dphaener/physa/internal/github"
+	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/forge/github"
 	"github.com/dphaener/physa/internal/store"
 )
 
 // TestMain keeps every test off GitHub: unless a test installs its own fake,
-// GitHub knows no PRs.
+// GitHub knows no PRs and no change came from one.
 func TestMain(m *testing.M) {
-	newGitHub = func(dir string) *github.Client { return fakeGitHub(dir, nil) }
+	newForge = func(dir string) forge.Forge { return fakeGitHub(dir, nil) }
 	// Safety net: no test reaches the store of this repository.
 	dir, err := os.MkdirTemp("", "physa-test-store")
 	if err != nil {
@@ -33,10 +34,16 @@ func TestMain(m *testing.M) {
 }
 
 // fakeGitHub returns a client whose gh knows exactly the PRs in known (a
-// nil map knows none); any other call fails with a 404.
+// nil map knows none) and no PR for any change; any other call fails with a
+// 404.
 func fakeGitHub(dir string, known map[int]bool) *github.Client {
 	return github.NewWithRunner(dir, func(_ string, args ...string) ([]byte, error) {
-		if len(args) >= 2 && args[0] == "api" {
+		switch {
+		case len(args) >= 2 && args[0] == "repo" && args[1] == "view":
+			return []byte(`{"name":"r","owner":{"login":"o"}}`), nil
+		case len(args) >= 2 && args[0] == "api" && args[1] == "graphql":
+			return []byte(`{"data":{"repository":{"object":{"associatedPullRequests":{"nodes":[]}}}}}`), nil
+		case len(args) >= 2 && args[0] == "api":
 			var n int
 			if _, err := fmt.Sscanf(args[1], "repos/{owner}/{repo}/pulls/%d", &n); err == nil && known[n] {
 				return []byte(strconv.Itoa(n) + "\n"), nil
@@ -53,9 +60,9 @@ func useGitHub(t *testing.T, known ...int) {
 	for _, n := range known {
 		set[n] = true
 	}
-	old := newGitHub
-	newGitHub = func(dir string) *github.Client { return fakeGitHub(dir, set) }
-	t.Cleanup(func() { newGitHub = old })
+	old := newForge
+	newForge = func(dir string) forge.Forge { return fakeGitHub(dir, set) }
+	t.Cleanup(func() { newForge = old })
 }
 
 func TestVersion(t *testing.T) {

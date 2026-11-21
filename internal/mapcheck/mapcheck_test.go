@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dphaener/physa/internal/mapfile"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
 )
@@ -356,14 +357,20 @@ func TestBrokenCopy(t *testing.T) {
 	write(t, root, ".physa/capabilities/map.md", strings.Join(cl, "\n"))
 	r := check(t, root)
 	t.Logf("because line %d, slug line %d", becauseLine, slugLine)
+	// The copy has no version control, so the live map's commit anchors
+	// can't resolve here; only the two problems made above count.
+	var problems []mapfile.Problem
 	for _, p := range r.Problems {
 		t.Log(p)
+		if !strings.Contains(p.Message, "cannot resolve: not a repository") {
+			problems = append(problems, p)
+		}
 	}
-	if len(r.Problems) != 2 {
-		t.Fatalf("want 2 problems, got %v", r.Problems)
+	if len(problems) != 2 {
+		t.Fatalf("want 2 problems, got %v", problems)
 	}
-	if r.Problems[0].Path != ".physa/capabilities/map.md" || r.Problems[1].Path != ".physa/product.md" {
-		t.Errorf("unexpected order: %v", r.Problems)
+	if problems[0].Path != ".physa/capabilities/map.md" || problems[1].Path != ".physa/product.md" {
+		t.Errorf("unexpected order: %v", problems)
 	}
 }
 

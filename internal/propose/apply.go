@@ -30,6 +30,66 @@ func tryOn(root string, m *mapfile.Map, p draft.Proposal, baseline map[string]in
 	if err := copyMap(root, tmp); err != nil {
 		return "", "the scratch copy of the map cannot be made: " + err.Error()
 	}
+	return applyTo(tmp, root, m, p, baseline, o)
+}
+
+// ApplyAll applies each of kept, in order, to the map under root itself and
+// returns those applied and those dropped. After each one it runs the map
+// check against the problems the map had before that proposal; one that adds
+// a problem, or does not read back as exactly one new entry citing its
+// changes, is undone and dropped with its reason. It writes only the map's
+// files under root's .physa/.
+func ApplyAll(root string, b draft.Batch, kept []Kept, o Options) ([]Kept, []Dropped) {
+	var (
+		applied []Kept
+		dropped []Dropped
+	)
+	co := once(o)
+	for _, k := range kept {
+		slug, reason := applyOne(root, k.Proposal, co)
+		if reason != "" {
+			dropped = append(dropped, Dropped{Proposal: k.Proposal, Reason: reason})
+			continue
+		}
+		applied = append(applied, Kept{Proposal: k.Proposal, Slug: slug})
+	}
+	return applied, dropped
+}
+
+// applyOne applies p to the map under root, restoring its file when p is
+// dropped.
+func applyOne(root string, p draft.Proposal, o Options) (string, string) {
+	m, _, err := mapfile.Read(root)
+	if err != nil {
+		return "", "the map cannot be read: " + err.Error()
+	}
+	before := capability(m, p.Capability)
+	if before == nil {
+		return "", fmt.Sprintf("the map has no capability `%s`", p.Capability)
+	}
+	base, err := mapcheck.CheckWith(root, mapcheck.Options{OpenRepo: o.OpenRepo, PRExists: o.PRExists})
+	if err != nil {
+		return "", "the map cannot be checked: " + err.Error()
+	}
+	file := filepath.Join(root, filepath.FromSlash(before.Path))
+	orig, err := os.ReadFile(file)
+	if err != nil {
+		return "", "the map cannot be read: " + err.Error()
+	}
+	slug, reason := applyTo(root, root, m, p, problemSet(base.Problems), o)
+	if reason != "" {
+		if err := os.WriteFile(file, orig, 0o644); err != nil {
+			reason += "; and the file cannot be restored: " + err.Error()
+		}
+	}
+	return slug, reason
+}
+
+// applyTo edits the map under dir with p, checks it, with document anchors
+// resolved in docRoot, and reads it back. It returns the new entry's slug,
+// or why p is dropped; the edit stays in dir either way.
+func applyTo(dir, docRoot string, m *mapfile.Map, p draft.Proposal, baseline map[string]int, o Options) (string, string) {
+	root, tmp := docRoot, dir
 	before := capability(m, p.Capability)
 	entry := strings.TrimSpace(strings.ReplaceAll(p.Entry, "\r\n", "\n"))
 	file := filepath.Join(tmp, filepath.FromSlash(before.Path))

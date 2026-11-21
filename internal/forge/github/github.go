@@ -1,5 +1,6 @@
 // Package github is the GitHub adapter of the forge interface: it reads
-// GitHub through the gh command and never writes to it. It tells a missing or
+// GitHub through the gh command, and opens or refreshes a PR only through
+// the forge.PRs methods in pulls.go; it never merges. It tells a missing or
 // unauthenticated gh, and a repo with no GitHub remote, apart from an answer
 // of "not found".
 package github
@@ -17,7 +18,10 @@ import (
 	"github.com/dphaener/physa/internal/forge"
 )
 
-var _ forge.Forge = (*Client)(nil)
+var (
+	_ forge.Forge = (*Client)(nil)
+	_ forge.PRs   = (*Client)(nil)
+)
 
 // Error is a gh command that exited non-zero.
 type Error struct {
@@ -34,9 +38,17 @@ func (e *Error) Error() string {
 // non-zero (gh api prints GraphQL errors there).
 type Runner func(dir string, args ...string) (stdout []byte, err error)
 
-func ghRunner(dir string, args ...string) ([]byte, error) {
+// StdinRunner is a Runner that also passes stdin to gh when it is not nil.
+type StdinRunner func(dir string, stdin []byte, args ...string) (stdout []byte, err error)
+
+func ghRunner(dir string, args ...string) ([]byte, error) { return ghStdinRunner(dir, nil, args...) }
+
+func ghStdinRunner(dir string, stdin []byte, args ...string) ([]byte, error) {
 	cmd := exec.Command("gh", args...)
 	cmd.Dir = dir
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
@@ -52,23 +64,35 @@ func ghRunner(dir string, args ...string) ([]byte, error) {
 // Client reads GitHub for the repo in its directory.
 type Client struct {
 	dir         string
-	run         Runner
+	run         StdinRunner
 	owner, name string // the repo, once ChangePR has asked gh
 }
 
 // New returns a Client that runs the real gh in dir.
-func New(dir string) *Client { return NewWithRunner(dir, ghRunner) }
+func New(dir string) *Client { return NewWithStdinRunner(dir, ghStdinRunner) }
 
-// NewWithRunner returns a Client that uses r instead of gh.
-func NewWithRunner(dir string, r Runner) *Client { return &Client{dir: dir, run: r} }
+// NewWithRunner returns a Client that uses r instead of gh. r is not given
+// the body of a PR, so it suits the reads; see NewWithStdinRunner.
+func NewWithRunner(dir string, r Runner) *Client {
+	return NewWithStdinRunner(dir, func(dir string, _ []byte, args ...string) ([]byte, error) {
+		return r(dir, args...)
+	})
+}
+
+// NewWithStdinRunner returns a Client that uses r instead of gh, and gives r
+// what gh would read on stdin.
+func NewWithStdinRunner(dir string, r StdinRunner) *Client { return &Client{dir: dir, run: r} }
 
 // Name is "github".
 func (c *Client) Name() string { return "github" }
 
 // gh runs gh and classes its failure as a forge.Error when it is one of the
 // forge's sentinels. Its stdout is returned whatever the error.
-func (c *Client) gh(args ...string) ([]byte, error) {
-	out, err := c.run(c.dir, args...)
+func (c *Client) gh(args ...string) ([]byte, error) { return c.ghIn(nil, args...) }
+
+// ghIn is gh with stdin for the command.
+func (c *Client) ghIn(stdin []byte, args ...string) ([]byte, error) {
+	out, err := c.run(c.dir, stdin, args...)
 	if err == nil {
 		return out, nil
 	}

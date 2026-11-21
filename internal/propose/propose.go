@@ -2,7 +2,7 @@
 // proposed map entry is checked against the signals it claims and, on a
 // scratch copy of the map, with the map check; those that pass are kept and
 // every other one is dropped with its reason, never silently. It writes
-// nothing to the map.
+// the map only through ApplyAll, to the root it is given, and never in Check.
 package propose
 
 import (

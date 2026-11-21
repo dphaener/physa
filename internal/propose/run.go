@@ -56,8 +56,12 @@ func Run(ctx context.Context, root string, m *mapfile.Map, res learn.Result, s S
 		return report, err
 	}
 	if s.Progress != nil {
-		fmt.Fprintf(s.Progress, "physa map learn: appetite %d tokens; batch of %d signals on %d changes, %d capabilities\n",
-			appetite, batch.SignalCount(), batch.ChangeCount(), batch.CapabilityCount())
+		cuts := ""
+		if c := batch.Cuts(); c != "" {
+			cuts = "; " + c
+		}
+		fmt.Fprintf(s.Progress, "physa map learn: appetite %d tokens; batch of %d signals on %d changes, %d capabilities%s\n",
+			appetite, batch.SignalCount(), batch.ChangeCount(), batch.CapabilityCount(), cuts)
 	}
 	out, err := draft.Run(ctx, a, prompt, appetite)
 	if err != nil {

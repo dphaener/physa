@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/dphaener/physa/internal/learn"
 	"github.com/dphaener/physa/internal/mapfile"
 	"github.com/dphaener/physa/internal/mapindex"
 	"github.com/dphaener/physa/internal/mapslice"
@@ -53,12 +55,17 @@ func Prompt(m *mapfile.Map, b Batch) (string, error) {
 	if b.Empty() {
 		w.WriteString(none)
 	}
+	q := &quoter{}
 	for i, c := range b.Changes {
 		if i > 0 {
 			w.WriteString("\n")
 		}
 		fmt.Fprintf(&w, "### Change %d of %d\n\n", i+1, len(b.Changes))
-		fenced(&w, "change: "+oneLine(c.Short)+"\nsubject: "+oneLine(c.Subject)+"\nmessage:\n"+strings.TrimSpace(c.Message))
+		head := "change: " + oneLine(c.Short)
+		if !c.At.IsZero() {
+			head += "\ndate: " + c.At.UTC().Format(time.RFC3339)
+		}
+		fenced(&w, head+"\nsubject: "+oneLine(c.Subject)+"\nmessage:\n"+strings.TrimSpace(c.Message))
 		for j, s := range c.Signals {
 			fmt.Fprintf(&w, "\nSignal %d of %d on this change:\n\n", j+1, len(c.Signals))
 			var t strings.Builder
@@ -73,9 +80,102 @@ func Prompt(m *mapfile.Map, b Batch) (string, error) {
 				t.WriteString("\n- " + strings.TrimSpace(e))
 			}
 			fenced(&w, t.String())
+			q.quote(&w, s)
 		}
 	}
 	return w.String(), nil
+}
+
+// Bounds on what the prompt quotes of others' words (design 08 section 7).
+const (
+	// commentRunes is the most characters quoted of one comment or of one
+	// reverted change's message.
+	commentRunes = 1500
+	// batchRunes is the most characters of all such quotes in one batch.
+	batchRunes = 20000
+)
+
+// quoter writes the text a signal quotes, a comment or a reverted message,
+// within the bounds, and counts what it cut or left out.
+type quoter struct {
+	used    int  // characters quoted so far
+	cut     int  // quotes cut to commentRunes
+	leftOut int  // comments left out for the batch bound
+	msgOut  int  // reverted messages left out for the batch bound
+	spent   bool // the batch bound is reached; nothing more is quoted
+}
+
+// quote writes what s quotes, each in its own fenced block, to w; a nil w
+// only counts.
+func (q *quoter) quote(w *strings.Builder, s learn.Signal) {
+	if w == nil {
+		w = &strings.Builder{}
+	}
+	for i, cm := range s.Comments {
+		text, n := q.take(cm.Body)
+		if n < 0 {
+			q.leftOut += len(s.Comments) - i
+			fmt.Fprintf(w, "\n%d more comments left out to keep the batch within its bound\n", len(s.Comments)-i)
+			break
+		}
+		fmt.Fprintf(w, "\nComment %d of %d on this signal, oldest first:\n\n", i+1, len(s.Comments))
+		fenced(w, "author: "+oneLine(cm.Author)+"\nat: "+oneLine(cm.At.UTC().Format(time.RFC3339))+"\ntext:\n"+text)
+	}
+	if s.Reverted != nil {
+		text, n := q.take(s.Reverted.Message)
+		w.WriteString("\nThe reverted change:\n\n")
+		if n < 0 {
+			q.msgOut++
+			fenced(w, "subject: "+oneLine(s.Reverted.Subject))
+			w.WriteString("\nits message is left out to keep the batch within its bound\n")
+			return
+		}
+		fenced(w, "subject: "+oneLine(s.Reverted.Subject)+"\nmessage:\n"+text)
+	}
+}
+
+// take returns body bounded: cut to commentRunes with the cut said, and n its
+// length in characters, or -1 when the batch bound would be passed by it.
+func (q *quoter) take(body string) (text string, n int) {
+	body = strings.TrimSpace(body)
+	r := []rune(body)
+	if len(r) > commentRunes {
+		text = string(r[:commentRunes]) + fmt.Sprintf("\n(cut: %d of %d characters)", commentRunes, len(r))
+		n = commentRunes
+	} else {
+		text, n = body, len(r)
+	}
+	if q.spent || q.used+n > batchRunes {
+		q.spent = true
+		return "", -1
+	}
+	q.used += n
+	if len(r) > commentRunes {
+		q.cut++
+	}
+	return text, n
+}
+
+// Cuts says in one clause what Prompt cut or left out of what it quotes of
+// the batch, or returns "" when it cut nothing.
+func (b Batch) Cuts() string {
+	q := &quoter{}
+	for _, c := range b.Changes {
+		for _, s := range c.Signals {
+			q.quote(nil, s)
+		}
+	}
+	var parts []string
+	if q.cut > 0 {
+		parts = append(parts, fmt.Sprintf("%d quotes cut to %d characters", q.cut, commentRunes))
+	}
+	if q.leftOut > 0 {
+		parts = append(parts, fmt.Sprintf("%d comments left out", q.leftOut))
+	}
+	if q.msgOut > 0 {
+		parts = append(parts, fmt.Sprintf("%d reverted messages left out", q.msgOut))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // oneLine returns s with every run of white space as one space, so a value

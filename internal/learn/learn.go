@@ -3,8 +3,15 @@
 // one carries, and triages them into changes with a signal and changes with
 // nothing to learn. A signal that needs a source Physa cannot read (no forge,
 // no slice records, or the engine, not built yet) is reported as not checked,
-// never as absent. It spends no tokens and changes nothing; drafting
-// proposals from the signals comes later.
+// never as absent.
+//
+// What is already learned is read from the record learning keeps (design 08
+// section 6): the Learned-through watermark, the newest default-branch change
+// learned from, read from the learn branch and the default branch's history;
+// and the Learned ids on the learn branch's unmerged commits and the
+// collected changes. A run computes the next watermark and never moves it
+// past a change not fully triaged. It spends no tokens and changes nothing;
+// drafting proposals and writing the record happen elsewhere.
 package learn
 
 import (
@@ -19,8 +26,9 @@ import (
 	"github.com/dphaener/physa/internal/vcs"
 )
 
-// learnBranch is the branch whose commits name, in Learned trailers, the
-// changes already learned from (design 08 section 6).
+// learnBranch is the branch learning writes its proposals to. Its commits
+// carry the Learned-through watermark and, in Learned trailers, the changes
+// they learned from (design 08 section 6).
 const learnBranch = "physa/learn"
 
 // minSharedID is how long a shared prefix two ids need to name one change.
@@ -28,8 +36,8 @@ const minSharedID = 7
 
 // Options are what a run reads besides version control.
 type Options struct {
-	// Since is the change the run starts after; empty means the newest
-	// DefaultChanges changes.
+	// Since is the change the run starts after; empty means after the
+	// watermark, or the newest DefaultChanges changes when there is none.
 	Since string
 	// Forge is the forge to ask about each change's PR; nil means none.
 	Forge forge.Forge
@@ -66,6 +74,17 @@ type Result struct {
 	Learn          []ChangeSignals `json:"learn"`
 	Nothing        []ChangeRef     `json:"nothing"`
 	Incomplete     []Incomplete    `json:"incomplete"`
+	// Watermark is the full id of the change learning was read to have
+	// learned through; empty when there is none.
+	Watermark string `json:"watermark"`
+	// Through is the full id of the change the next record learns through:
+	// past every change triaged, never past one not fully triaged, and
+	// never behind Watermark. With nothing triaged and no Watermark it is the
+	// change the run started after; empty only when the run started at the
+	// first change of the history.
+	Through string `json:"through"`
+	// LearnedNow are the short ids of the run's changes with signals.
+	LearnedNow []string `json:"learned_now"`
 }
 
 // Unavailable is a kind of signal that was not checked, and why.
@@ -87,6 +106,8 @@ type ChangeSignals struct {
 	Signals []Signal `json:"signals"`
 	// Message is the change's full message, for drafting; not in the JSON form.
 	Message string `json:"-"`
+	// At is when the change was made, for drafting; not in the JSON form.
+	At time.Time `json:"-"`
 	// Capabilities are the values of the change's Capability trailers, for
 	// drafting; not in the JSON form.
 	Capabilities []string `json:"-"`
@@ -117,16 +138,21 @@ func Run(repo vcs.Repo, o Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	collected, older, rng, err := collect(repo, ref, o.Since)
+	watermark, err := readWatermark(repo, ref)
 	if err != nil {
 		return Result{}, err
 	}
-	learned, err := learnedIDs(repo)
+	collected, older, rng, err := collect(repo, ref, o.Since, watermark)
+	if err != nil {
+		return Result{}, err
+	}
+	learned, err := learnedIDs(repo, ref, collected)
 	if err != nil {
 		return Result{}, err
 	}
 	res := Result{Version: ResultVersion, Range: rng, Unavailable: []Unavailable{},
-		Learn: []ChangeSignals{}, Nothing: []ChangeRef{}, Incomplete: []Incomplete{}}
+		Learn: []ChangeSignals{}, Nothing: []ChangeRef{}, Incomplete: []Incomplete{},
+		Watermark: watermark, LearnedNow: []string{}}
 	var entries []*entry
 	for i, c := range collected {
 		var from time.Time
@@ -134,6 +160,9 @@ func Run(repo vcs.Repo, o Options) (Result, error) {
 			from = collected[i+1].Time
 		} else if older != nil {
 			from = older.Time
+		}
+		if isRecord(c) {
+			continue
 		}
 		if isLearned(c.ID, learned) {
 			res.AlreadyLearned++
@@ -159,26 +188,51 @@ func Run(repo vcs.Repo, o Options) (Result, error) {
 		Unavailable{KindRecurringFinding, reasonRecurringFinding},
 		Unavailable{KindAsk, reasonAsk})
 
+	incomplete := map[string]bool{}
 	for _, e := range entries {
 		ref := ChangeRef{Change: e.change.ID, Short: e.change.Short, Subject: e.change.Subject}
 		switch {
 		case len(e.signals) > 0:
 			res.Learn = append(res.Learn, ChangeSignals{ChangeRef: ref, Signals: e.signals,
-				Message: e.change.Message, Capabilities: history.Trailers(e.change.Message, "Capability")})
+				Message: e.change.Message, At: e.change.Time, Capabilities: history.Trailers(e.change.Message, "Capability")})
+			res.LearnedNow = append(res.LearnedNow, e.change.Short)
 		case e.forgeGap != "":
 			res.Incomplete = append(res.Incomplete, Incomplete{ChangeRef: ref,
 				Reason: KindCorrection + " and " + KindArguedOptions + " not checked: " + e.forgeGap})
+			incomplete[e.change.ID] = true
 		default:
 			res.Nothing = append(res.Nothing, ref)
 		}
+	}
+	res.Through = nextWatermark(repo, watermark, collected, incomplete)
+	if res.Through == "" && older != nil {
+		res.Through = older.ID
 	}
 	return res, nil
 }
 
 // collect returns the changes to learn from on ref, newest first, the change
 // just older than the oldest of them when there is one, and the range they
-// span.
-func collect(repo vcs.Repo, ref, since string) ([]vcs.Change, *vcs.Change, string, error) {
+// span: those after since when it is given, else every change after the
+// watermark when there is one, else the newest DefaultChanges.
+func collect(repo vcs.Repo, ref, since, watermark string) ([]vcs.Change, *vcs.Change, string, error) {
+	if since == "" && watermark != "" {
+		changes, err := repo.Changes(watermark + ".." + ref)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		bound, err := repo.Latest(watermark, 1)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		rng := shortID(watermark) + ".." + ref
+		var older *vcs.Change
+		if len(bound) > 0 {
+			older = &bound[0]
+			rng = older.Short + ".." + ref
+		}
+		return changes, older, rng, nil
+	}
 	if since != "" {
 		rng := since + ".." + ref
 		changes, err := repo.Changes(rng)
@@ -204,24 +258,6 @@ func collect(repo vcs.Repo, ref, since string) ([]vcs.Change, *vcs.Change, strin
 	}
 	older := changes[DefaultChanges]
 	return changes[:DefaultChanges], &older, older.Short + ".." + ref, nil
-}
-
-// learnedIDs returns the ids named by Learned trailers on the learn branch,
-// here and on the remote, lower-cased.
-func learnedIDs(repo vcs.Repo) ([]string, error) {
-	var ids []string
-	for _, ref := range repo.Branch(learnBranch) {
-		changes, err := repo.Changes(ref)
-		if err != nil {
-			return nil, err
-		}
-		for _, c := range changes {
-			for _, id := range history.Trailers(c.Message, "Learned") {
-				ids = append(ids, strings.ToLower(id))
-			}
-		}
-	}
-	return ids, nil
 }
 
 // isLearned reports whether a learned id names change id.

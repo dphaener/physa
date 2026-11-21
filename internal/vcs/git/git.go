@@ -1,6 +1,9 @@
 // Package git is the git adapter of the version-control interface: it reads
-// the history of a git repository for Physa through the git command. It never
-// changes history, the index or the working copy.
+// the history of a git repository for Physa through the git command. A Repo
+// only reads. Writes go only through a Writer, for learning's branch: it
+// fetches from origin, makes isolated working copies under Physa's store,
+// moves a branch by compare-and-swap and pushes with a lease. It never
+// changes the person's working copy, index or checked-out branch.
 package git
 
 import (
@@ -167,10 +170,117 @@ func (r *repo) Files(id, dir string) ([]string, error) {
 	return files, nil
 }
 
+// Resolve returns the full id of the commit ref names.
+func (r *repo) Resolve(ref string) (string, bool) {
+	if ref == "" {
+		return "", false
+	}
+	out, _, err := r.git("rev-parse", "--verify", "--quiet", "--end-of-options", ref+"^{commit}")
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(out), true
+}
+
+// trailerKey is the form of a trailer key: it is matched in git's grep, so
+// nothing else may reach it.
+var trailerKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*$`)
+
+// Trailer asks git for the non-merge commits reachable from ref with a line
+// starting "key:", newest first, and returns the first whose trailers carry
+// key.
+func (r *repo) Trailer(ref, key string) (vcs.Change, bool, error) {
+	if !trailerKey.MatchString(key) {
+		return vcs.Change{}, false, fmt.Errorf("%q is not a trailer key", key)
+	}
+	out, stderr, err := r.git("log", "--no-merges", "-i", "--grep=^"+key+":", logFormat, "--end-of-options", ref, "--")
+	if err != nil {
+		return vcs.Change{}, false, gitError(err, stderr)
+	}
+	changes, err := parseLog(out)
+	if err != nil {
+		return vcs.Change{}, false, err
+	}
+	for _, c := range changes {
+		if hasTrailer(c.Message, key) {
+			return c, true, nil
+		}
+	}
+	return vcs.Change{}, false, nil
+}
+
+// IsAncestor reports whether commit a is b or reachable from b.
+func (r *repo) IsAncestor(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	_, _, err := r.git("merge-base", "--is-ancestor", "--end-of-options", a, b)
+	return err == nil
+}
+
+// trailerLine is one "Key: value" line of a trailer paragraph.
+var trailerLine = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*:\s*\S`)
+
+// hasTrailer reports whether message carries a trailer whose key is key,
+// case-insensitively, read as the history package reads trailers: never in
+// the subject paragraph; from the last paragraph back, every paragraph made
+// only of trailer lines and lines continuing them.
+func hasTrailer(message, key string) bool {
+	lines := strings.Split(strings.ReplaceAll(message, "\r\n", "\n"), "\n")
+	var blocks [][]string
+	var cur []string
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			if cur != nil {
+				blocks, cur = append(blocks, cur), nil
+			}
+			continue
+		}
+		cur = append(cur, line)
+	}
+	if cur != nil {
+		blocks = append(blocks, cur)
+	}
+	for i := len(blocks) - 1; i > 0 && isTrailerBlock(blocks[i]); i-- {
+		for _, line := range blocks[i] {
+			if k, _, ok := strings.Cut(line, ":"); ok && line[0] != ' ' && line[0] != '\t' && strings.EqualFold(k, key) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isTrailerBlock reports whether every line of the paragraph is a trailer
+// line or continues the one above.
+func isTrailerBlock(para []string) bool {
+	for i, line := range para {
+		if line[0] == ' ' || line[0] == '\t' {
+			if i == 0 {
+				return false
+			}
+			continue
+		}
+		if !trailerLine.MatchString(line) {
+			return false
+		}
+	}
+	return true
+}
+
 // git runs one read-only git command in the repo's directory.
 func (r *repo) git(args ...string) (stdout, stderr string, err error) {
-	cmd := exec.Command("git", append([]string{"-C", r.dir}, args...)...)
-	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	return runGit(r.dir, "", os.Environ(), args...)
+}
+
+// runGit runs one git command in dir with env, stdin as its input, git's
+// messages in C.
+func runGit(dir, stdin string, env []string, args ...string) (stdout, stderr string, err error) {
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(env, "LC_ALL=C")
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	var out, errBuf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errBuf
 	err = cmd.Run()

@@ -552,3 +552,332 @@ func TestJSONOmitsMessageAndCapabilities(t *testing.T) {
 		}
 	}
 }
+
+func TestDraftingTextRidesOnTheSignals(t *testing.T) {
+	r := newTestRepo(t, "main")
+	if err := os.WriteFile(filepath.Join(r.dir, "f.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r.git("add", "f.txt")
+	added := r.commit("feat: Add f\n\nWhy f exists.")
+	reverted := r.revert()
+	argued := r.commit("feat: Argue")
+	cs := []forge.Comment{
+		{Author: "zed", At: base.Add(2 * time.Hour), Kind: forge.KindDiscussion, Body: "later"},
+		{Author: "amy", At: base.Add(time.Hour), Kind: forge.KindDiscussion, Body: "first"},
+		{Author: "zed", At: base.Add(3 * time.Hour), Kind: forge.KindDiscussion, Body: "last"},
+	}
+	f := &fakeForge{prs: map[string]forge.PR{argued: {Comments: cs}}}
+	// The range starts after the reverted change: it is outside it.
+	res := run(t, r.open(), Options{Forge: f, Since: added})
+	var gotArgued, gotRevert *ChangeSignals
+	for i := range res.Learn {
+		switch res.Learn[i].Change {
+		case argued:
+			gotArgued = &res.Learn[i]
+		case reverted:
+			gotRevert = &res.Learn[i]
+		}
+	}
+	if gotArgued == nil || gotRevert == nil {
+		t.Fatalf("learn = %+v", res.Learn)
+	}
+	if gotArgued.At.IsZero() || !gotArgued.At.Equal(r.times[argued]) {
+		t.Errorf("at = %v, want %v", gotArgued.At, r.times[argued])
+	}
+	var authors []string
+	for _, c := range gotArgued.Signals[0].Comments {
+		authors = append(authors, c.Author+":"+c.Body)
+	}
+	if want := []string{"amy:first", "zed:later", "zed:last"}; !reflect.DeepEqual(authors, want) {
+		t.Errorf("comments = %v, want oldest first %v", authors, want)
+	}
+	rv := gotRevert.Signals[0].Reverted
+	if rv == nil || rv.Subject != "feat: Add f" || !strings.Contains(rv.Message, "Why f exists.") {
+		t.Errorf("reverted = %+v", rv)
+	}
+	var b bytes.Buffer
+	if err := WriteJSON(&b, res); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"Why f exists", "\"Comments\"", "\"Reverted\"", "\"At\"", "later"} {
+		if strings.Contains(b.String(), key) {
+			t.Errorf("the JSON form carries %q", key)
+		}
+	}
+}
+
+// onLearn makes a commit on physa/learn, branching it from main's HEAD when
+// it does not exist yet, and returns to main.
+func (r *testRepo) onLearn(message string) string {
+	r.t.Helper()
+	if _, err := exec.Command("git", "-C", r.dir, "rev-parse", "--verify", "--quiet", "refs/heads/physa/learn").Output(); err != nil {
+		r.git("checkout", "-q", "-b", "physa/learn")
+	} else {
+		r.git("checkout", "-q", "physa/learn")
+	}
+	id := r.commit(message)
+	r.git("checkout", "-q", "main")
+	return id
+}
+
+// record is a learning commit's message learning through id.
+func record(id string, learned ...string) string {
+	m := "docs(map): Learn from changes\n\n- a proposal\n\nLearned-through: " + id
+	if len(learned) > 0 {
+		m += "\nLearned: " + strings.Join(learned, ", ")
+	}
+	return m + "\nCapability: learning"
+}
+
+func TestWatermarkOnLearnBranchLimitsCollection(t *testing.T) {
+	r := newTestRepo(t, "main")
+	r.commit("a")
+	b := r.commit("b")
+	r.onLearn(record(b))
+	c := r.commit("c")
+	d := r.commit("d")
+	res := run(t, r.open(), Options{Forge: &fakeForge{}})
+	if got, want := ids(res.Nothing), []string{d, c}; !reflect.DeepEqual(got, want) {
+		t.Errorf("collected %v, want %v (only the changes after the watermark)", got, want)
+	}
+	if res.Watermark != b || res.Through != d {
+		t.Errorf("watermark %q through %q, want %q and %q", res.Watermark, res.Through, b, d)
+	}
+	if res.Range != b[:7]+"..main" {
+		t.Errorf("range = %q", res.Range)
+	}
+	if res.AlreadyLearned != 0 || res.Changes != 2 {
+		t.Errorf("changes %d, already learned %d", res.Changes, res.AlreadyLearned)
+	}
+}
+
+func TestWatermarkFromSquashMerge(t *testing.T) {
+	r := newTestRepo(t, "main")
+	r.commit("a")
+	b := r.commit("b")
+	c := r.commit("c")
+	sq := r.commit("docs(learning): Proposals learned from merged changes (#5)\n\n" + record(b, c[:7]))
+	d := r.commit("d")
+	res := run(t, r.open(), Options{Forge: &fakeForge{}})
+	if res.Watermark != b {
+		t.Fatalf("watermark %q, want %q from the squash merge", res.Watermark, b)
+	}
+	if got, want := ids(res.Nothing), []string{d}; !reflect.DeepEqual(got, want) {
+		t.Errorf("nothing %v, want %v: the squash merge is a record, c is learned", got, want)
+	}
+	if res.AlreadyLearned != 1 || res.Changes != 1 {
+		t.Errorf("changes %d, already learned %d, want 1 and 1", res.Changes, res.AlreadyLearned)
+	}
+	for _, n := range res.Nothing {
+		if n.Change == sq {
+			t.Error("the learning commit was collected")
+		}
+	}
+	if res.Through != d {
+		t.Errorf("through %q, want %q", res.Through, d)
+	}
+}
+
+func TestWatermarkRecordOnlyStaysPut(t *testing.T) {
+	r := newTestRepo(t, "main")
+	b := r.commit("b")
+	r.commit("docs(learning): Learn (#6)\n\n" + record(b))
+	res := run(t, r.open(), Options{Forge: &fakeForge{}})
+	if res.Changes != 0 || res.AlreadyLearned != 0 || len(res.Nothing) != 0 {
+		t.Errorf("a learning commit was counted: %+v", res)
+	}
+	if res.Through != b || res.Watermark != b {
+		t.Errorf("watermark %q through %q, want both %q", res.Watermark, res.Through, b)
+	}
+}
+
+func TestWatermarkLaterWins(t *testing.T) {
+	t.Run("default branch later", func(t *testing.T) {
+		r := newTestRepo(t, "main")
+		a := r.commit("a")
+		r.onLearn(record(a))
+		c := r.commit("c")
+		r.commit("docs(learning): Learn (#7)\n\n" + record(c))
+		e := r.commit("e")
+		res := run(t, r.open(), Options{Forge: &fakeForge{}})
+		if res.Watermark != c || !reflect.DeepEqual(ids(res.Nothing), []string{e}) {
+			t.Errorf("watermark %q, collected %v, want %q and [e]", res.Watermark, ids(res.Nothing), c)
+		}
+	})
+	t.Run("learn branch later", func(t *testing.T) {
+		r := newTestRepo(t, "main")
+		a := r.commit("a")
+		r.commit("docs(learning): Learn (#7)\n\n" + record(a))
+		c := r.commit("c")
+		r.onLearn(record(c))
+		e := r.commit("e")
+		res := run(t, r.open(), Options{Forge: &fakeForge{}})
+		if res.Watermark != c || !reflect.DeepEqual(ids(res.Nothing), []string{e}) {
+			t.Errorf("watermark %q, collected %v, want %q and [e]", res.Watermark, ids(res.Nothing), c)
+		}
+	})
+}
+
+func TestWatermarkUnreachableIsIgnored(t *testing.T) {
+	r := newTestRepo(t, "main")
+	a := r.commit("a")
+	r.git("checkout", "-q", "-b", "side")
+	side := r.commit("side")
+	r.git("checkout", "-q", "main")
+	b := r.commit("b")
+	r.onLearn(record(side))
+	r.commit("docs(learning): Learn (#8)\n\n" + record("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"))
+	res, err := Run(r.open(), Options{Forge: &fakeForge{}})
+	if err != nil {
+		t.Fatalf("an unreachable watermark is an error: %v", err)
+	}
+	if res.Watermark != "" || res.Range != "main" {
+		t.Errorf("watermark %q, range %q, want none and the newest changes", res.Watermark, res.Range)
+	}
+	if got, want := ids(res.Nothing), []string{b, a}; !reflect.DeepEqual(got, want) {
+		t.Errorf("collected %v, want %v", got, want)
+	}
+}
+
+func TestWatermarkHoldsBackWithoutForge(t *testing.T) {
+	t.Run("stops below the oldest not fully triaged", func(t *testing.T) {
+		r := newTestRepo(t, "main")
+		if err := os.WriteFile(filepath.Join(r.dir, "f.txt"), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		r.git("add", "f.txt")
+		f := r.commit("feat: Add f")
+		w := r.commit("w")
+		r.onLearn(record(w))
+		r.n++
+		r.git("revert", "--no-edit", f)
+		rev := r.git("rev-parse", "HEAD")
+		x := r.commit("x")
+		r.commit("y")
+		res := run(t, r.open(), Options{ForgeReason: "gh is not installed"})
+		if len(res.Learn) != 1 || res.Learn[0].Change != rev || len(res.Incomplete) != 2 {
+			t.Fatalf("learn %v, incomplete %v", res.Learn, res.Incomplete)
+		}
+		if res.Through != rev {
+			t.Errorf("through %q, want %q, below the not fully triaged %q", res.Through, rev, x)
+		}
+		if !reflect.DeepEqual(res.LearnedNow, []string{res.Learn[0].Short}) {
+			t.Errorf("learned now %v", res.LearnedNow)
+		}
+	})
+	t.Run("stays put when the oldest is not fully triaged", func(t *testing.T) {
+		r := newTestRepo(t, "main")
+		w := r.commit("w")
+		r.onLearn(record(w))
+		r.commit("x")
+		r.commit("y")
+		res := run(t, r.open(), Options{ForgeReason: "gh is not installed"})
+		if res.Through != w || res.Watermark != w {
+			t.Errorf("watermark %q through %q, want both %q", res.Watermark, res.Through, w)
+		}
+	})
+	t.Run("the change the run started after when nothing is triaged", func(t *testing.T) {
+		r := newTestRepo(t, "main")
+		a := r.commit("a")
+		r.commit("x")
+		res := run(t, r.open(), Options{Since: a, ForgeReason: "gh is not installed"})
+		if res.Through != a || res.Watermark != "" {
+			t.Errorf("watermark %q through %q, want through the base %q", res.Watermark, res.Through, a)
+		}
+	})
+	t.Run("a none record gives no watermark", func(t *testing.T) {
+		r := newTestRepo(t, "main")
+		r.commit("x")
+		r.onLearn("docs(map): Learn from 1 change\n\n- a proposal\n\nLearned-through: none")
+		res := run(t, r.open(), Options{ForgeReason: "gh is not installed"})
+		if res.Watermark != "" || res.Through != "" {
+			t.Errorf("watermark %q through %q, want none", res.Watermark, res.Through)
+		}
+	})
+	t.Run("none when there is no watermark", func(t *testing.T) {
+		r := newTestRepo(t, "main")
+		r.commit("x")
+		res := run(t, r.open(), Options{ForgeReason: "gh is not installed"})
+		if res.Through != "" || res.Watermark != "" {
+			t.Errorf("watermark %q through %q, want none", res.Watermark, res.Through)
+		}
+	})
+}
+
+func TestWatermarkNeverMovesBack(t *testing.T) {
+	r := newTestRepo(t, "main")
+	a := r.commit("a")
+	r.commit("b")
+	c := r.commit("c")
+	r.onLearn(record(c))
+	f := &fakeForge{errFor: map[string]error{c: errors.New("boom")}}
+	res := run(t, r.open(), Options{Since: a, Forge: f})
+	if len(res.Incomplete) != 1 || res.Incomplete[0].Change != c {
+		t.Fatalf("incomplete %v, want c", res.Incomplete)
+	}
+	if res.Through != c {
+		t.Errorf("through %q, want the read watermark %q, not behind it", res.Through, c)
+	}
+}
+
+func TestLearnedOnUnmergedLearnCommit(t *testing.T) {
+	r := newTestRepo(t, "main")
+	a := r.commit("a")
+	b := r.commit("b")
+	r.onLearn(record(a))
+	r.onLearn("docs(learning): Learn (no watermark)\n\nLearned: " + b[:8])
+	c := r.commit("c")
+	res := run(t, r.open(), Options{Forge: &fakeForge{}})
+	if got, want := ids(res.Nothing), []string{c}; !reflect.DeepEqual(got, want) {
+		t.Errorf("learned from %v, want %v", got, want)
+	}
+	if res.AlreadyLearned != 1 || res.Through != c {
+		t.Errorf("already learned %d through %q", res.AlreadyLearned, res.Through)
+	}
+}
+
+func TestWatermarkInJSONAndText(t *testing.T) {
+	r := newTestRepo(t, "main")
+	a := r.commit("a")
+	r.onLearn(record(a))
+	b := r.commit("b")
+	res := run(t, r.open(), Options{Forge: &fakeForge{}})
+	var j bytes.Buffer
+	if err := WriteJSON(&j, res); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"watermark":"` + a + `"`, `"through":"` + b + `"`, `"learned_now":[]`, `"version":1`} {
+		if !strings.Contains(j.String(), want) {
+			t.Errorf("json lacks %s: %s", want, j.String())
+		}
+	}
+	var txt bytes.Buffer
+	if err := WriteText(&txt, res); err != nil {
+		t.Fatal(err)
+	}
+	if want := "Learned through " + b[:7] + " (was " + a[:7] + ")\n"; !strings.Contains(txt.String(), want) {
+		t.Errorf("text lacks %q:\n%s", want, txt.String())
+	}
+	res.Watermark = ""
+	txt.Reset()
+	if err := WriteText(&txt, res); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(txt.String(), "(was none)\n") {
+		t.Errorf("text:\n%s", txt.String())
+	}
+}
+
+func TestWatermarkOnRemoteLearnBranch(t *testing.T) {
+	r := newTestRepo(t, "main")
+	a := r.commit("a")
+	l := r.onLearn(record(a))
+	r.git("update-ref", "refs/remotes/origin/physa/learn", l)
+	r.git("branch", "-q", "-D", "physa/learn")
+	b := r.commit("b")
+	res := run(t, r.open(), Options{Forge: &fakeForge{}})
+	if res.Watermark != a || !reflect.DeepEqual(ids(res.Nothing), []string{b}) {
+		t.Errorf("watermark %q, collected %v, want %q and [b]", res.Watermark, ids(res.Nothing), a)
+	}
+}

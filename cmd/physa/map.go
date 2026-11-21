@@ -26,7 +26,7 @@ func mapCommand() *cli.Command {
 			"physa map slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]",
 			"physa map changes [<range>] [--json] [--strict]",
 			"physa map records [--json]",
-			"physa map learn [--signals] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]",
+			"physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]",
 		},
 		Run: func(args []string, stdout, stderr io.Writer) int {
 			if len(args) > 0 {
@@ -88,8 +88,8 @@ func mapCommand() *cli.Command {
 			},
 			{
 				Name:    "learn",
-				Summary: "Find what the merged changes have to teach the map, and draft proposals from it for the stewards to review (--signals stops at the signals).",
-				Usage:   []string{"physa map learn [--signals] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]"},
+				Summary: "Find what the merged changes have to teach the map, and draft proposals from it for the stewards to review (--signals stops at the signals; --write commits the kept proposals to physa/learn, --push pushes it, --pr opens its PR).",
+				Usage:   []string{"physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]"},
 				Run: func(args []string, stdout, stderr io.Writer) int {
 					opts, ok := parseLearn(args)
 					if !ok {

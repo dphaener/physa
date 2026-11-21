@@ -7,12 +7,13 @@ import (
 	"strings"
 )
 
-// WriteText writes a run's triage for people: what was learned from, which
-// sources could not be read, the changes with signals and their evidence,
+// WriteText writes a run's triage for people: what was learned from, how far
+// the watermark moves, which sources could not be read, the changes with signals and their evidence,
 // and the changes with nothing to learn.
 func WriteText(w io.Writer, r Result) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Learning from %d changes (%s), %d already learned.\n", r.Changes, r.Range, r.AlreadyLearned)
+	fmt.Fprintf(&b, "Learned through %s (was %s)\n", markID(r.Through), markID(r.Watermark))
 	if r.Forge != "" {
 		fmt.Fprintf(&b, "Forge: %s\n", r.Forge)
 	} else {

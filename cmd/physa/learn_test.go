@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +105,7 @@ func TestLearnBadUsage(t *testing.T) {
 	for _, args := range [][]string{
 		{"--since"}, {"--nosuch"}, {"x"}, {"--appetite", "0"}, {"--appetite=x"}, {"--appetite"},
 		{"--appetite=-3"}, {"--agent"}, {"--agent="}, {"--signals", "--appetite", "5"}, {"--signals", "--agent=claude"},
+		{"--push"}, {"--pr"}, {"--write", "--pr"}, {"--signals", "--write"}, {"--write=x"},
 	} {
 		if _, ok := parseLearn(args); ok {
 			t.Errorf("parseLearn(%v) ok, want not", args)
@@ -113,13 +115,23 @@ func TestLearnBadUsage(t *testing.T) {
 	if !ok || o.since != "abc" || !o.json || !o.signals {
 		t.Errorf("got %+v, %v", o, ok)
 	}
+	o, ok = parseLearn([]string{"--write", "--push", "--pr", "--appetite=9"})
+	if !ok || !o.write || !o.push || !o.pr || o.appetite != 9 {
+		t.Errorf("got %+v, %v", o, ok)
+	}
 }
 
 func TestLearnHelp(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	run([]string{"map", "learn", "--help"}, &stdout, &stderr)
-	if !strings.Contains(stdout.String()+stderr.String(), "physa map learn [--signals] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]") {
-		t.Errorf("help lacks usage: %q %q", stdout.String(), stderr.String())
+	got := stdout.String() + stderr.String()
+	if !strings.Contains(got, "physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]") {
+		t.Errorf("help lacks usage: %q", got)
+	}
+	for _, flag := range []string{"--write", "--push", "--pr"} {
+		if !strings.Contains(got, flag) {
+			t.Errorf("help lacks %s", flag)
+		}
 	}
 }
 
@@ -335,5 +347,121 @@ func TestLearnBadUsageFromRun(t *testing.T) {
 		if code, _, _ := runLearn(t, args...); code != 2 {
 			t.Errorf("%v: code %d, want 2", args, code)
 		}
+	}
+}
+
+// prsForge is a forge that also opens PRs, and records what it was asked.
+type prsForge struct {
+	prForge
+	created []string
+}
+
+func (f *prsForge) OpenPR(string) (int, string, bool, error) { return 0, "", false, nil }
+func (f *prsForge) CreatePR(head, base, title, body string) (int, string, error) {
+	f.created = append(f.created, head+" into "+base+": "+body)
+	return 9, "https://example.com/pr/9", nil
+}
+func (f *prsForge) EditPR(int, string) error { return nil }
+
+// writeRepo is signalRepo with a local bare remote as origin, a fake forge
+// that opens PRs and an agent that proposes one good rule.
+func writeRepo(t *testing.T) (dir, bare string, f *prsForge) {
+	t.Helper()
+	dir, short := signalRepo(t)
+	bare = filepath.Join(t.TempDir(), "remote.git")
+	gitIn(t, dir, "init", "-q", "--bare", bare)
+	gitIn(t, dir, "remote", "add", "origin", bare)
+	gitIn(t, dir, "push", "-q", "origin", "HEAD:refs/heads/main")
+	gitIn(t, dir, "fetch", "-q", "origin")
+	prev := newForge(dir).(prForge)
+	f = &prsForge{prForge: prev}
+	old := newForge
+	newForge = func(string) forge.Forge { return f }
+	t.Cleanup(func() { newForge = old })
+	useAgent(t, "claude", &fakeAgent{result: adapter.Result{Text: answer(short), Tokens: adapter.Tokens{Input: 100, Output: 20}}})
+	return dir, bare, f
+}
+
+func TestLearnWriteCommitsToTheBranch(t *testing.T) {
+	dir, _, _ := writeRepo(t)
+	status := gitIn(t, dir, "status", "--porcelain")
+	code, out, errOut := runLearn(t, "--write", "--appetite", "5000")
+	if code != 0 {
+		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	msg := gitIn(t, dir, "log", "-1", "--format=%B", "physa/learn")
+	for _, want := range []string{"rename-on-review", "Learned-through: "} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("commit message lacks %q:\n%s", want, msg)
+		}
+	}
+	for _, want := range []string{"Wrote ", "physa/learn"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, out)
+		}
+	}
+	if got := gitIn(t, dir, "status", "--porcelain"); got != status {
+		t.Errorf("working tree changed: %q", got)
+	}
+	if got := gitIn(t, dir, "branch", "--show-current"); got == "physa/learn" {
+		t.Errorf("the person's branch moved to %q", got)
+	}
+}
+
+func TestLearnWritePushAndPR(t *testing.T) {
+	dir, bare, f := writeRepo(t)
+	code, out, errOut := runLearn(t, "--write", "--push", "--pr", "--appetite=5000")
+	if code != 0 {
+		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	if got := gitIn(t, bare, "log", "-1", "--format=%s", "physa/learn"); !strings.HasPrefix(got, "docs(map): Learn from ") {
+		t.Errorf("remote branch subject %q", got)
+	}
+	if len(f.created) != 1 || !strings.HasPrefix(f.created[0], "physa/learn into main: ") {
+		t.Errorf("created %q", f.created)
+	}
+	for _, want := range []string{"Pushed physa/learn", "Opened PR #9"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, out)
+		}
+	}
+	if got := gitIn(t, dir, "status", "--porcelain"); got != "" {
+		t.Errorf("working tree changed: %q", got)
+	}
+}
+
+func TestLearnWriteJSONStaysValid(t *testing.T) {
+	writeRepo(t)
+	code, out, errOut := runLearn(t, "--write", "--json", "--appetite=5000")
+	var got struct{ Version int }
+	if code != 0 || json.Unmarshal([]byte(out), &got) != nil || got.Version != 1 {
+		t.Fatalf("code %d, stdout %q", code, out)
+	}
+	if !strings.Contains(errOut, "Wrote ") {
+		t.Errorf("stderr lacks the branch outcome: %q", errOut)
+	}
+}
+
+func TestLearnPushWithoutWriteIsBadUsage(t *testing.T) {
+	for _, args := range [][]string{{"--push"}, {"--pr"}, {"--write", "--pr"}} {
+		if code, _, _ := runLearn(t, args...); code != 2 {
+			t.Errorf("%v: code %d, want 2", args, code)
+		}
+	}
+}
+
+// noPRs is a forge whose PRs cannot be reached, as when gh is not installed.
+type noPRs struct{ *prsForge }
+
+func (noPRs) OpenPR(string) (int, string, bool, error) {
+	return 0, "", false, &forge.Error{Class: forge.ErrUnavailable, Reason: "gh is not installed"}
+}
+
+func TestLearnPRWithoutForgeIsReadyForReview(t *testing.T) {
+	_, _, f := writeRepo(t)
+	newForge = func(string) forge.Forge { return noPRs{f} }
+	code, out, errOut := runLearn(t, "--write", "--push", "--pr", "--appetite=5000")
+	if code != 0 || !strings.Contains(out, "ready for review") || len(f.created) != 0 {
+		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }

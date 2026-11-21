@@ -14,6 +14,7 @@ import (
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/draft"
 	"github.com/dphaener/physa/internal/learn"
+	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
 )
@@ -441,4 +442,65 @@ func mustJSON(t *testing.T, r Report) string {
 		t.Fatal(err)
 	}
 	return b.String()
+}
+
+func (f *fixture) second(slug string) draft.Proposal {
+	p := f.rule(slug, f.c2)
+	p.Entry = strings.Replace(p.Entry, "Retries go through the queue", "Dead sends are parked", 1)
+	return p
+}
+
+func TestApplyAllLandsEachInOrder(t *testing.T) {
+	f := newFixture(t)
+	ps := []draft.Proposal{f.rule("queue-retries", f.c2), f.second("park-dead-sends"), {
+		Kind: "promise", Capability: "delivery", Section: "promise",
+		Signal:  draft.SignalRef{Kind: "served-not-loaded", Changes: []string{f.c1, f.c2}},
+		Changes: []string{f.c1},
+		Entry:   "Webhooks reach customers at least once, in order per endpoint.",
+	}}
+	kept, dropped := Check(f.root, f.batch, ps, f.opts())
+	if len(dropped) != 0 || len(kept) != 3 {
+		t.Fatalf("Check kept %d, dropped %v", len(kept), dropped)
+	}
+	applied, dropped := ApplyAll(f.root, f.batch, kept, f.opts())
+	if len(dropped) != 0 || len(applied) != 3 {
+		t.Fatalf("applied %d, dropped %v", len(applied), dropped)
+	}
+	raw, err := os.ReadFile(filepath.Join(f.root, ".physa/capabilities/delivery.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	a, b := strings.Index(text, "`queue-retries`"), strings.Index(text, "`park-dead-sends`")
+	if a < 0 || b < a {
+		t.Errorf("entries are missing or out of order:\n%s", text)
+	}
+	if !strings.Contains(text, "promise: Webhooks reach customers at least once, in order per endpoint.\n") ||
+		strings.Contains(text, "promise: "+deliveryPromise+"\n") {
+		t.Errorf("the promise was not replaced in place:\n%s", text)
+	}
+	res, err := mapcheck.CheckWith(f.root, mapcheck.Options{OpenRepo: git.Open})
+	if err != nil || len(res.Problems) != 0 {
+		t.Errorf("map check: %v %v", err, res.Problems)
+	}
+	noScratchLeft(t)
+}
+
+func TestApplyAllDropsADuplicateSlug(t *testing.T) {
+	f := newFixture(t)
+	kept := []Kept{{Proposal: f.rule("queue-retries", f.c2)}, {Proposal: f.second("queue-retries")}}
+	file := filepath.Join(f.root, ".physa/capabilities/delivery.md")
+	applied, dropped := ApplyAll(f.root, f.batch, kept, f.opts())
+	if len(applied) != 1 || applied[0].Slug != "queue-retries" || len(dropped) != 1 {
+		t.Fatalf("applied %v, dropped %v", applied, dropped)
+	}
+	t.Logf("dropped reason: %s", dropped[0].Reason)
+	if !strings.Contains(dropped[0].Reason, "queue-retries") {
+		t.Errorf("the reason does not name the slug: %s", dropped[0].Reason)
+	}
+	raw, _ := os.ReadFile(file)
+	if strings.Contains(string(raw), "Dead sends are parked") || !strings.Contains(string(raw), "Retries go through the queue") {
+		t.Errorf("the file is not as after the first proposal:\n%s", raw)
+	}
+	t.Logf("file after:\n%s", raw)
 }

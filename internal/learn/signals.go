@@ -23,6 +23,19 @@ type Signal struct {
 	// Capability is the capability the signal is about, when it is about one.
 	Capability string   `json:"capability,omitempty"`
 	Evidence   []string `json:"evidence"`
+	// Comments are the PR's comments, oldest first, on an argued-options
+	// signal, for drafting; not in the JSON form.
+	Comments []forge.Comment `json:"-"`
+	// Reverted is the reverted change's subject and message, on a revert
+	// signal whose reverted change is in the history, for drafting; not in
+	// the JSON form.
+	Reverted *ChangeText `json:"-"`
+}
+
+// ChangeText is a change's subject and full message.
+type ChangeText struct {
+	Subject string
+	Message string
 }
 
 // The kinds of Signal.
@@ -106,8 +119,11 @@ func arguedSignal(c vcs.Change, pr forge.PR) (Signal, bool) {
 		return Signal{}, false
 	}
 	sort.Strings(people)
+	comments := append([]forge.Comment(nil), pr.Comments...)
+	sort.SliceStable(comments, func(i, j int) bool { return comments[i].At.Before(comments[j].At) })
 	return Signal{Kind: KindArguedOptions, Rule: RuleLongDiscussion, Changes: []string{c.Short},
-		Evidence: []string{fmt.Sprintf("%d comments from %s", len(pr.Comments), strings.Join(people, ", "))}}, true
+		Evidence: []string{fmt.Sprintf("%d comments from %s", len(pr.Comments), strings.Join(people, ", "))},
+		Comments: comments}, true
 }
 
 // revertSignal finds a change that says it reverts another, naming the
@@ -118,7 +134,11 @@ func revertSignal(repo vcs.Repo, c vcs.Change, collected []vcs.Change) (Signal, 
 		return Signal{}, false
 	}
 	line := "reverts " + id
+	var reverted *ChangeText
 	if repo.HasChange(id) {
+		if got, err := repo.Latest(id, 1); err == nil && len(got) > 0 && sameChange(got[0].ID, id) {
+			reverted = &ChangeText{Subject: got[0].Subject, Message: got[0].Message}
+		}
 		for _, other := range collected {
 			if sameChange(other.ID, id) {
 				line += ": " + other.Subject
@@ -126,7 +146,7 @@ func revertSignal(repo vcs.Repo, c vcs.Change, collected []vcs.Change) (Signal, 
 			}
 		}
 	}
-	return Signal{Kind: KindRevert, Rule: RuleRevertMessage, Changes: []string{c.Short}, Evidence: []string{line}}, true
+	return Signal{Kind: KindRevert, Rule: RuleRevertMessage, Changes: []string{c.Short}, Evidence: []string{line}, Reverted: reverted}, true
 }
 
 // servedNotLoaded finds, for each capability, the changes with slice records

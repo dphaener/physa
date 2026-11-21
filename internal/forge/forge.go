@@ -1,6 +1,8 @@
 // Package forge is what Physa needs from the forge that hosts a repo's PRs,
 // when there is one: whether a PR exists, and for a change the PR it came
-// from with its review, discussion and commits. Version control, never the
+// from with its review, discussion and commits. It also lets Physa open or
+// refresh one PR, through PRs, and never merge, approve or auto-merge one.
+// Version control, never the
 // forge, is the source of every fact (design 07 section 7); the forge only
 // adds the review around a change. A forge that cannot answer says so with
 // ErrUnavailable or ErrUnauthenticated, so a caller can report what needs a
@@ -23,6 +25,20 @@ type Forge interface {
 	// the change came from no PR (it was pushed directly) or the forge does
 	// not know the change.
 	ChangePR(change string) (PR, bool, error)
+}
+
+// PRs opens and refreshes a PR. It is separate from Forge, which only reads.
+// It has no way to merge, approve or enable auto-merge on a PR, so Physa
+// never merges one itself (the no-self-merge rule): stewards accept, edit or
+// drop what a PR holds.
+type PRs interface {
+	// OpenPR returns the open PR whose head is the branch head. Its bool is
+	// false when none is open.
+	OpenPR(head string) (n int, url string, ok bool, err error)
+	// CreatePR opens a PR from branch head into branch base.
+	CreatePR(head, base, title, body string) (n int, url string, err error)
+	// EditPR replaces the body of PR n.
+	EditPR(n int, body string) error
 }
 
 // PR is a PR with the review around it.

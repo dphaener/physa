@@ -47,9 +47,11 @@ Physa collects sources into the local store. Nothing is written to the repo yet.
 The customer's agent receives the gathered sources (summarised to fit), Physa's mapping skill, and the budgets from 01. It proposes:
 
 - the product's promise for `product.md`;
-- up to ~50 capabilities, each a promise, each with the PRs that best show it.
+- as many capabilities as the product really has (no fixed count, `measure-before-budget`), each a promise, each with the PRs or changes that best show it.
 
 This is one agent session. It is the step that most shapes the map, so it is the step a person reviews most closely.
+
+It is built as `physa init --propose`, which needs a stored gather and says so when there is none. The gathered sources are fitted deterministically to an input budget before the agent sees them, with no agent involved. The budget is a named constant, a first guess tuned from runs (`measure-before-budget`). Sources are cut in this order: docs (long ones cut by section, their headings kept), PRs (titles first, then bodies, then review comments, those requesting changes first), commit subjects, and finally clusters of files that change together, used as hints only. The summary says what was cut and how much. The proposal is one prompt-only session with no tools, under the appetite (§2.7), shown before it starts. Uncertain knowledge comes back as questions, never as guesses (Q2). `physa init --propose` prints the proposal as markdown or `--json` and stores it for the next phase. It writes nothing to the repo, and a new gather clears the stored proposal.
 
 ### 2.4 Recover knowledge (agent, one session per capability)
 
@@ -83,7 +85,7 @@ The PR description summarises: capabilities proposed, entries recovered with the
 
 ### 2.7 Appetite for init
 
-Init spends the customer's tokens, so it has an appetite (Q4): a token budget shown before it starts, with a circuit breaker. If recovery runs out, the capabilities already done are kept and the rest are listed as "not yet recovered", to be filled from future PRs.
+Init spends the customer's tokens, so it has an appetite (Q4): a token budget shown before it starts, with a circuit breaker. If recovery runs out, the capabilities already done are kept and the rest are listed as "not yet recovered", to be filled from future PRs. `--appetite` sets it. Propose's input budget (§2.3) leaves room in the appetite for the reply, and an appetite too small for any input is refused, naming the smallest that works.
 
 ### 2.8 A new codebase
 
@@ -166,7 +168,7 @@ Each agent step uses a skill Physa ships and teams can replace:
 | recovering | init, one capability at a time |
 | learning | the after-merge step |
 
-They use only glossary terms and return structured output that `physa check map` validates.
+They use only glossary terms and return structured output that `physa check map` validates. The skills are embedded for now; replacing one is not yet built (the owner, 2026-11-21).
 
 ## 5. Settled with the owner (2026-11-19)
 

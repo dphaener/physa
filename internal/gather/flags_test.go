@@ -49,3 +49,37 @@ func TestParseFlagsRejections(t *testing.T) {
 		}
 	}
 }
+
+func TestParseFlagsPropose(t *testing.T) {
+	f, ok := ParseFlags([]string{"--propose", "--appetite", "5000", "--agent=claude", "--json"}, now)
+	if !ok || !f.Propose || f.Gather || f.Appetite != 5000 || f.Agent != "claude" || !f.JSON {
+		t.Fatalf("got %+v %v", f, ok)
+	}
+	f, ok = ParseFlags([]string{"--propose"}, now)
+	if !ok || f.Appetite != 0 || f.Agent != "" {
+		t.Errorf("bare propose: %+v %v", f, ok)
+	}
+}
+
+func TestParseFlagsProposeRejections(t *testing.T) {
+	for _, args := range [][]string{
+		{"--propose", "--gather"},
+		{"--gather", "--propose"},
+		{"--propose", "--since", "2026-01-02"},
+		{"--propose", "--max-prs", "5"},
+		{"--propose", "--appetite", "0"},
+		{"--propose", "--appetite=-1"},
+		{"--propose", "--appetite", "x"},
+		{"--propose", "--appetite"},
+		{"--propose", "--agent"},
+		{"--propose", "--agent="},
+		{"--appetite", "5000"},
+		{"--gather", "--appetite", "5000"},
+		{"--agent", "claude"},
+		{"--propose=1"},
+	} {
+		if _, ok := ParseFlags(args, now); ok {
+			t.Errorf("%v accepted", args)
+		}
+	}
+}

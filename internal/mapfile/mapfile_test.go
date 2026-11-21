@@ -243,3 +243,16 @@ func TestOwnMapBody(t *testing.T) {
 	}
 	t.Error("deterministic-slice not found")
 }
+
+func TestValidSlug(t *testing.T) {
+	for _, s := range []string{"a", "retry-on-review", "v2-api"} {
+		if !ValidSlug(s) {
+			t.Errorf("ValidSlug(%q) = false, want true", s)
+		}
+	}
+	for _, s := range []string{"", "Bad_Slug", "-x", "x-", "a--b", "a b"} {
+		if ValidSlug(s) {
+			t.Errorf("ValidSlug(%q) = true, want false", s)
+		}
+	}
+}

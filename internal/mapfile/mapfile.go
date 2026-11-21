@@ -124,6 +124,11 @@ const dir = ".physa"
 
 var slugRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
+// ValidSlug says whether s is a slug: lowercase words of letters and digits
+// joined by single hyphens, as a capability file name or an entry's slug
+// must be.
+func ValidSlug(s string) bool { return slugRe.MatchString(s) }
+
 // Read reads the map in root/.physa. The error is for I/O failure, such as a
 // missing .physa directory; every fault in the format is a Problem, and
 // reading goes on past each one.
@@ -192,7 +197,7 @@ func (r *reader) capabilities(m *Map) {
 	for _, e := range ents {
 		p := cdir + "/" + e.Name()
 		stem := strings.TrimSuffix(e.Name(), ".md")
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") || !slugRe.MatchString(stem) {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") || !ValidSlug(stem) {
 			r.add(p, 0, "not a capability file: want <name>.md with a lowercase, hyphenated name")
 			continue
 		}

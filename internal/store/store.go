@@ -3,7 +3,9 @@
 // names (shared by every worktree, never committed). It keeps slice records:
 // which capabilities were read, with what, under what budget, when and by
 // which session. It also keeps one gather of the repo's sources (docs,
-// history, PRs), replaced whole in one transaction. Schema changes are numbered migrations applied at open.
+// history, PRs), replaced whole in one transaction, and the one init proposal made from it,
+// which a new gather clears. Schema changes are numbered migrations applied at
+// open.
 package store
 
 import (

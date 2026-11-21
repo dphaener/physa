@@ -5,6 +5,7 @@
 // cannot list merged PRs or cannot answer makes PRs unavailable, which is
 // reported and never a failure. The bound is a date and a most number of
 // PRs: when the PR limit is reached first, history starts where the PRs do.
+// The package also parses the flags of physa init, both phases.
 // Gather reads the working tree and never writes to it; the caller keeps the
 // result in the store.
 package gather

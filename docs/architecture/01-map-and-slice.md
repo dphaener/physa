@@ -139,9 +139,9 @@ Settled with the owner on 2026-11-20 (`grouped-cli`): "Rather than having 100 co
 3. A bare group does its most common job.
 4. One way to do each thing, with no aliases.
 
-The full planned tree. `check`, `map` and `physa init --gather` are built today; everything else is planned.
+The full planned tree. `check`, `map`, `physa init --gather` and `physa init --propose` are built today; everything else is planned.
 
-- `physa init` (02), its gather phase built (`physa init --gather`); propose, recover, check and the PR planned.
+- `physa init` (02), its gather and propose phases built (`--gather`, `--propose`); recover, check and the PR planned.
 - `physa check [map | changes [range]]` (07 §5), built. Bare `check` runs the map check and, when a range is given or `origin/main..HEAD` resolves, the change check on it.
 - `physa map [index | slice | changes | records | learn | hooks]` (01, 07 §4.1), built. Bare `map` prints the index.
 - `physa map learn` (08), built (signals, drafting and the physa/learn branch with --write, --push and --pr); it also reads session logs (08 §5).

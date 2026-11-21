@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -61,32 +62,32 @@ func Prompt(m *mapfile.Map, b Batch) (string, error) {
 			w.WriteString("\n")
 		}
 		fmt.Fprintf(&w, "### Change %d of %d\n\n", i+1, len(b.Changes))
-		head := "change: " + oneLine(c.Short)
+		head := "change: " + OneLine(c.Short)
 		if c.Author != "" {
-			head += "\nauthor: " + oneLine(c.Author)
+			head += "\nauthor: " + OneLine(c.Author)
 		}
 		if !c.At.IsZero() {
 			head += "\ndate: " + c.At.UTC().Format(time.RFC3339)
 		}
-		fenced(&w, head+"\nsubject: "+oneLine(c.Subject)+"\nmessage:\n"+strings.TrimSpace(c.Message))
+		Fence(&w, head+"\nsubject: "+OneLine(c.Subject)+"\nmessage:\n"+strings.TrimSpace(c.Message))
 		for j, s := range c.Signals {
 			fmt.Fprintf(&w, "\nSignal %d of %d on this change:\n\n", j+1, len(c.Signals))
 			var t strings.Builder
-			t.WriteString("kind: " + oneLine(s.Kind) + "\n")
-			t.WriteString("rule: " + oneLine(s.Rule) + "\n")
-			t.WriteString("changes: " + oneLine(strings.Join(s.Changes, " ")) + "\n")
+			t.WriteString("kind: " + OneLine(s.Kind) + "\n")
+			t.WriteString("rule: " + OneLine(s.Rule) + "\n")
+			t.WriteString("changes: " + OneLine(strings.Join(s.Changes, " ")) + "\n")
 			if s.Capability != "" {
-				t.WriteString("capability: " + oneLine(s.Capability) + "\n")
+				t.WriteString("capability: " + OneLine(s.Capability) + "\n")
 			}
 			if s.Session != "" {
-				t.WriteString("session: " + oneLine(first(s.Session, 8)) + "\n")
-				t.WriteString("matched by: " + oneLine(s.MatchedBy) + "\n")
+				t.WriteString("session: " + OneLine(first(s.Session, 8)) + "\n")
+				t.WriteString("matched by: " + OneLine(s.MatchedBy) + "\n")
 			}
 			t.WriteString("evidence:")
 			for _, e := range s.Evidence {
 				t.WriteString("\n- " + strings.TrimSpace(e))
 			}
-			fenced(&w, t.String())
+			Fence(&w, t.String())
 			q.quote(&w, s)
 		}
 	}
@@ -136,7 +137,7 @@ func (q *quoter) quote(w *strings.Builder, s learn.Signal) {
 			break
 		}
 		fmt.Fprintf(w, "\nComment %d of %d on this signal, oldest first:\n\n", i+1, len(s.Comments))
-		fenced(w, "author: "+oneLine(cm.Author)+"\nat: "+oneLine(cm.At.UTC().Format(time.RFC3339))+"\ntext:\n"+text)
+		Fence(w, "author: "+OneLine(cm.Author)+"\nat: "+OneLine(cm.At.UTC().Format(time.RFC3339))+"\ntext:\n"+text)
 	}
 	for i, sq := range s.Quotes {
 		text, n := q.take(sq.Text)
@@ -151,28 +152,28 @@ func (q *quoter) quote(w *strings.Builder, s learn.Signal) {
 		}
 		fmt.Fprintf(w, "\nQuote %d of %d on this signal:\n\n", i+1, len(s.Quotes))
 		var t strings.Builder
-		t.WriteString("author: " + oneLine(sq.Author) + "\nat: " + oneLine(sq.At.UTC().Format(time.RFC3339)) + "\ntext:\n" + text)
+		t.WriteString("author: " + OneLine(sq.Author) + "\nat: " + OneLine(sq.At.UTC().Format(time.RFC3339)) + "\ntext:\n" + text)
 		if len(sq.Options) > 0 {
 			t.WriteString("\noptions offered:")
 			for _, o := range sq.Options {
-				t.WriteString("\n- " + oneLine(o))
+				t.WriteString("\n- " + OneLine(o))
 			}
 		}
 		if answer != "" {
 			t.WriteString("\nanswer:\n" + answer)
 		}
-		fenced(w, t.String())
+		Fence(w, t.String())
 	}
 	if s.Reverted != nil {
 		text, n := q.take(s.Reverted.Message)
 		w.WriteString("\nThe reverted change:\n\n")
 		if n < 0 {
 			q.msgOut++
-			fenced(w, "subject: "+oneLine(s.Reverted.Subject))
+			Fence(w, "subject: "+OneLine(s.Reverted.Subject))
 			w.WriteString("\nits message is left out to keep the batch within its bound\n")
 			return
 		}
-		fenced(w, "subject: "+oneLine(s.Reverted.Subject)+"\nmessage:\n"+text)
+		Fence(w, "subject: "+OneLine(s.Reverted.Subject)+"\nmessage:\n"+text)
 	}
 }
 
@@ -223,13 +224,13 @@ func (b Batch) Cuts() string {
 	return strings.Join(parts, ", ")
 }
 
-// oneLine returns s with every run of white space as one space, so a value
+// OneLine returns s with every run of white space as one space, so a value
 // keeps to its own line of a fenced block.
-func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+func OneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
-// fenced writes text in a fence longer than any run of backticks in it, so
+// Fence writes text in a fence longer than any run of backticks in it, so
 // that nothing inside can close it.
-func fenced(w *strings.Builder, text string) {
+func Fence(w io.Writer, text string) {
 	longest, run := 0, 0
 	for _, r := range text {
 		if r == '`' {
@@ -240,9 +241,9 @@ func fenced(w *strings.Builder, text string) {
 		}
 	}
 	fence := strings.Repeat("`", max(3, longest+1))
-	w.WriteString(fence + "text\n")
+	fmt.Fprint(w, fence+"text\n")
 	if text = strings.TrimRight(text, "\n"); text != "" {
-		w.WriteString(text + "\n")
+		fmt.Fprint(w, text+"\n")
 	}
-	w.WriteString(fence + "\n")
+	fmt.Fprint(w, fence+"\n")
 }

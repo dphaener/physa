@@ -777,3 +777,17 @@ func TestRunPassesTheSessionIDAndReturnsTheReportedOne(t *testing.T) {
 		t.Errorf("an adapter that reported none gave %q", out.SessionID)
 	}
 }
+
+func TestFenceGetsALongerFenceThanAnyRun(t *testing.T) {
+	var w strings.Builder
+	Fence(&w, "a ``` run and a `` run")
+	want := "````text\na ``` run and a `` run\n````\n"
+	if w.String() != want {
+		t.Fatalf("Fence with a run of three backticks wrote %q, want %q", w.String(), want)
+	}
+	w.Reset()
+	Fence(&w, "plain\n")
+	if want := "```text\nplain\n```\n"; w.String() != want {
+		t.Fatalf("Fence of plain text wrote %q, want %q", w.String(), want)
+	}
+}

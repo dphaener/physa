@@ -47,7 +47,7 @@ Each step: what lands, what the owner can do with it, and when it is done. Comma
 
 ### 4. Init, and the first public release
 
-- **Status:** in progress (2026-11-21): gather landed (4a, `physa init --gather`); propose, recover, check and the PR follow.
+- **Status:** in progress (2026-11-21): gather (4a, `physa init --gather`) and propose (4b, `physa init --propose`) landed; recover, check and the PR follow.
 - **Lands:** `physa init` (02 §2): gather, propose capabilities, recover per capability, check, the PR on `physa/init`, with its token appetite.
 - **Tried on:** nebari (brownfield), after a first change in nebari removes everything Rhiza put there (its 15 MB `.rhiza/`, and Rhiza's traces in README, CLAUDE.md, `bin/gate` and its specs, to be listed exactly before removing); then woodshop (greenfield).
 - **The owner can:** put a living map on any repo in one command.

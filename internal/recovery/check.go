@@ -1,6 +1,7 @@
 package recovery
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"github.com/dphaener/physa/internal/draft"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfile"
+	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/recovering"
 	"github.com/dphaener/physa/internal/vcs"
 )
@@ -21,15 +23,16 @@ const (
 	noPromise = "Not yet stated."
 )
 
-// answer is one answer of a session as the check read it: the capability
-// file with its front matter, the terms, and the problems found in the two.
+// answer is one answer of a session as the check read it: the capability's
+// single text with its front matter, the terms, and the problems found in
+// the two.
 type answer struct {
 	file, terms string
 	problems    []mapfile.Problem
 }
 
-// checker checks one capability file at a time, as `physa check map` does,
-// in a scratch map of its own: product is the proposal's product promise and
+// checker checks one capability at a time, as `physa check map` does, in a
+// scratch map of its own: product is the proposal's product promise and
 // root the repo's root.
 type checker struct {
 	product, root string
@@ -37,44 +40,49 @@ type checker struct {
 	openRepo      func(string) (vcs.Repo, error)
 }
 
-// capabilityPath is where the check reports the problems of name's file.
-func capabilityPath(name string) string { return ".physa/capabilities/" + name + ".md" }
-
-// scratch writes a map holding one capability file and its terms in a fresh
-// temp directory and returns the directory, which the caller removes.
-func (c checker) scratch(name, file, terms string) (string, error) {
+// scratch writes a map holding one capability, its folder split from its
+// single text file, and its terms in a fresh temp directory and returns the
+// directory, which the caller removes. A file Split rejects is left out of
+// the map and returned as a problem at the capability's folder, on the line
+// of file at fault, for the session to put right.
+func (c checker) scratch(name, file, terms string) (string, []mapfile.Problem, error) {
 	dir, err := os.MkdirTemp("", "physa-check-")
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	product := draft.OneLine(c.product)
 	if product == "" {
 		product = noPromise
 	}
-	err = os.MkdirAll(filepath.Join(dir, ".physa", "capabilities"), 0o755)
-	for _, f := range [][2]string{
-		{".physa/README.md", readme},
-		{".physa/product.md", "---\npromise: " + product + "\n---\n\n# Product\n"},
-		{recovering.GlossaryPath, recovering.Glossary(terms)},
-		{capabilityPath(name), file},
-	} {
+	var split []mapfile.Problem
+	folder, err := mapfolder.Split(file)
+	if e := (*mapfolder.SplitError)(nil); errors.As(err, &e) {
+		split, err = []mapfile.Problem{{Path: mapfolder.CapabilityDir(name), Line: e.Line, Message: e.Message}}, nil
+	} else if err == nil {
+		err = folder.Write(dir, mapfolder.CapabilityDir(name))
+	}
+	if err == nil {
+		index := mapfolder.Index("---\npromise: "+product+"\n---", "Product", product, nil)
+		err = mapfolder.Folder{Files: map[string]string{mapfolder.IndexFile: index}}.Write(dir, mapfolder.ProductDir)
+	}
+	for _, f := range [][2]string{{".physa/README.md", readme}, {recovering.GlossaryPath, recovering.Glossary(terms)}} {
 		if err == nil {
 			err = os.WriteFile(filepath.Join(dir, filepath.FromSlash(f[0])), []byte(f[1]), 0o644)
 		}
 	}
 	if err != nil {
 		os.RemoveAll(dir)
-		return "", err
+		return "", nil, err
 	}
-	return dir, nil
+	return dir, split, nil
 }
 
-// run returns the problems the map check finds in name's file and its
-// terms; a problem in the scratch map's own files would be Physa's bug, and
-// is left out. The error is for a scratch map that could not be written or
-// read.
+// run returns the problems the map check finds in name's folder and its
+// terms, and any Split found in file; a problem in the scratch map's own
+// files would be Physa's bug, and is left out. The error is for a scratch
+// map that could not be written or read.
 func (c checker) run(name, file, terms string) ([]mapfile.Problem, error) {
-	dir, err := c.scratch(name, file, terms)
+	dir, out, err := c.scratch(name, file, terms)
 	if err != nil {
 		return nil, err
 	}
@@ -84,19 +92,19 @@ func (c checker) run(name, file, terms string) ([]mapfile.Problem, error) {
 		o.OpenRepo = func(string) (vcs.Repo, error) { return c.openRepo(c.root) }
 	}
 	res, err := mapcheck.CheckWith(dir, o)
-	var out []mapfile.Problem
 	for _, p := range res.Problems {
-		if p.Path == capabilityPath(name) || p.Path == recovering.GlossaryPath {
+		if strings.HasPrefix(p.Path, mapfolder.CapabilityDir(name)+"/") || p.Path == recovering.GlossaryPath {
 			out = append(out, p)
 		}
 	}
 	return out, err
 }
 
-// read returns the entries of name's file and the terms, as the map reader
-// reads them, with the lines Drop and DropTerms take problems at.
+// read returns the entries of name's folder and the terms, as the map
+// reader reads them, with the paths and lines Drop and DropTerms take
+// problems at.
 func (c checker) read(name, file, terms string) ([]mapfile.Entry, []mapfile.Term, error) {
-	dir, err := c.scratch(name, file, terms)
+	dir, _, err := c.scratch(name, file, terms)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -112,36 +120,18 @@ func (c checker) read(name, file, terms string) ([]mapfile.Entry, []mapfile.Term
 	return entries, m.Glossary, nil
 }
 
-// describe words a's problems for the session and the person: each names
-// the line at fault by its text, since the session never saw the front
-// matter Physa adds and cannot count lines by it.
-func describe(a answer) []string {
-	var out []string
-	for _, p := range a.problems {
-		what, text := "the file", a.file
-		if p.Path == recovering.GlossaryPath {
-			what, text = "the glossary", recovering.Glossary(a.terms)
-		}
-		if lines := strings.Split(text, "\n"); p.Line > 0 && p.Line <= len(lines) {
-			line := []rune(draft.OneLine(lines[p.Line-1]))
-			if len(line) > 100 {
-				line = append(line[:100], '…')
-			}
-			what += fmt.Sprintf(", at %q", string(line))
-		}
-		out = append(out, what+": "+p.Message)
-	}
-	return out
-}
+// describe words a's problems for the session and the person.
+func describe(a answer) []string { return recovering.Describe(a.file, a.terms, a.problems) }
 
-// settle ends a capability on a, its last checked answer: every entry and
-// term holding a problem is dropped and listed, and what is left is checked
-// again, until it checks clean (recovered) or problems remain that no entry
-// or term holds (failed, with those problems, and nothing kept). Problems
-// in the glossary outside any term drop every term: the file is worth
+// settle ends a capability on a, its last checked answer: every entry,
+// term and overview holding a problem is dropped and listed (the promise
+// takes a dropped overview's place), and what is left is checked again,
+// until it checks clean (recovered) or problems remain that none of them
+// holds (failed, with those problems, and nothing kept). Problems in the
+// glossary outside any term drop every term: the capability is worth
 // keeping without them.
 func (c checker) settle(name string, a answer, out *Outcome) error {
-	path := capabilityPath(name)
+	path := mapfolder.CapabilityDir(name)
 	for len(a.problems) > 0 {
 		file, entries, rest := recovering.Drop(path, a.file, a.problems)
 		terms, gone, rest := recovering.DropTerms(a.terms, rest)
@@ -192,7 +182,7 @@ func dedupe(c checker, outcomes []Outcome) error {
 		var problems []mapfile.Problem
 		for _, e := range entries {
 			if first, dup := slugs[e.Slug]; dup && e.Slug != "" {
-				problems = append(problems, mapfile.Problem{Path: capabilityPath(o.Name), Line: e.Line + 1,
+				problems = append(problems, mapfile.Problem{Path: e.Path, Line: e.Line + 1,
 					Message: fmt.Sprintf("slug %q is already used in the capability %q", e.Slug, first)})
 			} else if e.Slug != "" {
 				slugs[e.Slug] = o.Name
@@ -210,7 +200,7 @@ func dedupe(c checker, outcomes []Outcome) error {
 		if len(problems) == 0 {
 			continue
 		}
-		file, gone, rest := recovering.Drop(capabilityPath(o.Name), o.File, problems)
+		file, gone, rest := recovering.Drop(mapfolder.CapabilityDir(o.Name), o.File, problems)
 		terms2, goneTerms, _ := recovering.DropTerms(o.Terms, rest)
 		o.File, o.Terms = file, terms2
 		o.Dropped = append(append(o.Dropped, gone...), goneTerms...)

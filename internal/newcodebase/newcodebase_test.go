@@ -2,11 +2,15 @@ package newcodebase
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/dphaener/physa/internal/initbranch"
+	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/store"
+	"github.com/dphaener/physa/internal/vcs/git"
 )
 
 func changes(n int) []store.GatheredChange {
@@ -167,5 +171,58 @@ func TestReadAnswersBad(t *testing.T) {
 	}
 	if _, err := ReadAnswers(filepath.Join(t.TempDir(), "none")); err == nil {
 		t.Error("missing file: want an error")
+	}
+}
+
+// gitIn runs git in dir.
+func gitIn(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// TestNewCodebaseWritesAValidProductFolder writes a new codebase's answers
+// as init does, a map of no capabilities, and checks the branch's tree.
+func TestNewCodebaseWritesAValidProductFolder(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(cfg, []byte("[user]\n\tname = W\n\temail = w@example.com\n[commit]\n\tgpgsign = false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	dir := t.TempDir()
+	gitIn(t, dir, "init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Lathe\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "add", ".")
+	gitIn(t, dir, "commit", "-q", "-m", "docs: Readme")
+	a, err := ReadAnswers(write(t, "1: Lathe\n2: Lathe turns sketches into cut lists.\n3: Cut list: The parts to cut, with their sizes\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := git.OpenWriter(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := initbranch.Map{ProductName: a.Name, ProductPromise: a.Promise, Terms: a.GlossaryTerms()}
+	if _, err := initbranch.Run(w, m, initbranch.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitIn(t, dir, "ls-tree", "-r", "--name-only", initbranch.Branch, ".physa"); got != ".physa/README.md\n.physa/glossary.md\n.physa/product/index.md" {
+		t.Errorf("files =\n%s", got)
+	}
+	want := "---\npromise: Lathe turns sketches into cut lists.\n---\n\n# Lathe\n\nLathe turns sketches into cut lists."
+	if got := gitIn(t, dir, "show", initbranch.Branch+":.physa/product/index.md"); got != want {
+		t.Errorf("index.md =\n%s\nwant\n%s", got, want)
+	}
+	tree := filepath.Join(t.TempDir(), "tree")
+	gitIn(t, dir, "worktree", "add", "-q", "--detach", tree, initbranch.Branch)
+	res, err := mapcheck.CheckWith(tree, mapcheck.Options{OpenRepo: git.Open})
+	if err != nil || len(res.Problems) > 0 || res.Capabilities != 0 {
+		t.Fatalf("check = %+v, %v", res, err)
 	}
 }

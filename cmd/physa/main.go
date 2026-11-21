@@ -2,7 +2,8 @@
 // checks the map, and the changes of a range against it: check map and check
 // changes. map reads the map: map index lists its capabilities, map slice
 // prints the slice a task needs, map changes lists the capability each change
-// of a range names, map records lists the slice records and map learn
+// of a range names, map records lists the slice records, map fmt rewrites the map's folders to
+// their format (--check only lists what would change) and map learn
 // finds what the merged changes have to teach the map: with --signals it
 // stops at the signals, without it an agent drafts proposals that are checked
 // on a scratch copy of the map and printed, never written; a bare map

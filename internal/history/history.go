@@ -3,8 +3,9 @@
 // trailer names and the sessions its Session trailers name, and checks the
 // capabilities as design 07 section 5 asks. Every change
 // names exactly one capability, and its slug is in the map as that change
-// leaves it, except changes made before the map, which serve no capability
-// yet and get no finding, and prints a range's changes and findings as text or JSON. It reads
+// leaves it (a capability folder, or at a change from before the folders an
+// old capability file), except changes made before the map, which serve no
+// capability yet and get no finding, and prints a range's changes and findings as text or JSON. It reads
 // history only through a vcs.Repo and never changes it.
 package history
 
@@ -12,8 +13,9 @@ import (
 	"github.com/dphaener/physa/internal/vcs"
 )
 
-// CapabilitiesDir is where the map keeps its capability files, relative to
-// the repo's working directory.
+// CapabilitiesDir is where the map keeps its capability folders (and, in the
+// old layout, its capability files), relative to the repo's working
+// directory.
 const CapabilitiesDir = ".physa/capabilities"
 
 // Commit is one change of a range with the capabilities its trailers name.

@@ -1,6 +1,6 @@
 # Architecture 01: the map format and the slice contract
 
-Draft 0.1, 2026-11-19. Uses `.physa/glossary.md` terms only. Items marked (Q) are open questions for the owner.
+Draft 0.1, 2026-11-19. Uses `.physa/glossary.md` terms only. Items marked (Q) are open questions for the owner. Capabilities and the product became folders in 09; §2, §3, §5, §6 and §9 say so and point there, and the entry formats in §3 are unchanged.
 
 ## 1. Constraints this design must meet
 
@@ -20,20 +20,26 @@ From the vision:
 ```
 .physa/                     (Q1: hidden directory)
   README.md                 how to read the map without the CLI
-  product.md                the product's promise, product-wide rules, decisions, questions
+  product/                  the product's promise, product-wide rules, decisions, questions
   glossary.md               terms
   capabilities/
-    delivery.md             one file per capability: its promise, rules, decisions, questions
-    billing.md
+    delivery/               one folder per capability (09 §2)
+      index.md              its promise, a short overview, links
+      rules.md              every rule
+      decisions.md          contents, then the decisions
+      questions.md          contents, then the open questions
+    billing/
     ...
 ```
 
-- **One file per capability** (Q2). A capability's rules, decisions and questions live in its file. A person reads one page to understand one area; a slice for a capability is mostly that file. Two PRs touching different capabilities never conflict; two touching the same one usually change different entries, which git merges.
-- **product.md** holds what belongs to no single capability: the product's own promise, product-wide rules (for example "never log customer emails"), product-level decisions, and questions.
-- **The index is not stored.** `physa map index` derives it from the capability files. Storing it would duplicate every promise.
+- **One folder per capability** (Q2, reshaped by 09). A capability's rules, decisions and questions live in its folder, split by kind; a person reads the index, then follows links. Two PRs touching different capabilities never conflict; two touching the same one usually change different entries, which git merges.
+- **product/** holds what belongs to no single capability: the product's own promise, product-wide rules (for example "never log customer emails"), product-level decisions, and questions. It has the same files as a capability.
+- **The index is not stored.** `physa map index` derives it from the capability folders. Storing it would duplicate every promise.
 - **Nothing else is in the repo.** Strength, slice records, usage and decay timers live in the local store (and the hosted layer).
 
-## 3. A capability file
+## 3. A capability
+
+The entry formats below are unchanged. Since 09 the text lives in a folder: the front matter and title in `index.md`, and each `## Rules`, `## Decisions` and `## Questions` section in its own file under a contents list (09 §3). The example is the capability as one text, the shape init's recovery writes and Physa splits.
 
 ````markdown
 ---
@@ -109,15 +115,15 @@ The glossary exists so agents speak to people in concrete terms. It guides agent
 
 Terms are product-wide. A slice includes the terms whose name appears in the text it assembled (a plain word match on the term and its aliases: deterministic, not semantic).
 
-## 5. product.md
+## 5. product/
 
-Same entry formats as a capability file, with the product's own promise in the front matter. Its rules are included in every slice (they are the always-loaded floor). Its decisions and questions are included when the slice asks for them or when the budget allows.
+The same folder and entry formats as a capability (09 §2, §3), with the product's own promise in the front matter. Its rules are included in every slice (they are the always-loaded floor). Its decisions and questions are included when the slice asks for them or when the budget allows.
 
 ## 6. README.md
 
 Fixed text written by `physa init`, the fallback for agents without the CLI:
 
-> This is the product's map. Read product.md first. Each file in capabilities/ is one promise the product makes, with its rules and decisions. Read the ones related to your task. Anchor commits with `Capability: <file name>`.
+See `.physa/README.md` for the text; 09 §5 says what it carries. It tells an agent to read `product/` first, to read each capability's `rules.md` in full and its decisions and questions through their contents, how to cut one entry out by its slug, and to anchor commits with `Capability: <folder name>`. A test keeps init's copy the same as Physa's own.
 
 ## 7. The AGENTS.md pointer
 
@@ -177,7 +183,7 @@ physa map slice --change <bet>     (for planned work: the capabilities were chos
 Output sections, always in this order:
 
 1. **Header**: the capabilities chosen and the budget used.
-2. **Product rules** from product.md. Always included.
+2. **Product rules** from product/rules.md. Always included.
 3. **For each capability**: its promise, then its rules, decisions and questions.
 4. **Current state** (from the local store and flag service, not the repo): live flags and ideas growing on these capabilities, recent rollbacks and reverts, guardrails. Marked as a snapshot with its time.
 5. **Terms** that appear in the text above.
@@ -188,14 +194,14 @@ Output sections, always in this order:
 
 **Cut order** when `--budget` is given and the slice is too big, the pieces lowest in the output first within each step:
 
-1. product.md's decisions and questions;
+1. product/'s decisions and questions;
 2. rejected options;
 3. terms, whole entries;
 4. questions;
 5. decisions' `Because:` lines;
 6. decisions.
 
-Product rules, promises and the capabilities' rules are never cut, nor decisions or questions the request asked for with `--with`. If those alone exceed the budget, the slice says so and names what they hold. Terms count only when they appear in the requested capabilities' own text, never in product.md's.
+Product rules, promises and the capabilities' rules are never cut, nor decisions or questions the request asked for with `--with`. If those alone exceed the budget, the slice says so and names what they hold. Terms count only when they appear in the requested capabilities' own text, never in product/'s.
 
 **Determinism**: sections 1–3 and 5–7 depend only on the map and the request. Section 4 is a dated snapshot.
 
@@ -211,23 +217,20 @@ Runs locally and in CI. It fails on:
 - a duplicate slug, or a reference to a slug that does not exist;
 - a rule or decision without an anchor or a `Because:` line;
 - an anchor that does not resolve to a commit or PR in this repo;
-- a capability file or product.md over its size budget.
+- a file of a capability or of product/ over its size budget (09 §6).
 
 Settled with the owner (2026-11-20):
 
 - A `from <path>` anchor must name a file in the repo.
 - Commit-hash anchors resolve against the local repo: an anchor naming no commit fails, as does one in a directory that is not a git repository. A shallow clone is named in the message, since its history may be missing the commit.
 - `#N` PR anchors resolve against GitHub through `gh`; an anchor naming no PR fails. When `gh` is missing, unauthenticated or unreachable, `physa check map` says so and checks them for form only, never failing on that alone.
-- Over a size budget fails the check, with a message that proposes a merge or a prune. The §9 defaults are read as hard limits: a capability file over 150 lines, product.md over 100 lines. (The limit of more than 50 capability files was dropped the same day: `measure-before-budget`.)
+- Over a size budget fails the check, with a message that proposes a merge or a prune. The §9 defaults are read as hard limits: `rules.md` over 150 lines, `index.md` over 30 (09 §6). (The limit of more than 50 capability files was dropped the same day: `measure-before-budget`.)
 
 **Slug references** (Q7): a reference from one entry to another needs a written form before `physa check map` can find references to slugs that do not exist. Until it has one, the check tests only slug shape and uniqueness.
 
 ## 9. Size budgets (Q5)
 
-| What | Default budget |
-|---|---|
-| A capability file | about 150 lines |
-| product.md | about 100 lines |
+Replaced by 09 §6: `index.md` about 30 lines, `rules.md` about 150, `decisions.md` and `questions.md` none, the same for product/. The single-file budgets this section first set (a capability file about 150 lines, product.md about 100) no longer apply.
 
 Slices have no default budget: an agent passes `--budget` when it wants one. There is no limit on how many capabilities a map holds; budgets get tuned from run data (`measure-before-budget` in .physa/capabilities/slices.md).
 

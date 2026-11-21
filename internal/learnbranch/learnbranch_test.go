@@ -14,6 +14,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/propose"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
@@ -61,6 +62,19 @@ type fixture struct {
 	forge            *fakeForge
 }
 
+// writeFolder writes text, a capability as a single text, as the folder dir
+// under root, through mapfolder.Split.
+func writeFolder(t *testing.T, root, dir, text string) {
+	t.Helper()
+	f, err := mapfolder.Split(text)
+	if err != nil {
+		t.Fatalf("%s: %v", dir, err)
+	}
+	if err := f.Write(root, dir); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	isolate(t)
@@ -70,9 +84,9 @@ func newFixture(t *testing.T) *fixture {
 	writeFile(t, f.dir, "docs/vision.md", "vision\n")
 	writeFile(t, f.dir, ".physa/README.md", "map\n")
 	writeFile(t, f.dir, ".physa/glossary.md", "# Glossary\n\n**Map**: the product's knowledge.\n")
-	writeFile(t, f.dir, ".physa/product.md", "---\npromise: A product.\n---\n# Product\n\n## Rules\n\n"+
+	writeFolder(t, f.dir, ".physa/product", "---\npromise: A product.\n---\n# Product\n\n## Rules\n\n"+
 		"### Cite sources\n`cite-sources` · from docs/vision.md\nEvery rule names its source.\nBecause: people check.\n")
-	writeFile(t, f.dir, ".physa/capabilities/delivery.md", "---\npromise: Webhooks reach customers at least once.\nstewards: [dana]\n---\n# Delivery\n\n"+
+	writeFolder(t, f.dir, ".physa/capabilities/delivery", "---\npromise: Webhooks reach customers at least once.\nstewards: [dana]\n---\n# Delivery\n\n"+
 		"## Rules\n\n### Sends are queued\n`queued-sends` · from docs/vision.md\nEvery send goes through the queue.\nBecause: sends survive a restart.\n")
 	gitIn(t, f.dir, "add", ".")
 	gitIn(t, f.dir, "commit", "-q", "-m", "chore: Add the map")
@@ -340,7 +354,7 @@ func TestCorrectionIsCommittedPushedAndOpened(t *testing.T) {
 	if parent := ref(f.bare, Branch+"^"); parent != c {
 		t.Errorf("parent %s, want the default branch's tip %s", parent, c)
 	}
-	if file := gitIn(t, f.bare, "show", Branch+":.physa/capabilities/delivery.md"); !strings.Contains(file, "`retry-on-review` · "+short(c)) {
+	if file := gitIn(t, f.bare, "show", Branch+":.physa/capabilities/delivery/rules.md"); !strings.Contains(file, "`retry-on-review` · "+short(c)) {
 		t.Errorf("the entry is not on the branch:\n%s", file)
 	}
 	want := []string{"list physa/learn", "create physa/learn main " + prTitle}

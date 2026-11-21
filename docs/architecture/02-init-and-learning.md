@@ -46,7 +46,7 @@ Physa collects sources into the local store. Nothing is written to the repo yet.
 
 The customer's agent receives the gathered sources (summarised to fit), Physa's mapping skill, and the budgets from 01. It proposes:
 
-- the product's promise for `product.md`;
+- the product's promise for `product/index.md`;
 - as many capabilities as the product really has (no fixed count, `measure-before-budget`), each a promise, each with the PRs or changes that best show it.
 
 This is one agent session. It is the step that most shapes the map, so it is the step a person reviews most closely.
@@ -55,7 +55,7 @@ It is built as `physa init --propose`, which needs a stored gather and says so w
 
 ### 2.4 Recover knowledge (agent, one session per capability)
 
-For each capability, a fresh agent session receives that capability's promise and the sources linked to it, and writes `capabilities/<name>.md`:
+For each capability, a fresh agent session receives that capability's promise and the sources linked to it, and writes one text for `capabilities/<name>/` (09 §7): front matter, title, optional overview, then its Rules, Decisions and Questions sections. Physa splits it into the folder's files:
 
 - **rules** from review corrections, docs and reverts, each with `Because:` and an anchor;
 - **decisions** from PR discussions, with who, when and the options rejected;
@@ -69,7 +69,7 @@ Sessions are independent, so they can run in parallel.
 Settled as built with `physa init --recover` (decided by Claude as arbiter for the owner to review):
 
 - A session receives the product's promise, the capability's promise and its questions from the proposal, the recovering skill, and the capability's linked sources fitted to a 30,000-token input budget, with no clusters. It has no tools and runs in a fresh directory.
-- Its reply is the capability file and its glossary terms. Physa writes the front matter, with the proposal's promise on one line, and adds a title when the session wrote none. Questions Physa records carry "raised by physa", the date and their anchors.
+- Its reply is the capability text and its glossary terms. Physa writes the front matter, with the proposal's promise on one line, and adds a title when the session wrote none. Questions Physa records carry "raised by physa", the date and their anchors.
 - A decision whose person or date the sources do not show becomes a question.
 - At most three sessions run at once. Each has its session id assigned before it starts, so a retry resumes the same session (§2.5).
 - The store keeps each recovered file and its terms until `physa init --write` writes them to the repo. A new gather or proposal clears them.
@@ -92,7 +92,7 @@ Init commits to a branch `physa/init` and opens a PR (Q3) containing exactly:
 
 | File | Purpose |
 |---|---|
-| `.physa/README.md`, `product.md`, `glossary.md`, `capabilities/*.md` | the map |
+| `.physa/README.md`, `product/`, `glossary.md`, `capabilities/<name>/` | the map |
 | 2–3 lines in `AGENTS.md`, between markers | the pointer (01 §7) |
 
 With `--hooks`, init installs the `Session:` hook after its commit and before its PR, the way `physa map hooks` does (01 §8, 08 §5). In a repo that ships no hook, that is `.git/hooks/prepare-commit-msg`, written when `core.hooksPath` is unset and no such hook exists, with `core.hooksPath` left alone so every hook already there keeps running. Otherwise init refuses and says how to add the hook by hand. The branch is kept and the PR still opens, its body naming the refusal, and the run exits 2. The hook is local, so it is not part of the PR.
@@ -129,7 +129,7 @@ Settled as built with a bare `physa init` (decided by Claude as arbiter for the 
 
 ### 2.8 A new codebase
 
-With nothing to recover, init asks the person a short round of questions (numbered, each with a suggested answer) to write the product's promise and first terms, creates `product.md` and `glossary.md`, and adds the pointer and, with `--hooks`, the hook. Capabilities arrive with the first PRs.
+With nothing to recover, init asks the person a short round of questions (numbered, each with a suggested answer) to write the product's promise and first terms, creates `product/` and `glossary.md`, and adds the pointer and, with `--hooks`, the hook. Capabilities arrive with the first PRs.
 
 Built as the new-codebase path of a bare `physa init` (decided by Claude as arbiter for the owner to review):
 

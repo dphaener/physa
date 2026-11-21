@@ -18,7 +18,8 @@ import (
 	"github.com/dphaener/physa/internal/vcs"
 )
 
-// notReached is why a capability the appetite never reached has no file.
+// notReached is why a capability the appetite never reached has no
+// recovered text.
 const notReached = "the appetite ran out before recovering reached it"
 
 // writeStored writes what the store holds to physa/init; see storedMap.
@@ -32,7 +33,7 @@ func writeStored(st *store.Store, root string, o Flags, env Env, p *printer, std
 
 // storedMap builds init's map from the store: the proposal's promise,
 // questions and capabilities in its order, each with its stored recovery
-// (promise only when it has no file), the recovered terms in capability
+// (promise only when it has no recovered text), the recovered terms in capability
 // order, the sessions Physa started, and what the PR body summarises. The
 // product is named after root.
 func storedMap(st *store.Store, root string, env Env) (initbranch.Map, error) {
@@ -85,7 +86,7 @@ func storedMap(st *store.Store, root string, env Env) (initbranch.Map, error) {
 	return m, nil
 }
 
-// withRecovery gives c its stored recovery r: the file, how it ended and
+// withRecovery gives c its stored recovery r: the text, how it ended and
 // why, and the entries dropped from it.
 func withRecovery(c initbranch.Capability, r store.Recovered) (initbranch.Capability, error) {
 	var d recovery.Outcome

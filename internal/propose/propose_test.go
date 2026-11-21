@@ -15,6 +15,7 @@ import (
 	"github.com/dphaener/physa/internal/draft"
 	"github.com/dphaener/physa/internal/learn"
 	"github.com/dphaener/physa/internal/mapcheck"
+	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
 )
@@ -50,6 +51,19 @@ func write(t *testing.T, root, rel, text string) {
 	}
 }
 
+// folder writes text, a capability as a single text, as the folder dir
+// under root, through mapfolder.Split.
+func folder(t *testing.T, root, dir, text string) {
+	t.Helper()
+	f, err := mapfolder.Split(text)
+	if err != nil {
+		t.Fatalf("%s: %v", dir, err)
+	}
+	if err := f.Write(root, dir); err != nil {
+		t.Fatal(err)
+	}
+}
+
 const deliveryPromise = "Webhooks reach customers at least once."
 
 // newFixture makes the repo. Every scratch copy goes to a TMPDIR of the
@@ -67,12 +81,12 @@ func newFixture(t *testing.T) *fixture {
 	write(t, f.root, "docs/vision.md", "vision\n")
 	write(t, f.root, ".physa/README.md", "map\n")
 	write(t, f.root, ".physa/glossary.md", "# Glossary\n\n**Map**: the product's knowledge.\n")
-	write(t, f.root, ".physa/product.md", "---\npromise: A product.\n---\n# Product\n\n## Rules\n\n"+
+	folder(t, f.root, ".physa/product", "---\npromise: A product.\n---\n# Product\n\n## Rules\n\n"+
 		"### Cite sources\n`cite-sources` · from docs/vision.md\nEvery rule names its source.\nBecause: people check.\n")
-	write(t, f.root, ".physa/capabilities/delivery.md", "---\npromise: "+deliveryPromise+"\nstewards: [dana]\n---\n# Delivery\n\n"+
+	folder(t, f.root, ".physa/capabilities/delivery", "---\npromise: "+deliveryPromise+"\nstewards: [dana]\n---\n# Delivery\n\n"+
 		"## Rules\n\n### Sends are queued\n`queued-sends` · "+f.c1+"\nEvery send goes through the queue.\nBecause: sends survive a restart.\n\n"+
 		"## Decisions\n\n### One queue\n`one-queue` · decided by dana, in their words · 2026-03-01 · "+f.c1+"\nOne queue for every endpoint.\nBecause: simpler to run.\n")
-	write(t, f.root, ".physa/capabilities/billing.md", "---\npromise: Customers are billed for what they use.\n---\n# Billing\n\n"+
+	folder(t, f.root, ".physa/capabilities/billing", "---\npromise: Customers are billed for what they use.\n---\n# Billing\n\n"+
 		"## Questions\n\n### Bill per seat?\n`per-seat` · raised by sam · 2026-03-02\n")
 
 	f.batch = draft.Batch{
@@ -191,20 +205,6 @@ func TestKeepsEachKind(t *testing.T) {
 	noScratchLeft(t)
 }
 
-func TestInsertKeepsTheMapsOrder(t *testing.T) {
-	lines := []string{"---", "promise: p", "---", "# B", "", "## Questions", "", "### Q?", "`q` · raised by s · 2026-01-01"}
-	out, first, last := insert(lines, "Rules", []string{"### R", "`r` · abc1234", "Body.", "Because: b."})
-	got := strings.Join(out, "\n")
-	want := "---\npromise: p\n---\n# B\n\n## Rules\n\n### R\n`r` · abc1234\nBody.\nBecause: b.\n\n## Questions\n\n### Q?\n`q` · raised by s · 2026-01-01"
-	if got != want || first != 8 || last != 11 {
-		t.Errorf("insert = %d-%d\n%s\nwant 8-11\n%s", first, last, got, want)
-	}
-	out, first, _ = insert(lines, "Questions", []string{"### Q2?", "`q2` · raised by s · 2026-01-02"})
-	if got := strings.Join(out, "\n"); !strings.HasSuffix(got, "2026-01-01\n\n### Q2?\n`q2` · raised by s · 2026-01-02") || first != 11 {
-		t.Errorf("appending to the last section = %d\n%s", first, got)
-	}
-}
-
 func TestDropReasons(t *testing.T) {
 	f := newFixture(t)
 	edit := func(fn func(*draft.Proposal)) draft.Proposal {
@@ -234,8 +234,8 @@ func TestDropReasons(t *testing.T) {
 		{"promise on two lines", promise("Webhooks arrive.\nIn order."), "a promise is one line"},
 		{"promise unchanged", promise(" " + deliveryPromise + " "), "the promise is the same as today's"},
 		{"map check", edit(func(p *draft.Proposal) { p.Entry = strings.Split(p.Entry, "\nBecause:")[0] }),
-			"the map check finds: .physa/capabilities/delivery.md:"},
-		{"duplicate slug", f.rule("cite-sources", f.c2), `slug "cite-sources" is already used at .physa/product.md:`},
+			"the map check finds: .physa/capabilities/delivery/rules.md:"},
+		{"duplicate slug", f.rule("cite-sources", f.c2), `slug "cite-sources" is already used at .physa/product/rules.md:`},
 		{"two entries", edit(func(p *draft.Proposal) {
 			p.Entry += "\n\n### Another\n`another` · " + f.c2 + "\nMore.\nBecause: more."
 		}), "it does not add exactly one rule to `delivery`"},
@@ -285,7 +285,7 @@ func TestPreexistingProblemKeepsAGoodProposal(t *testing.T) {
 	f := newFixture(t)
 	// A decision with no date, after the Rules section the proposal goes in:
 	// its problem's line moves, and it is still the same problem.
-	p := ".physa/capabilities/delivery.md"
+	p := ".physa/capabilities/delivery/decisions.md"
 	b, err := os.ReadFile(filepath.Join(f.root, p))
 	if err != nil {
 		t.Fatal(err)
@@ -295,11 +295,13 @@ func TestPreexistingProblemKeepsAGoodProposal(t *testing.T) {
 	// And, in billing, a doc anchor that names no file and a question with
 	// that decision's slug: the decision's problem says where the question
 	// is, a line a rule added to billing moves.
-	write(t, f.root, ".physa/capabilities/billing.md", "---\npromise: Billed.\n---\n# Billing\n\n## Rules\n\n"+
+	folder(t, f.root, ".physa/capabilities/billing", "---\npromise: Billed.\n---\n# Billing\n\n## Rules\n\n"+
 		"### Bills are exact\n`exact-bills` · from docs/gone.md\nBills are exact.\nBecause: trust.\n\n"+
 		"## Questions\n\n### One queue for bills?\n`one-queue` · raised by sam · 2026-03-02\n")
-	// And a capability already over its budget, which any entry lengthens.
-	write(t, f.root, ".physa/capabilities/zones.md", "---\npromise: Zones.\n---\n# Zones\n"+strings.Repeat("Zones are kept.\n", 160))
+	// And a capability whose rules are already over their limit, which any
+	// rule lengthens.
+	folder(t, f.root, ".physa/capabilities/zones", "---\npromise: Zones.\n---\n# Zones\n\n## Rules\n\n"+
+		"### Zones are kept\n`zones-kept` · from docs/vision.md\n"+strings.Repeat("Zones are kept.\n", 160)+"Because: zones.\n")
 	for _, capability := range []string{"delivery", "billing", "zones"} {
 		p := f.rule("queue-retries", f.c2)
 		p.Capability = capability
@@ -312,7 +314,7 @@ func TestPreexistingProblemKeepsAGoodProposal(t *testing.T) {
 
 func TestDropAddedProblemQuotesOnlyTheNewOne(t *testing.T) {
 	f := newFixture(t)
-	write(t, f.root, ".physa/capabilities/billing.md", "---\npromise: Billed.\n---\n# Billing\n\n## Rules\n\n"+
+	folder(t, f.root, ".physa/capabilities/billing", "---\npromise: Billed.\n---\n# Billing\n\n## Rules\n\n"+
 		"### Bills are exact\n`exact-bills` · from docs/gone.md\nBills are exact.\nBecause: trust.\n")
 	_, dropped := Check(f.root, f.batch, []draft.Proposal{f.rule("queue-retries", "from docs/missing.md")}, f.opts())
 	if len(dropped) != 1 {
@@ -326,7 +328,7 @@ func TestDropAddedProblemQuotesOnlyTheNewOne(t *testing.T) {
 
 func TestResolversAreAskedOnce(t *testing.T) {
 	f := newFixture(t)
-	write(t, f.root, ".physa/capabilities/billing.md", "---\npromise: Billed.\n---\n# Billing\n\n## Rules\n\n"+
+	folder(t, f.root, ".physa/capabilities/billing", "---\npromise: Billed.\n---\n# Billing\n\n## Rules\n\n"+
 		"### Bills are exact\n`exact-bills` · #12\nBills are exact.\nBecause: trust.\n")
 	var prs, opens int
 	o := Options{
@@ -345,7 +347,7 @@ func TestResolversAreAskedOnce(t *testing.T) {
 
 func TestResolverErrorIsTheSameEveryTime(t *testing.T) {
 	f := newFixture(t)
-	write(t, f.root, ".physa/capabilities/billing.md", "---\npromise: Billed.\n---\n# Billing\n\n## Rules\n\n"+
+	folder(t, f.root, ".physa/capabilities/billing", "---\npromise: Billed.\n---\n# Billing\n\n## Rules\n\n"+
 		"### Bills are exact\n`exact-bills` · #12\nBills are exact.\nBecause: trust.\n")
 	calls := 0
 	o := Options{OpenRepo: git.Open, PRExists: func(int) (bool, error) { calls++; return false, errors.New("gh is not installed") }}
@@ -466,15 +468,12 @@ func TestApplyAllLandsEachInOrder(t *testing.T) {
 	if len(dropped) != 0 || len(applied) != 3 {
 		t.Fatalf("applied %d, dropped %v", len(applied), dropped)
 	}
-	raw, err := os.ReadFile(filepath.Join(f.root, ".physa/capabilities/delivery.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(raw)
+	text := read(t, f.root, ".physa/capabilities/delivery/rules.md")
 	a, b := strings.Index(text, "`queue-retries`"), strings.Index(text, "`park-dead-sends`")
 	if a < 0 || b < a {
 		t.Errorf("entries are missing or out of order:\n%s", text)
 	}
+	text = read(t, f.root, ".physa/capabilities/delivery/index.md")
 	if !strings.Contains(text, "promise: Webhooks reach customers at least once, in order per endpoint.\n") ||
 		strings.Contains(text, "promise: "+deliveryPromise+"\n") {
 		t.Errorf("the promise was not replaced in place:\n%s", text)
@@ -489,7 +488,7 @@ func TestApplyAllLandsEachInOrder(t *testing.T) {
 func TestApplyAllDropsADuplicateSlug(t *testing.T) {
 	f := newFixture(t)
 	kept := []Kept{{Proposal: f.rule("queue-retries", f.c2)}, {Proposal: f.second("queue-retries")}}
-	file := filepath.Join(f.root, ".physa/capabilities/delivery.md")
+	file := filepath.Join(f.root, ".physa/capabilities/delivery/rules.md")
 	applied, dropped := ApplyAll(f.root, f.batch, kept, f.opts())
 	if len(applied) != 1 || applied[0].Slug != "queue-retries" || len(dropped) != 1 {
 		t.Fatalf("applied %v, dropped %v", applied, dropped)
@@ -522,4 +521,153 @@ func TestWhatNamesUnreadableOutputPlainly(t *testing.T) {
 	if got := plural(1, "token") + " " + plural(2, "token"); got != "1 token 2 tokens" {
 		t.Errorf("plural = %q", got)
 	}
+}
+
+// read reads the file rel under root.
+func read(t *testing.T, root, rel string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// checked fails t unless the map under root passes the map check.
+func checked(t *testing.T, root string) {
+	t.Helper()
+	res, err := mapcheck.CheckWith(root, mapcheck.Options{OpenRepo: git.Open})
+	if err != nil || len(res.Problems) != 0 {
+		t.Errorf("map check: %v %v", err, res.Problems)
+	}
+}
+
+func (f *fixture) decision(meta string) draft.Proposal {
+	return draft.Proposal{
+		Kind: "decision", Capability: "delivery", Section: "Decisions",
+		Signal:  draft.SignalRef{Kind: learn.KindArguedOptions, Changes: []string{f.c2}},
+		Changes: []string{f.c2},
+		Entry: "### Six attempts\n`retry-limit` · " + meta + " · " + f.c2 +
+			"\nSix attempts, then a person.\nBecause: a bounded window.\nRejected:\n- Unlimited attempts: floods endpoints.",
+	}
+}
+
+func (f *fixture) question(meta string) draft.Proposal {
+	return draft.Proposal{
+		Kind: "question", Capability: "delivery", Section: "Questions",
+		Signal:  draft.SignalRef{Kind: learn.KindRevert, Changes: []string{f.c2, f.c1}},
+		Changes: []string{f.c1},
+		Entry:   "### Should ordering be per customer?\n`ordering-scope` · " + meta + " · " + f.c1 + "\nThe revert settled nothing.",
+	}
+}
+
+func TestDecisionLandsInItsKindFileWithItsContentsLine(t *testing.T) {
+	f := newFixture(t)
+	dir := ".physa/capabilities/delivery/"
+	index := read(t, f.root, dir+"index.md")
+	applied, dropped := ApplyAll(f.root, f.batch, []Kept{{Proposal: f.decision("decided by dana, choosing an option · 2026-03-02")}}, f.opts())
+	if len(applied) != 1 || applied[0].Slug != "retry-limit" || len(dropped) != 0 {
+		t.Fatalf("applied %v, dropped %v", applied, dropped)
+	}
+	text := read(t, f.root, dir+"decisions.md")
+	t.Logf("decisions.md:\n%s", text)
+	if !strings.Contains(text, "## Contents\n\n- [One queue](#one-queue)\n- [Six attempts](#six-attempts)\n\n## Entries\n") {
+		t.Errorf("decisions.md lacks the new contents line")
+	}
+	if !strings.HasSuffix(text, "Because: simpler to run.\n\n"+f.decision("decided by dana, choosing an option · 2026-03-02").Entry+"\n") {
+		t.Errorf("the decision is not last under ## Entries")
+	}
+	if strings.Contains(read(t, f.root, dir+"rules.md"), "Six attempts") || read(t, f.root, dir+"index.md") != index {
+		t.Errorf("a file other than decisions.md changed")
+	}
+	checked(t, f.root)
+}
+
+func TestQuestionMakesItsKindFileAndIndexLinksIt(t *testing.T) {
+	f := newFixture(t)
+	dir := ".physa/capabilities/delivery/"
+	applied, dropped := ApplyAll(f.root, f.batch, []Kept{{Proposal: f.question("raised by sam · 2026-11-01")}}, f.opts())
+	if len(applied) != 1 || applied[0].Slug != "ordering-scope" || len(dropped) != 0 {
+		t.Fatalf("applied %v, dropped %v", applied, dropped)
+	}
+	text := read(t, f.root, dir+"questions.md")
+	t.Logf("questions.md:\n%s", text)
+	want := "# Delivery · Questions\n\n## Contents\n\n- [Should ordering be per customer?](#should-ordering-be-per-customer)\n\n## Entries\n\n" +
+		f.question("raised by sam · 2026-11-01").Entry + "\n"
+	if text != want {
+		t.Errorf("questions.md =\n%s\nwant\n%s", text, want)
+	}
+	index := read(t, f.root, dir+"index.md")
+	t.Logf("index.md:\n%s", index)
+	if !strings.HasSuffix(index, "\n\n- [Rules](rules.md)\n- [Decisions](decisions.md)\n- [Questions](questions.md)\n") {
+		t.Errorf("index.md does not link questions.md last")
+	}
+	checked(t, f.root)
+}
+
+func TestPromiseEditsOnlyIndexFrontMatter(t *testing.T) {
+	f := newFixture(t)
+	dir := ".physa/capabilities/delivery/"
+	before := snapshot(t, filepath.Join(f.root, dir))
+	p := draft.Proposal{Kind: "promise", Capability: "delivery", Section: "promise",
+		Signal:  draft.SignalRef{Kind: "served-not-loaded", Changes: []string{f.c1, f.c2}},
+		Changes: []string{f.c1}, Entry: "Webhooks reach customers at least once, in order per endpoint."}
+	applied, dropped := ApplyAll(f.root, f.batch, []Kept{{Proposal: p}}, f.opts())
+	if len(applied) != 1 || len(dropped) != 0 {
+		t.Fatalf("applied %v, dropped %v", applied, dropped)
+	}
+	index := filepath.Join(f.root, dir, "index.md")
+	after := snapshot(t, filepath.Join(f.root, dir))
+	want := strings.Replace(before[index], "promise: "+deliveryPromise+"\n", "promise: "+p.Entry+"\n", 1)
+	if after[index] != want || want == before[index] {
+		t.Errorf("index.md =\n%s\nwant\n%s", after[index], want)
+	}
+	delete(before, index)
+	delete(after, index)
+	sameFiles(t, before, after)
+	checked(t, f.root)
+}
+
+func TestDropRestoresTheChangedKindFile(t *testing.T) {
+	f := newFixture(t)
+	dir := filepath.Join(f.root, ".physa/capabilities/delivery")
+	before := snapshot(t, dir)
+	// A decision with no date: its meta line is bad.
+	applied, dropped := ApplyAll(f.root, f.batch, []Kept{{Proposal: f.decision("decided by dana, choosing an option")}}, f.opts())
+	if len(applied) != 0 || len(dropped) != 1 {
+		t.Fatalf("applied %v, dropped %v", applied, dropped)
+	}
+	r := dropped[0].Reason
+	t.Logf("dropped: %s", r)
+	if !strings.Contains(r, ".physa/capabilities/delivery/decisions.md:16: ") {
+		t.Errorf("the reason does not name decisions.md and the entry's meta line: %s", r)
+	}
+	sameFiles(t, before, snapshot(t, dir))
+}
+
+func TestDropRemovesTheKindFileItMade(t *testing.T) {
+	f := newFixture(t)
+	dir := filepath.Join(f.root, ".physa/capabilities/delivery")
+	before := snapshot(t, dir)
+	// A question with no date, for a capability with no questions yet.
+	q := f.question("raised by sam")
+	for _, run := range []func() []Dropped{
+		func() []Dropped { _, d := Check(f.root, f.batch, []draft.Proposal{q}, f.opts()); return d },
+		func() []Dropped { _, d := ApplyAll(f.root, f.batch, []Kept{{Proposal: q}}, f.opts()); return d },
+	} {
+		dropped := run()
+		if len(dropped) != 1 {
+			t.Fatalf("dropped %v", dropped)
+		}
+		r := dropped[0].Reason
+		t.Logf("dropped: %s", r)
+		if !strings.Contains(r, ".physa/capabilities/delivery/questions.md:10: ") {
+			t.Errorf("the reason does not name questions.md and the entry's meta line: %s", r)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "questions.md")); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("questions.md is left behind: %v", err)
+		}
+		sameFiles(t, before, snapshot(t, dir))
+	}
+	noScratchLeft(t)
 }

@@ -25,7 +25,7 @@ An entry holds why. It never describes code and never names a file path, a funct
 
 ## What each kind of entry comes from
 
-**Rules** come from review corrections, docs and reverts. A rule is something that must always or never be true, with its reason. A review comment that requests changes is the strongest source: someone stopped a PR until it was put right. Read those first, then the other review comments, the docs, and the changes that revert others. Each rule has a `Because:` line giving its reason as the sources state it, and at least one anchor to where it came from. A rule carries no person and no date.
+**Rules** come from review corrections, docs and reverts. A rule is something that must always or never be true, with its reason. Its heading is the rule itself, stated briefly, never a topic: `Retries go through the queue`, not `Retries`. A reader sees the rules' headings alone before choosing which to open, so each must say the whole rule. A review comment that requests changes is the strongest source: someone stopped a PR until it was put right. Read those first, then the other review comments, the docs, and the changes that revert others. Each rule has a `Because:` line giving its reason as the sources state it, and at least one anchor to where it came from. A rule carries no person and no date.
 
 **Decisions** come from PR discussions. A decision is a choice that is hard to reverse, surprising without its context, and the result of a real trade-off. It says who decided, how, and when, the anchors, a `Because:` line, and under `Rejected:` each option argued against, with why not. How a decision was reached is one of three:
 
@@ -51,10 +51,12 @@ Nothing else is an anchor. Never write `from` before a PR or a change, never cit
 
 ## The file
 
-The file holds this capability's entries and nothing else. Physa writes the front matter with the promise, so your file starts at its title. It has this form, with made-up names; yours come from the sources:
+The file holds this capability's overview and entries and nothing else. Physa writes the front matter with the promise, so your file starts at its title. Physa then splits it into the capability's folder: the title and overview become its index, and each section becomes a file of its own, which opens with a list of its entries' headings. It has this form, with made-up names; yours come from the sources:
 
 ````markdown
 # Delivery
+
+Delivery gets each send from the product to the customer's endpoints, signed so the customer can trust it. A send that fails is retried a bounded number of times and then set aside for a person.
 
 ## Rules
 
@@ -86,15 +88,17 @@ The revert in #980 shows per-endpoint ordering broke a customer with many endpoi
 ````
 
 - One title line, `# ` and the capability's name in plain words.
+- Then the overview: one paragraph of at most three sentences, in the product's own words, saying what the capability covers, so that a reader can tell whether a change belongs here and not in a neighbouring capability. It says more than the promise does, and it holds no entry.
 - Then the sections `## Rules`, `## Decisions` and `## Questions`, each at most once, in this order, and no others. Leave out a section with no entries.
 - Each entry is a heading starting `### `, then one meta line, then its body. No text sits between a section's heading and its first entry.
 - The meta line starts with the entry's slug in backticks, then its parts joined by ` · `, in this order: the person, the date, the anchors.
   - A rule: `` `slug` · <anchors> ``.
   - A decision: `` `slug` · decided by <person>, <how> · <YYYY-MM-DD> · <anchors> ``.
   - A question: `` `slug` · raised by physa · <today's date> · <anchors> ``; the anchors may be left out when nothing in the sources suggested it.
+- A heading holds no `[`, `]`, `<`, `>` or `*`, since each heading is also a link in its file's list, and no two headings of a section are the same.
 - A slug is lowercase words of letters and digits joined by single hyphens, specific to its entry, and unique in the file.
 - The body is plain prose of a line or a few. Then a rule or a decision has its `Because:` line, and a decision with options argued has `Rejected:` on its own line followed by one `- ` line per option.
-- The whole file stays within 150 lines, and Physa's front matter takes four of them, so yours stays within 146. When the sources hold more than fits, keep what matters most to someone changing the product, and leave out the rest.
+- Each part has its own limit, since a reader takes some parts whole and others through their lists. The index, Physa's front matter of four lines, the title, the overview and the links to the other files, stays within 30 lines, so keep the overview short. The rules, with their list of headings, stay within 150 lines: about two lines for each rule plus the rules themselves. The decisions and the questions have no limit, since a reader opens them one heading at a time, but each heading must make sense alone. When the sources hold more rules than fit, keep what matters most to someone changing the product, and leave out the rest.
 
 ## The glossary
 
@@ -118,4 +122,4 @@ Think and write as much as you need first: what the sources show, which correcti
 
 Physa reads only the last block marked `markdown` and the last marked `glossary`. When the file holds a fenced block of its own, open and close the `markdown` block with four backticks, so the inner fence cannot close it.
 
-Physa then checks the file as `physa check map` does: its form, that every entry carries what its kind needs, and that every anchor names a PR, a change or a doc that exists. When it finds problems, it sends them back to you in this same session. Then write your whole answer again, every entry and not only the ones at fault, ending with the same two blocks. An entry still at fault after that is dropped and listed for the person who reviews the file.
+Physa then checks the file as `physa check map` does: its form, that every entry carries what its kind needs, and that every anchor names a PR, a change or a doc that exists. When it finds problems, it sends them back to you in this same session. Then write your whole answer again, every entry and not only the ones at fault, ending with the same two blocks. An entry still at fault after that is dropped and listed for the person who reviews the file. An overview still at fault is replaced by the promise, and listed the same way.

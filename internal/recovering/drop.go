@@ -1,6 +1,7 @@
 package recovering
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"unicode"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/dphaener/physa/internal/draft"
 	"github.com/dphaener/physa/internal/mapfile"
+	"github.com/dphaener/physa/internal/mapfolder"
 )
 
 // GlossaryPath is where the map check reports a glossary's problems.
@@ -21,9 +23,9 @@ var (
 	termStart = regexp.MustCompile(`^\*\*([^*]+)\*\*:`)
 )
 
-// File assembles the capability file: front matter holding promise, on one
-// line, then body, the file the session wrote, with any front matter of its
-// own removed. A body with no title gets one made from name, so a missing
+// File assembles the capability's single text, which mapfolder.Split makes
+// its folder of: front matter holding promise, on one line, then body, the
+// text the session wrote, with any front matter of its own removed. A body with no title gets one made from name, so a missing
 // title line does not fail the whole file.
 func File(name, promise, body string) string {
 	lines := strings.Split(strings.TrimSpace(strings.ReplaceAll(body, "\r\n", "\n")), "\n")
@@ -76,9 +78,11 @@ func lines(text string) []string {
 	return strings.Split(strings.TrimSuffix(strings.ReplaceAll(text, "\r\n", "\n"), "\n"), "\n")
 }
 
-// entries finds the entries of a capability file as the map reader reads
+// entries finds the entries of a capability's single text as Split reads
 // them: after the front matter, outside fences, each from its "### "
-// heading to the next heading of the same or a higher level.
+// heading to the next heading of the same or a higher level. The overview,
+// the text between the title and the first heading below it, is a span of
+// kind KindOverview.
 func entries(file string) []span {
 	ls := lines(file)
 	start := 0
@@ -92,14 +96,16 @@ func entries(file string) []span {
 		}
 	}
 	var (
-		out     []span
-		section string
-		fence   bool
+		out            []span
+		section        string
+		fence, titled  bool
+		overview, open bool
 	)
 	end := func(no int) {
 		if n := len(out); n > 0 && out[n-1].to == 0 {
 			out[n-1].to = no
 		}
+		open = false
 	}
 	for i := start; i < len(ls); i++ {
 		l, no := ls[i], i+1
@@ -118,13 +124,17 @@ func entries(file string) []span {
 					s.slug = m[1]
 				}
 			}
-			out = append(out, s)
+			out, open, titled = append(out, s), true, false
 		case strings.HasPrefix(l, "## "):
 			end(no)
+			titled = false
 			section = map[string]string{"Rules": "rule", "Decisions": "decision", "Questions": "question"}[strings.TrimSpace(l[3:])]
 		case strings.HasPrefix(l, "# "):
 			end(no)
-			section = ""
+			section, titled = "", true
+		case titled && !open && !overview && strings.TrimSpace(l) != "":
+			out = append(out, span{kind: KindOverview, heading: "the overview", from: no})
+			open, overview = true, true
 		}
 	}
 	end(len(ls) + 1)
@@ -151,17 +161,17 @@ func termSpans(glossary string) []span {
 	return out
 }
 
-// cut takes out of text every span a problem at path falls in, and returns
-// what is left, what was taken with its reasons, and the problems that fell
-// in no span or were not at path.
-func cut(path, text string, spans []span, problems []mapfile.Problem) (string, []Dropped, []mapfile.Problem) {
+// cut takes out of text every span a problem falls in, by the line of text
+// at says it is on (0 for none), and returns what is left, what was taken
+// with its reasons, and the problems that fell in no span.
+func cut(text string, spans []span, problems []mapfile.Problem, at func(mapfile.Problem) int) (string, []Dropped, []mapfile.Problem) {
 	reasons := make([][]string, len(spans))
 	var rest []mapfile.Problem
 	for _, p := range problems {
 		hit := -1
-		if p.Path == path && p.Line > 0 {
+		if no := at(p); no > 0 {
 			for i, s := range spans {
-				if p.Line >= s.from && p.Line < s.to {
+				if no >= s.from && no < s.to {
 					hit = i
 					break
 				}
@@ -197,14 +207,39 @@ func cut(path, text string, spans []span, problems []mapfile.Problem) (string, [
 	return strings.Join(kept, "\n") + "\n", dropped, rest
 }
 
-// Drop takes out of file, the capability file the map check read at path,
-// every whole entry holding a problem on one of its lines, from its heading
-// to the next heading of the same or a higher level. It returns the file
-// that is left, the entries taken with their reasons, in the file's order,
-// and the rest: problems on no entry's lines (the title, a section heading,
-// the front matter, the whole file) and problems at other paths.
-func Drop(path, file string, problems []mapfile.Problem) (kept string, dropped []Dropped, rest []mapfile.Problem) {
-	return cut(path, file, entries(file), problems)
+// Drop takes out of file, a capability's single text, every whole entry
+// holding a problem on one of its lines, from its heading to the next
+// heading of the same or a higher level, and the overview when a problem
+// holds it. dir is the capability's folder the map check read, the folder
+// mapfolder.Split makes of file: a problem at a file in dir is read at the
+// line of file it came from, and one at dir itself (Split's own) at its
+// line of file. A problem on the whole of index.md, its length, is the
+// overview's: Split then takes the promise in its place. Drop returns the
+// text that is left, the parts taken with their reasons, in the text's
+// order, and the rest: problems on no entry's lines (the title, a section
+// heading, the front matter, a whole kind file) and problems outside dir.
+func Drop(dir, file string, problems []mapfile.Problem) (kept string, dropped []Dropped, rest []mapfile.Problem) {
+	f, _ := mapfolder.Split(file) // a text Split rejects has only problems at dir itself
+	spans := entries(file)
+	overview := 0
+	for _, s := range spans {
+		if s.kind == KindOverview {
+			overview = s.from
+		}
+	}
+	return cut(file, spans, problems, func(p mapfile.Problem) int {
+		if p.Path == dir {
+			return p.Line
+		}
+		name, ok := strings.CutPrefix(p.Path, dir+"/")
+		switch {
+		case !ok:
+			return 0
+		case name == mapfolder.IndexFile && p.Line == 0:
+			return overview
+		}
+		return f.Origin(name, p.Line)
+	})
 }
 
 // DropTerms takes out of terms every term the map check found a problem in,
@@ -213,7 +248,12 @@ func Drop(path, file string, problems []mapfile.Problem) (kept string, dropped [
 // the rest, as Drop does.
 func DropTerms(terms string, problems []mapfile.Problem) (kept string, dropped []Dropped, rest []mapfile.Problem) {
 	g := Glossary(terms)
-	left, dropped, rest := cut(GlossaryPath, g, termSpans(g), problems)
+	left, dropped, rest := cut(g, termSpans(g), problems, func(p mapfile.Problem) int {
+		if p.Path != GlossaryPath {
+			return 0
+		}
+		return p.Line
+	})
 	kept = strings.TrimSpace(strings.TrimPrefix(left, glossaryHead))
 	if kept != "" {
 		kept += "\n"
@@ -221,8 +261,8 @@ func DropTerms(terms string, problems []mapfile.Problem) (kept string, dropped [
 	return kept, dropped, rest
 }
 
-// Count says how many rules, decisions and questions file holds, and how
-// many terms glossaryTerms holds.
+// Count says how many rules, decisions and questions file, a capability's
+// single text, holds, and how many terms glossaryTerms holds.
 func Count(file, glossaryTerms string) Counts {
 	var c Counts
 	for _, s := range entries(file) {
@@ -237,4 +277,34 @@ func Count(file, glossaryTerms string) Counts {
 	}
 	c.Terms = len(termSpans(glossaryTerms))
 	return c
+}
+
+// Describe words problems, found in the folder split from file, a
+// capability's single text, and in the glossary of terms, for the session
+// and the person: each names the part at fault and quotes its line, since
+// the session wrote one text, never saw the front matter Physa adds or the
+// folder it splits it into, and cannot count lines by them.
+func Describe(file, terms string, problems []mapfile.Problem) []string {
+	folder, _ := mapfolder.Split(file)
+	var out []string
+	for _, p := range problems {
+		what, text := "the file", file
+		if p.Path == GlossaryPath {
+			what, text = "the glossary", Glossary(terms)
+		} else if _, name, ok := strings.Cut(strings.TrimPrefix(p.Path, mapfolder.CapabilitiesDir+"/"), "/"); ok {
+			what, text = "the title and overview", folder.Files[name]
+			if k, ok := mapfolder.KindOfFile(name); ok {
+				what = "the " + strings.ToLower(k.Word())
+			}
+		}
+		if ls := strings.Split(text, "\n"); p.Line > 0 && p.Line <= len(ls) {
+			line := []rune(draft.OneLine(ls[p.Line-1]))
+			if len(line) > 100 {
+				line = append(line[:100], '…')
+			}
+			what += fmt.Sprintf(", at %q", string(line))
+		}
+		out = append(out, what+": "+p.Message)
+	}
+	return out
 }

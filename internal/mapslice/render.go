@@ -8,7 +8,7 @@ import (
 )
 
 // WriteMD writes s as markdown, its sections in a fixed order: the header,
-// product.md, each capability, the terms, what was left out and how to
+// the product, each capability, the terms, what was left out and how to
 // anchor. Empty sections are omitted. The same slice always gives the same
 // bytes.
 func WriteMD(w io.Writer, s *Slice) error {
@@ -80,7 +80,7 @@ func renderBody(s *Slice) string {
 	return b.String()
 }
 
-// writeBody writes the sections the budget counts: product.md, each
+// writeBody writes the sections the budget counts: the product, each
 // capability and the terms, a blank line between sections.
 func writeBody(b *strings.Builder, s *Slice) {
 	sep := func() {

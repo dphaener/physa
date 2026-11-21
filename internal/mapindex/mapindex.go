@@ -19,7 +19,7 @@ type Line struct {
 }
 
 // Build returns one Line per capability, in the order the map holds them
-// (sorted by name). product.md is not a capability and is left out.
+// (sorted by name). The product is not a capability and is left out.
 func Build(m *mapfile.Map) []Line {
 	lines := make([]Line, 0, len(m.Capabilities))
 	for _, c := range m.Capabilities {

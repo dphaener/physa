@@ -11,6 +11,7 @@ import (
 	"github.com/dphaener/physa/internal/draft"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfile"
+	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/vcs"
 )
 
@@ -56,8 +57,9 @@ func ApplyAll(root string, b draft.Batch, kept []Kept, o Options) ([]Kept, []Dro
 	return applied, dropped
 }
 
-// applyOne applies p to the map under root, restoring its file when p is
-// dropped.
+// applyOne applies p to the map under root. When p is dropped, every file
+// of its capability's folder is put back as it was, and a kind file p made
+// is removed.
 func applyOne(root string, p draft.Proposal, o Options) (string, string) {
 	m, _, err := mapfile.Read(root)
 	if err != nil {
@@ -71,15 +73,15 @@ func applyOne(root string, p draft.Proposal, o Options) (string, string) {
 	if err != nil {
 		return "", "the map cannot be checked: " + err.Error()
 	}
-	file := filepath.Join(root, filepath.FromSlash(before.Path))
-	orig, err := os.ReadFile(file)
+	dir := filepath.Join(root, filepath.FromSlash(before.Path))
+	snap, err := mapfolder.Take(dir)
 	if err != nil {
 		return "", "the map cannot be read: " + err.Error()
 	}
 	slug, reason := applyTo(root, root, m, p, problemSet(base.Problems), o)
 	if reason != "" {
-		if err := os.WriteFile(file, orig, 0o644); err != nil {
-			reason += "; and the file cannot be restored: " + err.Error()
+		if err := snap.Restore(dir); err != nil {
+			reason += "; and the folder cannot be restored: " + err.Error()
 		}
 	}
 	return slug, reason
@@ -92,22 +94,22 @@ func applyTo(dir, docRoot string, m *mapfile.Map, p draft.Proposal, baseline map
 	root, tmp := docRoot, dir
 	before := capability(m, p.Capability)
 	entry := strings.TrimSpace(strings.ReplaceAll(p.Entry, "\r\n", "\n"))
-	file := filepath.Join(tmp, filepath.FromSlash(before.Path))
-	raw, err := os.ReadFile(file)
-	if err != nil {
-		return "", "the scratch copy of the map cannot be made: " + err.Error()
-	}
-	lines := strings.Split(strings.TrimSuffix(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n"), "\n")
-	var first, last int // 1-based lines of the new entry in the edited file
+	folder := filepath.Join(tmp, filepath.FromSlash(before.Path))
+	var (
+		file        string // the entry's file, slash-separated, relative to the root
+		first, last int    // 1-based lines of the new entry in file
+	)
 	if p.Kind == KindPromise {
-		if lines, err = setPromise(lines, entry); err != nil {
-			return "", err.Error()
+		if reason := editPromise(filepath.Join(folder, mapfolder.IndexFile), entry); reason != "" {
+			return "", reason
 		}
 	} else {
-		lines, first, last = insert(lines, sections[p.Kind], strings.Split(entry, "\n"))
-	}
-	if err := os.WriteFile(file, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
-		return "", "the scratch copy of the map cannot be made: " + err.Error()
+		k := entryKinds[p.Kind]
+		file = before.Path + "/" + k.File()
+		var err error
+		if first, last, err = mapfolder.AddEntry(folder, before.Title, k, entry); err != nil {
+			return "", "it cannot be written into " + before.Path + "/" + err.Error()
+		}
 	}
 
 	opts := mapcheck.Options{DocRoot: root, PRExists: o.PRExists}
@@ -142,7 +144,7 @@ func applyTo(dir, docRoot string, m *mapfile.Map, p draft.Proposal, baseline map
 	kind := entryKinds[p.Kind]
 	var added []mapfile.Entry
 	for _, e := range after.Entries {
-		if e.Line >= first && e.Line <= last {
+		if e.Path == file && e.Line >= first && e.Line <= last {
 			added = append(added, e)
 		}
 	}
@@ -183,83 +185,6 @@ func copyMap(root, dst string) error {
 	})
 }
 
-// sectionOrder is the order of a map file's sections.
-var sectionOrder = []string{"Rules", "Decisions", "Questions"}
-
-// insert puts entry at the end of the section named section, creating the
-// section in the map's order when the file lacks it. It returns the new
-// lines and the first and last line (1-based) the entry now takes.
-func insert(lines []string, section string, entry []string) ([]string, int, int) {
-	start, end, later := -1, len(lines), -1
-	rank := func(name string) int {
-		for i, s := range sectionOrder {
-			if s == name {
-				return i
-			}
-		}
-		return -1
-	}
-	want := rank(section)
-	fenced := false
-	for i := frontMatterEnd(lines); i < len(lines); i++ {
-		line := lines[i]
-		if strings.HasPrefix(line, "```") {
-			fenced = !fenced
-			continue
-		}
-		if fenced || !(strings.HasPrefix(line, "## ") || strings.HasPrefix(line, "# ")) {
-			continue
-		}
-		if start >= 0 && end == len(lines) {
-			end = i
-		}
-		if !strings.HasPrefix(line, "## ") {
-			continue
-		}
-		name := strings.TrimSpace(line[3:])
-		if name == section && start < 0 {
-			start = i
-		}
-		if r := rank(name); r > want && later < 0 && start < 0 {
-			later = i
-		}
-	}
-	var out []string
-	switch {
-	case start >= 0:
-		k := end
-		for k > start+1 && strings.TrimSpace(lines[k-1]) == "" {
-			k--
-		}
-		out = append(out, lines[:k]...)
-		out = append(out, "")
-		first := len(out) + 1
-		out = append(out, entry...)
-		if end < len(lines) {
-			out = append(out, "")
-		}
-		out = append(out, lines[end:]...)
-		return out, first, first + len(entry) - 1
-	case later >= 0:
-		out = append(out, lines[:later]...)
-		out = append(out, "## "+section, "")
-		first := len(out) + 1
-		out = append(out, entry...)
-		out = append(out, "")
-		out = append(out, lines[later:]...)
-		return out, first, first + len(entry) - 1
-	}
-	k := len(lines)
-	for k > 0 && strings.TrimSpace(lines[k-1]) == "" {
-		k--
-	}
-	out = append(out, lines[:k]...)
-	out = append(out, "", "## "+section, "")
-	first := len(out) + 1
-	out = append(out, entry...)
-	return out, first, first + len(entry) - 1
-}
-
 // frontMatterEnd returns the index of the first line after the leading ---
 // block, or 0 when there is none.
 func frontMatterEnd(lines []string) int {
@@ -274,12 +199,29 @@ func frontMatterEnd(lines []string) int {
 	return 0
 }
 
+// editPromise sets the promise in the index.md at file, or says why it
+// cannot.
+func editPromise(file, promise string) string {
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return "the map cannot be read: " + err.Error()
+	}
+	lines := strings.Split(strings.TrimSuffix(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n"), "\n")
+	if lines, err = setPromise(lines, promise); err != nil {
+		return err.Error()
+	}
+	if err := os.WriteFile(file, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		return "the map cannot be written: " + err.Error()
+	}
+	return ""
+}
+
 // setPromise replaces the promise: value of the front matter with promise,
 // adding the key when the front matter lacks it.
 func setPromise(lines []string, promise string) ([]string, error) {
 	end := frontMatterEnd(lines)
 	if end == 0 {
-		return nil, errors.New("the capability file has no front matter to hold a promise")
+		return nil, errors.New("the capability's index.md has no front matter to hold a promise")
 	}
 	out := append([]string(nil), lines...)
 	for i := 1; i < end-1; i++ {

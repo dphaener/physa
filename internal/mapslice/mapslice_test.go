@@ -14,9 +14,10 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/mapfile"
+	"github.com/dphaener/physa/internal/mapfolder"
 )
 
-// fixture is a small map: product.md with a rule, a decision and a question,
+// fixture is a small map: the product with a rule, a decision and a question,
 // and two capabilities, alpha and beta, each with a rule, a decision and a
 // question.
 func fixture() *mapfile.Map {
@@ -38,7 +39,7 @@ func fixture() *mapfile.Map {
 	}
 	return &mapfile.Map{
 		Product: &mapfile.File{
-			Path: ".physa/product.md", Name: "product", Title: "Mini",
+			Path: ".physa/product", Name: "product", Title: "Mini",
 			Promise: "Teams ship with confidence.",
 			Entries: []mapfile.Entry{
 				entry(mapfile.Rule, "Never log emails", "no-emails", "Never log customer emails."),
@@ -48,7 +49,7 @@ func fixture() *mapfile.Map {
 		},
 		Capabilities: []*mapfile.File{
 			{
-				Path: ".physa/capabilities/alpha.md", Name: "alpha", Title: "Alpha",
+				Path: ".physa/capabilities/alpha", Name: "alpha", Title: "Alpha",
 				Promise: "Alpha keeps the map readable.",
 				Entries: []mapfile.Entry{
 					entry(mapfile.Rule, "Keep it short", "alpha-rule", "Keep every file short."),
@@ -57,7 +58,7 @@ func fixture() *mapfile.Map {
 				},
 			},
 			{
-				Path: ".physa/capabilities/beta.md", Name: "beta", Title: "Beta",
+				Path: ".physa/capabilities/beta", Name: "beta", Title: "Beta",
 				Promise: "Beta answers fast.",
 				Entries: []mapfile.Entry{
 					entry(mapfile.Rule, "Answer fast", "beta-rule", "Answer in under 50 ms."),
@@ -66,7 +67,7 @@ func fixture() *mapfile.Map {
 				},
 			},
 			{
-				Path: ".physa/capabilities/gamma.md", Name: "gamma", Title: "Gamma",
+				Path: ".physa/capabilities/gamma", Name: "gamma", Title: "Gamma",
 				Promise: "Gamma is never asked for.",
 			},
 		},
@@ -167,7 +168,7 @@ func TestSectionOrder(t *testing.T) {
 		"# Slice: alpha, beta\n",
 		"Budget: ",
 		"\n## Product: Mini\n",
-		"\n## Alpha\n", "\nFile: .physa/capabilities/alpha.md\n", "\nPromise: Alpha keeps the map readable.\n",
+		"\n## Alpha\n", "\nFile: .physa/capabilities/alpha/\n", "\nPromise: Alpha keeps the map readable.\n",
 		"\n### Rules\n", "\n#### Keep it short\n",
 		"\n## Beta\n",
 		"\n## Terms\n",
@@ -360,7 +361,7 @@ func termNames(s *Slice) []string {
 func TestTermsMatch(t *testing.T) {
 	s := build(t, fixture(), Request{Capabilities: []string{"alpha", "beta"}})
 	// Map: "map" in Alpha's promise; Capability: in a body; Cache: "No cache"
-	// heading. Widget is only in product.md, which never brings in a term, and
+	// heading. Widget is only in the product, which never brings in a term, and
 	// Slice is not in the text.
 	if got, want := termNames(s), []string{"Map", "Capability", "Cache"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("terms %v, want %v", got, want)
@@ -384,7 +385,7 @@ func TestTermsByAvoidAndWholeWord(t *testing.T) {
 	}
 	for _, c := range cases {
 		m := &mapfile.Map{
-			Capabilities: []*mapfile.File{{Path: ".physa/capabilities/x.md", Name: "x", Title: "X", Promise: "P.",
+			Capabilities: []*mapfile.File{{Path: ".physa/capabilities/x", Name: "x", Title: "X", Promise: "P.",
 				Entries: []mapfile.Entry{{Kind: mapfile.Rule, Heading: "R", Slug: "r", Body: c.text}}}},
 			Glossary: fixture().Glossary,
 		}
@@ -449,7 +450,7 @@ func TestUnknownCapability(t *testing.T) {
 		t.Errorf("got %v", err)
 	}
 	if _, err := Build(fixture(), Request{Capabilities: []string{"product"}}); err == nil {
-		t.Errorf("product.md is not a capability")
+		t.Errorf("the product is not a capability")
 	}
 }
 
@@ -597,6 +598,19 @@ func put(t *testing.T, root, rel, text string) {
 	}
 }
 
+// putFolder writes one capability or the product, given as a single text, as
+// the folder the map reads.
+func putFolder(t *testing.T, root, dir, text string) {
+	t.Helper()
+	f, err := mapfolder.Split(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range f.Files {
+		put(t, root, dir+"/"+name, body)
+	}
+}
+
 func capability(n int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "---\npromise: Capability %03d keeps its word to the people who rely on it.\nstewards: [dana]\n---\n\n# Cap %03d\n\n## Rules\n\n", n, n)
@@ -622,12 +636,12 @@ func glossary() string {
 
 func TestLatency(t *testing.T) {
 	root := t.TempDir()
-	put(t, root, ".physa/README.md", "# Map\n\nRead product.md first.\n")
+	put(t, root, ".physa/README.md", "# Map\n\nRead the product first.\n")
 	put(t, root, ".physa/glossary.md", glossary())
-	put(t, root, ".physa/product.md", "---\npromise: Teams ship with confidence.\n---\n\n# Mini\n\n## Rules\n\n### Never log emails\n`no-emails` · from docs/vision.md\nNever log customer emails.\nBecause: customers trust us.\n")
+	putFolder(t, root, ".physa/product", "---\npromise: Teams ship with confidence.\n---\n\n# Mini\n\n## Rules\n\n### Never log emails\n`no-emails` · from docs/vision.md\nNever log customer emails.\nBecause: customers trust us.\n")
 	var all []string
 	for n := 1; n <= 100; n++ {
-		put(t, root, fmt.Sprintf(".physa/capabilities/cap-%03d.md", n), capability(n))
+		putFolder(t, root, fmt.Sprintf(".physa/capabilities/cap-%03d", n), capability(n))
 		all = append(all, fmt.Sprintf("cap-%03d", n))
 	}
 	for _, c := range []struct {

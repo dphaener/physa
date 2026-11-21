@@ -1,9 +1,13 @@
-// Package mapfile reads a product's map from its .physa directory: product.md,
-// the capability files and the glossary. It turns them into entries (rules,
-// decisions and questions), anchors and terms, and reports every spot where
-// the map is malformed, with its file and line. It judges form only: what an
-// entry of each kind must carry, and whether anchors point anywhere, are
-// questions for the checks built on top of it.
+// Package mapfile reads a product's map from its .physa directory: the
+// product's folder, each capability's folder and the glossary. A folder is
+// read whole: index.md for the promise, stewards, title and overview, then
+// rules.md, decisions.md and questions.md for its entries. It turns them into
+// entries (rules, decisions and questions), anchors and terms, describes each
+// file it read so the checks can judge the folder's format, and reports every
+// spot where the map is malformed, with its file and line. It judges form
+// only: what an entry of each kind must carry, whether anchors point
+// anywhere, and whether a folder's contents match its entries are questions
+// for the checks built on top of it.
 package mapfile
 
 import (
@@ -14,29 +18,19 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/dphaener/physa/internal/mapfolder"
 )
 
-// Kind says which section an entry sits in.
-type Kind int
+// Kind says which kind an entry is; the file it sits in decides it.
+type Kind = mapfolder.Kind
 
-// The entry kinds, one per section of a map file.
+// The entry kinds, one per kind file of a folder.
 const (
-	Rule Kind = iota + 1
-	Decision
-	Question
+	Rule     = mapfolder.Rule
+	Decision = mapfolder.Decision
+	Question = mapfolder.Question
 )
-
-func (k Kind) String() string {
-	switch k {
-	case Rule:
-		return "rule"
-	case Decision:
-		return "decision"
-	case Question:
-		return "question"
-	}
-	return "unknown"
-}
 
 // AnchorKind says what an anchor points at.
 type AnchorKind int
@@ -63,7 +57,8 @@ type Meta struct {
 type Entry struct {
 	Kind     Kind
 	Heading  string
-	Line     int // line of the heading
+	Path     string // the kind file it sits in, e.g. ".physa/capabilities/init/rules.md"
+	Line     int    // line of the heading in that file
 	Slug     string
 	Role     string // "decided" or "raised", empty without a person
 	Person   string
@@ -79,15 +74,42 @@ type Entry struct {
 	bodyDone     bool
 }
 
-// File is product.md or one capability file.
+// File is the product or one capability: its folder, read whole.
 type File struct {
-	Path     string // slash-separated, relative to the root
-	Name     string // file stem; "product" for product.md
-	Lines    int    // total lines, as wc -l counts them
-	Promise  string
-	Stewards []string
-	Title    string
-	Entries  []Entry
+	Path         string // the folder, slash-separated, relative to the root
+	Name         string // the folder's name, the capability's slug; "product" for the product
+	Lines        int    // lines of index.md, as wc -l counts them
+	Promise      string
+	Stewards     []string
+	Title        string
+	Overview     string  // index.md's overview paragraph, its lines joined by "\n"
+	OverviewLine int     // line of the overview's first line in index.md; 0 without one
+	Entries      []Entry // rules, then decisions, then questions, each in file order
+	Parts        []Part  // index.md first, then each kind file the folder has
+}
+
+// Part is one file of a folder as it was read, for the checks to judge its
+// format without reading it again.
+type Part struct {
+	Path      string // slash-separated, relative to the root
+	Kind      Kind   // 0 for index.md
+	Lines     int    // as wc -l counts them
+	Title     string // the text after "# ", empty without a title
+	TitleLine int
+	// Contents are the "- " lines under ## Contents in a kind file, or the
+	// link lines of index.md, as written.
+	Contents []Line
+	// Headings are every heading outside a fenced block, "#" marks included.
+	Headings []Line
+	// OutsideEntries are the lines of "###" headings outside ## Entries; in
+	// index.md, every "###" heading.
+	OutsideEntries []int
+}
+
+// Line is one line of a file and its line number.
+type Line struct {
+	No   int
+	Text string
 }
 
 // Term is one glossary term.
@@ -100,7 +122,7 @@ type Term struct {
 
 // Map is everything read from a product's .physa directory.
 type Map struct {
-	Product      *File   // nil when product.md is missing
+	Product      *File   // nil when the product's folder is missing
 	Capabilities []*File // sorted by Name
 	Glossary     []Term
 	HasReadme    bool
@@ -120,12 +142,16 @@ func (p Problem) String() string {
 	return fmt.Sprintf("%s:%d: %s", p.Path, p.Line, p.Message)
 }
 
-const dir = ".physa"
+const dir = mapfolder.Dir
+
+// OldLayout is the message for each file of a map still in the single-file
+// layout.
+const OldLayout = "the map is in the old single-file format; convert it to folders (docs/architecture/09-capability-folders.md)"
 
 var slugRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // ValidSlug says whether s is a slug: lowercase words of letters and digits
-// joined by single hyphens, as a capability file name or an entry's slug
+// joined by single hyphens, as a capability folder's name or an entry's slug
 // must be.
 func ValidSlug(s string) bool { return slugRe.MatchString(s) }
 
@@ -133,7 +159,8 @@ func ValidSlug(s string) bool { return slugRe.MatchString(s) }
 // missing .physa directory; every fault in the format is a Problem, and
 // reading goes on past each one. A missing capabilities directory means the
 // map has no capabilities yet and is not a Problem; a capabilities path that
-// is not a directory is one.
+// is not a directory is one. A map in the old single-file layout gives one
+// Problem per old file, saying to convert it.
 func Read(root string) (*Map, []Problem, error) {
 	info, err := os.Stat(path.Join(root, dir))
 	if err != nil {
@@ -144,9 +171,7 @@ func Read(root string) (*Map, []Problem, error) {
 	}
 	r := &reader{root: root}
 	m := &Map{}
-	if f := r.file(dir+"/product.md", "product"); f != nil {
-		m.Product = f
-	}
+	r.product(m)
 	r.capabilities(m)
 	r.glossary(m)
 	if _, err := os.Stat(path.Join(root, dir, "README.md")); err == nil {
@@ -189,12 +214,37 @@ func (r *reader) content(p string) ([]string, int, bool) {
 	return strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n"), n, true
 }
 
-// capabilities reads the files in .physa/capabilities. A missing directory is
-// no capabilities, not a problem: git keeps no empty directories, and a new
-// codebase's map has none yet. A path that exists but is not a directory is a
-// problem.
+// product reads .physa/product. An old .physa/product.md is reported as the
+// old layout, and then a missing product folder is not reported again.
+func (r *reader) product(m *Map) {
+	old := dir + "/product.md"
+	_, err := os.Stat(path.Join(r.root, old))
+	isOld := err == nil
+	if isOld {
+		r.add(old, 0, OldLayout)
+	}
+	info, err := os.Stat(path.Join(r.root, mapfolder.ProductDir))
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		if !isOld {
+			r.add(mapfolder.ProductDir+"/"+mapfolder.IndexFile, 0, "missing file")
+		}
+	case err != nil:
+		r.add(mapfolder.ProductDir, 0, "cannot read folder: %v", err)
+	case !info.IsDir():
+		r.add(mapfolder.ProductDir, 0, "not a folder: want the product's index.md and kind files in it")
+	default:
+		m.Product = r.folder(mapfolder.ProductDir, "product")
+	}
+}
+
+// capabilities reads the folders in .physa/capabilities. A missing directory
+// is no capabilities, not a problem: git keeps no empty directories, and a
+// new codebase's map has none yet. A path that exists but is not a directory
+// is a problem, as is anything in it but a folder named by a slug; a
+// <name>.md file in it is the old layout.
 func (r *reader) capabilities(m *Map) {
-	cdir := dir + "/capabilities"
+	cdir := mapfolder.CapabilitiesDir
 	info, err := os.Stat(path.Join(r.root, cdir))
 	if errors.Is(err, os.ErrNotExist) {
 		return
@@ -204,7 +254,7 @@ func (r *reader) capabilities(m *Map) {
 		return
 	}
 	if !info.IsDir() {
-		r.add(cdir, 0, "not a directory: want capabilities as a directory of <name>.md files")
+		r.add(cdir, 0, "not a directory: want capabilities as a directory of capability folders")
 		return
 	}
 	ents, err := os.ReadDir(path.Join(r.root, cdir))
@@ -214,35 +264,133 @@ func (r *reader) capabilities(m *Map) {
 	}
 	for _, e := range ents {
 		p := cdir + "/" + e.Name()
-		stem := strings.TrimSuffix(e.Name(), ".md")
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") || !ValidSlug(stem) {
-			r.add(p, 0, "not a capability file: want <name>.md with a lowercase, hyphenated name")
-			continue
-		}
-		if f := r.file(p, stem); f != nil {
-			m.Capabilities = append(m.Capabilities, f)
+		switch {
+		case !e.IsDir() && strings.HasSuffix(e.Name(), ".md"):
+			r.add(p, 0, OldLayout)
+		case !e.IsDir() || !ValidSlug(e.Name()):
+			r.add(p, 0, "not a capability folder: want a folder named by the capability's slug, lowercase words joined by hyphens")
+		default:
+			if f := r.folder(p, e.Name()); f != nil {
+				m.Capabilities = append(m.Capabilities, f)
+			}
 		}
 	}
 	sort.Slice(m.Capabilities, func(i, j int) bool { return m.Capabilities[i].Name < m.Capabilities[j].Name })
 }
 
-// file reads product.md or a capability file.
-func (r *reader) file(p, name string) *File {
-	lines, n, ok := r.content(p)
-	if !ok {
+// folder reads the product's or a capability's folder: index.md, which must
+// be there, then each kind file it has, in the order rules, decisions,
+// questions. A kind with no file has no entries.
+func (r *reader) folder(d, name string) *File {
+	ents, err := os.ReadDir(path.Join(r.root, d))
+	if err != nil {
+		r.add(d, 0, "cannot read folder: %v", err)
 		return nil
 	}
-	f := &File{Path: p, Name: name, Lines: n}
-	body := r.frontMatter(f, lines)
+	has := map[string]bool{}
+	for _, e := range ents {
+		_, kind := mapfolder.KindOfFile(e.Name())
+		if e.IsDir() || (!kind && e.Name() != mapfolder.IndexFile) {
+			r.add(d+"/"+e.Name(), 0, "not a file of a folder: want only index.md, rules.md, decisions.md and questions.md")
+			continue
+		}
+		has[e.Name()] = true
+	}
+	f := &File{Path: d, Name: name}
+	r.index(f, d+"/"+mapfolder.IndexFile)
+	for _, k := range mapfolder.Kinds {
+		if has[k.File()] {
+			r.kindFile(f, k, d+"/"+k.File())
+		}
+	}
+	return f
+}
+
+// index reads index.md: front matter, the title, the overview (the first
+// paragraph after the title) and the link lines. Whether it keeps to
+// index.md's grammar is for the checks; this records what it holds.
+func (r *reader) index(f *File, p string) {
+	lines, n, ok := r.content(p)
+	if !ok {
+		return
+	}
+	f.Lines = n
+	part := Part{Path: p, Lines: n}
+	var overview []string
+	ended := false // the overview's paragraph has ended
+	for i := r.frontMatter(f, p, lines); i < len(lines); i++ {
+		line, no := lines[i], i+1
+		switch {
+		case heading(line):
+			part.Headings = append(part.Headings, Line{no, line})
+			ended = ended || len(overview) > 0
+			if strings.HasPrefix(line, "### ") {
+				part.OutsideEntries = append(part.OutsideEntries, no)
+			}
+			if strings.HasPrefix(line, "# ") {
+				r.title(&part, no, line)
+				f.Title = part.Title
+			}
+		case strings.HasPrefix(line, "- "):
+			part.Contents = append(part.Contents, Line{no, line})
+			ended = ended || len(overview) > 0
+		case strings.TrimSpace(line) == "":
+			ended = ended || len(overview) > 0
+		case part.Title != "" && !ended && len(part.Contents) == 0:
+			if len(overview) == 0 {
+				f.OverviewLine = no
+			}
+			overview = append(overview, strings.TrimSpace(line))
+		}
+	}
+	f.Overview = strings.Join(overview, "\n")
+	if part.Title == "" {
+		r.add(p, 0, "missing title: want one line starting with \"# \"")
+	}
+	f.Parts = append(f.Parts, part)
+}
+
+// heading says whether line is a markdown heading of one to three levels.
+func heading(line string) bool {
+	return strings.HasPrefix(line, "# ") || strings.HasPrefix(line, "## ") || strings.HasPrefix(line, "### ")
+}
+
+func (r *reader) title(part *Part, no int, line string) {
+	if part.Title != "" {
+		r.add(part.Path, no, "more than one title")
+		return
+	}
+	part.Title, part.TitleLine = strings.TrimSpace(line[2:]), no
+}
+
+// kindFile reads rules.md, decisions.md or questions.md: the title, the
+// contents lines under ## Contents, and the entries. Every "###" heading
+// outside a fenced block starts an entry of the file's kind.
+func (r *reader) kindFile(f *File, k Kind, p string) {
+	lines, n, ok := r.content(p)
+	if !ok {
+		return
+	}
+	part := Part{Path: p, Kind: k, Lines: n}
+	start := 0
+	if len(lines) > 0 && lines[0] == "---" {
+		r.add(p, 1, "front matter belongs only in index.md")
+		start = 1
+		for i := 1; i < len(lines); i++ {
+			if lines[i] == "---" {
+				start = i + 1
+				break
+			}
+		}
+	}
 	var (
-		section  Kind
-		seen     = map[Kind]bool{}
+		section  string
 		fenced   bool
 		cur      *Entry
 		inReject bool
-		titled   bool
+		first    = len(f.Entries)
 	)
-	for i := body; i < len(lines); i++ {
+	for i := start; i < len(lines); i++ {
 		line, no := lines[i], i+1
 		if strings.HasPrefix(line, "```") {
 			fenced = !fenced
@@ -253,12 +401,11 @@ func (r *reader) file(p, name string) *File {
 		}
 		switch {
 		case strings.HasPrefix(line, "### "):
-			if section == 0 {
-				r.add(p, no, "entry outside a Rules, Decisions or Questions section")
-				cur = nil
-				continue
+			part.Headings = append(part.Headings, Line{no, line})
+			if section != "Entries" {
+				part.OutsideEntries = append(part.OutsideEntries, no)
 			}
-			f.Entries = append(f.Entries, Entry{Kind: section, Heading: strings.TrimSpace(line[4:]), Line: no})
+			f.Entries = append(f.Entries, Entry{Kind: k, Heading: strings.TrimSpace(line[4:]), Path: p, Line: no})
 			cur = &f.Entries[len(f.Entries)-1]
 			inReject = false
 			if i+1 < len(lines) && strings.TrimSpace(lines[i+1]) != "" && !strings.HasPrefix(lines[i+1], "#") {
@@ -271,53 +418,42 @@ func (r *reader) file(p, name string) *File {
 				}
 				r.add(p, at, "missing meta line after heading %q", cur.Heading)
 			}
-		case strings.HasPrefix(line, "## "):
+		case strings.HasPrefix(line, "## "), strings.HasPrefix(line, "# "):
 			cur = nil
-			switch strings.TrimSpace(line[3:]) {
-			case "Rules":
-				section = Rule
-			case "Decisions":
-				section = Decision
-			case "Questions":
-				section = Question
-			default:
-				section = 0
-				r.add(p, no, "unknown section %q: want Rules, Decisions or Questions", strings.TrimSpace(line[3:]))
-				continue
+			part.Headings = append(part.Headings, Line{no, line})
+			if strings.HasPrefix(line, "# ") {
+				section = ""
+				r.title(&part, no, line)
+			} else {
+				section = strings.TrimSpace(line[3:])
 			}
-			if seen[section] {
-				r.add(p, no, "section %q appears more than once", strings.TrimSpace(line[3:]))
-			}
-			seen[section] = true
-		case strings.HasPrefix(line, "# "):
-			cur, section = nil, 0
-			if titled {
-				r.add(p, no, "more than one title")
-			}
-			titled = true
-			f.Title = strings.TrimSpace(line[2:])
 		case cur != nil:
 			inReject = r.body(p, no, line, cur, inReject)
-		case section != 0 && strings.TrimSpace(line) != "":
-			r.add(p, no, "text before the first entry of the section")
+		case strings.TrimSpace(line) == "":
+		case section == "Contents" && strings.HasPrefix(line, "- "):
+			part.Contents = append(part.Contents, Line{no, line})
+		case section == "Entries":
+			r.add(p, no, "text before the first entry")
+		default:
+			r.add(p, no, "text outside the contents and the entries")
 		}
 	}
-	if !titled {
+	if part.Title == "" {
 		r.add(p, 0, "missing title: want one line starting with \"# \"")
 	}
-	for _, e := range f.Entries {
+	for _, e := range f.Entries[first:] {
 		if e.Rejected != nil && len(e.Rejected) == 0 {
 			r.add(p, e.rejectedLine, "Rejected: has no items")
 		}
 	}
-	return f
+	f.Parts = append(f.Parts, part)
 }
 
-// frontMatter reads the leading --- block and returns the index of the first
-// line after it.
-func (r *reader) frontMatter(f *File, lines []string) int {
+// frontMatter reads index.md's leading --- block into f and returns the
+// index of the first line after it.
+func (r *reader) frontMatter(f *File, p string, lines []string) int {
 	if len(lines) == 0 || lines[0] != "---" {
-		r.add(f.Path, 1, "missing front matter: the file must start with ---")
+		r.add(p, 1, "missing front matter: index.md must start with ---")
 		return 0
 	}
 	end := -1
@@ -328,7 +464,7 @@ func (r *reader) frontMatter(f *File, lines []string) int {
 		}
 	}
 	if end < 0 {
-		r.add(f.Path, 1, "front matter is not closed by a --- line")
+		r.add(p, 1, "front matter is not closed by a --- line")
 		return 1
 	}
 	for i := 1; i < end; i++ {
@@ -340,12 +476,12 @@ func (r *reader) frontMatter(f *File, lines []string) int {
 		key, val = strings.TrimSpace(key), strings.TrimSpace(val)
 		switch {
 		case !ok:
-			r.add(f.Path, i+1, "front matter line is not key: value")
+			r.add(p, i+1, "front matter line is not key: value")
 		case key == "promise":
 			f.Promise = val
 		case key == "stewards":
 			if !strings.HasPrefix(val, "[") || !strings.HasSuffix(val, "]") {
-				r.add(f.Path, i+1, "stewards must be a list like [a, b]")
+				r.add(p, i+1, "stewards must be a list like [a, b]")
 				break
 			}
 			for _, s := range strings.Split(val[1:len(val)-1], ",") {
@@ -354,11 +490,11 @@ func (r *reader) frontMatter(f *File, lines []string) int {
 				}
 			}
 		default:
-			r.add(f.Path, i+1, "unknown front matter key %q: want promise or stewards", key)
+			r.add(p, i+1, "unknown front matter key %q: want promise or stewards", key)
 		}
 	}
 	if f.Promise == "" {
-		r.add(f.Path, 1, "front matter needs a non-empty promise")
+		r.add(p, 1, "front matter needs a non-empty promise")
 	}
 	return end + 1
 }

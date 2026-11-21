@@ -16,6 +16,7 @@ import (
 	"github.com/dphaener/physa/internal/cli"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/forge/github"
+	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/store"
 )
 
@@ -158,14 +159,27 @@ func write(t *testing.T, root, rel, text string) {
 }
 
 // tempMap builds a repo root with a small map; rule is the capability's rule entry.
+// folder writes the single text of a capability (or the product) as a folder
+// at dir under root, as init does.
+func folder(t *testing.T, root, dir, text string) {
+	t.Helper()
+	f, err := mapfolder.Split(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range f.Files {
+		write(t, root, dir+"/"+name, body)
+	}
+}
+
 func tempMap(t *testing.T, rule string) string {
 	t.Helper()
 	root := t.TempDir()
 	front := "---\npromise: x\n---\n# T\n\n"
-	write(t, root, ".physa/product.md", front)
+	folder(t, root, mapfolder.ProductDir, front)
 	write(t, root, ".physa/glossary.md", "# Glossary\n\n**Map**: a thing.\n")
 	write(t, root, ".physa/README.md", "hi\n")
-	write(t, root, ".physa/capabilities/a.md", front+"## Rules\n\n### R\n"+rule+"\nBecause: y.\n")
+	folder(t, root, mapfolder.CapabilityDir("a"), front+"## Rules\n\n### R\n"+rule+"\nBecause: y.\n")
 	write(t, root, "docs/d.md", "doc\n")
 	return root
 }
@@ -190,7 +204,7 @@ func TestCheckBrokenMap(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), ".physa/capabilities/a.md:") {
+	if !strings.Contains(stderr.String(), ".physa/capabilities/a/rules.md:") {
 		t.Errorf("stderr = %q, want a path:line problem", stderr.String())
 	}
 	if stdout.Len() != 0 {
@@ -533,7 +547,7 @@ func trailersRepo(t *testing.T) string {
 	t.Setenv("GIT_COMMITTER_NAME", "t")
 	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
 	root := tempMap(t, "r from docs/d.md")
-	write(t, root, ".physa/capabilities/b.md", "---\npromise: y\n---\n# B\n\n")
+	folder(t, root, mapfolder.CapabilityDir("b"), "---\npromise: y\n---\n# B\n\n")
 	gitIn(t, root, "init", "-q")
 	gitIn(t, root, "add", ".")
 	gitIn(t, root, "commit", "-q", "-m", "base")
@@ -734,5 +748,63 @@ func TestPluralTokensInTheOverBudgetLine(t *testing.T) {
 	}
 	if got := plural(11, "token", "tokens"); got != "11 tokens" {
 		t.Errorf("plural(11) = %q", got)
+	}
+}
+
+// fmtRun runs physa map fmt with args and returns the code and both outputs.
+func fmtRun(args ...string) (int, string, string) {
+	var stdout, stderr bytes.Buffer
+	code := run(append([]string{"map", "fmt"}, args...), &stdout, &stderr)
+	return code, stdout.String(), stderr.String()
+}
+
+func TestFmtCheckThenFix(t *testing.T) {
+	root := tempMap(t, "`r` · from docs/d.md")
+	rules := filepath.Join(root, ".physa/capabilities/a/rules.md")
+	b, err := os.ReadFile(rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := strings.Replace(string(b), "- [R](#r)\n", "", 1)
+	if stale == string(b) {
+		t.Fatalf("no contents line in %q", b)
+	}
+	if err := os.WriteFile(rules, []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want := ".physa/capabilities/a/rules.md: contents or spacing differ; run physa map fmt\n"
+	if code, out, _ := fmtRun("--check", root); code != 1 || out != want {
+		t.Errorf("--check = %d, %q; want 1, %q", code, out, want)
+	}
+	if got, _ := os.ReadFile(rules); string(got) != stale {
+		t.Errorf("--check changed the file: %q", got)
+	}
+	if code, out, _ := fmtRun(root); code != 0 || out != "formatted .physa/capabilities/a/rules.md\n" {
+		t.Errorf("fmt = %d, %q", code, out)
+	}
+	if got, _ := os.ReadFile(rules); string(got) != string(b) {
+		t.Errorf("fmt wrote %q, want %q", got, b)
+	}
+	if code, out, errOut := fmtRun("--check", root); code != 0 || out != "" || errOut != "" {
+		t.Errorf("--check after fmt = %d, %q, %q", code, out, errOut)
+	}
+}
+
+func TestFmtOldLayoutExitsTwo(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, ".physa/product.md", "---\npromise: x\n---\n# T\n")
+	for _, args := range [][]string{{root}, {"--check", root}} {
+		code, out, errOut := fmtRun(args...)
+		if code != 2 || out != "" || !strings.Contains(errOut, "old single-file layout; convert") {
+			t.Errorf("fmt %v = %d, %q, %q; want 2 and the convert message", args, code, out, errOut)
+		}
+	}
+}
+
+func TestFmtBadUsage(t *testing.T) {
+	for _, args := range [][]string{{"a", "b"}, {"--fix"}, {"a", "--check"}} {
+		if code, _, _ := fmtRun(args...); code != 2 {
+			t.Errorf("fmt %v = %d, want 2", args, code)
+		}
 	}
 }

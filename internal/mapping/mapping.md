@@ -13,7 +13,7 @@ A capability is a promise the product makes to its users, stated as intended beh
 - **It is about users.** Ask who would notice if it stopped being true. If only the people building the product would, such as how it is tested, built or released, it is not a capability, unless building and releasing is what the product does for its users.
 - **It is intended behaviour.** A promise says what the product means to do, as its docs and discussions state it, even where a change shows it once failed to.
 
-`product.md` holds the product's own promise: one sentence saying what the product does for its users and why that matters to them. Every capability is one part of keeping it.
+The product's own promise is one sentence saying what the product does for its users and why that matters to them, and it is held in the product's folder, `.physa/product/`. Every capability is one part of keeping it.
 
 ## How many
 
@@ -21,7 +21,7 @@ Propose as many capabilities as the product really has. There is no number to re
 
 Prefer fewer, larger promises over many small ones. When two candidates would be kept by the same changes, or one is a detail of the other, they are one capability. When a candidate is real but you cannot state what it promises its users, it is a question, not a capability.
 
-For a sense of size: a capability's file holds its promise with all its rules, decisions and questions in about 150 lines, and `product.md` is about 100 lines. A promise is the right size when the lessons of many changes would fill such a file, too small when a few changes exhaust it, and too large when its rules and decisions would never fit in one.
+For a sense of size: each capability is a folder of its own, `.physa/capabilities/<name>/`: an `index.md` of about 30 lines holding the promise and a short overview, a `rules.md` of about 150 lines, and a `decisions.md` and a `questions.md` that have no limit. The product's folder has the same files and limits. A promise is the right size when its rules would come near the 150 lines of `rules.md` as many changes teach them, too small when a few changes exhaust it, and too large when its rules would never fit in one `rules.md`.
 
 ## What each capability carries
 

@@ -33,3 +33,6 @@ jobs:
 
       - name: Check the map
         run: go run ./cmd/physa check map
+
+      - name: Check the map's format
+        run: go run ./cmd/physa map fmt --check

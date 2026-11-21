@@ -18,7 +18,8 @@ import (
 	"github.com/dphaener/physa/internal/vcs"
 )
 
-// The kinds of proposal, and the section each goes in.
+// The kinds of proposal, and the section each names: a kind file's word,
+// or the promise in index.md's front matter.
 const (
 	KindRule     = "rule"
 	KindDecision = "decision"
@@ -82,9 +83,9 @@ func FromMalformed(ms []draft.Malformed) []Dropped {
 // exactly one of the two. A proposal is first checked for what it claims (its
 // kind and section, its capability, its signal and changes, its entry); then
 // it is applied alone to a scratch copy of the map and kept only when the map
-// check finds no problem the map did not have already, the capability file
-// holds exactly one more entry of its kind, and that entry's anchors cite one
-// of its changes. Nothing under root is written.
+// check finds no problem the map did not have already, the capability's
+// kind file holds exactly one more entry of its kind, and that entry's
+// anchors cite one of its changes. Nothing under root is written.
 func Check(root string, b draft.Batch, ps []draft.Proposal, o Options) ([]Kept, []Dropped) {
 	var (
 		kept    []Kept
@@ -169,7 +170,7 @@ func claims(m *mapfile.Map, b draft.Batch, p draft.Proposal) string {
 	return ""
 }
 
-// capability returns the capability file of m named name, or nil.
+// capability returns the capability of m named name, or nil.
 func capability(m *mapfile.Map, name string) *mapfile.File {
 	for _, f := range m.Capabilities {
 		if f.Name == name {

@@ -285,7 +285,7 @@ const twoReply = "Thinking.\n```json\n" +
 	`{"name":"search","promise":"People find what they kept.","shown_by":["#3"],"questions":[]}],` +
 	`"questions":[]}` + "\n```\n"
 
-// recoverReply is a session's answer: a capability file with one rule
+// recoverReply is a session's answer: a capability text with one rule
 // anchored to PR 3, and one term.
 const recoverReply = "The sources show this.\n\n````markdown\n# Delivery\n\n## Rules\n\n" +
 	"### Changes ship in order\n`ship-in-order` · #3\nChanges reach users in the order merged.\n" +
@@ -383,7 +383,7 @@ func TestRecoverJSON(t *testing.T) {
 
 func TestRecoverSmallAppetiteExitsOne(t *testing.T) {
 	env := proposedEnv(t, recoverAgent(10_000))
-	code, out, errOut := runInit(env, "--recover", "--appetite", "23000")
+	code, out, errOut := runInit(env, "--recover", "--appetite", "25000")
 	if code != 1 || !strings.Contains(out, "Not yet recovered") || !strings.Contains(out, "- search") ||
 		!strings.Contains(out, "## delivery: recovered") {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)

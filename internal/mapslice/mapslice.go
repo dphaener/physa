@@ -34,16 +34,16 @@ type Slice struct {
 	Used         int       `json:"used"`         // estimated tokens of product, capabilities and terms
 	OverBudget   bool      `json:"over_budget"`
 	Floor        []string  `json:"floor,omitempty"`   // what is never cut, when it alone is over budget
-	Product      *Section  `json:"product,omitempty"` // nil without product.md
+	Product      *Section  `json:"product,omitempty"` // nil without the product
 	Sections     []Section `json:"sections"`          // one per chosen capability
 	Terms        []Term    `json:"terms"`
 	LeftOut      []Cut     `json:"left_out"`
 	Trailers     []string  `json:"trailers"`
 }
 
-// Section is product.md or one capability, with the entries the budget kept.
+// Section is the product or one capability, with the entries the budget kept.
 type Section struct {
-	Name    string  `json:"name"` // "product" for product.md
+	Name    string  `json:"name"` // "product" for the product
 	Title   string  `json:"title"`
 	File    string  `json:"file"`
 	Promise string  `json:"promise"`
@@ -86,7 +86,7 @@ const (
 // term has its name as Slug and "glossary" as Capability.
 type Cut struct {
 	Slug       string `json:"slug"`
-	Capability string `json:"capability"` // "product" for product.md
+	Capability string `json:"capability"` // "product" for the product
 	Part       string `json:"part"`       // PartEntry, PartBecause, PartRejected or PartTerm
 	Command    string `json:"command"`
 }
@@ -138,8 +138,8 @@ type assembler struct {
 	req    Request
 	names  []string
 	budget int
-	secs   []Section // product.md first when present, then the capabilities
-	prod   bool      // secs[0] is product.md
+	secs   []Section // the product first when present, then the capabilities
+	prod   bool      // secs[0] is the product
 	cuts   []cut
 	terms  []mapfile.Term
 	// matches[sec][ent] are the terms each part of an entry mentions;
@@ -192,7 +192,7 @@ func newAssembler(m *mapfile.Map, r Request) (*assembler, error) {
 }
 
 func toSection(f *mapfile.File) Section {
-	s := Section{Name: f.Name, Title: f.Title, File: f.Path, Promise: f.Promise, Entries: []Entry{}}
+	s := Section{Name: f.Name, Title: f.Title, File: f.Path + "/", Promise: f.Promise, Entries: []Entry{}}
 	for _, k := range []mapfile.Kind{mapfile.Rule, mapfile.Decision, mapfile.Question} {
 		for _, e := range f.Entries {
 			if e.Kind == k {
@@ -242,7 +242,7 @@ func (a *assembler) cuttable(k string) bool {
 	return false
 }
 
-// order lists the cuts in the budget's order: product.md's decisions and
+// order lists the cuts in the budget's order: the product's decisions and
 // questions, then every rejected-option list, then terms, then questions,
 // then decisions' Because lines, then decisions. Within each tier the pieces
 // lowest in the output go first.
@@ -276,7 +276,7 @@ func (a *assembler) order() {
 }
 
 // match finds, once, the terms each piece of the capabilities' text mentions;
-// product.md's text never brings in a term. All pieces are joined into one
+// the product's text never brings in a term. All pieces are joined into one
 // text, split by a byte that is never part of a word, so each term's name and
 // Avoid words are searched for once.
 func (a *assembler) match() {

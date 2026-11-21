@@ -43,7 +43,7 @@ func commit(t *testing.T, dir, message string) string {
 	return run(t, dir, "rev-parse", "HEAD")
 }
 
-// addCapability writes the capability file of slug and commits it with message.
+// addCapability writes the old-layout capability file of slug and commits it with message.
 func addCapability(t *testing.T, dir, slug, message string) {
 	t.Helper()
 	p := filepath.Join(dir, ".physa", "capabilities", slug+".md")
@@ -307,5 +307,131 @@ func TestCheckExemptsChangesBeforeTheMap(t *testing.T) {
 	all, _ := kinds(t, r, "HEAD")
 	if !reflect.DeepEqual(all, want) {
 		t.Errorf("whole history with a root change: got %v, want %v", all, want)
+	}
+}
+
+// addFolderCapability writes the folder of slug (an index.md) and the
+// product folder and commits them with message.
+func addFolderCapability(t *testing.T, dir, slug, message string) {
+	t.Helper()
+	for p, body := range map[string]string{
+		filepath.Join(".physa", "product", "index.md"):            "# Product\n",
+		filepath.Join(".physa", "capabilities", slug, "index.md"): "---\npromise: x\n---\n# " + slug + "\n",
+	} {
+		full := filepath.Join(dir, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run(t, dir, "add", ".")
+	run(t, dir, "commit", "-q", "-m", message)
+}
+
+// A trailer names a capability folder of the map as the change leaves it.
+func TestCheckFolderCapability(t *testing.T) {
+	r, dir := newRepo(t)
+	commit(t, dir, "root")
+	addFolderCapability(t, dir, "map", "chore: add the map")
+	commit(t, dir, "ok\n\nCapability: map")
+	commit(t, dir, "none")
+	got, _ := kinds(t, r, "HEAD~3..HEAD")
+	want := []fk{{"none", KindMissing, ""}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	addFolderCapability(t, dir, "later", "feat: add later\n\nCapability: later")
+	got, _ = kinds(t, r, "HEAD~1..HEAD")
+	if len(got) != 0 {
+		t.Errorf("a change adding a folder may name it, got %v", got)
+	}
+}
+
+// A change before the map is exempt in both layouts: its parent has neither
+// .physa/product.md nor a file under .physa/product/.
+func TestCheckBeforeTheMapInBothLayouts(t *testing.T) {
+	for _, layout := range []string{"files", "folders"} {
+		t.Run(layout, func(t *testing.T) {
+			r, dir := newRepo(t)
+			commit(t, dir, "root")
+			commit(t, dir, "second")
+			if layout == "files" {
+				addCapability(t, dir, "map", "chore: add the map")
+			} else {
+				addFolderCapability(t, dir, "map", "chore: add the map")
+			}
+			commit(t, dir, "after")
+			got, _ := kinds(t, r, "HEAD~3..HEAD")
+			want := []fk{{"after", KindMissing, ""}}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("got %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// A series that converts from files to folders keeps resolving slugs on both
+// sides: before the conversion the old file names the capability, after it
+// the folder does, and a slug the folder map lacks is not rescued by a
+// leftover old file.
+func TestCheckConvertSeries(t *testing.T) {
+	r, dir := newRepo(t)
+	addCapability(t, dir, "map", "chore: files")
+	commit(t, dir, "old\n\nCapability: map")
+	// Convert: the folder replaces the file.
+	run(t, dir, "rm", "-q", ".physa/capabilities/map.md", ".physa/product.md")
+	addFolderCapability(t, dir, "map", "chore: convert\n\nCapability: map")
+	commit(t, dir, "new\n\nCapability: map")
+	// A stray old file beside the folders does not make a slug.
+	if err := os.WriteFile(filepath.Join(dir, ".physa", "capabilities", "stray.md"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, dir, "add", ".")
+	run(t, dir, "commit", "-q", "-m", "stray\n\nCapability: stray")
+	got, _ := kinds(t, r, "HEAD~4..HEAD")
+	want := []fk{{"stray", KindUnknown, "stray"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+// A slug the folder map lacks is unknown.
+func TestCheckUnknownSlugInFolderMap(t *testing.T) {
+	r, dir := newRepo(t)
+	commit(t, dir, "root")
+	addFolderCapability(t, dir, "map", "chore: add the map")
+	commit(t, dir, "bad\n\nCapability: nosuch")
+	got, findings := kinds(t, r, "HEAD~1..HEAD")
+	want := []fk{{"bad", KindUnknown, "nosuch"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if findings[0].Message != `Capability "nosuch" is not in the map` {
+		t.Errorf("message: %q", findings[0].Message)
+	}
+}
+
+// A trailer value that is not a slug is unknown, and never becomes part of
+// a path: "../product" would list the product folder, "map/../map" and
+// "Map" are no slugs either.
+func TestCheckUnknownInvalidSlug(t *testing.T) {
+	r, dir := newRepo(t)
+	commit(t, dir, "root")
+	addFolderCapability(t, dir, "map", "chore: add the map")
+	commit(t, dir, "up\n\nCapability: ../product")
+	commit(t, dir, "dots\n\nCapability: map/../map")
+	commit(t, dir, "upper\n\nCapability: Map")
+	commit(t, dir, "nested\n\nCapability: map/index.md")
+	got, _ := kinds(t, r, "HEAD~4..HEAD")
+	want := []fk{
+		{"nested", KindUnknown, "map/index.md"},
+		{"upper", KindUnknown, "Map"},
+		{"dots", KindUnknown, "map/../map"},
+		{"up", KindUnknown, "../product"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }

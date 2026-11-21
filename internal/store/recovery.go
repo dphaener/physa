@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Recovered is one capability's recovery the store keeps: the capability file
+// Recovered is one capability's recovery the store keeps: the capability text
 // and glossary terms its session wrote, how it ended (Status is stored as
 // given), the session and what it used. ProposalAt is the time of the
 // proposal it was recovered from. Details is JSON.

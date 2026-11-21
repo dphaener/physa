@@ -6,7 +6,7 @@
 // nothing to the repo: the proposal goes to the store for init's next phase.
 package mapping
 
-// Product is the product's own promise, as product.md will hold it.
+// Product is the product's own promise, as the product's folder will hold it.
 type Product struct {
 	// Promise is one sentence on one line; empty when the session's was
 	// dropped.

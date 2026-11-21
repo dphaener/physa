@@ -12,12 +12,14 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfile"
+	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/vcs"
 )
 
@@ -27,13 +29,13 @@ const Branch = "physa/init"
 // Map is everything init writes: the product, its capabilities and terms,
 // the sessions Physa started for them, and what the PR body summarises.
 type Map struct {
-	// ProductName is the title of product.md.
+	// ProductName is the title of the product's index.md.
 	ProductName string
 	// ProductPromise is the product's promise, on one line.
 	ProductPromise string
 	// ProductQuestions are the product-wide questions, raised by physa.
 	ProductQuestions []Question
-	// Capabilities are written in this order, one file each.
+	// Capabilities are written in this order, one folder each.
 	Capabilities []Capability
 	// Terms are the glossary's terms, as glossary.md writes them.
 	Terms string
@@ -58,17 +60,17 @@ type Question struct {
 
 // Capability is one capability of the map.
 type Capability struct {
-	// Name is the capability's name, a slug: its file is <Name>.md.
+	// Name is the capability's name, a slug, and its folder's name.
 	Name string
 	// Promise is what the product promises its users, on one line.
 	Promise string
-	// File is the recovered capability file; empty when it was not
-	// recovered, and the file then holds the promise only.
+	// File is the recovered capability as one text, split into its folder;
+	// empty when not recovered, and the folder then holds the promise only.
 	File string
 	// Status is the recovery's status, such as "not yet recovered" or
 	// "failed"; Reason says why, when there is no File.
 	Status, Reason string
-	// Dropped are the entries and terms recovery took out of the file.
+	// Dropped are the entries and terms recovery took out of the text.
 	Dropped []Drop
 }
 
@@ -230,7 +232,7 @@ func leaseError(err error, where string) error {
 // commit writes m into the copy, checks it and commits it, filling out's
 // Commit, Files and Body. A map that fails the check commits nothing.
 func commit(w vcs.Writer, c vcs.Copy, m Map, o Options, out *Outcome) error {
-	files, err := writeAll(c.Dir(), m)
+	files, m, err := writeAll(c.Dir(), m)
 	if err != nil {
 		return err
 	}
@@ -263,7 +265,7 @@ func commit(w vcs.Writer, c vcs.Copy, m Map, o Options, out *Outcome) error {
 // capability whose name is not a slug or is used twice.
 func (m Map) valid() error {
 	if strings.TrimSpace(m.ProductName) == "" {
-		return errors.New("the product needs a name to title product.md")
+		return errors.New("the product needs a name to title its index.md")
 	}
 	seen := map[string]bool{}
 	for _, c := range m.Capabilities {
@@ -317,20 +319,21 @@ func read(w vcs.Writer, push bool) (state, error) {
 	return st, nil
 }
 
-// HasMap returns an error saying how to proceed when the default branch
-// already holds a map (.physa/product.md), and nil when it does not.
+// HasMap returns an error naming the file found and saying how to proceed
+// when the default branch holds either of mapfolder.Products, else nil. Files
+// lists only blobs directly under a directory, so each one's is listed.
 func HasMap(w vcs.Writer) error {
 	def, err := w.DefaultBranch()
 	if err != nil {
 		return err
 	}
-	files, err := w.Files(def, path.Dir(productPath))
-	if err != nil {
-		return err
-	}
-	for _, f := range files {
-		if path.Base(f) == path.Base(productPath) {
-			return fmt.Errorf("the repo already has a map (%s on %s); init only starts a map, and learning keeps an existing one current: run physa map learn", productPath, def)
+	for _, p := range mapfolder.Products {
+		files, err := w.Files(def, path.Dir(p))
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(files, func(f string) bool { return path.Base(f) == path.Base(p) }) {
+			return fmt.Errorf("the repo already has a map (%s on %s); init only starts a map, and learning keeps an existing one current: run physa map learn", p, def)
 		}
 	}
 	return nil
@@ -393,7 +396,7 @@ func subject(m Map) string {
 }
 
 // counts says how many capabilities were recovered, not yet recovered and
-// failed. A capability with a file is recovered.
+// failed. A capability with a recovered text is recovered.
 func counts(m Map) (recovered, notYet, failed int) {
 	for _, c := range m.Capabilities {
 		switch {

@@ -47,7 +47,7 @@ Each step: what lands, what the owner can do with it, and when it is done. Comma
 
 ### 3a. Capability folders
 
-- **Status:** designed (09, settled 2026-11-21).
+- **Status:** in progress (2026-11-21): the first PR landed (09 §10): the folder format, `physa check map` and `physa map fmt`, with Physa's own map converted, and init's writer, learning's proposer and the skills writing folders. The second PR, the slice, `--entry`, the slice skill and `--budget` removed, is still to come.
 - **Lands,** in two PRs (09 Q10): first the folder format, `physa check map` and `physa map fmt`, with Physa's own map converted; then the slice that returns the floor and the headings, `physa map slice --entry`, the slice skill, and `--budget` removed.
 - **Why now:** learning makes capability files grow past their limit within weeks, and nebari's init (step 4) should write the new format, not the old.
 - **Done when:** Physa's map is in folders, and agents building the next step take decisions with `--entry` (seen in slice records).

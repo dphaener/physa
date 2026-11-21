@@ -1,3 +1,0 @@
-# No front matter
-
-## Rules

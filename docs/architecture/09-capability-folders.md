@@ -201,3 +201,19 @@ The owner accepted every recommendation below ("yes").
 - **Q8** The skill in every slice, or a pointer? Settled: in every slice. Now that the CLI does the navigating it is about 200 tokens, and it arrives exactly when the agent decides what to read.
 - **Q9** The limits: index.md about 30 lines, rules.md about 150, decisions and questions unlimited. Settled, tuned later from slice records (`measure-before-budget`).
 - **Q10** One PR or two: format, check and migration first, then slice, `--entry` and the skill? Settled: two, so the map is converted and checked before anything reads it the new way.
+
+## 10. Built in the first PR
+
+The first of the two PRs (Q10) landed the folder format, `physa check map`, `physa map fmt` and Physa's own map in folders. Calls made while building it, closed by Claude as arbiter (2026-11-21), for the owner to review:
+
+- **The anchor algorithm** is GitHub's, for the headings Physa writes: lowercase, every character other than a letter, a digit, a space, a hyphen or an underscore dropped, each space turned into a hyphen. Combining marks are dropped, which GitHub keeps; no heading in Physa's map has one. The check rejects `[`, `]`, `<`, `>` and `*` in a heading, and two headings in a file with the same anchor, the title and the two sections included.
+- **The overview's length** is held by index.md's 30-line limit and nothing else. There is no sentence counter; "three sentences at most" (Q3) is the guidance the skills give.
+- **An old layout is reported, not read.** A `.physa/product.md` or a `.physa/capabilities/<slug>.md` is a problem naming the file, with a message saying to convert it; `physa map fmt` stops with the same message and changes nothing. Physa keeps no converter.
+- **History and init read both layouts.** The pre-map exemption for `Capability:` (07) and init's refusal of a repo that already has a map each accept `.physa/product.md` and `.physa/product/index.md`; a slug is found in a capability's folder or, in an old commit, its single file.
+- **The recovering skill still writes one block**, a capability as one text, and Physa splits it into the folder's files. The recovered entries stay byte for byte; without an overview the promise stands in as the overview, until a person or learning edits it. An overview that breaks a limit is dropped at settle, like an entry.
+- **The slice's `file` names the folder**, with a trailing slash, in both the markdown and the JSON.
+- **`physa map fmt` regenerates the contents and also index.md's links**, so they follow the kind files on disk in index order, and it normalises spacing. It never deletes a file and never makes one; a file outside the format is reported with its line and left alone. `--check` changes nothing and exits 1 when fmt would.
+- **The `file-per-capability` rule is reworded**, the one entry of the map changed: "One folder per capability", from this document, its slug kept. It stated a layout this design replaced.
+- **Init and learning write folders.** Init drops, with a reason in the PR body, an entry the check would reject (an empty heading, a rejected character, a repeated anchor) and a capability whose text does not split, which then holds its promise only. Learning appends each proposal to its kind file, regenerates the contents with the code `physa map fmt` uses, and drops a proposal whose file is already outside the format.
+
+The second PR, still to come, holds the slice that returns the floor and the headings, `--entry`, the slice skill and the removal of `--budget` (§4, §5).

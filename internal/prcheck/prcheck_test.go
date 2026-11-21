@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/dphaener/physa/internal/history"
+	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
 )
@@ -27,7 +28,7 @@ func messy() Result {
 	r := clean()
 	r.Commits = append(r.Commits, history.Commit{Hash: "def", Short: "def5678", Subject: "fix: y", Capabilities: []string{}})
 	r.Findings = []history.Finding{{Commit: "def5678", Kind: history.KindMissing, Message: "no Capability trailer"}}
-	r.Map = MapResult{Problems: []Problem{{Path: ".physa/product.md", Line: 4, Message: "bad anchor"}, {Path: "x.md", Message: "whole file"}}, PRAnchors: PRAnchorsFormOnly, Note: "gh is not installed"}
+	r.Map = MapResult{Problems: []Problem{{Path: ".physa/product/rules.md", Line: 4, Message: "bad anchor"}, {Path: "x.md", Message: "whole file"}}, PRAnchors: PRAnchorsFormOnly, Note: "gh is not installed"}
 	return r
 }
 
@@ -99,7 +100,7 @@ func TestMarkdownClean(t *testing.T) {
 
 func TestMarkdownMessy(t *testing.T) {
 	got := md(t, messy())
-	for _, want := range []string{"| def5678 | fix: y | - |", "- def5678: no Capability trailer", "- .physa/product.md:4: bad anchor", "- x.md: whole file", "checked for form only (gh is not installed)"} {
+	for _, want := range []string{"| def5678 | fix: y | - |", "- def5678: no Capability trailer", "- .physa/product/rules.md:4: bad anchor", "- x.md: whole file", "checked for form only (gh is not installed)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
@@ -127,7 +128,21 @@ func TestClean(t *testing.T) {
 	}
 }
 
+// front is the head of a capability in the single-text shape, which folder
+// splits into a folder.
 const front = "---\npromise: x\n---\n# T\n\n"
+
+// folder writes body, a capability's text after front, as the folder dir.
+func folder(t *testing.T, root, dir, body string) {
+	t.Helper()
+	f, err := mapfolder.Split(front + body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range f.Files {
+		write(t, root, dir+"/"+name, text)
+	}
+}
 
 func write(t *testing.T, root, rel, text string) {
 	t.Helper()
@@ -156,10 +171,10 @@ func mapRepo(t *testing.T) (vcs.Repo, string) {
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	root := t.TempDir()
-	write(t, root, ".physa/product.md", front)
+	folder(t, root, mapfolder.ProductDir, "")
 	write(t, root, ".physa/glossary.md", "# Glossary\n\n**Map**: a thing.\n")
 	write(t, root, ".physa/README.md", "hi\n")
-	write(t, root, ".physa/capabilities/a.md", front)
+	folder(t, root, mapfolder.CapabilityDir("a"), "")
 	gitIn(t, root, "init", "-q")
 	gitIn(t, root, "add", ".")
 	gitIn(t, root, "commit", "-q", "-m", "base")
@@ -173,7 +188,7 @@ func mapRepo(t *testing.T) (vcs.Repo, string) {
 func TestRunClean(t *testing.T) {
 	repo, root := mapRepo(t)
 	gitIn(t, root, "commit", "-q", "--allow-empty", "-m", "feat: a\n\nCapability: a")
-	write(t, root, ".physa/capabilities/new.md", front)
+	folder(t, root, mapfolder.CapabilityDir("new"), "")
 	gitIn(t, root, "add", ".")
 	gitIn(t, root, "commit", "-q", "-m", "feat: new\n\nCapability: new")
 	r, err := Run(root, repo, "HEAD~2..HEAD", nil)
@@ -191,11 +206,11 @@ func TestRunClean(t *testing.T) {
 func TestRunFindings(t *testing.T) {
 	repo, root := mapRepo(t)
 	gitIn(t, root, "commit", "-q", "--allow-empty", "-m", "feat: early\n\nCapability: later")
-	write(t, root, ".physa/capabilities/later.md", front)
+	folder(t, root, mapfolder.CapabilityDir("later"), "")
 	gitIn(t, root, "add", ".")
 	gitIn(t, root, "commit", "-q", "-m", "feat: later\n\nCapability: later")
 	full := gitIn(t, root, "rev-parse", "HEAD")
-	write(t, root, ".physa/capabilities/a.md", front+"## Rules\n\n### R\n`r` · from docs/nope.md · "+full[:7]+"\nBecause: y.\n")
+	folder(t, root, mapfolder.CapabilityDir("a"), "## Rules\n\n### R\n`r` · from docs/nope.md · "+full[:7]+"\nBecause: y.\n")
 	r, err := Run(root, repo, "HEAD~2..HEAD", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +232,7 @@ func TestRunErrors(t *testing.T) {
 		t.Error("no map: want an error")
 	}
 	prErr := func(int) (bool, error) { return false, errors.New("gh is not authenticated") }
-	write(t, root, ".physa/capabilities/a.md", front+"## Rules\n\n### R\n`r` · from .physa/README.md · #3\nBecause: y.\n")
+	folder(t, root, mapfolder.CapabilityDir("a"), "## Rules\n\n### R\n`r` · from .physa/README.md · #3\nBecause: y.\n")
 	r, err := Run(root, repo, "HEAD..HEAD", prErr)
 	if err != nil || r.Map.Note != "gh is not authenticated" || !r.Clean() {
 		t.Errorf("resolver error: got %+v %v", r, err)

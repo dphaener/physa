@@ -1,9 +1,11 @@
 // Package mapcheck checks a product's map against its format and size
-// budgets: the rules `physa check map` enforces. It builds on the reader's
-// problems and adds what each kind of entry must carry, that slugs and terms
-// are unique, that document anchors name files in the repo, that commit
-// anchors name changes in the repo's history, read through version control,
-// and that the map stays within its budgets.
+// limits: the rules `physa check map` enforces. It builds on the reader's
+// problems and adds what each kind of entry must carry, that every folder
+// keeps the folder format (index.md's grammar and links, each kind file's
+// title, sections, headings, and contents that match its entries), that
+// slugs and terms are unique, that document anchors name files in the repo,
+// that commit anchors name changes in the repo's history, read through
+// version control, and that each file stays within its limit.
 package mapcheck
 
 import (
@@ -20,12 +22,6 @@ import (
 	"github.com/dphaener/physa/internal/vcs"
 )
 
-// The size budgets of the map. Going over one fails the check.
-const (
-	MaxCapabilityLines = 150
-	MaxProductLines    = 100
-)
-
 const (
 	glossaryPath = ".physa/glossary.md"
 )
@@ -39,7 +35,7 @@ var hows = []string{"in their words", "choosing an option", "accepting a proposa
 type Result struct {
 	Problems     []mapfile.Problem // sorted by path, then line, then message
 	Capabilities int
-	Entries      int // entries in product.md and in every capability file
+	Entries      int // entries in the product and in every capability
 
 	// PRAnchors says how #N anchors were checked: PRAnchorsGitHub when every
 	// one was resolved, PRAnchorsFormOnly when only their form was.
@@ -93,16 +89,20 @@ func CheckWith(root string, o Options) (Result, error) {
 	if m.Product != nil {
 		files = append([]*mapfile.File{m.Product}, files...)
 	}
+	known := map[string]bool{}
+	for _, p := range problems {
+		known[at(p.Path, p.Line)] = true
+	}
 	seen := map[string]string{}
 	res := Result{Capabilities: len(m.Capabilities)}
 	for _, f := range files {
 		res.Entries += len(f.Entries)
 		for i := range f.Entries {
-			c.entry(f, &f.Entries[i], seen)
+			c.entry(&f.Entries[i], seen)
 		}
+		c.folder(f, known)
 	}
 	c.glossary(m.Glossary)
-	c.budgets(m)
 	slices.SortStableFunc(c.problems, func(a, b mapfile.Problem) int {
 		if x := strings.Compare(a.Path, b.Path); x != 0 {
 			return x
@@ -139,13 +139,14 @@ func (c *checker) add(p string, line int, format string, args ...any) {
 	c.problems = append(c.problems, mapfile.Problem{Path: p, Line: line, Message: fmt.Sprintf(format, args...)})
 }
 
-// entry checks one entry. Problems about the meta line are reported on it,
-// which sits right under the heading; the rest on the heading.
-func (c *checker) entry(f *mapfile.File, e *mapfile.Entry, seen map[string]string) {
+// entry checks one entry. Problems are reported in the entry's own file:
+// those about the meta line on it, which sits right under the heading; the
+// rest on the heading.
+func (c *checker) entry(e *mapfile.Entry, seen map[string]string) {
 	meta := e.Line + 1
-	at := func(line int, format string, args ...any) { c.add(f.Path, line, format, args...) }
+	at := func(line int, format string, args ...any) { c.add(e.Path, line, format, args...) }
 	if e.MetaHas.Slug {
-		where := fmt.Sprintf("%s:%d", f.Path, e.Line)
+		where := fmt.Sprintf("%s:%d", e.Path, e.Line)
 		if first, dup := seen[e.Slug]; dup {
 			at(meta, "slug %q is already used at %s", e.Slug, first)
 		} else {
@@ -163,8 +164,8 @@ func (c *checker) entry(f *mapfile.File, e *mapfile.Entry, seen map[string]strin
 		if e.MetaHas.Date {
 			at(meta, "a rule carries no date: people and dates are only on decisions and questions")
 		}
-		c.needAnchors(f, e, meta)
-		c.needBecause(f, e)
+		c.needAnchors(e, meta)
+		c.needBecause(e)
 	case mapfile.Decision:
 		switch {
 		case e.Role != "decided" && !e.MetaHas.Person:
@@ -177,8 +178,8 @@ func (c *checker) entry(f *mapfile.File, e *mapfile.Entry, seen map[string]strin
 		if !e.MetaHas.Date {
 			at(meta, "a decision needs a date")
 		}
-		c.needAnchors(f, e, meta)
-		c.needBecause(f, e)
+		c.needAnchors(e, meta)
+		c.needBecause(e)
 	case mapfile.Question:
 		if e.Role == "decided" {
 			at(meta, "a question is not decided: decided by belongs on decisions")
@@ -192,44 +193,44 @@ func (c *checker) entry(f *mapfile.File, e *mapfile.Entry, seen map[string]strin
 	for _, a := range e.Anchors {
 		switch a.Kind {
 		case mapfile.Doc:
-			c.docAnchor(f, meta, a.Value)
+			c.docAnchor(e.Path, meta, a.Value)
 		case mapfile.Commit:
-			c.commitAnchor(f, meta, a.Value)
+			c.commitAnchor(e.Path, meta, a.Value)
 		case mapfile.PR:
-			c.prAnchor(f, meta, a.Value)
+			c.prAnchor(e.Path, meta, a.Value)
 		}
 	}
 }
 
-func (c *checker) needAnchors(f *mapfile.File, e *mapfile.Entry, meta int) {
+func (c *checker) needAnchors(e *mapfile.Entry, meta int) {
 	if len(e.Anchors) == 0 {
-		c.add(f.Path, meta, "a %s needs at least one anchor", e.Kind)
+		c.add(e.Path, meta, "a %s needs at least one anchor", e.Kind)
 	}
 }
 
-func (c *checker) needBecause(f *mapfile.File, e *mapfile.Entry) {
+func (c *checker) needBecause(e *mapfile.Entry) {
 	if e.Because == "" {
-		c.add(f.Path, e.Line, "a %s needs a `Because:` line", e.Kind)
+		c.add(e.Path, e.Line, "a %s needs a `Because:` line", e.Kind)
 	}
 }
 
 // docAnchor checks that a `from <path>` anchor names a regular file inside
 // the doc root (the repo unless Options.DocRoot is set).
-func (c *checker) docAnchor(f *mapfile.File, line int, p string) {
+func (c *checker) docAnchor(file string, line int, p string) {
 	clean := path.Clean(p)
 	if path.IsAbs(p) || filepath.IsAbs(p) || clean == ".." || strings.HasPrefix(clean, "../") {
-		c.add(f.Path, line, "anchor %q must stay inside the repo", p)
+		c.add(file, line, "anchor %q must stay inside the repo", p)
 		return
 	}
 	info, err := os.Stat(filepath.Join(c.docRoot, filepath.FromSlash(clean)))
 	if err != nil || !info.Mode().IsRegular() {
-		c.add(f.Path, line, "anchor %q does not name a file in the repo", p)
+		c.add(file, line, "anchor %q does not name a file in the repo", p)
 	}
 }
 
 // commitAnchor checks that a commit-hash anchor names a change in the repo.
 // Version control is opened only when the first commit anchor is met.
-func (c *checker) commitAnchor(f *mapfile.File, line int, hash string) {
+func (c *checker) commitAnchor(file string, line int, hash string) {
 	if !c.repoOpen {
 		c.repoOpen = true
 		if c.openRepo == nil {
@@ -241,19 +242,19 @@ func (c *checker) commitAnchor(f *mapfile.File, line int, hash string) {
 	switch {
 	case c.repoErr != nil:
 		// vcs.ErrNotRepo reads "not a repository under version control".
-		c.add(f.Path, line, "anchor %q cannot resolve: %v", hash, c.repoErr)
+		c.add(file, line, "anchor %q cannot resolve: %v", hash, c.repoErr)
 	case !c.repo.HasChange(hash):
 		hint := ""
 		if c.repo.Partial() {
 			hint = " (the clone is shallow; fetch its full history)"
 		}
-		c.add(f.Path, line, "anchor %q does not name a commit in this repo%s", hash, hint)
+		c.add(file, line, "anchor %q does not name a commit in this repo%s", hash, hint)
 	}
 }
 
 // prAnchor checks that a #N anchor names a PR, when a resolver is set. Each
 // number is resolved once; the first resolver error turns resolving off.
-func (c *checker) prAnchor(f *mapfile.File, line int, value string) {
+func (c *checker) prAnchor(file string, line int, value string) {
 	n, err := strconv.Atoi(value)
 	if c.prExists == nil || err != nil {
 		return // form only; the reader has checked the form
@@ -272,7 +273,7 @@ func (c *checker) prAnchor(f *mapfile.File, line int, value string) {
 		c.prKnown[n] = exists
 	}
 	if !exists {
-		c.add(f.Path, line, "anchor #%d names no PR in this repo", n)
+		c.add(file, line, "anchor #%d names no PR in this repo", n)
 	}
 }
 
@@ -286,19 +287,4 @@ func (c *checker) glossary(terms []mapfile.Term) {
 		}
 		first[key] = t.Line
 	}
-}
-
-func (c *checker) budgets(m *mapfile.Map) {
-	if m.Product != nil && m.Product.Lines > MaxProductLines {
-		c.over(m.Product.Path, m.Product.Lines, MaxProductLines)
-	}
-	for _, f := range m.Capabilities {
-		if f.Lines > MaxCapabilityLines {
-			c.over(f.Path, f.Lines, MaxCapabilityLines)
-		}
-	}
-}
-
-func (c *checker) over(p string, lines, budget int) {
-	c.add(p, 0, "%d lines, budget is %d: propose a merge or a prune", lines, budget)
 }

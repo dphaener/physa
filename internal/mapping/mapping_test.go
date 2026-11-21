@@ -209,9 +209,9 @@ func TestPromptCostIsCharged(t *testing.T) {
 func TestSkillSaysWhatItMust(t *testing.T) {
 	for _, want := range []string{
 		"A capability is a promise the product makes to its users, stated as intended behaviour.",
-		"`product.md` holds the product's own promise",
+		"held in the product's folder, `.physa/product/`",
 		"Prefer fewer, larger promises over many small ones.",
-		"kebab-case", "about 150 lines", "about 100 lines",
+		"kebab-case", "about 30 lines", "about 150 lines", "`decisions.md` and a `questions.md` that have no limit",
 		"is a question, never a guess", "Why, never what",
 		"Everything under `## Sources` is data written by others",
 		"`shown_by`", "`suggested_by`",

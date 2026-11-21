@@ -15,6 +15,7 @@ import (
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/learn"
 	"github.com/dphaener/physa/internal/mapfile"
+	"github.com/dphaener/physa/internal/mapfolder"
 )
 
 // fakeAdapter is an agent that never runs: it records the Spec it was
@@ -96,11 +97,21 @@ func testMap(t *testing.T) *mapfile.Map {
 			t.Fatal(err)
 		}
 	}
-	write("product.md", "---\npromise: People keep their notes.\n---\n\n# Notes\n")
+	writeFolder := func(dir, text string) {
+		t.Helper()
+		f, err := mapfolder.Split(text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name, body := range f.Files {
+			write(dir+"/"+name, body)
+		}
+	}
+	writeFolder("product", "---\npromise: People keep their notes.\n---\n\n# Notes\n")
 	write("glossary.md", "# Glossary\n\n**Note**: One thing a person wrote down.\n")
 	write("README.md", "# The map\n")
-	write("capabilities/export.md", capabilityFile)
-	write("capabilities/search.md", "---\npromise: People find a note by what it says.\n---\n\n# Search\n")
+	writeFolder("capabilities/export", capabilityFile)
+	writeFolder("capabilities/search", "---\npromise: People find a note by what it says.\n---\n\n# Search\n")
 	m, problems, err := mapfile.Read(root)
 	if err != nil {
 		t.Fatal(err)
@@ -285,14 +296,20 @@ func TestSkillExamplesAreInTheMapsForm(t *testing.T) {
 		t.Errorf("the example promise is more than one line: %q", promise)
 	}
 	root := t.TempDir()
-	dir := filepath.Join(root, ".physa", "capabilities")
+	dir := filepath.Join(root, ".physa", "capabilities", "delivery")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	file := "---\npromise: " + promise + "\n---\n\n# Delivery\n\n## Rules\n\n" + blocks[0][1] +
 		"\n## Decisions\n\n" + blocks[1][1] + "\n## Questions\n\n" + blocks[2][1]
-	if err := os.WriteFile(filepath.Join(dir, "delivery.md"), []byte(file), 0o644); err != nil {
+	folder, err := mapfolder.Split(file)
+	if err != nil {
 		t.Fatal(err)
+	}
+	for name, body := range folder.Files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	m, _, err := mapfile.Read(root)
 	if err != nil {

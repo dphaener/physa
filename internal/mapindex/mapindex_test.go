@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/mapfile"
+	"github.com/dphaener/physa/internal/mapfolder"
 )
 
 func render(t *testing.T, lines []Line) string {
@@ -127,6 +128,19 @@ func put(t *testing.T, root, rel, text string) {
 	}
 }
 
+// putFolder writes one capability or the product, given as a single text, as
+// the folder the map reads.
+func putFolder(t *testing.T, root, dir, text string) {
+	t.Helper()
+	f, err := mapfolder.Split(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range f.Files {
+		put(t, root, dir+"/"+name, body)
+	}
+}
+
 func capability(n int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "---\npromise: Capability %03d keeps its word to the people who rely on it.\nstewards: [dana]\n---\n\n# Cap %03d\n\n## Rules\n\n", n, n)
@@ -143,11 +157,11 @@ func capability(n int) string {
 
 func TestLatency(t *testing.T) {
 	root := t.TempDir()
-	put(t, root, ".physa/README.md", "# Map\n\nRead product.md first.\n")
+	put(t, root, ".physa/README.md", "# Map\n\nRead the product first.\n")
 	put(t, root, ".physa/glossary.md", "# Glossary\n\n**Map**: The product's knowledge.\n_Avoid_: model\n")
-	put(t, root, ".physa/product.md", "---\npromise: Teams ship with confidence.\n---\n\n# Mini\n\n## Rules\n\n### Never log emails\n`no-emails` · from docs/vision.md\nNever log customer emails.\nBecause: customers trust us.\n")
+	putFolder(t, root, ".physa/product", "---\npromise: Teams ship with confidence.\n---\n\n# Mini\n\n## Rules\n\n### Never log emails\n`no-emails` · from docs/vision.md\nNever log customer emails.\nBecause: customers trust us.\n")
 	for n := 1; n <= 100; n++ {
-		put(t, root, fmt.Sprintf(".physa/capabilities/cap-%03d.md", n), capability(n))
+		putFolder(t, root, fmt.Sprintf(".physa/capabilities/cap-%03d", n), capability(n))
 	}
 
 	start := time.Now()

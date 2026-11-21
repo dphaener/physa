@@ -3,11 +3,13 @@ package main
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/dphaener/physa/internal/cli"
 	"github.com/dphaener/physa/internal/history"
 	"github.com/dphaener/physa/internal/learnbranch"
 	"github.com/dphaener/physa/internal/mapfile"
+	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/mapindex"
 	"github.com/dphaener/physa/internal/mapslice"
 	"github.com/dphaener/physa/internal/vcs/git"
@@ -24,6 +26,7 @@ func mapCommand() *cli.Command {
 			"physa map slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]",
 			"physa map changes [<range>] [--json] [--strict]",
 			"physa map records [--json]",
+			"physa map fmt [--check] [dir]",
 			"physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]",
 			"physa map hooks",
 		},
@@ -83,6 +86,25 @@ func mapCommand() *cli.Command {
 						return cli.BadUsage
 					}
 					return records(".", asJSON, stdout, stderr)
+				},
+			},
+			{
+				Name:    "fmt",
+				Summary: "Rewrite the map's folders to their format: contents, index links and spacing (--check writes nothing and exits 1 when a file would change).",
+				Usage:   []string{"physa map fmt [--check] [dir]"},
+				Run: func(args []string, stdout, stderr io.Writer) int {
+					check := len(args) > 0 && args[0] == "--check"
+					if check {
+						args = args[1:]
+					}
+					if len(args) > 1 || (len(args) == 1 && strings.HasPrefix(args[0], "-")) {
+						return cli.BadUsage
+					}
+					dir := "."
+					if len(args) == 1 {
+						dir = args[0]
+					}
+					return format(dir, check, stdout, stderr)
 				},
 			},
 			{
@@ -179,6 +201,30 @@ func changes(dir string, o changesOptions, stdout, stderr io.Writer) int {
 		return failed(stderr, "changes", err)
 	}
 	if o.strict && len(findings) > 0 {
+		return 1
+	}
+	return 0
+}
+
+// format formats the map in dir: 0 when nothing is outside its format or it
+// was rewritten, 1 when check is set and a file would change or a file is
+// outside its format, and 2 when the map cannot be read or written.
+func format(dir string, check bool, stdout, stderr io.Writer) int {
+	changed, problems, err := mapfolder.FormatMap(dir, !check)
+	if err != nil {
+		return failed(stderr, "fmt", err)
+	}
+	for _, p := range changed {
+		if check {
+			fmt.Fprintf(stdout, "%s: contents or spacing differ; run physa map fmt\n", p)
+		} else {
+			fmt.Fprintf(stdout, "formatted %s\n", p)
+		}
+	}
+	for _, p := range problems {
+		fmt.Fprintln(stderr, p)
+	}
+	if len(problems) > 0 || (check && len(changed) > 0) {
 		return 1
 	}
 	return 0

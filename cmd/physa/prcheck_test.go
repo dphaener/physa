@@ -10,6 +10,7 @@ import (
 
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/forge/github"
+	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/prcheck"
 )
 
@@ -58,7 +59,7 @@ func TestPRCheckJSON(t *testing.T) {
 
 func TestPRCheckMapProblemsStillExitZero(t *testing.T) {
 	root := trailersRepo(t)
-	write(t, root, ".physa/capabilities/a.md", "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md · #99\nBecause: y.\n")
+	folder(t, root, mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md · #99\nBecause: y.\n")
 	t.Chdir(root)
 	code, out, errOut := runPRCheck(t, "HEAD~4..HEAD", "--json")
 	if code != 0 {
@@ -72,7 +73,7 @@ func TestPRCheckMapProblemsStillExitZero(t *testing.T) {
 func TestPRCheckNoGHFallsBack(t *testing.T) {
 	t.Chdir(trailersRepo(t))
 	useNoGH(t)
-	write(t, ".", ".physa/capabilities/a.md", "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md · #10\nBecause: y.\n")
+	folder(t, ".", mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md · #10\nBecause: y.\n")
 	code, out, _ := runPRCheck(t, "HEAD~4..HEAD", "--json")
 	if code != 0 || !strings.Contains(out, `"pr_anchors":"form-only"`) || !strings.Contains(out, "gh is not installed") {
 		t.Errorf("code %d, out %s", code, out)
@@ -94,12 +95,12 @@ func TestPRCheckStrict(t *testing.T) {
 	if code, out, errOut := runPRCheck(t, "HEAD~4..HEAD", "--strict"); code != 1 || !strings.Contains(out, "nosuch") {
 		t.Errorf("strict with findings: code %d, stdout %q, stderr %q, want 1", code, out, errOut)
 	}
-	write(t, ".", ".physa/capabilities/a.md", "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md\nBecause: y.\n")
+	folder(t, ".", mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md\nBecause: y.\n")
 	code, out, errOut := runPRCheck(t, "--strict", "HEAD~4..HEAD~3", "--json")
 	if code != 0 {
 		t.Errorf("strict and clean: code %d, stdout %q, stderr %q, want 0", code, out, errOut)
 	}
-	write(t, ".", ".physa/capabilities/a.md", "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/nope.md\nBecause: y.\n")
+	folder(t, ".", mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/nope.md\nBecause: y.\n")
 	if code, out, _ := runPRCheck(t, "HEAD~4..HEAD~3", "--strict"); code != 1 || !strings.Contains(out, "docs/nope.md") {
 		t.Errorf("strict with a map problem: code %d, stdout %q, want 1", code, out)
 	}
@@ -110,7 +111,7 @@ func TestPRCheckStrict(t *testing.T) {
 func TestPRCheckMapAsEachChangeLeavesIt(t *testing.T) {
 	root := trailersRepo(t)
 	gitIn(t, root, "commit", "-q", "--allow-empty", "-m", "feat: early\n\nCapability: c")
-	write(t, root, ".physa/capabilities/c.md", "---\npromise: z\n---\n# C\n\n")
+	folder(t, root, mapfolder.CapabilityDir("c"), "---\npromise: z\n---\n# C\n\n")
 	gitIn(t, root, "add", ".")
 	gitIn(t, root, "commit", "-q", "-m", "feat: add c\n\nCapability: c")
 	t.Chdir(root)
@@ -228,7 +229,7 @@ func TestBareCheckWithoutRepositoryChecksTheMap(t *testing.T) {
 
 func TestBareCheckWithoutOriginMainChecksTheMap(t *testing.T) {
 	t.Chdir(trailersRepo(t))
-	write(t, ".", ".physa/capabilities/a.md", "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` \u00b7 from docs/d.md\nBecause: y.\n")
+	folder(t, ".", mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` \u00b7 from docs/d.md\nBecause: y.\n")
 	code, out, _ := runCheck(t)
 	if code != 0 || !strings.HasPrefix(out, "physa check: ok") {
 		t.Errorf("code %d, stdout %q", code, out)
@@ -246,7 +247,7 @@ func TestBareCheckRangeRunsTheChangeCheck(t *testing.T) {
 			t.Errorf("markdown lacks %q:\n%s", want, out)
 		}
 	}
-	write(t, ".", ".physa/capabilities/a.md", "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` \u00b7 from docs/d.md\nBecause: y.\n")
+	folder(t, ".", mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` \u00b7 from docs/d.md\nBecause: y.\n")
 	if code, _, errOut := runCheck(t, "HEAD~4..HEAD"); code != 0 {
 		t.Errorf("sound map with findings: code %d, want 0; stderr %q", code, errOut)
 	}

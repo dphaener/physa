@@ -46,7 +46,8 @@ func Body(m Map) string {
 		return body(m, nil)
 	}
 	defer os.RemoveAll(dir)
-	if _, err := writeFiles(dir, mapFiles(m)); err != nil {
+	files, m := mapFiles(m)
+	if _, err := writeFiles(dir, files); err != nil {
 		return body(m, nil)
 	}
 	read, _, err := mapfile.Read(dir)
@@ -108,7 +109,7 @@ func recovered(b *strings.Builder, c Capability, f *mapfile.File) {
 		if c.Reason != "" {
 			line += ": " + c.Reason
 		}
-		b.WriteString(line + ". Its file holds its promise only, to be filled from future PRs.\n")
+		b.WriteString(line + ". Its folder holds its promise only, to be filled from future PRs.\n")
 		return
 	}
 	n := 0
@@ -125,7 +126,7 @@ func recovered(b *strings.Builder, c Capability, f *mapfile.File) {
 	}
 }
 
-// questions writes every question of the map: product.md's, then each
+// questions writes every question of the map: the product's, then each
 // capability's.
 func questions(b *strings.Builder, m Map, prod *mapfile.File, files map[string]*mapfile.File) {
 	n := 0

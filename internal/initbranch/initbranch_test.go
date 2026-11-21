@@ -13,6 +13,7 @@ import (
 
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/mapcheck"
+	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
 )
@@ -209,7 +210,9 @@ func sample(f *fixture) Map {
 	}
 }
 
-var mapPaths = []string{".physa/README.md", ".physa/capabilities/billing.md", ".physa/capabilities/delivery.md", ".physa/glossary.md", ".physa/product.md"}
+var mapPaths = []string{".physa/README.md", ".physa/capabilities/billing/index.md", ".physa/capabilities/delivery/index.md",
+	".physa/capabilities/delivery/questions.md", ".physa/capabilities/delivery/rules.md", ".physa/glossary.md",
+	".physa/product/index.md", ".physa/product/questions.md"}
 
 func show(t *testing.T, dir, rev, p string) string {
 	t.Helper()
@@ -247,11 +250,15 @@ func TestWritesExactlyTheMapFiles(t *testing.T) {
 	}
 	tip := ref(f.dir, Branch)
 	checks := map[string]string{
-		".physa/README.md":               readme,
-		"AGENTS.md":                      pointer + "\n",
-		".physa/glossary.md":             "# Glossary\n\n**Cut**: One pass of the saw.\n",
-		".physa/capabilities/billing.md": "---\npromise: Customers pay for what they use.\n---\n\n# Billing\n",
-		".physa/product.md": "---\npromise: Woodworkers plan their cuts and waste less wood.\n---\n\n# Woodshop\n\n## Questions\n\n" +
+		".physa/README.md":   mapfolder.Readme,
+		"AGENTS.md":          pointer + "\n",
+		".physa/glossary.md": "# Glossary\n\n**Cut**: One pass of the saw.\n",
+		".physa/capabilities/billing/index.md": "---\npromise: Customers pay for what they use.\n---\n\n# Billing\n\n" +
+			"Customers pay for what they use.\n",
+		".physa/product/index.md": "---\npromise: Woodworkers plan their cuts and waste less wood.\n---\n\n# Woodshop\n\n" +
+			"Woodworkers plan their cuts and waste less wood.\n\n- [Questions](questions.md)\n",
+		".physa/product/questions.md": "# Woodshop · Questions\n\n## Contents\n\n" +
+			"- [Should ordering be per customer?](#should-ordering-be-per-customer)\n\n## Entries\n\n" +
 			"### Should ordering be per customer?\n`should-ordering-be-per-customer-2` · raised by physa · 2026-11-21 · " + f.first[:7] + " #3\n" + questionBody + "\n",
 	}
 	for p, want := range checks {
@@ -318,7 +325,7 @@ func TestMapFailingTheCheckWritesNothing(t *testing.T) {
 		t.Fatal("a failing map was written")
 	}
 	t.Logf("error: %v", err)
-	if !strings.Contains(err.Error(), "fails the map check") || !strings.Contains(err.Error(), ".physa/capabilities/delivery.md:") {
+	if !strings.Contains(err.Error(), "fails the map check") || !strings.Contains(err.Error(), ".physa/capabilities/delivery/rules.md:") {
 		t.Errorf("error does not list the problem: %v", err)
 	}
 	branches := gitIn(t, f.dir, "branch", "--list", Branch)
@@ -416,19 +423,23 @@ func TestCheckedOutBranchIsRefused(t *testing.T) {
 }
 
 func TestExistingMapIsRefused(t *testing.T) {
-	f := newFixture(t, nil)
-	other := filepath.Join(t.TempDir(), "other")
-	gitIn(t, f.dir, "clone", "-q", f.bare, other)
-	writeFile(t, other, ".physa/product.md", "---\npromise: P.\n---\n\n# P\n")
-	gitIn(t, other, "add", ".")
-	gitIn(t, other, "commit", "-q", "-m", "docs(map): Add a map")
-	gitIn(t, other, "push", "-q", "origin", "main")
-	_, err := f.run(sample(f), f.opts(true, false), nil)
-	if err == nil || !strings.Contains(err.Error(), "the repo already has a map") || !strings.Contains(err.Error(), "physa map learn") {
-		t.Fatalf("err = %v, want the existing map refused", err)
-	}
-	if ref(f.dir, Branch) != "" || ref(f.bare, Branch) != "" {
-		t.Error("a branch was written")
+	for _, p := range mapfolder.Products {
+		t.Run(p, func(t *testing.T) {
+			f := newFixture(t, nil)
+			other := filepath.Join(t.TempDir(), "other")
+			gitIn(t, f.dir, "clone", "-q", f.bare, other)
+			writeFile(t, other, p, "---\npromise: P.\n---\n\n# P\n\nP.\n")
+			gitIn(t, other, "add", ".")
+			gitIn(t, other, "commit", "-q", "-m", "docs(map): Add a map")
+			gitIn(t, other, "push", "-q", "origin", "main")
+			_, err := f.run(sample(f), f.opts(true, false), nil)
+			if err == nil || !strings.Contains(err.Error(), "the repo already has a map ("+p+" on origin/main)") || !strings.Contains(err.Error(), "physa map learn") {
+				t.Fatalf("err = %v, want the existing map refused, naming %s", err, p)
+			}
+			if ref(f.dir, Branch) != "" || ref(f.bare, Branch) != "" {
+				t.Error("a branch was written")
+			}
+		})
 	}
 }
 
@@ -462,9 +473,14 @@ func TestNewCodebaseHasNoCapabilities(t *testing.T) {
 		t.Errorf("subject = %q", out.Commit.Subject)
 	}
 	files := gitIn(t, f.dir, "diff", "--name-only", "main.."+Branch)
-	if files != ".physa/README.md\n.physa/glossary.md\n.physa/product.md\nAGENTS.md" {
+	if files != ".physa/README.md\n.physa/glossary.md\n.physa/product/index.md\nAGENTS.md" {
 		t.Errorf("files =\n%s", files)
 	}
+	want := "---\npromise: Woodworkers plan their cuts.\n---\n\n# Woodshop\n\nWoodworkers plan their cuts.\n"
+	if got := show(t, f.dir, Branch, ".physa/product/index.md"); got != want {
+		t.Errorf("product index.md =\n%q\nwant\n%q", got, want)
+	}
+	checkBranch(t, f, 0)
 	if msg := gitIn(t, f.dir, "log", "-1", "--format=%B", Branch); strings.Contains(msg, "Session:") || strings.Contains(msg, "Capability:") {
 		t.Errorf("message carries trailers:\n%s", msg)
 	}
@@ -500,7 +516,7 @@ func TestBodySummarisesTheRun(t *testing.T) {
 	for _, want := range []string{
 		"- `delivery`: Webhooks reach customers at least once.\n- `billing`: Customers pay for what they use.\n",
 		"### delivery\n\n- rule: Sends are queued (from docs/vision.md)\n",
-		"### billing\n\nNot yet recovered: the appetite ran out. Its file holds its promise only",
+		"### billing\n\nNot yet recovered: the appetite ran out. Its folder holds its promise only",
 		"- product: Should ordering be per customer? (" + f.first[:7] + " #3)\n- delivery: Should ordering be per customer?\n",
 		"- proposal: capability \"misc\": the name is not lowercase words joined by single hyphens\n",
 		"- delivery: decision \"Six attempts\": a decision needs a date\n",
@@ -526,16 +542,105 @@ func TestBodySummarisesTheRun(t *testing.T) {
 }
 
 func TestHasMap(t *testing.T) {
-	f := newFixture(t, nil)
-	if err := HasMap(f.writer()); err != nil {
-		t.Fatalf("HasMap without a map = %v", err)
+	for _, p := range mapfolder.Products {
+		t.Run(p, func(t *testing.T) {
+			f := newFixture(t, nil)
+			if err := HasMap(f.writer()); err != nil {
+				t.Fatalf("HasMap without a map = %v", err)
+			}
+			writeFile(t, f.dir, p, "---\npromise: P.\n---\n\n# P\n\nP.\n")
+			gitIn(t, f.dir, "add", ".")
+			gitIn(t, f.dir, "commit", "-q", "-m", "docs(map): Add a map")
+			gitIn(t, f.dir, "push", "-q", "origin", "main")
+			err := HasMap(f.writer())
+			t.Logf("HasMap: %v", err)
+			if err == nil || !strings.Contains(err.Error(), "the repo already has a map ("+p+" on ") || !strings.Contains(err.Error(), "run physa map learn") {
+				t.Fatalf("HasMap with a map = %v, want the refusal naming %s", err, p)
+			}
+		})
 	}
-	writeFile(t, f.dir, ".physa/product.md", "---\npromise: P.\n---\n\n# P\n")
-	gitIn(t, f.dir, "add", ".")
-	gitIn(t, f.dir, "commit", "-q", "-m", "docs(map): Add a map")
-	gitIn(t, f.dir, "push", "-q", "origin", "main")
-	err := HasMap(f.writer())
-	if err == nil || !strings.Contains(err.Error(), "the repo already has a map") || !strings.Contains(err.Error(), "run physa map learn") {
-		t.Fatalf("HasMap with a map = %v, want the refusal", err)
+}
+
+// checkBranch checks the tree of the branch with the map check, which must
+// find no problem, and the number of capabilities it reads.
+func checkBranch(t *testing.T, f *fixture, capabilities int) {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "check")
+	gitIn(t, f.dir, "worktree", "add", "-q", "--detach", dir, Branch)
+	defer gitIn(t, f.dir, "worktree", "remove", "--force", dir)
+	res, err := mapcheck.CheckWith(dir, mapcheck.Options{OpenRepo: git.Open})
+	if err != nil || len(res.Problems) > 0 || res.Capabilities != capabilities {
+		t.Fatalf("check = %+v, %v", res, err)
+	}
+}
+
+func TestWriteDropsWhatTheCheckWouldReject(t *testing.T) {
+	f := newFixture(t, nil)
+	m := sample(f)
+	m.ProductQuestions = append(m.ProductQuestions,
+		Question{Question: "Should ordering be per customer?"},
+		Question{Question: "Is <html> allowed in *notes*?"})
+	m.Capabilities[0].File = "---\npromise: Webhooks reach customers at least once.\n---\n\n# Delivery\n\n## Rules\n\n" +
+		"### Sends are *queued*\n`queued-sends` · from docs/vision.md\nEvery send goes through the queue.\nBecause: sends survive a restart.\n\n" +
+		"### Sends retry\n`sends-retry` · from docs/vision.md\nA failed send is sent again.\nBecause: networks fail.\n\n" +
+		"## Decisions\n\n### Six attempts\n`six-attempts` · decided by W, choosing an option · 2026-11-20 · from docs/vision.md\nA send is tried six times.\nBecause: six covers an hour.\n\n" +
+		"### Six attempts\n`six-tries` · decided by W, choosing an option · 2026-11-20 · from docs/vision.md\nA send is tried six times, again.\nBecause: six covers an hour.\n"
+	m.Capabilities[1].File = "---\npromise: Customers pay for what they use.\n---\n\n# Billing\n\nOne paragraph.\n\nAnd a second.\n\n## Rules\n"
+	m.Capabilities[1].Status = "recovered"
+	out, err := f.run(m, Options{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkBranch(t, f, 2)
+	t.Logf("body:\n%s", out.Body)
+	for _, want := range []string{
+		"- delivery: rule \"Sends are *queued*\": heading",
+		"- delivery: decision \"Six attempts\": its heading is the same as, or has the anchor of,",
+		"- billing: capability \"billing\": its recovered text does not split into a folder (line ",
+		"- proposal: question \"Should ordering be per customer?\": its heading is the same as, or has the anchor of,",
+		"- product: Is html allowed in notes?",
+	} {
+		if !strings.Contains(out.Body, want) {
+			t.Errorf("body misses %q", want)
+		}
+	}
+	if body := Body(m); body != out.Body {
+		t.Errorf("Body(m) differs from the run's body:\n%s", body)
+	}
+	if len(m.Capabilities[0].Dropped) != 1 || len(m.Summary.Dropped) != 1 {
+		t.Errorf("the caller's map changed: %+v", m)
+	}
+	want := "---\npromise: Customers pay for what they use.\n---\n\n# Billing\n\nCustomers pay for what they use.\n"
+	if got := show(t, f.dir, Branch, ".physa/capabilities/billing/index.md"); got != want {
+		t.Errorf("billing index.md =\n%q\nwant\n%q", got, want)
+	}
+	if got := show(t, f.dir, Branch, ".physa/capabilities/delivery/rules.md"); strings.Contains(got, "queued") || !strings.Contains(got, "### Sends retry") {
+		t.Errorf("delivery rules.md:\n%s", got)
+	}
+}
+
+func TestWriteOverviewFromTheText(t *testing.T) {
+	f := newFixture(t, nil)
+	m := sample(f)
+	m.Capabilities[0].File = strings.Replace(m.Capabilities[0].File, "# Delivery\n", "# Delivery\n\nWebhooks are queued and sent again until they land.\n", 1)
+	if _, err := f.run(m, Options{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	checkBranch(t, f, 2)
+	got := show(t, f.dir, Branch, ".physa/capabilities/delivery/index.md")
+	if !strings.Contains(got, "# Delivery\n\nWebhooks are queued and sent again until they land.\n\n- [Rules](rules.md)\n- [Questions](questions.md)\n") {
+		t.Errorf("delivery index.md:\n%s", got)
+	}
+}
+
+// TestReadmeMatchesTheMapsOwn keeps init's README text the same as Physa's
+// own .physa/README.md, so the map describes the layout it is written in.
+func TestReadmeMatchesTheMapsOwn(t *testing.T) {
+	own, err := os.ReadFile("../../.physa/README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(own) != mapfolder.Readme {
+		t.Errorf(".physa/README.md differs from mapfolder.Readme:\n%s", own)
 	}
 }

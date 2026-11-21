@@ -6,7 +6,7 @@ import (
 )
 
 // Parse reads the session's answer: the last fenced block marked markdown
-// is the capability file, the last marked glossary its terms. A fence is a
+// is the capability text, the last marked glossary its terms. A fence is a
 // line of three or more backticks, closed by a line of backticks alone at
 // least as long, so a block opened with four holds fences of three. The
 // error, worded to follow "the session's output: ", is for an answer with no

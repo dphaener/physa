@@ -1,9 +1,10 @@
 // Package recovery is init's recover and check phases: one prompt-only
 // session per capability, at most Concurrency at once, all under init's one
-// appetite; each capability file goes through the map check and back to the
-// same session with the problems, up to MaxRetries times, before failing
-// entries are dropped. Capabilities the appetite does not reach are not yet
-// recovered. It writes the store, never the repo.
+// appetite; each capability's text, split into its folder, goes through the
+// map check and back to the same session with the problems, up to
+// MaxRetries times, before failing entries are dropped. Capabilities the
+// appetite does not reach are not yet recovered. It writes the store, never
+// the repo.
 package recovery
 
 import (
@@ -29,7 +30,7 @@ import (
 const (
 	// Concurrency is the most sessions running at once.
 	Concurrency = 3
-	// MaxRetries is how many times a capability file with problems goes back
+	// MaxRetries is how many times a capability's text with problems goes back
 	// to its session before the failing entries are dropped.
 	MaxRetries = 2
 	// DefaultAppetite is how many tokens all of a run's sessions may use
@@ -101,12 +102,13 @@ type Report struct {
 	Capabilities []Outcome      `json:"capabilities"`
 }
 
-// Outcome is how one capability's recovery ended. File is the capability
-// file, front matter included, and Terms its glossary terms, both empty
-// unless Status is StatusRecovered; Counts says what they hold. Dropped
-// lists the entries and terms taken out, each with its reasons. Problems is
-// what failed the capability's file: what the check found outside any entry,
-// or why the answer could not be read. Error is any other reason it failed:
+// Outcome is how one capability's recovery ended. File is the capability's
+// single text, front matter included, which mapfolder.Split makes its folder
+// of, and Terms its glossary terms, both empty unless Status is
+// StatusRecovered; Counts says what they hold. Dropped lists the entries,
+// terms and overview taken out, each with its reasons. Problems is what
+// failed the capability: what the check found outside any entry, or why the
+// answer could not be read. Error is any other reason it failed:
 // the agent's error, or the check's. Attempts counts the session's turns,
 // the first and each retry, and Tokens is what they used together.
 // SessionID is the id assigned to the session, empty when none started.
@@ -138,8 +140,9 @@ type job struct {
 // Run is init's recover and check phases end to end. For each capability
 // (those of s.Only, or all the proposal holds) it fits the sources linked to
 // it, runs one prompt-only session with the recovering skill, checks the
-// capability file it writes, sends problems back on the same session up to
-// MaxRetries times, and then drops the entries still at fault. It stores one
+// capability's text it writes, split into its folder, sends problems back on
+// the same session up to MaxRetries times, and then drops the entries and
+// overview still at fault. It stores one
 // row per capability, replacing any earlier one of that capability.
 //
 // With no proposal it returns ErrNoProposal; a name in s.Only the proposal

@@ -1,3 +1,3 @@
 # Map
 
-Read product.md first.
+Read product/index.md first.

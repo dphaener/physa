@@ -135,10 +135,13 @@ func splitSlugs(value string) []string {
 
 // Check reports the trailer findings of commits. A change made before the
 // map serves no capability yet, so a change whose parent leaves no map (no
-// .physa/product.md, or no parent at all) gets no finding, and that covers the
-// change that adds the map. A slug is known when its
-// file is in the map as that commit leaves it, so a commit that adds a
-// capability may name it, and a slug only a later commit adds is unknown.
+// .physa/product/ folder and no old .physa/product.md, or no parent at all)
+// gets no finding, and that covers the change that adds the map. A slug is
+// known when its capability is in the map as that commit leaves it: its
+// folder under .physa/capabilities/ holds a file, or, at a commit whose map
+// has no .physa/product/ folder, an old <slug>.md file does. A commit that
+// adds a capability may name it, and a slug only a later commit adds is
+// unknown. A trailer value that is not a slug names nothing and is unknown.
 // Findings follow commit order; for each commit, missing or multiple come
 // before unknown slugs, each in the order written. The error is for a commit
 // whose files version control cannot list.
@@ -164,7 +167,7 @@ func Check(repo vcs.Repo, commits []Commit) ([]Finding, error) {
 		if len(c.Capabilities) == 0 {
 			continue
 		}
-		known, err := slugsAt(repo, c.Hash)
+		known, err := slugsAt(repo, c.Hash, c.Capabilities)
 		if err != nil {
 			return nil, err
 		}
@@ -177,12 +180,17 @@ func Check(repo vcs.Repo, commits []Commit) ([]Finding, error) {
 	return findings, nil
 }
 
-// productFile is the map's one required file; a change whose parent lacks it
-// was made before the map.
-const productFile = "product.md"
+// Where the map keeps its parts, relative to the repo's working directory,
+// and the file of the old single-file layout that marks a map in it.
+const (
+	mapDir     = ".physa"
+	productDir = ".physa/product"
+	oldProduct = "product.md"
+)
 
-// beforeTheMap reports whether the parent of change id leaves no map. A root
-// change has no parent, so it is before the map.
+// beforeTheMap reports whether the parent of change id leaves no map: neither
+// the folder layout (a file under .physa/product/) nor the old one
+// (.physa/product.md). A root change has no parent, so it is before the map.
 func beforeTheMap(repo vcs.Repo, id string) (bool, error) {
 	parent, ok := repo.Resolve(id + "^")
 	if !ok {
@@ -191,32 +199,70 @@ func beforeTheMap(repo vcs.Repo, id string) (bool, error) {
 		}
 		parent = id // not a change: list its files for the adapter's error
 	}
-	files, err := repo.Files(parent, path.Dir(CapabilitiesDir))
+	// Files lists only the files directly under a directory, never its
+	// subdirectories, so each layout's marker needs its own listing.
+	files, err := repo.Files(parent, mapDir)
 	if err != nil {
 		return false, fmt.Errorf("cannot list the map at %s: %w", id, err)
 	}
 	for _, f := range files {
-		if path.Base(f) == productFile {
+		if path.Base(f) == oldProduct {
 			return false, nil
 		}
 	}
-	return true, nil
+	product, err := repo.Files(parent, productDir)
+	if err != nil {
+		return false, fmt.Errorf("cannot list the map at %s: %w", id, err)
+	}
+	return len(product) == 0, nil
 }
 
-// slugsAt returns the capability slugs whose files change id leaves in the
-// map.
-func slugsAt(repo vcs.Repo, id string) (map[string]bool, error) {
-	files, err := repo.Files(id, CapabilitiesDir)
+// validSlug reports whether s can name a capability: lowercase letters,
+// digits and hyphens only, so it never holds a path separator or "..".
+var validSlug = regexp.MustCompile(`^[a-z0-9-]+$`)
+
+// slugsAt returns which of the named slugs are capabilities in the map as
+// change id leaves it. Files lists only the files directly under a
+// directory, so a capability's folder is found by listing that folder, once
+// for each valid slug named; the old <slug>.md listing is read only when a
+// slug is still unknown and the map has no .physa/product/ folder.
+func slugsAt(repo vcs.Repo, id string, named []string) (map[string]bool, error) {
+	known := map[string]bool{}
+	var pending []string
+	for _, s := range named {
+		if !validSlug.MatchString(s) || known[s] {
+			continue
+		}
+		files, err := repo.Files(id, CapabilitiesDir+"/"+s)
+		if err != nil {
+			return nil, fmt.Errorf("cannot list the map's capabilities at %s: %w", id, err)
+		}
+		if len(files) > 0 {
+			known[s] = true
+		} else {
+			pending = append(pending, s)
+		}
+	}
+	if len(pending) == 0 {
+		return known, nil
+	}
+	product, err := repo.Files(id, productDir)
 	if err != nil {
 		return nil, fmt.Errorf("cannot list the map's capabilities at %s: %w", id, err)
 	}
-	slugs := make(map[string]bool, len(files))
-	for _, f := range files {
+	if len(product) > 0 {
+		return known, nil
+	}
+	old, err := repo.Files(id, CapabilitiesDir)
+	if err != nil {
+		return nil, fmt.Errorf("cannot list the map's capabilities at %s: %w", id, err)
+	}
+	for _, f := range old {
 		if stem, ok := strings.CutSuffix(path.Base(f), ".md"); ok {
-			slugs[stem] = true
+			known[stem] = true
 		}
 	}
-	return slugs, nil
+	return known, nil
 }
 
 // TrailerBlock returns every key and value of the message's trailers, in the

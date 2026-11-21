@@ -16,6 +16,7 @@ import (
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/fit"
 	"github.com/dphaener/physa/internal/mapcheck"
+	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/recovering"
 	"github.com/dphaener/physa/internal/store"
@@ -185,7 +186,7 @@ func testStore(t *testing.T) *fakeStore {
 	return &fakeStore{gather: testGather(), proposal: &store.Proposal{GatherAt: gatherAt, At: proposedAt, Body: body}}
 }
 
-// reply wraps a capability file and terms as a session's answer.
+// reply wraps a capability text and terms as a session's answer.
 func reply(file, terms string) string {
 	return "The sources show this.\n\n````markdown\n" + file + "````\n\n```glossary\n" + terms + "```\n"
 }
@@ -346,7 +347,7 @@ func TestRetryFixesTheFileOnTheSameSession(t *testing.T) {
 	if first.Resume || !second.Resume || !second.PromptOnly || second.SessionID != first.SessionID || second.Dir != first.Dir {
 		t.Errorf("first %+v\nsecond %+v", first, second)
 	}
-	for _, want := range []string{"a rule needs a `Because:` line", `the file, at "### The rule export-deleted"`, "Write your whole answer again"} {
+	for _, want := range []string{"a rule needs a `Because:` line", `the rules, at "### The rule export-deleted"`, "Write your whole answer again"} {
 		if !strings.Contains(second.Prompt, want) {
 			t.Errorf("the retry lacks %q:\n%s", want, second.Prompt)
 		}
@@ -653,13 +654,13 @@ func TestAgentErrorFailsOnlyItsCapability(t *testing.T) {
 func TestScaffoldAloneChecksClean(t *testing.T) {
 	for _, product := range []string{"People keep their notes.", ""} {
 		c := checker{product: product, root: t.TempDir()}
-		dir, err := c.scratch("export", recovering.File("export", "Notes leave the product.", ""), "")
+		dir, split, err := c.scratch("export", recovering.File("export", "Notes leave the product.", ""), "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		res, err := mapcheck.Check(dir)
-		if err != nil || len(res.Problems) != 0 || res.Capabilities != 1 {
-			t.Errorf("product %q: %+v, error %v", product, res, err)
+		if err != nil || len(res.Problems) != 0 || res.Capabilities != 1 || split != nil {
+			t.Errorf("product %q: %+v, split %v, error %v", product, res, split, err)
 		}
 		if err := os.RemoveAll(dir); err != nil {
 			t.Error(err)
@@ -808,5 +809,74 @@ func TestProgressLineCountsCapabilitiesAndTokens(t *testing.T) {
 	line := strings.SplitN(h.progress.String(), "\n", 2)[0]
 	if want := "physa init: recovering 1 capability, at most 3 at once; appetite 60000 tokens"; line != want {
 		t.Errorf("progress = %q, want %q", line, want)
+	}
+}
+
+// decision is a decision whose meta line lacks how it was decided, which
+// the check fails.
+const decision = "### Exports are one file\n`one-file` · decided by dana · 2026-11-20 · #12\nOne file per export.\nBecause: a file is easy to share.\n"
+
+func TestDropBadDecisionNamesItsFolderFile(t *testing.T) {
+	text := "# Notes\n\n## Rules\n\n" + rule("export-deleted") + "\n## Decisions\n\n" + decision
+	h := newHarness(t, map[string][]step{"export": {{text: reply(text, "")}, {text: reply(text, "")}, {text: reply(text, "")}}})
+	c := checker{product: "People keep their notes.", root: h.root, prExists: h.session.PRExists}
+	problems, err := c.run("export", recovering.File("export", "People can rely on export.", text), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(problems) != 1 || problems[0].Path != ".physa/capabilities/export/decisions.md" || problems[0].Line != 10 {
+		t.Fatalf("problems %v", problems)
+	}
+	t.Logf("the check found: %v", problems[0])
+
+	h.session.Only = []string{"export"}
+	o := h.run(t).Capabilities[0]
+	if o.Status != StatusRecovered || o.Counts != (recovering.Counts{Rules: 1}) || strings.Contains(o.File, "one-file") || !strings.Contains(o.File, "export-deleted") {
+		t.Fatalf("outcome %+v, file:\n%s", o, o.File)
+	}
+	if len(o.Dropped) != 1 || o.Dropped[0].Kind != "decision" || o.Dropped[0].Slug != "one-file" {
+		t.Errorf("dropped %+v", o.Dropped)
+	}
+	t.Logf("dropped and listed: %+v", o.Dropped)
+	if retry := h.agent.specs["export"][1].Prompt; !strings.Contains(retry, "the decisions, at \"`one-file` · decided by dana") {
+		t.Errorf("the retry does not quote the decision:\n%s", retry)
+	}
+}
+
+func TestSplitProblemIsAskedOfTheSession(t *testing.T) {
+	h := newHarness(t, map[string][]step{"export": {
+		{text: reply("# Notes\n\n"+rule("export-deleted"), "")},
+		{text: reply(good("export-deleted"), "")},
+	}})
+	h.session.Only = []string{"export"}
+	o := h.run(t).Capabilities[0]
+	if o.Status != StatusRecovered || o.Attempts != 2 || o.Counts.Rules != 1 || o.Error != "" {
+		t.Fatalf("outcome %+v", o)
+	}
+	retry := h.agent.specs["export"][1].Prompt
+	if !strings.Contains(retry, `the file, at "### The rule export-deleted": entry outside a Rules, Decisions or Questions section`) {
+		t.Errorf("the retry lacks the split problem:\n%s", retry)
+	}
+	t.Logf("asked of the session: %s", strings.SplitN(strings.SplitN(retry, "\n- ", 2)[1], "\n", 2)[0])
+}
+
+func TestOverviewOverItsLimitIsReplacedByThePromise(t *testing.T) {
+	text := "# Notes\n\n" + strings.Repeat("Notes leave the product as files.\n", 25) + "\n## Rules\n\n" + rule("export-deleted")
+	h := newHarness(t, map[string][]step{"export": {{text: reply(text, "")}, {text: reply(text, "")}, {text: reply(text, "")}}})
+	h.session.Only = []string{"export"}
+	o := h.run(t).Capabilities[0]
+	if o.Status != StatusRecovered || o.Counts != (recovering.Counts{Rules: 1}) || strings.Contains(o.File, "as files") {
+		t.Fatalf("outcome %+v, file:\n%s", o, o.File)
+	}
+	if len(o.Dropped) != 1 || o.Dropped[0].Kind != recovering.KindOverview || !strings.HasPrefix(o.Dropped[0].Reasons[0], "33 lines, budget is 30") {
+		t.Errorf("dropped %+v", o.Dropped)
+	}
+	t.Logf("dropped and listed: %+v", o.Dropped)
+	f, err := mapfolder.Split(o.File)
+	if err != nil || !strings.Contains(f.Files[mapfolder.IndexFile], "# Notes\n\nPeople can rely on export.\n\n- [Rules](rules.md)") {
+		t.Errorf("index.md %q, %v", f.Files[mapfolder.IndexFile], err)
+	}
+	if retry := h.agent.specs["export"][1].Prompt; !strings.Contains(retry, "the title and overview: 33 lines, budget is 30") {
+		t.Errorf("the retry lacks the overview's problem:\n%s", retry)
 	}
 }

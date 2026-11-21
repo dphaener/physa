@@ -77,7 +77,7 @@ func (p *printer) newCodebase(a newcodebase.Answers, write bool) {
 		terms = append(terms, map[string]string{"name": t.Name, "meaning": t.Meaning})
 	}
 	text := fmt.Sprintf("A new codebase: nothing to recover, so the map starts from your answers.\n"+
-		"- .physa/product.md: %s, promising: %s\n- .physa/glossary.md: %s (%s)\n- .physa/README.md, and the pointer in AGENTS.md\n",
+		"- .physa/product/index.md: %s, promising: %s\n- .physa/glossary.md: %s (%s)\n- .physa/README.md, and the pointer in AGENTS.md\n",
 		a.Name, a.Promise, plural(len(a.Terms), "term", "terms"), strings.Join(names, ", "))
 	if !write {
 		text += "Nothing is written without --write.\n"

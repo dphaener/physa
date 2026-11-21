@@ -188,7 +188,8 @@ func TestFullWritePushPR(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
-	want := []string{".physa/README.md", ".physa/capabilities/delivery.md", ".physa/capabilities/search.md", ".physa/glossary.md", ".physa/product.md", "AGENTS.md"}
+	want := []string{".physa/README.md", ".physa/capabilities/delivery/index.md", ".physa/capabilities/delivery/rules.md",
+		".physa/capabilities/search/index.md", ".physa/capabilities/search/rules.md", ".physa/glossary.md", ".physa/product/index.md", "AGENTS.md"}
 	if got := changed(t, bare, "physa/init"); !slices.Equal(got, want) {
 		t.Errorf("the remote's physa/init changes %v, want %v", got, want)
 	}
@@ -280,11 +281,11 @@ func storedRow(t *testing.T, env Env, c string) store.Recovered {
 func TestFullSmallAppetiteThenRecoverWrite(t *testing.T) {
 	dir, _ := remoteRepo(t)
 	a := newRoutedAgent()
-	a.propose = 24_000
+	a.propose = 25_600
 	env := fullEnv(t, onePR(), a)
-	// Proposing uses 24,020 of 50,100; recovering's 26,080 holds one
+	// Proposing uses 25,620 of 51,400; recovering's 25,780 holds one
 	// capability's reserve (its prompt and 12,000 for the reply) and no more.
-	code, out, errOut := runInit(env, "--write", "--appetite", "50100")
+	code, out, errOut := runInit(env, "--write", "--appetite", "51400")
 	if code != 1 || !strings.Contains(out, "Not yet recovered") {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -299,8 +300,11 @@ func TestFullSmallAppetiteThenRecoverWrite(t *testing.T) {
 	if first == "" || missing == "" {
 		t.Fatalf("want one recovered and one not; got first %q, missing %q", first, missing)
 	}
-	file := gitIn(t, dir, "show", "physa/init:.physa/capabilities/"+missing+".md")
-	if strings.Contains(file, "## Rules") || !strings.Contains(file, "promise: ") {
+	if files := strings.TrimSpace(gitIn(t, dir, "ls-tree", "--name-only", "physa/init:.physa/capabilities/"+missing)); files != "index.md" {
+		t.Errorf("%s's folder holds %q, want index.md alone", missing, files)
+	}
+	file := gitIn(t, dir, "show", "physa/init:.physa/capabilities/"+missing+"/index.md")
+	if strings.Contains(file, "rules.md") || !strings.Contains(file, "promise: ") {
 		t.Errorf("%s is not promise-only:\n%s", missing, file)
 	}
 	earlier := storedRow(t, env, first).File
@@ -312,7 +316,7 @@ func TestFullSmallAppetiteThenRecoverWrite(t *testing.T) {
 		t.Errorf("the earlier file of %s was not kept:\n%s", first, got)
 	}
 	for _, c := range []string{first, missing} {
-		if f := gitIn(t, dir, "show", "physa/init:.physa/capabilities/"+c+".md"); !strings.Contains(f, "## Rules") {
+		if f := gitIn(t, dir, "show", "physa/init:.physa/capabilities/"+c+"/rules.md"); !strings.Contains(f, "\n### ") {
 			t.Errorf("rewritten %s holds no rules:\n%s", c, f)
 		}
 	}
@@ -370,18 +374,18 @@ func TestNewCodebaseAnswersWrite(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
-	want := []string{".physa/README.md", ".physa/glossary.md", ".physa/product.md", "AGENTS.md"}
+	want := []string{".physa/README.md", ".physa/glossary.md", ".physa/product/index.md", "AGENTS.md"}
 	if got := changed(t, dir, "physa/init"); !slices.Equal(got, want) {
 		t.Errorf("physa/init changes %v, want %v", got, want)
 	}
-	if p := gitIn(t, dir, "show", "physa/init:.physa/product.md"); !strings.Contains(p, "promise: Lathe turns sketches into cut lists.") || !strings.Contains(p, "# Lathe") {
-		t.Errorf("product.md:\n%s", p)
+	if p := gitIn(t, dir, "show", "physa/init:.physa/product/index.md"); strings.TrimSpace(p) != "---\npromise: Lathe turns sketches into cut lists.\n---\n\n# Lathe\n\nLathe turns sketches into cut lists." {
+		t.Errorf("product/index.md:\n%s", p)
 	}
 	if g := gitIn(t, dir, "show", "physa/init:.physa/glossary.md"); !strings.Contains(g, "**Cut list**: The parts to cut, with their sizes") {
 		t.Errorf("glossary.md:\n%s", g)
 	}
 	checkTree(t, dir, "physa/init")
-	if !strings.Contains(out, "A new codebase") || !strings.Contains(out, "Wrote physa/init at ") {
+	if !strings.Contains(out, "A new codebase") || !strings.Contains(out, "- .physa/product/index.md: Lathe") || !strings.Contains(out, "Wrote physa/init at ") {
 		t.Errorf("stdout %s", out)
 	}
 }
@@ -458,41 +462,52 @@ func TestFullBadCombinationsAreBadUsage(t *testing.T) {
 	}
 }
 
-// mappedRepo is remoteRepo with a map committed to its default branch.
-func mappedRepo(t *testing.T) {
+// mapLayouts are a product of each layout, by its path: the single file of
+// old and the folder's index.md.
+var mapLayouts = map[string]string{
+	".physa/product.md":       "---\npromise: P.\n---\n\n# P\n",
+	".physa/product/index.md": "---\npromise: P.\n---\n\n# P\n\nP.\n",
+}
+
+// mappedRepo is remoteRepo with a map's product at p committed to its
+// default branch.
+func mappedRepo(t *testing.T, p string) {
 	t.Helper()
 	dir, _ := remoteRepo(t)
-	write(t, dir, ".physa/product.md", "---\npromise: P.\n---\n\n# P\n")
-	gitIn(t, dir, "add", ".physa/product.md")
+	write(t, dir, p, mapLayouts[p])
+	gitIn(t, dir, "add", p)
 	gitIn(t, dir, "commit", "-q", "-m", "docs(map): Add a map")
 	gitIn(t, dir, "push", "-q", "origin", "main")
 }
 
 func TestMappedRepoIsRefusedBeforeAnythingIsSpent(t *testing.T) {
-	for _, args := range [][]string{nil, {"--propose"}, {"--recover"}} {
-		mappedRepo(t)
-		a := newRoutedAgent()
-		env := fullEnv(t, onePR(), a)
-		code, out, errOut := runInit(env, args...)
-		if code != 2 || out != "" || !strings.Contains(errOut, "the repo already has a map") || !strings.Contains(errOut, "physa map learn") {
-			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errOut)
+	for p := range mapLayouts {
+		for _, args := range [][]string{nil, {"--propose"}, {"--recover"}} {
+			mappedRepo(t, p)
+			a := newRoutedAgent()
+			env := fullEnv(t, onePR(), a)
+			code, out, errOut := runInit(env, args...)
+			t.Logf("%s %v: %s", p, args, strings.TrimSpace(errOut))
+			if code != 2 || out != "" || !strings.Contains(errOut, "the repo already has a map ("+p+" on origin/main)") || !strings.Contains(errOut, "physa map learn") {
+				t.Errorf("%s %v: code %d, stdout %q, stderr %q", p, args, code, out, errOut)
+			}
+			if len(a.started) != 0 {
+				t.Errorf("%s %v: %d agent sessions ran", p, args, len(a.started))
+			}
+			st, err := env.Store(".")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok, _ := st.Gathered(); ok {
+				t.Errorf("%s %v: a gather was stored", p, args)
+			}
+			st.Close()
 		}
-		if len(a.started) != 0 {
-			t.Errorf("%v: %d agent sessions ran", args, len(a.started))
-		}
-		st, err := env.Store(".")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, ok, _ := st.Gathered(); ok {
-			t.Errorf("%v: a gather was stored", args)
-		}
-		st.Close()
 	}
 }
 
 func TestMappedRepoStillGathers(t *testing.T) {
-	mappedRepo(t)
+	mappedRepo(t, ".physa/product/index.md")
 	env := fullEnv(t, onePR(), newRoutedAgent())
 	if code, out, errOut := runInit(env, "--gather"); code != 0 || !strings.Contains(out, "Gathered into") {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
@@ -518,16 +533,19 @@ func TestNoDefaultBranchSkipsTheEarlyCheck(t *testing.T) {
 }
 
 func TestNoDefaultBranchRefusesAMapInTheWorkingTree(t *testing.T) {
-	dir := trunkRepo(t)
-	write(t, dir, ".physa/product.md", "---\npromise: P.\n---\n\n# P\n")
-	a := newRoutedAgent()
-	for _, args := range [][]string{nil, {"--propose"}, {"--recover"}} {
-		code, out, errOut := runInit(testEnv(t, nil, a), args...)
-		if code != 2 || out != "" || !strings.Contains(errOut, "(.physa/product.md in the working tree)") || !strings.Contains(errOut, "physa map learn") {
-			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errOut)
+	for p, text := range mapLayouts {
+		dir := trunkRepo(t)
+		write(t, dir, p, text)
+		a := newRoutedAgent()
+		for _, args := range [][]string{nil, {"--propose"}, {"--recover"}} {
+			code, out, errOut := runInit(testEnv(t, nil, a), args...)
+			t.Logf("%s %v: %s", p, args, strings.TrimSpace(errOut))
+			if code != 2 || out != "" || !strings.Contains(errOut, "("+p+" in the working tree)") || !strings.Contains(errOut, "physa map learn") {
+				t.Errorf("%s %v: code %d, stdout %q, stderr %q", p, args, code, out, errOut)
+			}
 		}
-	}
-	if len(a.started) != 0 {
-		t.Errorf("%d agent sessions ran", len(a.started))
+		if len(a.started) != 0 {
+			t.Errorf("%s: %d agent sessions ran", p, len(a.started))
+		}
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/initbranch"
+	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/store"
@@ -82,9 +83,10 @@ func Run(args []string, stdout, stderr io.Writer, env Env) int {
 }
 
 // refuseMapped is the early refusal: it errors, before anything is spent,
-// when the default branch already holds a map. With no default branch to
-// be found it checks the working tree instead, and leaves a missing default
-// branch for --write to report.
+// when the default branch already holds a map in either layout
+// (mapfolder.Products), naming the file found. With no default branch
+// to be found it checks the working tree instead, and leaves a missing
+// default branch for --write to report.
 func refuseMapped(env Env) error {
 	w, err := env.Writer(".")
 	if err != nil {
@@ -93,14 +95,13 @@ func refuseMapped(env Env) error {
 	if _, err := w.DefaultBranch(); err == nil {
 		return initbranch.HasMap(w)
 	}
-	if _, err := os.Stat(filepath.FromSlash(mapProduct)); err == nil {
-		return fmt.Errorf("the repo already has a map (%s in the working tree); init only starts a map, and learning keeps an existing one current: run physa map learn", mapProduct)
+	for _, p := range mapfolder.Products {
+		if _, err := os.Stat(filepath.FromSlash(p)); err == nil {
+			return fmt.Errorf("the repo already has a map (%s in the working tree); init only starts a map, and learning keeps an existing one current: run physa map learn", p)
+		}
 	}
 	return nil
 }
-
-// mapProduct is the map's product file, whose presence means a map.
-const mapProduct = ".physa/product.md"
 
 // gatherInto gathers the repo's sources under o's bounds and stores them in
 // st, replacing the earlier gather, and says what it gathered.
@@ -142,7 +143,7 @@ func propose(o Flags, st *store.Store, p *printer, stderr io.Writer, env Env) in
 
 // recoverPhase recovers the proposed capabilities into the store and prints
 // how each fared. Without --write it writes nothing to the repo; with it,
-// it then writes everything stored to physa/init, keeping the files an
+// it then writes everything stored to physa/init, keeping what an
 // earlier run recovered.
 func recoverPhase(o Flags, st *store.Store, root string, p *printer, stderr io.Writer, env Env) int {
 	rep, err := recovery.Run(context.Background(), st, recoverySession(o, o.Appetite, o.Only, root, env, stderr))

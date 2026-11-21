@@ -1,6 +1,7 @@
 package recovering
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/dphaener/physa/internal/fit"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfile"
+	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/store"
 )
@@ -87,7 +89,9 @@ func TestSkillSaysWhatItMust(t *testing.T) {
 }
 
 // TestSkillExampleIsAFileTheMapReads reads the skill's own example as an
-// answer and holds the file it makes to the map reader's form.
+// answer, splits the text it makes into a folder, and holds the folder to
+// the map reader's form: an index with the example's overview, and a file
+// for each kind.
 func TestSkillExampleIsAFileTheMapReads(t *testing.T) {
 	r, err := Parse(skill)
 	if err != nil {
@@ -96,17 +100,30 @@ func TestSkillExampleIsAFileTheMapReads(t *testing.T) {
 	if got := Count(r.File, r.Terms); got != (Counts{Rules: 2, Decisions: 1, Questions: 1, Terms: 2}) {
 		t.Errorf("counts %+v", got)
 	}
-	m, problems := readScratch(t, "delivery", File("delivery", "Webhooks reach customers.", r.File), Glossary(r.Terms))
+	file := File("delivery", "Webhooks reach customers.", r.File)
+	f, err := mapfolder.Split(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{mapfolder.IndexFile, mapfolder.RulesFile, mapfolder.DecisionsFile, mapfolder.QuestionsFile} {
+		if f.Files[name] == "" {
+			t.Errorf("the folder lacks %s: %v", name, f.Files)
+		}
+	}
+	m, problems := readScratch(t, "delivery", file, Glossary(r.Terms))
 	if len(problems) > 0 {
 		t.Errorf("the example has problems: %v", problems)
 	}
 	if len(m.Capabilities) != 1 || len(m.Capabilities[0].Entries) != 4 || len(m.Glossary) != 2 {
-		t.Errorf("read %+v", m)
+		t.Fatalf("read %+v", m)
+	}
+	if c := m.Capabilities[0]; !strings.HasPrefix(c.Overview, "Delivery gets each send") || c.Lines > 30 {
+		t.Errorf("overview %q, index of %d lines", c.Overview, c.Lines)
 	}
 }
 
-// readScratch writes a map holding one capability file and a glossary in a
-// temp dir and reads it.
+// readScratch writes a map holding one capability, split from its single
+// text, and a glossary in a temp dir and reads it.
 func readScratch(t *testing.T, name, file, glossary string) (*mapfile.Map, []mapfile.Problem) {
 	t.Helper()
 	root := t.TempDir()
@@ -118,19 +135,24 @@ func readScratch(t *testing.T, name, file, glossary string) (*mapfile.Map, []map
 	return m, problems
 }
 
-// writeScratch writes a map under root holding one capability file and a
-// glossary.
+// writeScratch writes a map under root holding one capability, its folder
+// split from its single text file, and a glossary.
 func writeScratch(t *testing.T, root, name, file, glossary string) {
 	t.Helper()
-	dir := filepath.Join(root, ".physa")
-	if err := os.MkdirAll(filepath.Join(dir, "capabilities"), 0o755); err != nil {
+	f, err := mapfolder.Split(file)
+	if err != nil {
 		t.Fatal(err)
 	}
-	for p, s := range map[string]string{
-		"README.md": "The map.\n", "product.md": "---\npromise: People keep notes.\n---\n\n# Product\n",
-		"glossary.md": glossary, "capabilities/" + name + ".md": file,
-	} {
-		if err := os.WriteFile(filepath.Join(dir, p), []byte(s), 0o644); err != nil {
+	product := mapfolder.Folder{Files: map[string]string{mapfolder.IndexFile: mapfolder.Index(
+		"---\npromise: People keep notes.\n---", "Product", "People keep notes.", nil)}}
+	if err := f.Write(root, mapfolder.CapabilityDir(name)); err != nil {
+		t.Fatal(err)
+	}
+	if err := product.Write(root, mapfolder.ProductDir); err != nil {
+		t.Fatal(err)
+	}
+	for p, s := range map[string]string{"README.md": "The map.\n", "glossary.md": glossary} {
+		if err := os.WriteFile(filepath.Join(root, ".physa", p), []byte(s), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -321,9 +343,10 @@ func TestFileWritesItsOwnFrontMatter(t *testing.T) {
 	}
 }
 
-const path = ".physa/capabilities/export.md"
+// path is the folder the map check reads export in.
+const path = ".physa/capabilities/export"
 
-// failing is a capability file whose decision lacks its how, and that has
+// failing is a capability text whose decision lacks its how, and that has
 // one problem outside any entry.
 var failing = File("export", "Notes leave the product.", `# Export
 
@@ -348,14 +371,18 @@ Rejected:
 `)
 
 func TestDropTakesOutTheFailingEntriesOnly(t *testing.T) {
-	// The check's own problems for the decision, on its meta line (17) and
-	// its heading (16), as mapcheck reports them; one on the title (5), one
-	// on the whole file, and one in the glossary.
+	// The check's own problems for the decision, on its meta line (10 of
+	// decisions.md, 17 of the text) and its heading (9, 16), as mapcheck
+	// reports them; one on the title (5 of the text, as Split reports it),
+	// one on decisions.md's title, which no entry holds, one on the whole of
+	// rules.md, and one in the glossary.
+	decisions := path + "/decisions.md"
 	mine := []mapfile.Problem{
-		{Path: path, Line: 17, Message: `decided by "dana" needs how: one of in their words, choosing an option, accepting a proposal`},
-		{Path: path, Line: 16, Message: "a decision needs a `Because:` line"},
+		{Path: decisions, Line: 10, Message: `decided by "dana" needs how: one of in their words, choosing an option, accepting a proposal`},
+		{Path: decisions, Line: 9, Message: "a decision needs a `Because:` line"},
 		{Path: path, Line: 5, Message: "more than one title"},
-		{Path: path, Line: 0, Message: "151 lines, budget is 150: propose a merge or a prune"},
+		{Path: decisions, Line: 1, Message: "a stray title problem"},
+		{Path: path + "/rules.md", Line: 0, Message: "151 lines, budget is 150: propose a merge or a prune"},
 		{Path: GlossaryPath, Line: 3, Message: "term has no definition"},
 	}
 	kept, dropped, rest := Drop(path, failing, mine)
@@ -365,7 +392,7 @@ func TestDropTakesOutTheFailingEntriesOnly(t *testing.T) {
 		t.Errorf("dropped %+v", dropped)
 	}
 	t.Logf("dropped: %+v", dropped)
-	if len(rest) != 3 || rest[0].Line != 5 || rest[1].Line != 0 || rest[2].Path != GlossaryPath {
+	if len(rest) != 4 || rest[0].Line != 5 || rest[1].Line != 1 || rest[2].Line != 0 || rest[3].Path != GlossaryPath {
 		t.Errorf("rest %v", rest)
 	}
 	t.Logf("kept back as problems outside entries: %v", rest)
@@ -394,14 +421,19 @@ func TestDropWithoutProblemsKeepsTheFile(t *testing.T) {
 
 func TestDropIgnoresHeadingsInFences(t *testing.T) {
 	file := File("export", "p", "# Export\n\n## Rules\n\n### A\n`a` · #1\n```\n### not an entry\n```\nBecause: x.\n\n### B\n`b` · #2\nBecause: y.\n")
-	// The problem is on A's Because: line, after the fenced heading.
+	// The problem is on A's Because: line of rules.md, after the fenced
+	// heading.
+	f, err := mapfolder.Split(file)
+	if err != nil {
+		t.Fatal(err)
+	}
 	no := 0
-	for i, l := range strings.Split(file, "\n") {
+	for i, l := range strings.Split(f.Files[mapfolder.RulesFile], "\n") {
 		if l == "Because: x." {
 			no = i + 1
 		}
 	}
-	kept, dropped, _ := Drop(path, file, []mapfile.Problem{{Path: path, Line: no, Message: "bad"}})
+	kept, dropped, _ := Drop(path, file, []mapfile.Problem{{Path: path + "/rules.md", Line: no, Message: "bad"}})
 	if len(dropped) != 1 || dropped[0].Slug != "a" || !strings.Contains(kept, "### B") || strings.Contains(kept, "not an entry") {
 		t.Errorf("dropped %+v, kept:\n%s", dropped, kept)
 	}
@@ -452,11 +484,119 @@ func TestDropWhatTheMapCheckFinds(t *testing.T) {
 	if len(problems) == 0 {
 		t.Fatal("the check found nothing in the failing file")
 	}
+	for _, p := range problems {
+		if p.Path != path+"/decisions.md" || p.Line < 9 {
+			t.Errorf("problem %v: want it on the decision in decisions.md", p)
+		}
+	}
+	t.Logf("the check found: %v", problems)
 	kept, dropped, rest := Drop(path, failing, problems)
 	if len(dropped) != 1 || dropped[0].Slug != "one-file" || len(rest) != 0 {
 		t.Errorf("dropped %+v, rest %v", dropped, rest)
 	}
 	if again := check(kept); len(again) != 0 {
 		t.Errorf("what is kept still fails: %v", again)
+	}
+}
+
+// withOverview is a capability's single text with an overview of three
+// lines (7 to 9) before its one rule.
+var withOverview = File("export", "Notes leave the product.", `# Export
+
+Export writes notes out.
+It writes them as files.
+Other tools read them.
+
+## Rules
+
+### Exports hold deleted notes
+`+"`deleted-notes`"+` · #12
+An export holds every note.
+Because: sam asked for it.
+`)
+
+// TestDropOverviewOnALongIndex drops the overview when index.md is over its
+// limit, a problem on the whole file: Split then takes the promise.
+func TestDropOverviewOnALongIndex(t *testing.T) {
+	long := []mapfile.Problem{{Path: path + "/index.md", Line: 0, Message: "31 lines, budget is 30: propose a merge, a prune, or a split into two capabilities"}}
+	kept, dropped, rest := Drop(path, withOverview, long)
+	want := []Dropped{{Kind: KindOverview, Heading: "the overview", Reasons: []string{long[0].Message}}}
+	if !reflect.DeepEqual(dropped, want) || rest != nil {
+		t.Fatalf("dropped %+v, rest %v", dropped, rest)
+	}
+	t.Logf("dropped: %+v", dropped)
+	if strings.Contains(kept, "Export writes") || !strings.Contains(kept, "# Export\n\n## Rules\n\n### Exports hold deleted notes") {
+		t.Errorf("kept:\n%s", kept)
+	}
+	f, err := mapfolder.Split(kept)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f.Files[mapfolder.IndexFile], "# Export\n\nNotes leave the product.\n\n- [Rules](rules.md)") {
+		t.Errorf("index.md without the overview:\n%s", f.Files[mapfolder.IndexFile])
+	}
+	if got := Count(kept, ""); got != (Counts{Rules: 1}) {
+		t.Errorf("counts %+v", got)
+	}
+}
+
+// TestDropOverviewOnASecondParagraph drops the overview, all of its
+// paragraphs, when Split finds a second one; and an overview line index.md
+// is checked at maps to the overview too.
+func TestDropOverviewOnASecondParagraph(t *testing.T) {
+	two := strings.Replace(withOverview, "It writes them as files.\n", "It writes them as files.\n\n", 1)
+	_, err := mapfolder.Split(two)
+	e := (*mapfolder.SplitError)(nil)
+	if !errors.As(err, &e) || e.Line != 10 {
+		t.Fatalf("split: %v", err)
+	}
+	kept, dropped, rest := Drop(path, two, []mapfile.Problem{{Path: path, Line: e.Line, Message: e.Message}})
+	if len(dropped) != 1 || dropped[0].Kind != KindOverview || rest != nil || strings.Contains(kept, "Other tools") {
+		t.Errorf("dropped %+v, rest %v, kept:\n%s", dropped, rest, kept)
+	}
+	if _, err := mapfolder.Split(kept); err != nil {
+		t.Errorf("what is kept does not split: %v", err)
+	}
+	_, dropped, _ = Drop(path, withOverview, []mapfile.Problem{{Path: path + "/index.md", Line: 7, Message: "bad overview"}})
+	if len(dropped) != 1 || dropped[0].Kind != KindOverview {
+		t.Errorf("index.md:7: dropped %+v", dropped)
+	}
+}
+
+// TestDropSplitProblemOutsideASection drops an entry Split finds outside
+// any section, as the problem Split reports at the folder on its line.
+func TestDropSplitProblemOutsideASection(t *testing.T) {
+	file := strings.Replace(withOverview, "## Rules\n\n", "", 1)
+	_, err := mapfolder.Split(file)
+	e := (*mapfolder.SplitError)(nil)
+	if !errors.As(err, &e) || e.Line != 11 || !strings.Contains(e.Message, "outside a Rules, Decisions or Questions section") {
+		t.Fatalf("split: %v", err)
+	}
+	kept, dropped, rest := Drop(path, file, []mapfile.Problem{{Path: path, Line: e.Line, Message: e.Message}})
+	if len(dropped) != 1 || dropped[0].Kind != "entry" || dropped[0].Slug != "deleted-notes" || rest != nil {
+		t.Errorf("dropped %+v, rest %v", dropped, rest)
+	}
+	if !strings.Contains(kept, "Other tools read them.") || strings.Contains(kept, "###") {
+		t.Errorf("kept:\n%s", kept)
+	}
+}
+
+func TestDescribeQuotesTheRightFile(t *testing.T) {
+	got := Describe(failing, "**Tag**: a label.\n", []mapfile.Problem{
+		{Path: path + "/decisions.md", Line: 10, Message: "needs how"},
+		{Path: path + "/rules.md", Line: 0, Message: "too long"},
+		{Path: path + "/index.md", Line: 2, Message: "bad promise"},
+		{Path: path, Line: 5, Message: "more than one title"},
+		{Path: GlossaryPath, Line: 3, Message: "bad term"},
+	})
+	want := []string{
+		"the decisions, at \"`one-file` · decided by dana · 2026-11-20 · #12\": needs how",
+		"the rules: too long",
+		"the title and overview, at \"promise: Notes leave the product.\": bad promise",
+		"the file, at \"# Export\": more than one title",
+		"the glossary, at \"**Tag**: a label.\": bad term",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q", got)
 	}
 }

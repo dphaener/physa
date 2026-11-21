@@ -33,7 +33,7 @@ Rejected:
 
 ### Physa records what it observes
 `record-observed` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/07-records-and-verification.md
-Slice records, tokens, rework and asks come from `physa map slice` and the engine's sessions, not from agents reporting them. Agents declare only intent, in `Capability:`.
+Slice records, tokens, rework and asks come from what Physa observes: `physa map slice` records, the agent's session logs found through the `Session:` trailer, and later the engine's sessions. Agents never report them. Agents declare only intent, in `Capability:`.
 Because: "Physa has access to every agent log correct? It knows what the agent did, right? That can be used can it not?"
 Rejected:
 - A `Loaded:` trailer: a claim, and it overstated; in #12 none of the agents that wrote the code loaded a slice.

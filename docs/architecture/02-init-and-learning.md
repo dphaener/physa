@@ -207,7 +207,7 @@ Decided by Claude as arbiter (2026-11-20), for the owner to review: `physa revie
 
 ## 4. Skills Physa ships
 
-Each agent step uses a skill Physa ships and teams can replace:
+Each agent step uses a skill Physa ships:
 
 | Skill | Used by |
 |---|---|
@@ -215,7 +215,7 @@ Each agent step uses a skill Physa ships and teams can replace:
 | recovering | init, one capability at a time |
 | learning | the after-merge step |
 
-They use only glossary terms and return structured output that `physa check map` validates. The skills are embedded for now; replacing one is not yet built (the owner, 2026-11-21).
+They use only glossary terms and return structured output that `physa check map` validates. The skills are embedded in the binary, and teams can't replace them (decided by dphaener, 2026-11-21: "That steps on our core functionality that we own and could end up with loss of trust in the product due to users making bad decisions.").
 
 ## 5. Settled with the owner (2026-11-19)
 

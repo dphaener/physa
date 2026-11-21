@@ -54,7 +54,7 @@ Drift, a change quietly undoing a decision, is caught only when a signal points 
 ## 4. The draft
 
 - **Physa's own role**, through the agent adapter (04 §10, `internal/adapter`), with no tools: its inputs are written by others and untrusted.
-- **The `learning` skill**, embedded in Physa and replaceable by a team, in glossary terms only. It receives the batch's signals, each with its change, and the slices for the capabilities they bear on.
+- **The `learning` skill**, embedded in Physa (teams can't replace it, 02 §4), in glossary terms only. It receives the batch's signals, each with its change, and the slices for the capabilities they bear on.
 - **Structured output**: proposed entries in the map's own form, each anchored to the change or changes it came from. Anything that names a slug the map lacks, or fails `physa check map`, is dropped and reported, never silently.
 - **Judgment it makes**: whether a comment was a lesson or a nit, the wording of the entry, and its `Because:`.
 

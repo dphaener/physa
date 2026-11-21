@@ -1,0 +1,151 @@
+package github
+
+import (
+	"encoding/json"
+	"fmt"
+	"sort"
+	"time"
+
+	"github.com/dphaener/physa/internal/forge"
+)
+
+// mergedPage is how many PRs one query asks for.
+const mergedPage = 25
+
+// mergedQuery asks for a page of merged PRs, the most recently updated first,
+// with their conversation, reviews (with state) and inline comments, and the
+// issues each closes.
+const mergedQuery = `query($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: MERGED, orderBy: {field: UPDATED_AT, direction: DESC}, first: 25, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number
+        title
+        body
+        mergedAt
+        updatedAt
+        author { login }
+        comments(first: 100) { nodes { author { login __typename } createdAt body } }
+        reviews(first: 100) {
+          nodes {
+            author { login __typename }
+            state
+            submittedAt
+            body
+            comments(first: 100) { nodes { author { login __typename } createdAt body } }
+          }
+        }
+        closingIssuesReferences(first: 10) { nodes { number title body } }
+      }
+    }
+  }
+}`
+
+type mergedNode struct {
+	Number    int       `json:"number"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	MergedAt  time.Time `json:"mergedAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	Author    *author   `json:"author"`
+	Comments  struct {
+		Nodes []comment `json:"nodes"`
+	} `json:"comments"`
+	Reviews struct {
+		Nodes []review `json:"nodes"`
+	} `json:"reviews"`
+	Issues struct {
+		Nodes []forge.Issue `json:"nodes"`
+	} `json:"closingIssuesReferences"`
+}
+
+type mergedResponse struct {
+	Data struct {
+		Repository *struct {
+			PullRequests struct {
+				PageInfo struct {
+					HasNextPage bool   `json:"hasNextPage"`
+					EndCursor   string `json:"endCursor"`
+				} `json:"pageInfo"`
+				Nodes []mergedNode `json:"nodes"`
+			} `json:"pullRequests"`
+		} `json:"repository"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+// MergedPRs returns the PRs merged at or after since, newest merge first, at
+// most max, with their people's review and the issues they close. more is
+// true when max stopped the list before since did. A max below 1 returns
+// nothing. GitHub orders pages by update time, and a PR merged after since was
+// updated after it, so paging stops at the first page that reaches back past
+// since.
+func (c *Client) MergedPRs(since time.Time, max int) ([]forge.PR, bool, error) {
+	if max < 1 {
+		return []forge.PR{}, false, nil
+	}
+	owner, name, err := c.repo()
+	if err != nil {
+		return nil, false, err
+	}
+	var prs []forge.PR
+	more := false
+	cursor := ""
+	for {
+		args := []string{"api", "graphql", "-f", "query=" + mergedQuery, "-f", "owner=" + owner, "-f", "name=" + name}
+		if cursor != "" {
+			args = append(args, "-f", "cursor="+cursor)
+		}
+		out, err := c.gh(args...)
+		var resp mergedResponse
+		if jerr := json.Unmarshal(out, &resp); jerr == nil && len(resp.Errors) > 0 {
+			return nil, false, fmt.Errorf("GitHub GraphQL: %s", resp.Errors[0].Message)
+		} else if err != nil {
+			return nil, false, err
+		} else if jerr != nil {
+			return nil, false, fmt.Errorf("GitHub GraphQL: %w", jerr)
+		}
+		if resp.Data.Repository == nil {
+			return nil, false, fmt.Errorf("GitHub GraphQL: no repository %s/%s", owner, name)
+		}
+		page := resp.Data.Repository.PullRequests
+		for _, n := range page.Nodes {
+			if !n.MergedAt.Before(since) {
+				prs = append(prs, n.pr())
+			}
+		}
+		crossed := len(page.Nodes) == 0 || page.Nodes[len(page.Nodes)-1].UpdatedAt.Before(since)
+		exhausted := crossed || !page.PageInfo.HasNextPage || page.PageInfo.EndCursor == ""
+		if len(prs) > max || (len(prs) == max && !exhausted) {
+			more = true
+		}
+		if exhausted || len(prs) >= max {
+			break
+		}
+		cursor = page.PageInfo.EndCursor
+	}
+	sort.SliceStable(prs, func(i, j int) bool { return prs[i].MergedAt.After(prs[j].MergedAt) })
+	if len(prs) > max {
+		prs = prs[:max]
+	}
+	if prs == nil {
+		prs = []forge.PR{}
+	}
+	return prs, more, nil
+}
+
+func (n mergedNode) pr() forge.PR {
+	pr := forge.PR{
+		Number: n.Number, Title: n.Title, Body: n.Body, MergedAt: n.MergedAt,
+		Comments: comments(n.Comments.Nodes, n.Reviews.Nodes),
+		Commits:  []forge.Commit{},
+		Issues:   n.Issues.Nodes,
+	}
+	if n.Author != nil {
+		pr.Author = n.Author.Login
+	}
+	return pr
+}

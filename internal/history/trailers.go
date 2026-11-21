@@ -182,3 +182,24 @@ func slugsAt(repo vcs.Repo, id string) (map[string]bool, error) {
 	}
 	return slugs, nil
 }
+
+// TrailerBlock returns every key and value of the message's trailers, in the
+// order written, read the way Trailers reads them: from the last paragraph
+// back, every paragraph made only of `Key: value` lines. Values are kept
+// whole, never split on commas; a continuation line joins its value. A
+// message with no trailers gives an empty list.
+func TrailerBlock(message string) [][2]string {
+	out := [][2]string{}
+	paras := paragraphs(message)
+	first := len(paras)
+	for first > 1 && isTrailerBlock(paras[first-1]) {
+		first--
+	}
+	for _, para := range paras[first:] {
+		for _, t := range joinContinuations(para) {
+			k, v, _ := strings.Cut(t, ":")
+			out = append(out, [2]string{k, strings.TrimSpace(v)})
+		}
+	}
+	return out
+}

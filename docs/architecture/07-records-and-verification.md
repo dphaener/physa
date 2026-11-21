@@ -91,6 +91,8 @@ What Physa needs, as one interface. Git is the only adapter built now; the inter
 | where the store lives | the store | `.git/physa/` in the common directory | `.hg/physa/` |
 | an isolated working copy for a run | the engine (03) | worktree | share, or a clone |
 | attach a digest to a change after the fact | §7 | notes on `refs/notes/physa` | none: a fallback (§7) |
+| list the changes since a time | init's gather (02 §2.2) | `git log --since` | `hg log -d '>DATE'` |
+| the files a change altered | init's gather | `git diff-tree --name-only` | the `{files}` template |
 
 An adapter may lack an operation; the design names the fallback for each one it may lack.
 

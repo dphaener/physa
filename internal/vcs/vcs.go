@@ -4,7 +4,8 @@
 // reverts, the shared default branch and the refs that hold a named branch,
 // whether the history is incomplete, where Physa's store lives, the files a
 // change leaves in a directory, the change a ref names, the newest change
-// carrying a trailer, and whether one change is part of another's history.
+// carrying a trailer, whether one change is part of another's history, the
+// changes committed after a time, and the paths a change altered.
 // Nothing else in Physa reads version control except through a Repo (design
 // 07 section 6); git is the only adapter today, in internal/vcs/git.
 //
@@ -22,9 +23,10 @@
 // "This reverts commit <id>." (built) and Mercurial's backout message "Backed
 // out changeset <id>" (the form a Mercurial adapter reads).
 //
-// Not built yet, because nothing uses them: what a change altered (a diff)
-// and attaching a digest to a change. Each joins the interface when the
-// engine needs it.
+// Since lists the changes committed after a time, and Altered the paths a
+// change altered (hints only; no diff). Not built yet, because nothing uses
+// it: attaching a digest to a change. It joins the interface when the engine
+// needs it.
 package vcs
 
 import (
@@ -59,6 +61,14 @@ type Repo interface {
 	// Changes returns the non-merge changes of the range rng, newest first.
 	// The adapter's own message is the error when the range is not valid.
 	Changes(rng string) ([]Change, error)
+	// Since returns the non-merge changes reachable from ref committed after
+	// t, newest first. A zero t means all of them. The adapter's own message
+	// is the error when ref is not valid.
+	Since(ref string, t time.Time) ([]Change, error)
+	// Altered returns the paths change id altered, relative to the repo root
+	// and sorted. A change with no paths, such as an empty one, gives an
+	// empty list. The adapter's own message is the error when id is not valid.
+	Altered(id string) ([]string, error)
 	// Latest returns the newest n non-merge changes reachable from ref, newest
 	// first. The adapter's own message is the error when ref is not valid.
 	Latest(ref string, n int) ([]Change, error)

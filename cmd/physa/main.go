@@ -6,8 +6,8 @@
 // finds what the merged changes have to teach the map: with --signals it
 // stops at the signals, without it an agent drafts proposals that are checked
 // on a scratch copy of the map and printed, never written; a bare map
-// prints the index. version prints the version of the build and help prints the
-// commands. It reads version control only through the git adapter.
+// prints the index. init --gather gathers a repo's sources into the store.
+// version prints the version of the build and help prints the commands. It reads version control only through the git adapter.
 // physa sync is not built yet: it returns with digests, after the engine.
 package main
 
@@ -41,6 +41,7 @@ func rootCommand() *cli.Command {
 	root.Subs = []*cli.Command{
 		checkCommand(),
 		mapCommand(),
+		initCommand(),
 		{
 			Name:    "sync",
 			Summary: "Not built yet: it returns with digests, after the engine.",

@@ -1,0 +1,51 @@
+package gather
+
+import (
+	"testing"
+	"time"
+)
+
+var now = time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+
+func TestParseFlagsDefaults(t *testing.T) {
+	f, ok := ParseFlags([]string{"--gather"}, now)
+	if !ok || !f.Gather || f.SinceSet || f.JSON || f.MaxPRs != 1000 {
+		t.Fatalf("got %+v %v", f, ok)
+	}
+	if want := now.AddDate(-1, 0, 0); !f.Since.Equal(want) {
+		t.Errorf("since %v, want %v", f.Since, want)
+	}
+}
+
+func TestParseFlagsValues(t *testing.T) {
+	for _, args := range [][]string{
+		{"--gather", "--since", "2026-01-02", "--max-prs", "5", "--json"},
+		{"--since=2026-01-02", "--max-prs=5", "--gather", "--json"},
+	} {
+		f, ok := ParseFlags(args, now)
+		want := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+		if !ok || !f.Gather || !f.SinceSet || !f.Since.Equal(want) || f.MaxPRs != 5 || !f.JSON {
+			t.Errorf("%v: got %+v %v", args, f, ok)
+		}
+	}
+}
+
+func TestParseFlagsRejections(t *testing.T) {
+	for _, args := range [][]string{
+		{"--gather", "--since", "yesterday"},
+		{"--gather", "--since", "2026-13-01"},
+		{"--gather", "--since"},
+		{"--gather", "--since="},
+		{"--gather", "--max-prs", "0"},
+		{"--gather", "--max-prs=-3"},
+		{"--gather", "--max-prs", "x"},
+		{"--gather", "--max-prs"},
+		{"--gather", "--bogus"},
+		{"--gather", "extra"},
+		{"--gather=1"},
+	} {
+		if _, ok := ParseFlags(args, now); ok {
+			t.Errorf("%v accepted", args)
+		}
+	}
+}

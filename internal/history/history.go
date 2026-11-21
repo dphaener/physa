@@ -3,7 +3,8 @@
 // trailer names and the sessions its Session trailers name, and checks the
 // capabilities as design 07 section 5 asks. Every change
 // names exactly one capability, and its slug is in the map as that change
-// leaves it. It reads history only through a vcs.Repo and never changes it.
+// leaves it, and prints a range's changes and findings as text or JSON. It reads
+// history only through a vcs.Repo and never changes it.
 package history
 
 import (

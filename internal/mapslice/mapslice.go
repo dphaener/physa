@@ -1,7 +1,8 @@
 // Package mapslice assembles a slice: the part of the map one task needs,
 // from the capabilities an agent chose, within a token budget. It never
 // matches or ranks capabilities; it takes only the ones named. The same map
-// and request always give the same slice.
+// and request always give the same slice. It also parses the flags of
+// physa map slice into a Request.
 package mapslice
 
 import (

@@ -16,6 +16,8 @@ From the vision and 01:
 
 ## 2. `physa init`
 
+> **Brought up to date on 2026-11-21, decided by Claude as arbiter for the owner to review.** Gather (§2.2) is built as `physa init --gather`. §2.6 adds the hook, and §2.8 drops the workflow, which 07 removed.
+
 ### 2.1 Phases
 
 ```
@@ -30,11 +32,15 @@ Physa collects sources into the local store. Nothing is written to the repo yet.
 | Source | What is kept | How |
 |---|---|---|
 | Existing agent and contributor docs | AGENTS.md, CLAUDE.md, Cursor rules, CONTRIBUTING, README, any decision-record folders | files in the repo |
-| Git history | commit messages, trailers, reverts, which files change together | `git log` |
-| PRs | titles, bodies, review comments (especially requested changes), linked issues | `gh` (Q1) |
+| Git history | commit messages, trailers, reverts, which files change together | the version-control interface (07 §6) |
+| PRs | titles, bodies, review comments (especially requested changes), linked issues | the forge interface (GitHub through `gh` first) (Q1) |
 
-- **History is bounded** by default: the last 12 months or 1,000 PRs, whichever is smaller. Teams can widen it.
+- **History is bounded** by default: the last 12 months or 1,000 PRs, whichever is smaller (the shorter window). Teams can widen it with `--since YYYY-MM-DD` (the date bound) and `--max-prs N` (the PR bound).
+- **When the PR limit is reached first**, history starts at the merge time of the oldest gathered PR, so both sources cover the same window.
+- **Without a forge**, only the date applies, and PRs are reported unavailable. That is not a failure.
+- **Decision-record folders** are found by name or by shape (numbered markdown files). Files over 2 MB are skipped and listed in the summary; fitting the sources to an agent is the next phase's job (§2.3).
 - **Files that change together** are used only as hints for proposing capabilities during init. File paths never enter the map.
+- **`physa init --gather`** runs this phase alone. It writes only the store, replacing the previous gather in one transaction, and prints a summary as text or `--json`: counts by source, the bound used, and an estimated token count (bytes/4, an estimate).
 
 ### 2.3 Propose capabilities (agent)
 
@@ -71,6 +77,8 @@ Init commits to a branch `physa/init` and opens a PR (Q3) containing exactly:
 | `.physa/README.md`, `product.md`, `glossary.md`, `capabilities/*.md` | the map |
 | 2–3 lines in `AGENTS.md`, between markers | the pointer (01 §7) |
 
+Init also installs the `Session:` hook, which `physa map hooks` does in a repo that ships one. Init takes that over (08 §5). The hook is local git config (`core.hooksPath`), so it is not part of the PR.
+
 The PR description summarises: capabilities proposed, entries recovered with their sources, questions raised, entries dropped, and the tokens spent. The person edits, deletes or merges it like any PR.
 
 ### 2.7 Appetite for init
@@ -79,7 +87,7 @@ Init spends the customer's tokens, so it has an appetite (Q4): a token budget sh
 
 ### 2.8 A new codebase
 
-With nothing to recover, init asks the person a short round of questions (numbered, each with a suggested answer) to write the product's promise and first terms, creates `product.md` and `glossary.md`, and adds the pointer and the workflow. Capabilities arrive with the first PRs.
+With nothing to recover, init asks the person a short round of questions (numbered, each with a suggested answer) to write the product's promise and first terms, creates `product.md` and `glossary.md`, and adds the pointer and the hook. Capabilities arrive with the first PRs.
 
 ## 3. Around every PR
 

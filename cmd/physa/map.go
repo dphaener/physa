@@ -1,11 +1,8 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
-	"strconv"
-	"strings"
 
 	"github.com/dphaener/physa/internal/cli"
 	"github.com/dphaener/physa/internal/history"
@@ -57,7 +54,7 @@ func mapCommand() *cli.Command {
 				Summary: "Print the slice of the map a task needs.",
 				Usage:   []string{"physa map slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]"},
 				Run: func(args []string, stdout, stderr io.Writer) int {
-					opts, ok := parseSlice(args)
+					opts, ok := mapslice.ParseFlags(args)
 					if !ok {
 						return cli.BadUsage
 					}
@@ -129,81 +126,26 @@ func index(dir string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// sliceOptions is a parsed physa map slice command line.
-type sliceOptions struct {
-	req  mapslice.Request
-	json bool
-}
-
-// parseSlice reads the arguments after "slice": capability names and the flags
-// --with, --budget and --format, in any order, as "--flag value" or
-// "--flag=value". It reports false for anything else.
-func parseSlice(args []string) (sliceOptions, bool) {
-	var o sliceOptions
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if !strings.HasPrefix(a, "--") {
-			o.req.Capabilities = append(o.req.Capabilities, a)
-			continue
-		}
-		name, val, hasVal := strings.Cut(a[2:], "=")
-		if !hasVal {
-			if i+1 >= len(args) {
-				return o, false
-			}
-			i++
-			val = args[i]
-		}
-		switch name {
-		case "with":
-			switch val {
-			case "decisions":
-				o.req.WithDecisions = true
-			case "questions":
-				o.req.WithQuestions = true
-			case "all":
-				o.req.WithDecisions, o.req.WithQuestions = true, true
-			default:
-				return o, false
-			}
-		case "budget":
-			n, err := strconv.Atoi(val)
-			if err != nil || n <= 0 {
-				return o, false
-			}
-			o.req.Budget = n
-		case "format":
-			if val != "md" && val != "json" {
-				return o, false
-			}
-			o.json = val == "json"
-		default:
-			return o, false
-		}
-	}
-	return o, len(o.req.Capabilities) > 0
-}
-
 // slice prints the slice of the map in dir: 0 when it printed, even if the map
 // has problems or the slice is over budget, and 2 when the map cannot be read,
 // a capability is unknown or the slice cannot be written.
-func slice(dir string, o sliceOptions, stdout, stderr io.Writer) int {
+func slice(dir string, o mapslice.Flags, stdout, stderr io.Writer) int {
 	m, problems, err := mapfile.Read(dir)
 	if err != nil {
 		return failed(stderr, "slice", err)
 	}
-	s, err := mapslice.Build(m, o.req)
+	s, err := mapslice.Build(m, o.Req)
 	if err != nil {
 		return failed(stderr, "slice", err)
 	}
 	write := mapslice.WriteMD
-	if o.json {
+	if o.JSON {
 		write = mapslice.WriteJSON
 	}
 	if err := write(stdout, s); err != nil {
 		return failed(stderr, "slice", err)
 	}
-	recordSlice(dir, o.req, stderr)
+	recordSlice(dir, o.Req, stderr)
 	noteProblems(stderr, "slice", len(problems))
 	if s.OverBudget {
 		fmt.Fprintf(stderr, "physa map slice: over budget: what is never cut is %d tokens, over the %d-token budget\n", s.Used, s.Budget)
@@ -233,40 +175,13 @@ func changes(dir string, o changesOptions, stdout, stderr io.Writer) int {
 	if err != nil {
 		return failed(stderr, "changes", err)
 	}
-	if o.json {
-		out := struct {
-			Range    string            `json:"range"`
-			Commits  []history.Commit  `json:"commits"`
-			Findings []history.Finding `json:"findings"`
-		}{o.rng, commits, findings}
-		if err := json.NewEncoder(stdout).Encode(out); err != nil {
-			return failed(stderr, "changes", err)
-		}
-	} else {
-		for _, c := range commits {
-			fmt.Fprintf(stdout, "%s %s\n  capability: %s\n", c.Short, c.Subject, slugList(c.Capabilities))
-		}
-		if len(findings) == 0 {
-			fmt.Fprintf(stdout, "\nphysa map changes: ok (%d commits)\n", len(commits))
-		} else {
-			fmt.Fprintf(stdout, "\n%d findings:\n", len(findings))
-			for _, f := range findings {
-				fmt.Fprintf(stdout, "%s: %s\n", f.Commit, f.Message)
-			}
-		}
+	if err := history.WriteChanges(stdout, o.rng, commits, findings, o.json); err != nil {
+		return failed(stderr, "changes", err)
 	}
 	if o.strict && len(findings) > 0 {
 		return 1
 	}
 	return 0
-}
-
-// slugList joins slugs for display, or gives a dash when there are none.
-func slugList(slugs []string) string {
-	if len(slugs) == 0 {
-		return "\u2014"
-	}
-	return strings.Join(slugs, ", ")
 }
 
 // failed prints err as the failure of the command named cmd and returns the

@@ -348,3 +348,83 @@ func TestChangeAuthor(t *testing.T) {
 		}
 	}
 }
+
+func commitAt(t *testing.T, dir, message, when string) string {
+	t.Helper()
+	t.Setenv("GIT_COMMITTER_DATE", when)
+	return commit(t, dir, message)
+}
+
+func TestSince(t *testing.T) {
+	r, dir := newRepo(t)
+	commitAt(t, dir, "old", "2024-01-01T00:00:00Z")
+	newer := commitAt(t, dir, "new", "2024-03-01T00:00:00Z")
+	cut := time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)
+	got, err := r.Since("HEAD", cut)
+	if err != nil || len(got) != 1 || got[0].ID != newer {
+		t.Fatalf("since = %+v, %v", got, err)
+	}
+}
+
+func TestSinceZeroTime(t *testing.T) {
+	r, dir := newRepo(t)
+	first := commitAt(t, dir, "old", "2001-01-01T00:00:00Z")
+	second := commitAt(t, dir, "new", "2024-03-01T00:00:00Z")
+	got, err := r.Since("HEAD", time.Time{})
+	if err != nil || len(got) != 2 || got[0].ID != second || got[1].ID != first {
+		t.Fatalf("since = %+v, %v", got, err)
+	}
+}
+
+func TestSinceBadRef(t *testing.T) {
+	r, dir := newRepo(t)
+	commit(t, dir, "one")
+	if got, err := r.Since("nope", time.Time{}); err == nil {
+		t.Fatalf("since = %+v, want an error", got)
+	}
+}
+
+func TestAlteredRootCommit(t *testing.T) {
+	r, dir := newRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, dir, "add", ".")
+	id := commit(t, dir, "root")
+	got, err := r.Altered(id)
+	if err != nil || !reflect.DeepEqual(got, []string{"a.txt"}) {
+		t.Fatalf("altered = %v, %v", got, err)
+	}
+}
+
+func TestAlteredSubdirectories(t *testing.T) {
+	r, dir := newRepo(t)
+	commit(t, dir, "base")
+	for _, p := range []string{"z/deep/b.go", "a/c.go"} {
+		full := filepath.Join(dir, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run(t, dir, "add", ".")
+	id := commit(t, dir, "two files")
+	got, err := r.Altered(id)
+	if err != nil || !reflect.DeepEqual(got, []string{"a/c.go", "z/deep/b.go"}) {
+		t.Fatalf("altered = %v, %v", got, err)
+	}
+	empty, err := r.Altered(commit(t, dir, "empty"))
+	if err != nil || empty == nil || len(empty) != 0 {
+		t.Fatalf("empty commit altered = %#v, %v", empty, err)
+	}
+}
+
+func TestAlteredBadID(t *testing.T) {
+	r, dir := newRepo(t)
+	commit(t, dir, "one")
+	if got, err := r.Altered("deadbeefdeadbeef"); err == nil {
+		t.Fatalf("altered = %v, want an error", got)
+	}
+}

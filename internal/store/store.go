@@ -2,7 +2,8 @@
 // database, physa.db in the store directory the version-control interface
 // names (shared by every worktree, never committed). It keeps slice records:
 // which capabilities were read, with what, under what budget, when and by
-// which session. Schema changes are numbered migrations applied at open.
+// which session. It also keeps one gather of the repo's sources (docs,
+// history, PRs), replaced whole in one transaction. Schema changes are numbered migrations applied at open.
 package store
 
 import (

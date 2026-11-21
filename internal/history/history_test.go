@@ -263,3 +263,23 @@ func TestReadFillsSessions(t *testing.T) {
 		t.Errorf("Sessions = %#v", got[0].Sessions)
 	}
 }
+
+func TestTrailerBlock(t *testing.T) {
+	tests := []struct {
+		name, msg string
+		want      [][2]string
+	}{
+		{"every key", "feat: x\n\nbody\n\nCapability: a\nSession: s1, s2\n", [][2]string{{"Capability", "a"}, {"Session", "s1, s2"}}},
+		{"continuation", "feat: x\n\nLearned: a,\n  b\n", [][2]string{{"Learned", "a, b"}}},
+		{"two trailer paragraphs", "feat: x\n\nA: 1\n\nB: 2\n", [][2]string{{"A", "1"}, {"B", "2"}}},
+		{"prose after is no block", "feat: x\n\nA: 1\nprose\n", [][2]string{}},
+		{"subject only", "Learned: x\n", [][2]string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := TrailerBlock(tt.msg); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

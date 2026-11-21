@@ -2,6 +2,8 @@
 // when there is one: whether a PR exists, and for a change the PR it came
 // from with its review, discussion and commits. It also lets Physa open or
 // refresh one PR, through PRs, and never merge, approve or auto-merge one.
+// A forge that offers Merged also lists the PRs merged since a time, each
+// with its review (marked when it requests changes) and its linked issues.
 // Version control, never the
 // forge, is the source of every fact (design 07 section 7); the forge only
 // adds the review around a change. A forge that cannot answer says so with
@@ -41,6 +43,15 @@ type PRs interface {
 	EditPR(n int, body string) error
 }
 
+// Merged lists merged PRs. It is separate from Forge because an adapter may
+// not offer it.
+type Merged interface {
+	// MergedPRs returns the PRs merged at or after since, newest merge first,
+	// at most max. more is true when the limit stopped the list before the
+	// date did.
+	MergedPRs(since time.Time, max int) (prs []PR, more bool, err error)
+}
+
 // PR is a PR with the review around it.
 type PR struct {
 	Number int `json:"number"`
@@ -52,6 +63,20 @@ type PR struct {
 	Comments []Comment `json:"comments"`
 	// Commits are the PR's commits, oldest first.
 	Commits []Commit `json:"commits"`
+	// Title and Body are the PR's own words; MergedAt is when it was merged.
+	// MergedPRs fills them, ChangePR does not.
+	Title    string    `json:"title,omitempty"`
+	Body     string    `json:"body,omitempty"`
+	MergedAt time.Time `json:"merged_at,omitzero"`
+	// Issues are the issues the PR closes, as the forge links them.
+	Issues []Issue `json:"issues,omitempty"`
+}
+
+// Issue is an issue a PR is linked to as closing.
+type Issue struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	Body   string `json:"body"`
 }
 
 // The kinds of Comment.
@@ -68,6 +93,9 @@ type Comment struct {
 	At     time.Time `json:"at"`
 	Kind   string    `json:"kind"` // KindReview or KindDiscussion
 	Body   string    `json:"body"`
+	// RequestsChanges is true for a review that requests changes and for
+	// that review's inline comments.
+	RequestsChanges bool `json:"requests_changes,omitempty"`
 }
 
 // Commit is one commit of a PR. At is its committer time, so a commit that

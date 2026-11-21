@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -53,6 +54,37 @@ func (r *repo) Changes(rng string) ([]vcs.Change, error) {
 		return nil, gitError(err, stderr)
 	}
 	return parseLog(out)
+}
+
+// Since returns the non-merge commits reachable from ref committed after t,
+// newest first. A zero t means all of them.
+func (r *repo) Since(ref string, t time.Time) ([]vcs.Change, error) {
+	args := []string{"log", "--no-merges"}
+	if !t.IsZero() {
+		args = append(args, "--since="+t.UTC().Format(time.RFC3339))
+	}
+	out, stderr, err := r.git(append(args, logFormat, "--end-of-options", ref, "--")...)
+	if err != nil {
+		return nil, gitError(err, stderr)
+	}
+	return parseLog(out)
+}
+
+// Altered returns the paths commit id altered, relative to the repo root and
+// sorted. A merge gives its paths against the first parent.
+func (r *repo) Altered(id string) ([]string, error) {
+	out, stderr, err := r.git("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", "--root", "--end-of-options", id)
+	if err != nil {
+		return nil, gitError(err, stderr)
+	}
+	paths := []string{}
+	for _, p := range strings.Split(out, "\x00") {
+		if p != "" {
+			paths = append(paths, p)
+		}
+	}
+	sort.Strings(paths)
+	return paths, nil
 }
 
 // Latest returns the newest n non-merge commits reachable from ref.

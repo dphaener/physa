@@ -19,8 +19,9 @@ import (
 )
 
 var (
-	_ forge.Forge = (*Client)(nil)
-	_ forge.PRs   = (*Client)(nil)
+	_ forge.Forge  = (*Client)(nil)
+	_ forge.PRs    = (*Client)(nil)
+	_ forge.Merged = (*Client)(nil)
 )
 
 // Error is a gh command that exited non-zero.
@@ -167,6 +168,7 @@ const changePRQuery = `query($owner: String!, $name: String!, $oid: GitObjectID!
             reviews(first: 100) {
               nodes {
                 author { login __typename }
+                state
                 submittedAt
                 body
                 comments(first: 100) { nodes { author { login __typename } createdAt body } }
@@ -208,14 +210,7 @@ type changePRResponse struct {
 							Nodes []comment `json:"nodes"`
 						} `json:"comments"`
 						Reviews struct {
-							Nodes []struct {
-								Author      *author    `json:"author"`
-								SubmittedAt *time.Time `json:"submittedAt"`
-								Body        string     `json:"body"`
-								Comments    struct {
-									Nodes []comment `json:"nodes"`
-								} `json:"comments"`
-							} `json:"nodes"`
+							Nodes []review `json:"nodes"`
 						} `json:"reviews"`
 						Commits struct {
 							Nodes []struct {
@@ -264,29 +259,50 @@ func (c *Client) ChangePR(change string) (forge.PR, bool, error) {
 	if n.Author != nil {
 		pr.Author = n.Author.Login
 	}
-	add := func(a *author, at time.Time, kind, body string) {
-		if !a.bot() {
-			pr.Comments = append(pr.Comments, forge.Comment{Author: a.Login, At: at, Kind: kind, Body: body})
-		}
-	}
-	for _, cm := range n.Comments.Nodes {
-		add(cm.Author, cm.CreatedAt, forge.KindDiscussion, cm.Body)
-	}
-	for _, r := range n.Reviews.Nodes {
-		if r.SubmittedAt == nil {
-			continue
-		}
-		if strings.TrimSpace(r.Body) != "" {
-			add(r.Author, *r.SubmittedAt, forge.KindReview, r.Body)
-		}
-		for _, cm := range r.Comments.Nodes {
-			add(cm.Author, cm.CreatedAt, forge.KindReview, cm.Body)
-		}
-	}
+	pr.Comments = comments(n.Comments.Nodes, n.Reviews.Nodes)
 	for _, cm := range n.Commits.Nodes {
 		pr.Commits = append(pr.Commits, forge.Commit{ID: cm.Commit.OID, At: cm.Commit.CommittedDate})
 	}
-	sort.SliceStable(pr.Comments, func(i, j int) bool { return pr.Comments[i].At.Before(pr.Comments[j].At) })
 	sort.SliceStable(pr.Commits, func(i, j int) bool { return pr.Commits[i].At.Before(pr.Commits[j].At) })
 	return pr, true, nil
+}
+
+// review is a review node: its state, body and inline comments.
+type review struct {
+	Author      *author    `json:"author"`
+	State       string     `json:"state"`
+	SubmittedAt *time.Time `json:"submittedAt"`
+	Body        string     `json:"body"`
+	Comments    struct {
+		Nodes []comment `json:"nodes"`
+	} `json:"comments"`
+}
+
+// comments converts a PR's conversation and reviews to forge comments, oldest
+// first. It drops bots' comments and reviews still pending, and marks a
+// CHANGES_REQUESTED review and its inline comments.
+func comments(discussion []comment, reviews []review) []forge.Comment {
+	out := []forge.Comment{}
+	add := func(a *author, at time.Time, kind, body string, requests bool) {
+		if !a.bot() {
+			out = append(out, forge.Comment{Author: a.Login, At: at, Kind: kind, Body: body, RequestsChanges: requests})
+		}
+	}
+	for _, cm := range discussion {
+		add(cm.Author, cm.CreatedAt, forge.KindDiscussion, cm.Body, false)
+	}
+	for _, r := range reviews {
+		if r.SubmittedAt == nil {
+			continue
+		}
+		requests := r.State == "CHANGES_REQUESTED"
+		if strings.TrimSpace(r.Body) != "" {
+			add(r.Author, *r.SubmittedAt, forge.KindReview, r.Body, requests)
+		}
+		for _, cm := range r.Comments.Nodes {
+			add(cm.Author, cm.CreatedAt, forge.KindReview, cm.Body, requests)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
+	return out
 }

@@ -156,7 +156,7 @@ const fullPR = `{"data":{"repository":{"object":{"associatedPullRequests":{"node
     {"author": {"login": "renovate[bot]", "__typename": "User"}, "createdAt": "2026-11-20T10:02:00Z", "body": "bump"}
   ]},
   "reviews": {"nodes": [
-    {"author": {"login": "dphaener", "__typename": "User"}, "submittedAt": "2026-11-20T10:03:00Z", "body": "Rename this.",
+    {"author": {"login": "dphaener", "__typename": "User"}, "state": "CHANGES_REQUESTED", "submittedAt": "2026-11-20T10:03:00Z", "body": "Rename this.",
      "comments": {"nodes": [{"author": {"login": "dphaener", "__typename": "User"}, "createdAt": "2026-11-20T10:02:30Z", "body": "here"}]}},
     {"author": {"login": "dphaener", "__typename": "User"}, "submittedAt": "2026-11-20T10:04:00Z", "body": "  ", "comments": {"nodes": []}},
     {"author": {"login": "dphaener", "__typename": "User"}, "submittedAt": null, "body": "pending", "comments": {"nodes": []}}
@@ -186,8 +186,8 @@ func TestChangePR(t *testing.T) {
 		Number: 9,
 		Author: "agent",
 		Comments: []forge.Comment{
-			{Author: "dphaener", At: at("2026-11-20T10:02:30Z"), Kind: forge.KindReview, Body: "here"},
-			{Author: "dphaener", At: at("2026-11-20T10:03:00Z"), Kind: forge.KindReview, Body: "Rename this."},
+			{Author: "dphaener", At: at("2026-11-20T10:02:30Z"), Kind: forge.KindReview, Body: "here", RequestsChanges: true},
+			{Author: "dphaener", At: at("2026-11-20T10:03:00Z"), Kind: forge.KindReview, Body: "Rename this.", RequestsChanges: true},
 			{Author: "dphaener", At: at("2026-11-20T10:05:00Z"), Kind: forge.KindDiscussion, Body: "why not B?"},
 		},
 		Commits: []forge.Commit{{ID: "aaa", At: at("2026-11-20T09:00:00Z")}, {ID: "bbb", At: at("2026-11-20T11:00:00Z")}},

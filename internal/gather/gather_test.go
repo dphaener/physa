@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dphaener/physa/internal/fit"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
@@ -89,7 +90,7 @@ func (m mergedForge) MergedPRs(time.Time, int) ([]forge.PR, bool, error) {
 
 func gatherNow(t *testing.T) time.Time { return base.Add(60 * 24 * time.Hour) }
 
-func run(t *testing.T, r *testRepo, f forge.Forge, o Flags) (Summary, int) {
+func run(t *testing.T, r *testRepo, f forge.Forge, o Bounds) (Summary, int) {
 	t.Helper()
 	g, s, err := Run(r.dir, r.open(), f, o, gatherNow(t))
 	if err != nil {
@@ -98,13 +99,15 @@ func run(t *testing.T, r *testRepo, f forge.Forge, o Flags) (Summary, int) {
 	return s, len(g.Changes)
 }
 
-func flags(t *testing.T, args ...string) Flags {
+// bounds is the bound of a default gather at gatherNow: twelve months back and
+// DefaultMaxPRs PRs, changed by with.
+func bounds(t *testing.T, with ...func(*Bounds)) Bounds {
 	t.Helper()
-	o, ok := ParseFlags(args, gatherNow(t))
-	if !ok {
-		t.Fatalf("flags %v", args)
+	b := Bounds{Since: gatherNow(t).AddDate(-1, 0, 0), MaxPRs: DefaultMaxPRs}
+	for _, w := range with {
+		w(&b)
 	}
-	return o
+	return b
 }
 
 func TestRunHistory(t *testing.T) {
@@ -114,7 +117,7 @@ func TestRunHistory(t *testing.T) {
 	r.git("revert", "--no-edit", bad)
 	r.n++
 	write(t, r.dir, "AGENTS.md", "agents")
-	g, s, err := Run(r.dir, r.open(), nil, flags(t, "--gather"), gatherNow(t))
+	g, s, err := Run(r.dir, r.open(), nil, bounds(t), gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +148,9 @@ func TestRunSinceCutsOlderChanges(t *testing.T) {
 	r.commit("feat: mid", "a")
 	r.commit("feat: new", "a")
 	// Changes are on days 1, 2 and 3 at 10:00; the date cuts day 1.
-	o := flags(t, "--gather", "--since", r.at(2).Format("2006-01-02"))
+	o := bounds(t, func(b *Bounds) {
+		b.Since, b.SinceSet = time.Date(r.at(2).Year(), r.at(2).Month(), r.at(2).Day(), 0, 0, 0, 0, time.UTC), true
+	})
 	s, n := run(t, r, nil, o)
 	if n != 2 || s.History.Changes != 2 {
 		t.Errorf("changes %d", n)
@@ -158,7 +163,7 @@ func TestRunSinceCutsOlderChanges(t *testing.T) {
 func TestRunUnavailableNoForge(t *testing.T) {
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
-	s, _ := run(t, r, nil, flags(t, "--gather"))
+	s, _ := run(t, r, nil, bounds(t))
 	if s.PRs.Available || s.PRs.Reason != "no forge" {
 		t.Errorf("%+v", s.PRs)
 	}
@@ -167,7 +172,7 @@ func TestRunUnavailableNoForge(t *testing.T) {
 func TestRunUnavailableWithoutMerged(t *testing.T) {
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
-	s, _ := run(t, r, plainForge{}, flags(t, "--gather"))
+	s, _ := run(t, r, plainForge{}, bounds(t))
 	if s.PRs.Available || s.PRs.Reason == "" {
 		t.Errorf("%+v", s.PRs)
 	}
@@ -177,7 +182,7 @@ func TestRunUnavailableForgeError(t *testing.T) {
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	f := mergedForge{err: &forge.Error{Class: forge.ErrUnavailable, Reason: "gh is not installed"}}
-	g, s, err := Run(r.dir, r.open(), f, flags(t, "--gather"), gatherNow(t))
+	g, s, err := Run(r.dir, r.open(), f, bounds(t), gatherNow(t))
 	if err != nil {
 		t.Fatalf("an unavailable forge failed the run: %v", err)
 	}
@@ -199,7 +204,7 @@ func TestRunUnavailableForgeError(t *testing.T) {
 func TestRunOtherForgeErrorIsUnavailable(t *testing.T) {
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
-	s, _ := run(t, r, mergedForge{err: errors.New("boom")}, flags(t, "--gather"))
+	s, _ := run(t, r, mergedForge{err: errors.New("boom")}, bounds(t))
 	if s.PRs.Available || s.PRs.Reason != "boom" {
 		t.Errorf("%+v", s.PRs)
 	}
@@ -214,7 +219,7 @@ func TestRunMoreStartsHistoryAtOldestPR(t *testing.T) {
 	f := mergedForge{more: true, prs: []forge.PR{
 		{Number: 9, MergedAt: r.at(4)}, {Number: 8, MergedAt: r.at(3)},
 	}}
-	g, s, err := Run(r.dir, r.open(), f, flags(t, "--gather", "--max-prs", "2"), gatherNow(t))
+	g, s, err := Run(r.dir, r.open(), f, bounds(t, func(b *Bounds) { b.MaxPRs = 2 }), gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +249,7 @@ func TestRunPRCounts(t *testing.T) {
 			}},
 		{Number: 1, Title: "one", MergedAt: r.at(0)},
 	}}
-	g, s, err := Run(r.dir, r.open(), f, flags(t, "--gather"), gatherNow(t))
+	g, s, err := Run(r.dir, r.open(), f, bounds(t), gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +274,7 @@ func TestRunTokenEstimate(t *testing.T) {
 	r.commit("feat: x\n\nCapability: a", "f.go")
 	write(t, r.dir, "README.md", strings.Repeat("r", 100))
 	f := mergedForge{prs: []forge.PR{{Number: 1, Title: "t", Body: strings.Repeat("b", 50), MergedAt: r.at(1)}}}
-	g, s, err := Run(r.dir, r.open(), f, flags(t, "--gather"), gatherNow(t))
+	g, s, err := Run(r.dir, r.open(), f, bounds(t), gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +283,7 @@ func TestRunTokenEstimate(t *testing.T) {
 	if s.Docs.Bytes != 100 || s.History.Bytes != hist || s.PRs.Bytes != 51 {
 		t.Errorf("bytes %+v", s)
 	}
-	if s.EstimatedTokens != total/4 || s.EstimatedTokens == 0 {
+	if s.EstimatedTokens != fit.BytesTokens(total) || s.EstimatedTokens == 0 {
 		t.Errorf("tokens %d, bytes %d", s.EstimatedTokens, total)
 	}
 }
@@ -287,7 +292,7 @@ func TestRunDocsSkippedAndHistoryFallback(t *testing.T) {
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	write(t, r.dir, "README.md", strings.Repeat("x", MaxDocBytes+1))
-	s, _ := run(t, r, nil, flags(t, "--gather"))
+	s, _ := run(t, r, nil, bounds(t))
 	if s.Docs.Count != 0 || len(s.Docs.Skipped) != 1 {
 		t.Errorf("%+v", s.Docs)
 	}
@@ -323,7 +328,7 @@ func TestWriteText(t *testing.T) {
 		"  skipped BIG.md",
 		"History: 10 changes, 4 with trailers, 1 reverts, 9 with altered files, 30 distinct files.\n",
 		"PRs: 3, 5 review comments (2 requesting changes), 1 linked issues.\n",
-		"About 35 tokens to read it all (an estimate: bytes / 4).\n",
+		"About 35 tokens to read it all (an estimate: bytes / 2.3).\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q", want)

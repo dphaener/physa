@@ -2,8 +2,6 @@ package fit
 
 import (
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/dphaener/physa/internal/store"
 )
@@ -115,8 +113,13 @@ func dedupe(sorted []string) []string {
 	return out
 }
 
+// clusterTokens is what c costs with its wrapping.
 func clusterTokens(c Cluster) int {
-	return Tokens(strings.Join(c.Paths, " ") + " " + strconv.Itoa(c.Changes))
+	n := clusterWrap
+	for _, p := range c.Paths {
+		n += pathWrap + len(p)
+	}
+	return BytesTokens(n)
 }
 
 // fitClusters keeps clusters, in order, within left tokens.

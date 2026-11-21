@@ -18,10 +18,13 @@ func rank(kind string) int {
 	return len(kindRank)
 }
 
+// docWrapTokens is what doc d costs beside its body.
+func docWrapTokens(d store.Doc) int { return BytesTokens(docWrap + len(d.Path) + len(d.Kind)) }
+
 // fitDocs keeps docs within share by water-filling: docs that fit an even
 // split are kept whole, and the rest of the share is split evenly among the
 // larger ones, each cut by section. A doc whose headings alone do not fit
-// its allowance is left out.
+// its allowance is left out. Each doc costs its body plus its wrapping.
 func fitDocs(gathered []store.Doc, share int) ([]Doc, SourceReport) {
 	r := SourceReport{Name: "docs", Items: len(gathered)}
 	docs := append([]store.Doc(nil), gathered...)
@@ -31,23 +34,23 @@ func fitDocs(gathered []store.Doc, share int) ([]Doc, SourceReport) {
 		}
 		return docs[i].Path < docs[j].Path
 	})
+	cost := make([]int, len(docs))
 	bySize := make([]int, len(docs))
 	for i, d := range docs {
 		bySize[i] = i
-		r.Tokens += Tokens(d.Body)
+		cost[i] = Tokens(d.Body) + docWrapTokens(d)
+		r.Tokens += cost[i]
 	}
-	sort.SliceStable(bySize, func(a, b int) bool {
-		return Tokens(docs[bySize[a]].Body) < Tokens(docs[bySize[b]].Body)
-	})
+	sort.SliceStable(bySize, func(a, b int) bool { return cost[bySize[a]] < cost[bySize[b]] })
 
 	allow := make([]int, len(docs))
 	whole := make([]bool, len(docs))
 	rem := max(share, 0)
 	for k, i := range bySize {
 		even := rem / (len(docs) - k)
-		if n := Tokens(docs[i].Body); n <= even {
+		if cost[i] <= even {
 			whole[i] = true
-			rem -= n
+			rem -= cost[i]
 			continue
 		}
 		for _, j := range bySize[k:] {
@@ -61,17 +64,18 @@ func fitDocs(gathered []store.Doc, share int) ([]Doc, SourceReport) {
 		if whole[i] {
 			kept = append(kept, Doc{Path: d.Path, Kind: d.Kind, Body: d.Body})
 			r.Kept++
-			r.KeptTokens += Tokens(d.Body)
+			r.KeptTokens += cost[i]
 			continue
 		}
-		body, ok := cutSections(d.Body, allow[i])
+		wrap := docWrapTokens(d)
+		body, ok := cutSections(d.Body, allow[i]-wrap)
 		if !ok {
 			continue
 		}
 		kept = append(kept, Doc{Path: d.Path, Kind: d.Kind, Body: body, Cut: true})
 		r.Kept++
 		r.Partial++
-		r.KeptTokens += Tokens(body)
+		r.KeptTokens += Tokens(body) + wrap
 	}
 	return kept, r
 }
@@ -153,7 +157,7 @@ func isHeading(s string) bool {
 // markers alone do not fit.
 func cutSections(doc string, tokens int) (string, bool) {
 	secs := sections(doc)
-	limit := 4 * tokens
+	limit := tokenBytes(tokens)
 	mark := markerBytes(doc)
 	need := 0
 	for _, s := range secs {

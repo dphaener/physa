@@ -55,6 +55,9 @@ func TestProposedFreshStoreIsFalse(t *testing.T) {
 	if _, ok, err := s.Proposed(); ok || err != nil {
 		t.Errorf("Proposed = %v, %v; want false, nil", ok, err)
 	}
+	if rs, err := s.Recovered(); len(rs) != 0 || err != nil {
+		t.Errorf("Recovered = %d rows, %v; want none", len(rs), err)
+	}
 }
 
 func TestPutGatherClearsProposal(t *testing.T) {
@@ -108,8 +111,8 @@ func TestMigrationFiveUpgradesVersionFourStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if got := version(t, s); got != 5 {
-		t.Errorf("user_version = %d, want 5", got)
+	if got := version(t, s); got != 6 {
+		t.Errorf("user_version = %d, want 6", got)
 	}
 	g, ok, err := s.Gathered()
 	if err != nil || !ok || g.Run.MaxPRs != 10 || g.Run.ForgeReason != "none" {

@@ -25,6 +25,10 @@ var ErrFailed = errors.New("agent session failed")
 // missing or cannot be read. It is wrapped with the reason.
 var ErrUnavailable = errors.New("session log unavailable")
 
+// ErrNoResume is returned by Start, before running anything, when a Spec asks
+// to resume a session and the agent cannot.
+var ErrNoResume = errors.New("agent cannot resume a session")
+
 // Adapter starts sessions of one agent.
 type Adapter interface {
 	// Name is the agent's stable name, as Physa records it.
@@ -51,6 +55,12 @@ type Spec struct {
 	// take an assigned id ignores it. One that can may refuse an id not in the
 	// agent's form, before running anything.
 	SessionID string
+	// Resume continues the earlier session SessionID (which must be set)
+	// instead of starting one: Prompt is that session's next message. It must
+	// run in the same Dir as the session it continues. An adapter whose agent
+	// cannot resume returns an error wrapping ErrNoResume before running
+	// anything.
+	Resume bool
 	// Usage, when set, is called with the session's tokens so far each time the
 	// agent reports them, from the goroutine running Wait. The last call
 	// carries the same tokens as Result.

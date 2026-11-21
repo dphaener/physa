@@ -126,6 +126,49 @@ func TestSessionArgvWithSessionID(t *testing.T) {
 	}
 }
 
+func TestArgsResume(t *testing.T) {
+	want := []string{"-p", "--output-format", "stream-json", "--verbose", "--resume", testSessionID}
+	if got := args(adapter.Spec{SessionID: testSessionID, Resume: true}); !reflect.DeepEqual(got, want) {
+		t.Errorf("resume args = %q, want %q", got, want)
+	}
+	want = append(want, "--tools", "", "--strict-mcp-config")
+	if got := args(adapter.Spec{SessionID: testSessionID, Resume: true, PromptOnly: true}); !reflect.DeepEqual(got, want) {
+		t.Errorf("prompt-only resume args = %q, want %q", got, want)
+	}
+}
+
+func TestSessionArgvResume(t *testing.T) {
+	cmd, rec := fake(t, okResult+"\n", "", 0)
+	spec := adapter.Spec{Prompt: "next", SessionID: testSessionID, Resume: true, PromptOnly: true}
+	if _, err := run(t, &Adapter{Command: cmd}, spec); err != nil {
+		t.Fatal(err)
+	}
+	argv := strings.Split(strings.TrimSuffix(read(t, filepath.Join(rec, "argv")), "\n"), "\n")
+	found := false
+	for i, a := range argv {
+		if a == "--session-id" {
+			t.Errorf("argv %q has --session-id on a resume", argv)
+		}
+		if a == "--resume" && i+1 < len(argv) && argv[i+1] == testSessionID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("argv %q lacks --resume %s", argv, testSessionID)
+	}
+}
+
+func TestStartRefusesResumeWithoutSessionID(t *testing.T) {
+	cmd, rec := fake(t, okResult+"\n", "", 0)
+	sess, err := (&Adapter{Command: cmd}).Start(context.Background(), adapter.Spec{Prompt: "p", Resume: true})
+	if err == nil || sess != nil {
+		t.Fatalf("Start: session %v, err %v; want an error", sess, err)
+	}
+	if _, err := os.Stat(filepath.Join(rec, "argv")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the agent ran for a resume without an id (argv recorded: %v)", err)
+	}
+}
+
 func TestStartRefusesBadSessionID(t *testing.T) {
 	cmd, rec := fake(t, okResult+"\n", "", 0)
 	for _, id := range []string{

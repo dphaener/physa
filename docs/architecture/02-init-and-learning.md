@@ -16,7 +16,7 @@ From the vision and 01:
 
 ## 2. `physa init`
 
-> **Brought up to date on 2026-11-21, decided by Claude as arbiter for the owner to review.** Gather (§2.2) is built as `physa init --gather`. §2.6 adds the hook, and §2.8 drops the workflow, which 07 removed.
+> **Brought up to date on 2026-11-21, decided by Claude as arbiter for the owner to review.** Gather (§2.2), propose (§2.3), recover (§2.4) and check (§2.5) are built as `physa init --gather`, `--propose` and `--recover`; the PR (§2.6) is not yet built. §2.6 adds the hook, and §2.8 drops the workflow, which 07 removed.
 
 ### 2.1 Phases
 
@@ -40,7 +40,7 @@ Physa collects sources into the local store. Nothing is written to the repo yet.
 - **Without a forge**, only the date applies, and PRs are reported unavailable. That is not a failure.
 - **Decision-record folders** are found by name or by shape (numbered markdown files). Files over 2 MB are skipped and listed in the summary; fitting the sources to an agent is the next phase's job (§2.3).
 - **Files that change together** are used only as hints for proposing capabilities during init. File paths never enter the map.
-- **`physa init --gather`** runs this phase alone. It writes only the store, replacing the previous gather in one transaction, and prints a summary as text or `--json`: counts by source, the bound used, and an estimated token count (bytes/4, an estimate).
+- **`physa init --gather`** runs this phase alone. It writes only the store, replacing the previous gather in one transaction, and prints a summary as text or `--json`: counts by source, the bound used, and an estimated token count (bytes / 2.3, an estimate).
 
 ### 2.3 Propose capabilities (agent)
 
@@ -51,7 +51,7 @@ The customer's agent receives the gathered sources (summarised to fit), Physa's 
 
 This is one agent session. It is the step that most shapes the map, so it is the step a person reviews most closely.
 
-It is built as `physa init --propose`, which needs a stored gather and says so when there is none. The gathered sources are fitted deterministically to an input budget before the agent sees them, with no agent involved. The budget is a named constant, a first guess tuned from runs (`measure-before-budget`). Sources are cut in this order: docs (long ones cut by section, their headings kept), PRs (titles first, then bodies, then review comments, those requesting changes first), commit subjects, and finally clusters of files that change together, used as hints only. The summary says what was cut and how much. The proposal is one prompt-only session with no tools, under the appetite (§2.7), shown before it starts. Uncertain knowledge comes back as questions, never as guesses (Q2). `physa init --propose` prints the proposal as markdown or `--json` and stores it for the next phase. It writes nothing to the repo, and a new gather clears the stored proposal.
+It is built as `physa init --propose`, which needs a stored gather and says so when there is none. The gathered sources are fitted deterministically to an input budget before the agent sees them, with no agent involved. The budget is a named constant, a first guess tuned from runs (`measure-before-budget`). Fitting estimates a token as 2.3 bytes, measured on #25's real prompts at 2.38 to 2.70 bytes a token, so the estimate errs high. It charges each item its own wrapping (labels and fences) as well as its text, and keeps a share of the PR budget for review comments, so long PR bodies cannot push them all out. Sources are cut in this order: docs (long ones cut by section, their headings kept), PRs (titles first, then bodies, then review comments, those requesting changes first), commit subjects, and finally clusters of files that change together, used as hints only. The summary says what was cut and how much. The proposal is one prompt-only session with no tools, under the appetite (§2.7), shown before it starts. Uncertain knowledge comes back as questions, never as guesses (Q2). `physa init --propose` prints the proposal as markdown or `--json` and stores it for the next phase. It writes nothing to the repo, and a new gather clears the stored proposal.
 
 ### 2.4 Recover knowledge (agent, one session per capability)
 
@@ -66,9 +66,25 @@ Sessions are independent, so they can run in parallel.
 
 **Uncertain knowledge becomes a question, never a guess.** If the sources suggest a rule but do not establish it, the agent writes a question ("Is it true that retries must never run in-process? Suggested by #1290.") instead of a rule. There are no confidence scores in the map.
 
+Settled as built with `physa init --recover` (decided by Claude as arbiter for the owner to review):
+
+- A session receives the product's promise, the capability's promise and its questions from the proposal, the recovering skill, and the capability's linked sources fitted to a 30,000-token input budget, with no clusters. It has no tools and runs in a fresh directory.
+- Its reply is the capability file and its glossary terms. Physa writes the front matter, with the proposal's promise on one line, and adds a title when the session wrote none. Questions Physa records carry "raised by physa", the date and their anchors.
+- A decision whose person or date the sources do not show becomes a question.
+- At most three sessions run at once. Each has its session id assigned before it starts, so a retry resumes the same session (§2.5).
+- The store keeps each recovered file and its terms until the `physa/init` PR (4d) writes them to the repo. A new gather or proposal clears them.
+
 ### 2.5 Check (deterministic)
 
 `physa check map` (01 §8.3) validates every file. An agent's output that fails is sent back to the same session with the errors, up to two times. After that, the failing entries are dropped and listed in the review summary.
+
+Settled as built:
+
+- Each file is checked with the map check's rules on a scratch copy of the map, so it passes as it will be stored. Duplicate slugs and terms across capabilities are found in run order: the later capability drops them.
+- A retry is the same session, resumed, with its problems named by the text of their line.
+- Dropping repeats: after each drop the file is checked again, until it passes or only problems that dropping cannot reach remain. Those fail the capability, and its file is not stored.
+- A glossary problem outside any term drops every term of that capability and keeps the file.
+- An agent error on any attempt fails the capability, even on a retry.
 
 ### 2.6 Review as a PR (a person)
 
@@ -86,6 +102,13 @@ The PR description summarises: capabilities proposed, entries recovered with the
 ### 2.7 Appetite for init
 
 Init spends the customer's tokens, so it has an appetite (Q4): a token budget shown before it starts, with a circuit breaker. If recovery runs out, the capabilities already done are kept and the rest are listed as "not yet recovered", to be filled from future PRs. `--appetite` sets it. Propose's input budget (§2.3) leaves room in the appetite for the reply, and an appetite too small for any input is refused, naming the smallest that works.
+
+Settled as built with `physa init --recover`:
+
+- The default appetite is 300,000 tokens, shared by all of a run's sessions. Input and output both count.
+- Before its first turn a session reserves its prompt plus 12,000 tokens for the reply. Before each retry it reserves what it has used so far, plus the retry's message and another 12,000. A reservation that cannot fit beside what is already spent is refused. One that waits only on other sessions' reservations waits for them to settle.
+- A session that reports more tokens than its reservation is stopped by the circuit breaker.
+- When the appetite ends a session, a capability with a checked answer keeps it, with its entries settled by dropping. A capability with no checked answer is "not yet recovered", as are those not started. A capability whose retries run out with no readable answer fails, with the read problem.
 
 ### 2.8 A new codebase
 

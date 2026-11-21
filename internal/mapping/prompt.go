@@ -19,10 +19,12 @@ var skill string
 // none stands in a part of the prompt that holds nothing.
 const none = "none\n"
 
-// headingAllowance is the tokens allowed for the prompt's own headings and
-// labels, beside the skill. It is a first guess, to be tuned from real runs
+// headingAllowance is the tokens allowed for the prompt's own text that no
+// item carries: its headings, the fences around changes and clusters, and
+// what was cut. Each item's own labels and fences are charged by fit as its
+// wrapping. It is a first guess, to be tuned from real runs
 // (measure-before-budget).
-const headingAllowance = 2_000
+const headingAllowance = 400
 
 // Overhead is what the prompt costs beside the fitted sources: the skill's
 // tokens plus a fixed allowance for headings. fit.Budget takes it off the

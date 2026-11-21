@@ -20,11 +20,22 @@ type Proposal struct {
 	Body         []byte
 }
 
-// PutProposal replaces the stored init proposal with p.
+// PutProposal replaces the stored init proposal with p. It also deletes the
+// stored recoveries, which belong to one proposal.
 func (s *Store) PutProposal(p Proposal) error {
-	_, err := s.db.Exec(`INSERT OR REPLACE INTO init_proposal (id, gather_at, at, session_id, model, appetite, input, cached_input, output, body) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		ts(p.GatherAt), ts(p.At), p.SessionID, p.Model, p.Appetite, p.Input, p.CachedInput, p.Output, string(p.Body))
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM init_recovery`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO init_proposal (id, gather_at, at, session_id, model, appetite, input, cached_input, output, body) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ts(p.GatherAt), ts(p.At), p.SessionID, p.Model, p.Appetite, p.Input, p.CachedInput, p.Output, string(p.Body)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Proposed returns the stored init proposal, false when there is none.

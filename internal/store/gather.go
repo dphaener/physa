@@ -82,14 +82,14 @@ func jsonText(v any) (string, error) {
 
 // PutGather replaces the stored gather with g in one transaction: on any
 // error the earlier gather is left intact. It also deletes the stored init
-// proposal, which belongs to one gather.
+// proposal and recoveries, which belong to one gather.
 func (s *Store) PutGather(g Gather) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	for _, t := range []string{"gather_comments", "gather_prs", "gather_changes", "gather_docs", "gather_runs", "init_proposal"} {
+	for _, t := range []string{"gather_comments", "gather_prs", "gather_changes", "gather_docs", "gather_runs", "init_proposal", "init_recovery"} {
 		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
 			return err
 		}

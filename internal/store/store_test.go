@@ -115,8 +115,8 @@ func TestMigrationTwoDropsPRChecks(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if got := version(t, s); got != 5 {
-		t.Errorf("user_version = %d, want 5", got)
+	if got := version(t, s); got != 6 {
+		t.Errorf("user_version = %d, want 6", got)
 	}
 	var n int
 	if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name = 'pr_checks'").Scan(&n); err != nil || n != 0 {
@@ -124,10 +124,10 @@ func TestMigrationTwoDropsPRChecks(t *testing.T) {
 	}
 }
 
-func TestFreshStoreMigratesToFive(t *testing.T) {
+func TestFreshStoreMigratesToSix(t *testing.T) {
 	s, _ := open(t)
-	if got := version(t, s); got != 5 {
-		t.Errorf("user_version = %d, want 5", got)
+	if got := version(t, s); got != 6 {
+		t.Errorf("user_version = %d, want 6", got)
 	}
 	var n int
 	if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name = 'slice_records'").Scan(&n); err != nil || n != 1 {

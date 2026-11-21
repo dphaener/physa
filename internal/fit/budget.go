@@ -1,32 +1,13 @@
 package fit
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
-// Each number below is a first guess, to be tuned from real runs
+// Each cluster number below is a first guess, to be tuned from real runs
 // (measure-before-budget).
 const (
-	// InputBudget is the most tokens of gathered sources the proposer reads.
-	InputBudget = 100_000
-	// ReplyReserve is the part of the appetite kept for the session's reply.
-	ReplyReserve = 16_000
-	// MinBudget is the smallest input budget worth a session.
-	MinBudget = 5_000
-
-	// DocsShare is the percent of the budget docs may spend first.
-	DocsShare = 40
-	// PRsShare is the percent of the budget PRs may spend, plus what docs left.
-	PRsShare = 40
-	// CommitsShare is the percent of the budget commit subjects may spend,
-	// plus what PRs left.
-	CommitsShare = 15
-	// ClustersShare is the percent of the budget co-change clusters may
-	// spend, plus what commits left.
-	ClustersShare = 5
-
-	// PRBodyTokens caps each PR body.
-	PRBodyTokens = 500
-	// CommentTokens caps each review comment.
-	CommentTokens = 300
 	// ClusterMaxFiles is the most files a change may touch and still count
 	// for clusters; a larger change says little about what belongs together.
 	ClusterMaxFiles = 20
@@ -37,22 +18,44 @@ const (
 	ClusterPaths = 8
 )
 
-// Tokens estimates the tokens in s as bytes / 4, the rule gather uses.
-func Tokens(s string) int { return len(s) / 4 }
+// BytesPerTokenTenths is the bytes per token every estimate uses, in tenths:
+// 2.3. It was measured on #25's real propose prompts: 178,659 bytes read as
+// 66,069 input tokens on Physa (2.70 a token) and 321,819 as 135,135 on
+// nebari (2.38); the lower, rounded down, so estimates err high.
+const BytesPerTokenTenths = 23
 
-// Budget returns the input budget for a session under appetite, after the
-// reply's reserve and overhead (the skill and the prompt's own text):
+// BytesTokens estimates the tokens in n bytes, rounding up.
+func BytesTokens(n int) int { return (n*10 + BytesPerTokenTenths - 1) / BytesPerTokenTenths }
+
+// Tokens estimates the tokens in s; see BytesTokens.
+func Tokens(s string) int { return BytesTokens(len(s)) }
+
+// tokenBytes is the most bytes estimated at no more than t tokens.
+func tokenBytes(t int) int { return t * BytesPerTokenTenths / 10 }
+
+// Figure is the bytes per token as people read it: "2.3".
+func Figure() string {
+	return strconv.Itoa(BytesPerTokenTenths/10) + "." + strconv.Itoa(BytesPerTokenTenths%10)
+}
+
+// Budget is BudgetWith under the Propose limits.
+func Budget(appetite int64, overhead int) (int, error) {
+	return BudgetWith(appetite, overhead, Propose)
+}
+
+// BudgetWith returns the input budget for a session under appetite, after
+// the reply's reserve and overhead (the skill and the prompt's own text):
 // min(InputBudget, appetite − ReplyReserve − overhead). It errors, naming the
 // smallest appetite that works, when that leaves less than MinBudget.
-func Budget(appetite int64, overhead int) (int, error) {
-	b := appetite - ReplyReserve - int64(overhead)
-	if b < MinBudget {
-		least := int64(MinBudget + ReplyReserve + overhead)
+func BudgetWith(appetite int64, overhead int, l Limits) (int, error) {
+	b := appetite - int64(l.ReplyReserve) - int64(overhead)
+	if b < int64(l.MinBudget) {
+		least := l.MinBudget + l.ReplyReserve + overhead
 		return 0, fmt.Errorf("the appetite of %s tokens is too small: init needs at least %s (%s for the sources, %s for the reply and %s for the skill)",
-			thousands(int(appetite)), thousands(int(least)), thousands(MinBudget), thousands(ReplyReserve), thousands(overhead))
+			thousands(int(appetite)), thousands(least), thousands(l.MinBudget), thousands(l.ReplyReserve), thousands(overhead))
 	}
-	if b > InputBudget {
-		b = InputBudget
+	if b > int64(l.InputBudget) {
+		b = int64(l.InputBudget)
 	}
 	return int(b), nil
 }

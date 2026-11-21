@@ -1,6 +1,7 @@
-package gather
+package initrun
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -77,6 +78,42 @@ func TestParseFlagsProposeRejections(t *testing.T) {
 		{"--gather", "--appetite", "5000"},
 		{"--agent", "claude"},
 		{"--propose=1"},
+	} {
+		if _, ok := ParseFlags(args, now); ok {
+			t.Errorf("%v accepted", args)
+		}
+	}
+}
+
+func TestParseFlagsRecover(t *testing.T) {
+	for _, args := range [][]string{
+		{"--recover"},
+		{"--recover", "--only", "a", "--only=b,c", "--appetite", "5000", "--agent", "x", "--json"},
+		{"--only", "a", "--recover"},
+	} {
+		f, ok := ParseFlags(args, now)
+		if !ok || !f.Recover || f.Gather || f.Propose {
+			t.Errorf("%v: got %+v %v", args, f, ok)
+		}
+	}
+	f, _ := ParseFlags([]string{"--recover", "--only", "a", "--only=b,c"}, now)
+	if got := strings.Join(f.Only, "|"); got != "a|b|c" {
+		t.Errorf("only %q", got)
+	}
+}
+
+func TestParseFlagsRecoverRejections(t *testing.T) {
+	for _, args := range [][]string{
+		{"--recover", "--gather"},
+		{"--recover", "--propose"},
+		{"--recover", "--since", "2026-01-02"},
+		{"--recover", "--max-prs", "5"},
+		{"--only", "a"},
+		{"--propose", "--only", "a"},
+		{"--recover", "--only"},
+		{"--recover", "--only="},
+		{"--recover", "--only", "a,,b"},
+		{"--gather", "--appetite", "5"},
 	} {
 		if _, ok := ParseFlags(args, now); ok {
 			t.Errorf("%v accepted", args)

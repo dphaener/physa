@@ -6,6 +6,8 @@ import (
 	"io"
 	"path"
 	"sort"
+
+	"github.com/dphaener/physa/internal/fit"
 )
 
 // WriteJSON writes the summary as indented JSON.
@@ -63,6 +65,6 @@ func WriteText(w io.Writer, s Summary) error {
 	} else {
 		p("PRs: unavailable (%s)", r.Reason)
 	}
-	p("About %d tokens to read it all (an estimate: bytes / 4).", s.EstimatedTokens)
+	p("About %d tokens to read it all (an estimate: bytes / %s).", s.EstimatedTokens, fit.Figure())
 	return err
 }

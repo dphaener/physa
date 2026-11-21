@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -157,6 +158,51 @@ func TestPromptOverheadCoversItsOwnText(t *testing.T) {
 	}
 	if strings.Count(empty, "none\n") < 4 {
 		t.Errorf("empty parts should say none:\n%s", empty[strings.Index(empty, "## Sources"):])
+	}
+}
+
+// realisticGather is a gather shaped like a real repo's: docs with sections,
+// PRs with bodies, issues and review comments (some with fences of their
+// own), and changes whose files cluster.
+func realisticGather() store.Gather {
+	var g store.Gather
+	para := "This paragraph explains a rule, why it holds, and the PR that settled it in some detail.\n"
+	for d, kind := range []string{"agent", "readme", "decisions", "contributing"} {
+		var b strings.Builder
+		for s := 0; b.Len() < 60_000; s++ {
+			fmt.Fprintf(&b, "## Section %d\n\n%s%s\n", s, strings.Repeat(para, 5), "```go\nfunc x() {}\n```")
+		}
+		g.Docs = append(g.Docs, store.Doc{Path: fmt.Sprintf("docs/part-%d.md", d), Kind: kind, Body: b.String()})
+	}
+	for i := 0; i < 400; i++ {
+		p := store.GatheredPR{Number: 1000 + i, Title: fmt.Sprintf("feat(area%d): Change the way part %d works", i%9, i), Author: "dev",
+			MergedAt: gatherAt.Add(-time.Duration(i) * time.Hour), Issues: []string{fmt.Sprintf("Part %d is slow", i)},
+			Body: "## Summary\n\n" + strings.Repeat(para, 1+i%12) + "## Test plan\n\n- `go test ./...`\n"}
+		for c := 0; c < i%4; c++ {
+			p.Comments = append(p.Comments, store.GatheredComment{Author: fmt.Sprintf("reviewer%d", c), At: p.MergedAt,
+				RequestsChanges: c == 0 && i%5 == 0, Body: "Could this use the existing helper?\n\n```go\nhelper()\n```\n"})
+		}
+		g.PRs = append(g.PRs, p)
+	}
+	for i := 0; i < 3_000; i++ {
+		id := fmt.Sprintf("%040x", i)
+		g.Changes = append(g.Changes, store.GatheredChange{ID: id, Short: id[:7], Subject: fmt.Sprintf("fix(area%d): Mend part %d of the flow", i%9, i),
+			At:    gatherAt.Add(-time.Duration(i) * time.Minute),
+			Files: []string{fmt.Sprintf("internal/area%d/a.go", i%30), fmt.Sprintf("internal/area%d/b.go", i%30), fmt.Sprintf("internal/area%d/a_test.go", i%30)}})
+	}
+	return g
+}
+
+// TestPromptCostIsCharged checks that what fit charges, plus the overhead,
+// covers the prompt mapping writes, and by no more than a tenth.
+func TestPromptCostIsCharged(t *testing.T) {
+	for _, budget := range []int{fit.Propose.MinBudget, 30_000, fit.Propose.InputBudget} {
+		in := fit.Fit(realisticGather(), budget)
+		est, real := in.Report.Used+Overhead(), fit.Tokens(Prompt(in))
+		t.Logf("budget %d: estimate %d, prompt %d (%.1f%% over)", budget, est, real, 100*float64(est-real)/float64(real))
+		if est < real || est > real*11/10 {
+			t.Errorf("budget %d: estimate %d for a prompt of %d tokens", budget, est, real)
+		}
 	}
 }
 

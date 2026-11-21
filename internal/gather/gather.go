@@ -5,7 +5,6 @@
 // cannot list merged PRs or cannot answer makes PRs unavailable, which is
 // reported and never a failure. The bound is a date and a most number of
 // PRs: when the PR limit is reached first, history starts where the PRs do.
-// The package also parses the flags of physa init, both phases.
 // Gather reads the working tree and never writes to it; the caller keeps the
 // result in the store.
 package gather
@@ -14,6 +13,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dphaener/physa/internal/fit"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
@@ -80,11 +80,23 @@ type PRsSummary struct {
 	Bytes             int    `json:"bytes"`
 }
 
+// DefaultMaxPRs is the most PRs gathered unless the bound says otherwise.
+const DefaultMaxPRs = 1000
+
+// Bounds is the bound of one gather: Since is its start, SinceSet is true
+// when the caller gave it rather than defaulting it, and MaxPRs is the most
+// merged PRs to list.
+type Bounds struct {
+	Since    time.Time
+	SinceSet bool
+	MaxPRs   int
+}
+
 // Run gathers the docs under root, the history of repo and, through f, the
 // merged PRs, within the bound o sets, as of now. It returns the gather for
 // the caller to store and its summary, whose Store is left for the caller to
 // set. f may be nil.
-func Run(root string, repo vcs.Repo, f forge.Forge, o Flags, now time.Time) (store.Gather, Summary, error) {
+func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, now time.Time) (store.Gather, Summary, error) {
 	docs, skipped, err := Docs(root)
 	if err != nil {
 		return store.Gather{}, Summary{}, fmt.Errorf("cannot read the docs: %w", err)
@@ -128,13 +140,13 @@ func Run(root string, repo vcs.Repo, f forge.Forge, o Flags, now time.Time) (sto
 		return store.Gather{}, Summary{}, err
 	}
 	s.History = summariseHistory(g.Changes)
-	s.EstimatedTokens = (s.Docs.Bytes + s.History.Bytes + s.PRs.Bytes) / 4
+	s.EstimatedTokens = fit.BytesTokens(s.Docs.Bytes + s.History.Bytes + s.PRs.Bytes)
 	return g, s, nil
 }
 
 // readPRs lists the merged PRs within the bound. reason is empty when the
 // forge answered, and otherwise says why PRs are unavailable.
-func readPRs(f forge.Forge, o Flags) (prs []store.GatheredPR, more bool, reason string) {
+func readPRs(f forge.Forge, o Bounds) (prs []store.GatheredPR, more bool, reason string) {
 	if f == nil {
 		return nil, false, "no forge"
 	}

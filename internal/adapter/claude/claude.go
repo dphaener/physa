@@ -1,6 +1,8 @@
 // Package claude is the Claude Code adapter: it starts sessions with claude -p
 // and streamed JSON output, optionally under an id assigned by whoever starts
-// them (--session-id, so the session keeps its log), reads the result and
+// them (--session-id, so the session keeps its log) or continuing one
+// (--resume <id>, which works with -p, as claude --help shows, in the same
+// directory the session ran in), reads the result and
 // tokens from the stream, and reads sessions' logs.
 package claude
 
@@ -54,9 +56,12 @@ var uuid = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-
 
 // args is the argv after the command for a session of s. A session with an
 // assigned id keeps its log, so it can be read later; one without leaves none.
+// A resumed session continues the one under SessionID.
 func args(s adapter.Spec) []string {
 	argv := []string{"-p", "--output-format", "stream-json", "--verbose"}
-	if s.SessionID != "" {
+	if s.Resume {
+		argv = append(argv, "--resume", s.SessionID)
+	} else if s.SessionID != "" {
 		argv = append(argv, "--session-id", s.SessionID)
 	} else {
 		argv = append(argv, "--no-session-persistence")
@@ -68,8 +73,12 @@ func args(s adapter.Spec) []string {
 }
 
 // Start runs claude -p in s.Dir with the prompt on stdin. An assigned session
-// id that is not a UUID is refused before anything runs.
+// id that is not a UUID, and a resume without one, are refused before anything
+// runs.
 func (a *Adapter) Start(ctx context.Context, s adapter.Spec) (adapter.Session, error) {
+	if s.Resume && s.SessionID == "" {
+		return nil, errors.New("resuming a session needs its session id")
+	}
 	if s.SessionID != "" && !uuid.MatchString(s.SessionID) {
 		return nil, fmt.Errorf("session id %q is not a UUID", s.SessionID)
 	}

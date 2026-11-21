@@ -105,12 +105,12 @@ Glossary terms travel in every slice, so agents use the team's words from the fi
 
 ### 4.4 How the map learns
 
-Learning happens at the PR, the one place every agent's work passes through, whichever agent wrote it.
+Learning happens where every agent's work ends up: the change, whichever agent wrote it.
 
-- A reviewer agent reads the diff and the index, names the capabilities touched and the rules at stake, and flags contradictions with existing rules or decisions.
-- Review corrections become proposed rules. Reverts and incidents weaken what they touch. Unused entries decay.
-- Every slice is recorded and compared with what the PR did: a **miss** (relevant knowledge not loaded) or **excess** (loaded but irrelevant) tunes how the map is used.
-- Updates arrive as small proposed changes to the map on the PR. Nothing changes silently.
+- Each change names the capability it serves, and Physa checks that it exists and that the map still holds. Physa does not review code; that stays the team's.
+- Every slice is recorded, so Physa knows which agent had which part of the map, and which capabilities keep being served without their slice being loaded.
+- After a change merges, Physa learns from signals, never from the bare diff: review corrections become proposed rules, argued choices become proposed decisions, reverts and rollbacks weaken what they undid, and recurring findings become rules. A change with no signal costs nothing.
+- Proposals arrive as one batched map update that stewards review. Nothing changes silently.
 
 ### 4.5 Setting up on an existing codebase
 

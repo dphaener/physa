@@ -83,7 +83,7 @@ With nothing to recover, init asks the person a short round of questions (number
 
 ## 3. Around every PR
 
-> **Revised 2026-11-20 by [07](07-records-and-verification.md).** The PR check no longer runs a reviewer agent, the `Loaded:` trailer is replaced by slice records, results are no longer kept in GitHub check runs, and checks and sync run on the developer's machine. Where this section and 07 disagree, 07 holds.
+> **Revised 2026-11-20 by [07](07-records-and-verification.md).** The PR check no longer runs a reviewer agent, the `Loaded:` trailer is replaced by slice records, results are no longer kept in GitHub check runs, and checks and sync run on the developer's machine. Where this section and 07 disagree, 07 holds. §3.3 and §3.5 are replaced by [08](08-learning.md).
 
 ### 3.1 Two moments
 
@@ -156,7 +156,6 @@ Each agent step uses a skill Physa ships and teams can replace:
 |---|---|
 | mapping | init, proposing capabilities |
 | recovering | init, one capability at a time |
-| reviewing | the open-PR check and `physa review` |
 | learning | the after-merge step |
 
 They use only glossary terms and return structured output that `physa check map` validates.

@@ -467,8 +467,8 @@ func TestSessionSignalsMakeTheChangeLearned(t *testing.T) {
 		t.Fatalf("learn = %+v", res.Learn)
 	}
 	got := res.Learn[0]
-	if !reflect.DeepEqual(got.Signals, []Signal{sig}) || got.Author != "T" {
-		t.Errorf("signals %+v, author %q", got.Signals, got.Author)
+	if !reflect.DeepEqual(got.Signals, []Signal{sig}) {
+		t.Errorf("signals %+v", got.Signals)
 	}
 	if !reflect.DeepEqual(res.LearnedNow, []string{got.Short}) || !reflect.DeepEqual(ids(res.Nothing), []string{a}) {
 		t.Errorf("learned now %v, nothing %v", res.LearnedNow, ids(res.Nothing))

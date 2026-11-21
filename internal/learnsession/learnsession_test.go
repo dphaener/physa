@@ -403,3 +403,39 @@ func TestNoSessionsNothingRead(t *testing.T) {
 		t.Errorf("signals = %#v, read = %v, gaps = %#v, calls = %v", signals, read, gaps, f.calls)
 	}
 }
+
+func TestArbiterAnsweredAskCreditedToArbiter(t *testing.T) {
+	w := window{until: at(60)}
+	cases := []struct{ answer, author string }{
+		{"CSV", "person"},
+		{"Answered on behalf of dphaener by the arbiter: CSV", "Claude as arbiter"},
+		{"  answered on behalf of dphaener by the Arbiter: keep both, CSV first", "Claude as arbiter"},
+		{"Answered on behalf of dphaener by the arbiter", "Claude as arbiter"},
+		{"I Answered on behalf of dphaener by the arbiter: CSV", "person"},
+		{"Answered on behalf of dphaener: by the arbiter", "person"},
+	}
+	for _, c := range cases {
+		got := asks([]adapter.Ask{{At: at(10), Text: "Format?", Options: []string{"CSV", "JSON"}, Answer: c.answer}}, w)
+		if len(got) != 1 || got[0].Author != c.author || got[0].Answer != c.answer {
+			t.Errorf("answer %q: quotes = %#v, want author %q", c.answer, got, c.author)
+		}
+	}
+}
+
+func TestArbiterInterventionCreditedToArbiter(t *testing.T) {
+	w := window{until: at(60)}
+	text := "Answered on behalf of dphaener by the arbiter: use files"
+	got := interventions([]adapter.Message{{At: at(10), Text: text}}, w)
+	if len(got) != 1 || got[0].Author != "Claude as arbiter" || got[0].Text != text {
+		t.Errorf("quotes = %#v", got)
+	}
+}
+
+func TestInterventionArbiterPhraseNotAtStartIsMessage(t *testing.T) {
+	w := window{until: at(60)}
+	text := "I answered on behalf of dphaener by the arbiter: use files"
+	got := interventions([]adapter.Message{{At: at(10), Text: text}}, w)
+	if len(got) != 1 || got[0].Author != "message in the session" {
+		t.Errorf("quotes = %#v", got)
+	}
+}

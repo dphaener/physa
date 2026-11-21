@@ -27,6 +27,9 @@ const DefaultAppetite = 60000
 // Batch is what one session drafts from: the changes of a run that carry
 // signals, and the capabilities those signals bear on.
 type Batch struct {
+	// Person is the name of the person running Physa (internal/person), or
+	// empty when unknown.
+	Person string
 	// Changes are the changes with signals, newest first, as triage found
 	// them.
 	Changes []learn.ChangeSignals

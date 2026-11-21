@@ -256,7 +256,7 @@ func TestPromptDataCannotCloseItsFence(t *testing.T) {
 		case inside && line == fence:
 			inside = false
 		case inside:
-		case line == "", line == "### Change 1 of 1", line == "Signal 1 of 1 on this change:":
+		case line == "", line == "person: unknown", line == "### Change 1 of 1", line == "Signal 1 of 1 on this change:":
 		default:
 			t.Errorf("data escaped its fence: %q", line)
 		}
@@ -688,7 +688,7 @@ func sessionBatch(q learn.Quote) learn.Result {
 	return learn.Result{Learn: []learn.ChangeSignals{{
 		ChangeRef: learn.ChangeRef{Short: "aaaaaaa", Subject: "feat(export): Pick a format"},
 		At:        time.Date(2026, 11, 3, 9, 30, 0, 0, time.UTC), Capabilities: []string{"export"},
-		Message: "feat(export): Pick a format", Author: "Dana Lee",
+		Message: "feat(export): Pick a format",
 		Signals: []learn.Signal{{
 			Kind: learn.KindAnsweredAsk, Rule: learn.RulePersonAnswered, Changes: []string{"aaaaaaa"}, Capability: "export",
 			Evidence: []string{"1 answered ask in session 11111111"},
@@ -697,12 +697,54 @@ func sessionBatch(q learn.Quote) learn.Result {
 	}}}
 }
 
+func TestPromptNamesThePerson(t *testing.T) {
+	at := time.Date(2026, 11, 3, 9, 10, 0, 0, time.UTC)
+	r := sessionBatch(learn.Quote{Author: "person", At: at, Text: "Which format?", Answer: "CSV"})
+	m := testMap(t)
+	b := NewBatch(m, r)
+	b.Person = "dphaener"
+	p, err := Prompt(m, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := "## Signals\n\nperson: dphaener\n\n### Change 1 of 1\n\n```text\nchange: aaaaaaa\n"
+	if !strings.Contains(p, block) {
+		t.Errorf("the prompt lacks %q", block)
+	}
+	if strings.Contains(p, "author: Dana Lee") || strings.Contains(p, "\nauthor: Dana") {
+		t.Errorf("the change block names a git author")
+	}
+}
+
+func TestPromptNamesNoPersonWhenUnknown(t *testing.T) {
+	m := testMap(t)
+	b := NewBatch(m, sessionBatch(learn.Quote{Author: "person", Text: "Which format?", Answer: "CSV"}))
+	p, err := Prompt(m, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(p, "## Signals\n\nperson: unknown\n\n### Change 1 of 1\n") {
+		t.Errorf("the prompt does not say person: unknown")
+	}
+}
+
+func TestSkillAttributesByThePersonAndTheArbiter(t *testing.T) {
+	for _, want := range []string{"Claude as arbiter", "person:", "decided by Claude as arbiter", "person: unknown"} {
+		if !strings.Contains(skill, want) {
+			t.Errorf("the skill lacks %q", want)
+		}
+	}
+	if strings.Contains(skill, "`author:` of the change") {
+		t.Errorf("the skill still credits the change's git author")
+	}
+}
+
 func TestPromptCarriesSessionQuotes(t *testing.T) {
 	at := time.Date(2026, 11, 3, 9, 10, 0, 0, time.UTC)
 	r := sessionBatch(learn.Quote{Author: "person", At: at, Text: "Which format?", Options: []string{"CSV", "JSON\nlines"}, Answer: "CSV"})
 	p, b := prompt(t, r)
 	for _, want := range []string{
-		"change: aaaaaaa\nauthor: Dana Lee\n",
+		"change: aaaaaaa\ndate: ",
 		"session: 11111111\nmatched by: trailer\n",
 		"Quote 1 of 1 on this signal:",
 		"author: person\nat: 2026-11-03T09:10:00Z\ntext:\nWhich format?\noptions offered:\n- CSV\n- JSON lines\nanswer:\nCSV\n",

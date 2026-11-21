@@ -39,9 +39,24 @@ func TestMain(m *testing.M) {
 	}
 	os.Setenv("CLAUDE_CONFIG_DIR", claudeDir)
 	os.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	// Nor the real person setting.
+	configDir, err := os.MkdirTemp("", "physa-test-config")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("XDG_CONFIG_HOME", configDir)
+	// A test that learns has a person by default; the ones about naming one
+	// set their own config dir.
+	if err := os.MkdirAll(filepath.Join(configDir, "physa"), 0o700); err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "physa", "person"), []byte("tester\n"), 0o600); err != nil {
+		panic(err)
+	}
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.RemoveAll(claudeDir)
+	os.RemoveAll(configDir)
 	os.Exit(code)
 }
 

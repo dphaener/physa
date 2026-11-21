@@ -55,7 +55,7 @@ func WriteMarkdown(w io.Writer, r Report) error {
 	for _, k := range r.Kept {
 		p := k.Proposal
 		fmt.Fprintf(&b, "## %s · %s\n\n", p.Capability, p.Section)
-		fmt.Fprintf(&b, "From a %s signal on %s.\n\n", p.Signal.Kind, strings.Join(p.Signal.Changes, ", "))
+		fmt.Fprintf(&b, "From %s %s signal on %s.\n\n", article(p.Signal.Kind), p.Signal.Kind, strings.Join(p.Signal.Changes, ", "))
 		b.WriteString(strings.TrimSpace(p.Entry) + "\n\n")
 	}
 	if len(r.Dropped) > 0 {
@@ -126,6 +126,15 @@ func what(d Dropped) string {
 // oneLine keeps a reason on one line of the list.
 func oneLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// article is the indefinite article for word: "an" when word starts with a
+// vowel letter, else "a".
+func article(word string) string {
+	if word != "" && strings.ContainsRune("aeiouAEIOU", rune(word[0])) {
+		return "an"
+	}
+	return "a"
 }
 
 func plural(n int, word string) string {

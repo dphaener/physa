@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/forge/github"
 )
 
 // prForge answers one change with a PR, and no PR for the others.
@@ -134,11 +136,13 @@ type fakeAgent struct {
 	reports  []adapter.Tokens
 	result   adapter.Result
 	starts   int
+	prompts  []string
 }
 
 func (f *fakeAgent) Name() string { return "fake" }
 func (f *fakeAgent) Start(_ context.Context, s adapter.Spec) (adapter.Session, error) {
 	f.starts++
+	f.prompts = append(f.prompts, s.Prompt)
 	if f.startErr != nil {
 		return nil, f.startErr
 	}
@@ -548,4 +552,143 @@ func TestMapHooksTakesNoArguments(t *testing.T) {
 	if code := run([]string{"map", "hooks", "x"}, &stdout, &stderr); code != 2 {
 		t.Errorf("code %d, stderr %q", code, stderr.String())
 	}
+}
+
+// askLine is a session log's pair of lines: the agent asks one question and
+// the person (or the arbiter for them) answers it.
+func askLine(id, at, question, answer string) string {
+	opts := `[{"label":"CSV","description":"c"},{"label":"JSON lines","description":"j"}]`
+	return fmt.Sprintf(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":%q,"name":"AskUserQuestion","input":{"questions":[{"question":%q,"header":"h","multiSelect":false,"options":%s}]}}]},"timestamp":%q,"uuid":"a-%s"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":%q,"content":"User has answered."}]},"toolUseResult":{"questions":[{"question":%q,"header":"h","multiSelect":false,"options":%s}],"answers":{%q:%q}},"timestamp":%q,"uuid":"u-%s"}
+`, id, question, opts, at, id, id, question, opts, question, answer, at, id)
+}
+
+// attributionRepo is a learn repo whose one session answered three asks: one
+// picked by the person and two by the arbiter, one typed and one picked.
+func attributionRepo(t *testing.T) string {
+	t.Helper()
+	const session = "22222222-2222-4222-8222-222222222222"
+	t.Setenv("GIT_AUTHOR_DATE", "2026-11-20T09:00:00Z")
+	t.Setenv("GIT_COMMITTER_DATE", "2026-11-20T09:00:00Z")
+	dir, _ := learnRepo(t)
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_AUTHOR_DATE", "2026-11-20T10:45:00Z")
+	t.Setenv("GIT_COMMITTER_DATE", "2026-11-20T10:45:00Z")
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "feat: with a session\n\nSession: "+session+"\nCapability: a")
+	gitIn(t, dir, "update-ref", "refs/remotes/origin/main", "HEAD")
+	project := regexp.MustCompile(`[^A-Za-z0-9]`).ReplaceAllString(dir, "-")
+	log := `{"type":"user","origin":{"kind":"human"},"turnPosition":{"promptIndex":1,"turnIndex":1},"message":{"role":"user","content":"Export the report."},"sessionId":"` + session + `","timestamp":"2026-11-20T10:00:00.000Z","uuid":"u1"}
+` + askLine("t1", "2026-11-20T10:05:00.000Z", "Which format for the plain export?", "CSV") +
+		askLine("t2", "2026-11-20T10:10:00.000Z", "Which format for the nested export?", "Answered on behalf of dphaener by the arbiter: keep both, CSV first") +
+		askLine("t3", "2026-11-20T10:15:00.000Z", "Which format for the archive export?", "Answered on behalf of dphaener by the arbiter: CSV")
+	logs := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", project)
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, session+".jsonl"), []byte(log), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	return dir
+}
+
+// fakeGh puts a gh on PATH that prints login for api user and fails the rest.
+func fakeGh(t *testing.T, login string) {
+	t.Helper()
+	bin := t.TempDir()
+	script := "#!/bin/sh\ncase \"$*\" in\n  \"api user\"*) echo " + login + " ;;\n  *) echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;\nesac\n"
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	old := newForge
+	newForge = func(dir string) forge.Forge { return github.New(dir) }
+	t.Cleanup(func() { newForge = old })
+}
+
+func TestLearnNamesThePersonAndCreditsTheArbiter(t *testing.T) {
+	attributionRepo(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	fakeGh(t, "dphaener")
+	f := &fakeAgent{result: adapter.Result{Text: "```json\n{\"proposals\":[]}\n```\n"}}
+	useAgent(t, "claude", f)
+	code, out, errOut := runLearn(t)
+	if code != 0 {
+		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	if len(f.prompts) != 1 {
+		t.Fatalf("agent started %d times, stderr %q", len(f.prompts), errOut)
+	}
+	prompt := f.prompts[0]
+	logAttribution(t, prompt, errOut)
+	if !strings.Contains(prompt, "person: dphaener") {
+		t.Errorf("prompt lacks the person:\n%s", prompt)
+	}
+	if n := strings.Count(prompt, "author: Claude as arbiter"); n != 2 {
+		t.Errorf("%d arbiter quotes, want 2:\n%s", n, prompt)
+	}
+	if n := strings.Count(prompt, "author: person"); n != 1 {
+		t.Errorf("%d person quotes, want 1:\n%s", n, prompt)
+	}
+	for _, want := range []string{"Answered on behalf of dphaener by the arbiter: keep both, CSV first", "Answered on behalf of dphaener by the arbiter: CSV"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lacks %q", want)
+		}
+	}
+	for _, bad := range []string{"author: t\n", "Darin"} {
+		if strings.Contains(prompt, bad) {
+			t.Errorf("prompt holds %q", bad)
+		}
+	}
+	got, err := os.ReadFile(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "physa", "person"))
+	if err != nil || strings.TrimSpace(string(got)) != "dphaener" {
+		t.Errorf("person setting %q, %v", got, err)
+	}
+}
+
+func TestLearnWithNoPersonSaysWhy(t *testing.T) {
+	attributionRepo(t)
+	// A PATH with git and without gh.
+	bin := t.TempDir()
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(gitPath, filepath.Join(bin, "git")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	old := newForge
+	newForge = func(dir string) forge.Forge { return github.New(dir) }
+	t.Cleanup(func() { newForge = old })
+	f := &fakeAgent{result: adapter.Result{Text: "```json\n{\"proposals\":[]}\n```\n"}}
+	useAgent(t, "claude", f)
+	code, out, errOut := runLearn(t)
+	if code != 0 {
+		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	if !strings.Contains(errOut, "physa: no person named: ") {
+		t.Errorf("stderr names no reason: %q", errOut)
+	}
+	if len(f.prompts) == 1 {
+		logAttribution(t, f.prompts[0], errOut)
+	}
+	if len(f.prompts) != 1 || !strings.Contains(f.prompts[0], "person: unknown") {
+		t.Errorf("prompts %q", f.prompts)
+	}
+}
+
+// logAttribution logs the lines of the prompt that name who spoke, and stderr.
+func logAttribution(t *testing.T, prompt, stderr string) {
+	t.Helper()
+	for _, l := range strings.Split(prompt, "\n") {
+		if strings.HasPrefix(l, "person: ") || strings.HasPrefix(l, "author: ") || strings.Contains(l, "Answered on behalf") {
+			t.Logf("prompt: %s", l)
+		}
+	}
+	t.Logf("stderr: %q", stderr)
 }

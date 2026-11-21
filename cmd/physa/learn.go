@@ -12,6 +12,7 @@ import (
 	"github.com/dphaener/physa/internal/learnbranch"
 	"github.com/dphaener/physa/internal/learnreport"
 	"github.com/dphaener/physa/internal/learnsession"
+	"github.com/dphaener/physa/internal/person"
 	"github.com/dphaener/physa/internal/propose"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs/git"
@@ -19,12 +20,14 @@ import (
 
 // learnMap is physa map learn: the signals with --signals, else what a draft
 // session proposed and the check kept and dropped; --write commits the kept
-// ones to physa/learn, --push pushes it and --pr opens its PR. It returns 0
-// when it printed, 1 when the circuit breaker stopped the session, 2 on any
-// failure. Without --write it never writes to the repo.
+// ones to physa/learn, --push pushes it, --pr opens its PR. It returns 0 when
+// it printed, 1 when the breaker stopped the session, 2 on failure.
 func learnMap(dir string, o learnbranch.Flags, stdout, stderr io.Writer) int {
 	session := propose.Session{Agent: func() (adapter.Adapter, error) { return agentFor(o.Agent) }, Appetite: o.Appetite,
 		Progress: stderr, Check: propose.Options{OpenRepo: git.Open, PRExists: prResolver(dir)}}
+	if !o.Signals {
+		session.Person = resolvePerson(dir, newForge(dir), stderr)
+	}
 	var out learnbranch.Outcome
 	var err error
 	if o.Write {
@@ -43,6 +46,8 @@ func learnMap(dir string, o learnbranch.Flags, stdout, stderr io.Writer) int {
 	}
 	return 0
 }
+
+var resolvePerson = person.ForRepo
 
 func writeBranch(dir string, o learnbranch.Flags, s propose.Session) (learnbranch.Outcome, error) {
 	w, err := git.OpenWriter(dir)
@@ -77,13 +82,9 @@ func draftOnly(dir string, o learnbranch.Flags, s propose.Session, stdout io.Wri
 	return propose.Run(context.Background(), dir, m, res, s)
 }
 
-// sessionLogs reads the logs of the sessions that worked in dir, whichever
-// agent drafts: session logs belong to whoever did the work.
+// sessionLogs reads the logs of the sessions that worked in dir, whoever drafts.
 func sessionLogs(dir string) learn.Sessions {
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		abs = dir
-	}
+	abs, _ := filepath.Abs(dir) // fails only with no working directory, then nothing matches
 	return learnsession.New(claude.NewLogs(abs))
 }
 

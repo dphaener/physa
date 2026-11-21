@@ -121,8 +121,6 @@ type ChangeSignals struct {
 	// Capabilities are the values of the change's Capability trailers, for
 	// drafting; not in the JSON form.
 	Capabilities []string `json:"-"`
-	// Author is the change's author, for drafting; not in the JSON form.
-	Author string `json:"-"`
 }
 
 // Incomplete is a change with no signal found whose forge signals could not
@@ -211,8 +209,7 @@ func Run(repo vcs.Repo, o Options) (Result, error) {
 		switch {
 		case len(e.signals) > 0:
 			res.Learn = append(res.Learn, ChangeSignals{ChangeRef: ref, Signals: e.signals,
-				Message: e.change.Message, At: e.change.Time, Capabilities: history.Trailers(e.change.Message, "Capability"),
-				Author: e.change.Author})
+				Message: e.change.Message, At: e.change.Time, Capabilities: history.Trailers(e.change.Message, "Capability")})
 			res.LearnedNow = append(res.LearnedNow, e.change.Short)
 		case e.forgeGap != "":
 			res.Incomplete = append(res.Incomplete, Incomplete{ChangeRef: ref,

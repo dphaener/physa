@@ -403,6 +403,29 @@ func TestWriteMarkdown(t *testing.T) {
 	}
 }
 
+func TestSignalLineArticle(t *testing.T) {
+	cases := map[string]string{
+		learn.KindCorrection:   "From a correction signal on def5678.",
+		learn.KindIntervention: "From an intervention signal on def5678.",
+		learn.KindAnsweredAsk:  "From an answered-ask signal on def5678.",
+	}
+	for kind, want := range cases {
+		r := Report{Version: ReportVersion, Session: SessionNone, Kept: []Kept{{
+			Proposal: draft.Proposal{Kind: "rule", Capability: "delivery", Section: "Rules",
+				Signal: draft.SignalRef{Kind: kind, Changes: []string{"def5678"}}, Changes: []string{"def5678"},
+				Entry: "### Retries go through the queue\n`queue-retries` · def5678\nBody.\nBecause: b."},
+			Slug: "queue-retries",
+		}}}
+		var b bytes.Buffer
+		if err := WriteMarkdown(&b, r); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("%s: output lacks %q:\n%s", kind, want, b.String())
+		}
+	}
+}
+
 func TestWriteJSON(t *testing.T) {
 	for _, session := range []string{SessionRan, SessionStopped, SessionNone} {
 		var b bytes.Buffer

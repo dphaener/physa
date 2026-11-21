@@ -312,7 +312,7 @@ func TestOwnMapCounts(t *testing.T) {
 	m, _ := mustRead(t, "../..")
 	want := map[string][3]int{
 		"confidence": {4, 1, 0}, "earned-release": {2, 5, 0}, "engine": {5, 8, 0},
-		"harnesses": {2, 7, 0}, "ideas": {4, 2, 0}, "init": {6, 4, 1}, "learning": {4, 4, 0},
+		"harnesses": {2, 7, 0}, "ideas": {4, 2, 0}, "init": {6, 4, 1}, "learning": {4, 5, 0},
 		"map": {5, 3, 0}, "rollback": {3, 1, 0}, "signals": {4, 4, 0}, "slices": {4, 3, 0},
 		"strength": {3, 3, 1}, "views": {3, 11, 1},
 	}

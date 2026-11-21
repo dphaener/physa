@@ -49,6 +49,8 @@ Triage thresholds (how many recurrences, how long a thread) start small and are 
 
 The session signals' kinds are `answered-ask`, `intervention` and `fixed-finding`; a fixed finding is one a later report of the same check in the same run passed, or one the report marks fixed.
 
+An answered ask whose answer starts "Answered on behalf of <person> by the arbiter" is credited to the arbiter, and is never the person's decision: it reads `decided by Claude as arbiter, choosing an option` when it picks an offered option, and `decided by Claude as arbiter, in their words` when typed. An intervention starting the same way is treated the same. Every other `decided by` or `raised by` learning names the person running Physa, by the name 03 §16 settles, never git's author name.
+
 Drift, a change quietly undoing a decision, is caught only when a signal points at it. That is the price of not reviewing code.
 
 ## 4. The draft

@@ -157,6 +157,7 @@ func Run(ctx context.Context, w vcs.Writer, o Options) (Outcome, error) {
 			return nil
 		}
 		batch = draft.NewBatch(m, out.Result)
+		batch.Person = o.Session.Person
 		rec := record{changes: out.Result.Changes, watermark: out.Result.Watermark,
 			through: out.Result.Through, learned: out.Result.LearnedNow, carried: carried,
 			session: out.Report.DraftSession}

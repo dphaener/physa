@@ -23,6 +23,9 @@ type Session struct {
 	Progress io.Writer
 	// Check is passed to Check.
 	Check Options
+	// Person is the name of the person running Physa, or empty when unknown;
+	// the draft prompt names them.
+	Person string
 }
 
 // Run is learning's draft and check stages end to end: it batches the
@@ -38,6 +41,7 @@ func Run(ctx context.Context, root string, m *mapfile.Map, res learn.Result, s S
 		appetite = draft.DefaultAppetite
 	}
 	batch := draft.NewBatch(m, res)
+	batch.Person = s.Person
 	report := Report{
 		Version: ReportVersion, Range: res.Range,
 		Changes: batch.ChangeCount(), Signals: batch.SignalCount(), Capabilities: batch.CapabilityCount(),

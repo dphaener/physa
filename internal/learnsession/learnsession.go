@@ -10,6 +10,7 @@ package learnsession
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,9 @@ const (
 	// authorMessage is the author of an intervention. That a message came
 	// through the person's channel does not prove a person wrote it.
 	authorMessage = "message in the session"
+	// authorArbiter is the author of an answer the arbiter gave on the
+	// owner's behalf, not the owner.
+	authorArbiter = "Claude as arbiter"
 )
 
 // idLen is how much of a session's id evidence shows.
@@ -165,6 +169,29 @@ func sessionSignals(sid string, log adapter.Log, w window) []learn.Signal {
 	return out
 }
 
+// byArbiter reports whether text is an answer the arbiter gave on a person's
+// behalf: it starts "Answered on behalf of <person> by the arbiter", the
+// phrase ending before the first colon.
+func byArbiter(text string) bool {
+	text = strings.TrimSpace(text)
+	if len(text) < len(arbiterPrefix) || !strings.EqualFold(text[:len(arbiterPrefix)], arbiterPrefix) {
+		return false
+	}
+	head, _, _ := strings.Cut(text, ":")
+	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(head)), " by the arbiter")
+}
+
+// arbiterPrefix opens an answer the arbiter gave on a person's behalf.
+const arbiterPrefix = "Answered on behalf of "
+
+// authorOf returns the author of an answer or message text, else fallback.
+func authorOf(text, fallback string) string {
+	if byArbiter(text) {
+		return authorArbiter
+	}
+	return fallback
+}
+
 // asks returns one Quote per answered ask in w.
 func asks(list []adapter.Ask, w window) []learn.Quote {
 	var out []learn.Quote
@@ -172,7 +199,7 @@ func asks(list []adapter.Ask, w window) []learn.Quote {
 		if !w.holds(a.At) {
 			continue
 		}
-		out = append(out, learn.Quote{Author: authorPerson, At: a.At, Text: a.Text,
+		out = append(out, learn.Quote{Author: authorOf(a.Answer, authorPerson), At: a.At, Text: a.Text,
 			Options: append([]string(nil), a.Options...), Answer: a.Answer})
 	}
 	return out
@@ -185,7 +212,7 @@ func interventions(list []adapter.Message, w window) []learn.Quote {
 		if !w.holds(m.At) {
 			continue
 		}
-		out = append(out, learn.Quote{Author: authorMessage, At: m.At, Text: m.Text})
+		out = append(out, learn.Quote{Author: authorOf(m.Text, authorMessage), At: m.At, Text: m.Text})
 	}
 	return out
 }

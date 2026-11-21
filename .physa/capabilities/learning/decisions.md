@@ -6,6 +6,7 @@
 - [Physa records what it observes](#physa-records-what-it-observes)
 - [Checks and sync run here](#checks-and-sync-run-here)
 - [Recurring findings become proposed rules](#recurring-findings-become-proposed-rules)
+- [Answers by the arbiter are credited to the arbiter](#answers-by-the-arbiter-are-credited-to-the-arbiter)
 
 ## Entries
 
@@ -34,3 +35,8 @@ Rejected:
 `findings-to-rules` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/03-engine-and-store.md
 When the same kind of finding recurs on a capability, learning proposes a rule on the next `physa/learn` PR.
 Because: a rule in the slice costs a few lines; the same lesson paid in review costs a build, a round and a fix.
+
+### Answers by the arbiter are credited to the arbiter
+`arbiter-answers-credited` · decided by dphaener, in their words · 2026-11-21 · from docs/architecture/08-learning.md
+When the arbiter answers on a person's behalf, the answer is credited to Claude as arbiter, never to that person.
+Because: "Yes the arbiter should always answer in this way so it's attributable. If there is a more durable way to do this we should explore it."

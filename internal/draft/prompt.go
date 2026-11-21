@@ -55,6 +55,12 @@ func Prompt(m *mapfile.Map, b Batch) (string, error) {
 	w.WriteString("\n## Signals\n\n")
 	if b.Empty() {
 		w.WriteString(none)
+	} else {
+		person := OneLine(b.Person)
+		if person == "" {
+			person = "unknown"
+		}
+		w.WriteString("person: " + person + "\n\n")
 	}
 	q := &quoter{}
 	for i, c := range b.Changes {
@@ -63,9 +69,6 @@ func Prompt(m *mapfile.Map, b Batch) (string, error) {
 		}
 		fmt.Fprintf(&w, "### Change %d of %d\n\n", i+1, len(b.Changes))
 		head := "change: " + OneLine(c.Short)
-		if c.Author != "" {
-			head += "\nauthor: " + OneLine(c.Author)
-		}
 		if !c.At.IsZero() {
 			head += "\ndate: " + c.At.UTC().Format(time.RFC3339)
 		}
@@ -213,13 +216,13 @@ func (b Batch) Cuts() string {
 		parts = append(parts, fmt.Sprintf("%s cut to %d characters", plural(q.cut, "quote", "quotes"), commentRunes))
 	}
 	if q.leftOut > 0 {
-		parts = append(parts, plural(q.leftOut, "comment", "comments") + " left out")
+		parts = append(parts, plural(q.leftOut, "comment", "comments")+" left out")
 	}
 	if q.quotes > 0 {
-		parts = append(parts, plural(q.quotes, "session quote", "session quotes") + " left out")
+		parts = append(parts, plural(q.quotes, "session quote", "session quotes")+" left out")
 	}
 	if q.msgOut > 0 {
-		parts = append(parts, plural(q.msgOut, "reverted message", "reverted messages") + " left out")
+		parts = append(parts, plural(q.msgOut, "reverted message", "reverted messages")+" left out")
 	}
 	return strings.Join(parts, ", ")
 }

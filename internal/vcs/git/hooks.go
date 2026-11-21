@@ -98,3 +98,18 @@ func (h *hooks) HooksDir() (string, error) {
 	}
 	return filepath.Join(strings.TrimSpace(out), "hooks"), nil
 }
+
+// Email reads user.email from every scope git reads, for the repository at
+// dir or outside any. It is "" with no error when unset: git config exits 1,
+// printing nothing. It never reads user.name.
+func Email(dir string) (string, error) {
+	out, stderr, err := runGit(dir, "", os.Environ(), "config", "--get", "user.email")
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 && stderr == "" {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("user.email cannot be read: %w", gitError(err, stderr))
+	}
+	return strings.TrimSpace(out), nil
+}

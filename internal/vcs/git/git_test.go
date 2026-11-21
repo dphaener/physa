@@ -428,3 +428,19 @@ func TestAlteredBadID(t *testing.T) {
 		t.Fatalf("altered = %v, want an error", got)
 	}
 }
+
+func TestEmail(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	_, dir := newRepo(t)
+	got, err := Email(dir)
+	if err != nil || got != "" {
+		t.Errorf("unset: %q, %v", got, err)
+	}
+	if out, err := exec.Command("git", "-C", dir, "config", "--local", "user.email", "Darin.H@example.com").CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if got, err = Email(dir); err != nil || got != "Darin.H@example.com" {
+		t.Errorf("set: %q, %v", got, err)
+	}
+}

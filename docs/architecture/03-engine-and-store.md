@@ -244,7 +244,7 @@ The engine is the part of Physa most likely to grow by accretion. Its packages g
 ## 16. Settled with the owner (2026-11-21): the step 5 round
 
 - **Ideas, pitches and bets live in the local store only, for now.** One clone holds them; mirroring to `refs/notes/physa` waits for team digests (07 §7) and the hosted layer.
-- **A person is named by their forge login** (GitHub: `dphaener`), read once and kept in `~/.config/physa/`, with a setting to change it. With no forge, the part of git's email before the `@`. The map, the engine and learning all use this name; an arbiter's answer is "Claude as arbiter, on behalf of dphaener".
+- **A person is named by their forge login** (GitHub: `dphaener`), read once and kept in `~/.config/physa/`, with a setting to change it. With no forge, the part of git's email before the `@`. The map, the engine and learning all use this name; an arbiter's answer is "Claude as arbiter, on behalf of dphaener". The name is kept in `~/.config/physa/person` (under `$XDG_CONFIG_HOME` when set) as one line, and editing that file is the setting; a name taken from git's email is not kept, and a settings command can replace the file later.
 - **Writers are split by table** (§5.1): the engine writes work and run state; the map commands write their own records.
 - **The engine exits when idle**: up while work is pending, gone after 30 minutes with none; the next command that needs it starts it again.
 - **Pitches are written in `$EDITOR` or from a file**: `physa idea shape <slug>` opens a markdown template of the seven parts (problem, appetite, solution, scope, signal, rabbit holes, no-gos); `--from <file>` or stdin is how agents write one. Physa checks the parts and stores it.

@@ -64,6 +64,12 @@ type Options struct {
 	// DocRoot is where `from <path>` anchors resolve; empty means root. A
 	// scratch copy of the map uses it to check against the real repo.
 	DocRoot string
+	// FormOnly checks every anchor for its form alone: a commit anchor is
+	// not resolved, so it is no problem, and a #N anchor is not resolved
+	// whatever PRExists says. History and the forge are never read. Every
+	// other check runs as it does without the option: format, contents,
+	// slugs, terms, size limits, and `from <path>` anchors naming a file.
+	FormOnly bool
 }
 
 // Check reads the map under root (the repo root) and checks it, with no
@@ -76,15 +82,25 @@ func Check(root string) (Result, error) {
 // CheckWith is Check with options: it resolves #N anchors through
 // o.PRExists and commit anchors through o.OpenRepo, when each is set.
 func CheckWith(root string, o Options) (Result, error) {
+	_, res, err := CheckRead(root, o)
+	return res, err
+}
+
+// CheckRead is CheckWith that also returns the map it read, so a caller
+// that needs the map reads it once. The map is nil only with an error.
+func CheckRead(root string, o Options) (*mapfile.Map, Result, error) {
 	m, problems, err := mapfile.Read(root)
 	if err != nil {
-		return Result{}, err
+		return nil, Result{}, err
 	}
 	docRoot := o.DocRoot
 	if docRoot == "" {
 		docRoot = root
 	}
-	c := &checker{root: root, docRoot: docRoot, problems: problems, prExists: o.PRExists, prKnown: map[int]bool{}, openRepo: o.OpenRepo}
+	c := &checker{root: root, docRoot: docRoot, problems: problems, prExists: o.PRExists, prKnown: map[int]bool{}, openRepo: o.OpenRepo, formOnly: o.FormOnly}
+	if o.FormOnly {
+		c.prExists = nil
+	}
 	files := m.Capabilities
 	if m.Product != nil {
 		files = append([]*mapfile.File{m.Product}, files...)
@@ -117,11 +133,12 @@ func CheckWith(root string, o Options) (Result, error) {
 	if c.prExists != nil && c.prNote == "" {
 		res.PRAnchors = PRAnchorsGitHub
 	}
-	return res, nil
+	return m, res, nil
 }
 
 type checker struct {
 	root     string
+	formOnly bool   // commit anchors are not resolved
 	docRoot  string // where doc anchors resolve
 	problems []mapfile.Problem
 
@@ -231,6 +248,9 @@ func (c *checker) docAnchor(file string, line int, p string) {
 // commitAnchor checks that a commit-hash anchor names a change in the repo.
 // Version control is opened only when the first commit anchor is met.
 func (c *checker) commitAnchor(file string, line int, hash string) {
+	if c.formOnly {
+		return // the reader has checked the form
+	}
 	if !c.repoOpen {
 		c.repoOpen = true
 		if c.openRepo == nil {

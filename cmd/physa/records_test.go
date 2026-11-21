@@ -32,7 +32,7 @@ func listed(t *testing.T) []store.SliceRecord {
 		At           string   `json:"at"`
 		Capabilities []string `json:"capabilities"`
 		With         string   `json:"with"`
-		Budget       *int     `json:"budget"`
+		Entries      []string `json:"entries"`
 		Session      *string  `json:"session"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &recs); err != nil {
@@ -40,10 +40,7 @@ func listed(t *testing.T) []store.SliceRecord {
 	}
 	var res []store.SliceRecord
 	for _, r := range recs {
-		sr := store.SliceRecord{Capabilities: r.Capabilities, With: r.With}
-		if r.Budget != nil {
-			sr.Budget = *r.Budget
-		}
+		sr := store.SliceRecord{Capabilities: r.Capabilities, With: r.With, Entries: r.Entries}
 		if r.Session != nil {
 			sr.Session = *r.Session
 		}
@@ -57,7 +54,7 @@ func TestSliceRecordsEachPrintedSlice(t *testing.T) {
 	useStore(t)
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "s-1")
 	var out, errb bytes.Buffer
-	if code := run([]string{"map", "slice", "slices", "map", "--with", "all", "--budget", "9000"}, &out, &errb); code != 0 {
+	if code := run([]string{"map", "slice", "slices", "map", "--with", "all"}, &out, &errb); code != 0 {
 		t.Fatalf("code = %d; stderr %q", code, errb.String())
 	}
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
@@ -68,22 +65,43 @@ func TestSliceRecordsEachPrintedSlice(t *testing.T) {
 	if len(recs) != 2 {
 		t.Fatalf("records = %+v, want 2", recs)
 	}
-	if r := recs[0]; strings.Join(r.Capabilities, ",") != "map" || r.With != "" || r.Budget != 0 || r.Session != "" {
-		t.Errorf("newest = %+v, want map, no with, no budget, no session", r)
+	if r := recs[0]; strings.Join(r.Capabilities, ",") != "map" || r.With != "" || r.Entries != nil || r.Session != "" {
+		t.Errorf("newest = %+v, want map, no with, no entries, no session", r)
 	}
-	if r := recs[1]; strings.Join(r.Capabilities, ",") != "slices,map" || r.With != "all" || r.Budget != 9000 || r.Session != "s-1" {
-		t.Errorf("oldest = %+v, want slices,map with all budget 9000 session s-1", r)
+	if r := recs[1]; strings.Join(r.Capabilities, ",") != "slices,map" || r.With != "all" || r.Session != "s-1" {
+		t.Errorf("oldest = %+v, want slices,map with all session s-1", r)
 	}
 	var js, e bytes.Buffer
 	run([]string{"map", "records", "--json"}, &js, &e)
-	if !strings.Contains(js.String(), `"session":null`) || !strings.Contains(js.String(), `"budget":null`) {
-		t.Errorf("json = %q, want null session and budget", js.String())
+	if !strings.Contains(js.String(), `"session":null`) || !strings.Contains(js.String(), `"entries":null`) {
+		t.Errorf("json = %q, want null session and entries", js.String())
 	}
 	var txt bytes.Buffer
 	run([]string{"map", "records"}, &txt, &e)
 	lines := strings.Split(strings.TrimSpace(txt.String()), "\n")
-	if len(lines) != 2 || !strings.Contains(lines[0], " — map") || !strings.HasSuffix(lines[1], "s-1 slices,map with all budget 9000") {
+	if len(lines) != 2 || !strings.Contains(lines[0], " — map") || !strings.HasSuffix(lines[1], "s-1 slices,map with all") {
 		t.Errorf("records = %q", txt.String())
+	}
+}
+
+func TestEntryReadRecordedWithItsSlugs(t *testing.T) {
+	t.Chdir("../..")
+	useStore(t)
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "s-2")
+	if code := run([]string{"map", "slice", "--entry", "no-adr", "github-first"}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+		t.Fatalf("code = %d", code)
+	}
+	recs := listed(t)
+	if len(recs) != 1 {
+		t.Fatalf("records = %+v, want 1", recs)
+	}
+	if r := recs[0]; strings.Join(r.Entries, ",") != "no-adr,github-first" || len(r.Capabilities) != 0 || r.With != "" || r.Session != "s-2" {
+		t.Errorf("record = %+v, want entries no-adr,github-first with no capabilities", r)
+	}
+	var txt, e bytes.Buffer
+	run([]string{"map", "records"}, &txt, &e)
+	if !strings.Contains(txt.String(), "entries no-adr, github-first") {
+		t.Errorf("records = %q, want the entries shown", txt.String())
 	}
 }
 
@@ -104,7 +122,7 @@ func TestSliceWithDecisionsAndQuestionsRecorded(t *testing.T) {
 func TestNoRecordForFailedSlices(t *testing.T) {
 	t.Chdir("../..")
 	useStore(t)
-	for _, args := range [][]string{{"slice", "nope"}, {"slice"}, {"slice", "map", "--with", "bad"}} {
+	for _, args := range [][]string{{"slice", "nope"}, {"slice"}, {"slice", "map", "--with", "bad"}, {"map", "slice", "--entry", "nope"}} {
 		run(args, &bytes.Buffer{}, &bytes.Buffer{})
 	}
 	if recs := listed(t); len(recs) != 0 {

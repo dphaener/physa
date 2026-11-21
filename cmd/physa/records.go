@@ -49,13 +49,16 @@ func recordSlice(dir string, req mapslice.Request, stderr io.Writer) {
 		return
 	}
 	defer s.Close()
-	err = s.PutSliceRecord(store.SliceRecord{
-		At:           time.Now().UTC(),
-		Capabilities: req.Capabilities,
-		With:         withName(req),
-		Budget:       req.Budget,
-		Session:      os.Getenv("CLAUDE_CODE_SESSION_ID"),
-	})
+	rec := store.SliceRecord{
+		At:      time.Now().UTC(),
+		Session: os.Getenv("CLAUDE_CODE_SESSION_ID"),
+	}
+	if len(req.Entries) > 0 {
+		rec.Entries = req.Entries
+	} else {
+		rec.Capabilities, rec.With = req.Capabilities, withName(req)
+	}
+	err = s.PutSliceRecord(rec)
 	if err != nil {
 		fmt.Fprintf(stderr, "physa map slice: not recorded: %v\n", err)
 	}

@@ -4,7 +4,7 @@
 
 - [Agents choose, the CLI assembles](#agents-choose-the-cli-assembles)
 - [Same request, same slice](#same-request-same-slice)
-- [Product rules and promises are never cut](#product-rules-and-promises-are-never-cut)
+- [Promises, overviews, rules and headings are always in a slice](#promises-overviews-rules-and-headings-are-always-in-a-slice)
 - [Fast from day one](#fast-from-day-one)
 
 ## Entries
@@ -19,10 +19,10 @@ Because: the agent knows its task; matching text to capabilities is flaky, and e
 Everything in a slice except its current-state section depends only on the map and the request.
 Because: agents and people must be able to trust and reproduce what was loaded.
 
-### Product rules and promises are never cut
-`never-cut` · from docs/architecture/01-map-and-slice.md
-When a slice is over its budget, product.md's decisions and questions go first, then rejected options, terms, questions, reasons and decisions. Product rules, promises and rules stay.
-Because: they are what an agent most needs; if they alone don't fit, the map is too big.
+### Promises, overviews, rules and headings are always in a slice
+`never-cut` · from docs/architecture/09-capability-folders.md
+Product rules, promises, overviews, rules, and the headings of decisions and questions are in every slice; the agent chooses the rest, and nothing is cut by size.
+Because: they are what an agent most needs, and which decisions and questions bear on a task is the agent's judgment, not a size limit's.
 
 ### Fast from day one
 `fifty-ms` · from docs/architecture/01-map-and-slice.md

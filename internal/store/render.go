@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -27,12 +26,15 @@ func WriteRecords(w io.Writer, recs []SliceRecord, asJSON bool) error {
 		if session == "" {
 			session = "—"
 		}
-		line := fmt.Sprintf("%s %s %s", r.At.UTC().Format(time.RFC3339), session, strings.Join(r.Capabilities, ","))
+		line := fmt.Sprintf("%s %s", r.At.UTC().Format(time.RFC3339), session)
+		if len(r.Capabilities) > 0 || len(r.Entries) == 0 {
+			line += " " + strings.Join(r.Capabilities, ",")
+		}
 		if r.With != "" {
 			line += " with " + r.With
 		}
-		if r.Budget != 0 {
-			line += " budget " + strconv.Itoa(r.Budget)
+		if len(r.Entries) > 0 {
+			line += " entries " + strings.Join(r.Entries, ", ")
 		}
 		if _, err := fmt.Fprintln(w, line); err != nil {
 			return err

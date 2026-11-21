@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"strings"
@@ -23,7 +24,8 @@ func mapCommand() *cli.Command {
 		Usage: []string{
 			"physa map",
 			"physa map index [dir]",
-			"physa map slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]",
+			"physa map slice <capability>... [--with decisions|questions|all] [--format md|json]",
+			"physa map slice --entry <slug>... [--format md|json]",
 			"physa map changes [<range>] [--json] [--strict]",
 			"physa map records [--json]",
 			"physa map fmt [--check] [dir]",
@@ -55,7 +57,10 @@ func mapCommand() *cli.Command {
 			{
 				Name:    "slice",
 				Summary: "Print the slice of the map a task needs.",
-				Usage:   []string{"physa map slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]"},
+				Usage: []string{
+					"physa map slice <capability>... [--with decisions|questions|all] [--format md|json]",
+					"physa map slice --entry <slug>... [--format md|json]",
+				},
 				Run: func(args []string, stdout, stderr io.Writer) int {
 					opts, ok := mapslice.ParseFlags(args)
 					if !ok {
@@ -148,30 +153,23 @@ func index(dir string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// slice prints the slice of the map in dir: 0 when it printed, even if the map
-// has problems or the slice is over budget, and 2 when the map cannot be read,
-// a capability is unknown or the slice cannot be written.
+// slice prints what the slice command line o asks for from the map in dir:
+// 0 when it printed, and 2 when the map has a problem physa check map would
+// report, a capability or slug is unknown, or the slice cannot be written.
+// Nothing is printed or recorded on a failure.
 func slice(dir string, o mapslice.Flags, stdout, stderr io.Writer) int {
-	m, problems, err := mapfile.Read(dir)
+	m, err := mapslice.Read(dir)
 	if err != nil {
 		return failed(stderr, "slice", err)
 	}
-	s, err := mapslice.Build(m, o.Req)
-	if err != nil {
+	var out bytes.Buffer
+	if err := mapslice.Write(&out, m, o); err != nil {
 		return failed(stderr, "slice", err)
 	}
-	write := mapslice.WriteMD
-	if o.JSON {
-		write = mapslice.WriteJSON
-	}
-	if err := write(stdout, s); err != nil {
+	if _, err := out.WriteTo(stdout); err != nil {
 		return failed(stderr, "slice", err)
 	}
 	recordSlice(dir, o.Req, stderr)
-	noteProblems(stderr, "slice", len(problems))
-	if s.OverBudget {
-		fmt.Fprintf(stderr, "physa map slice: over budget: what is never cut is %s, over the %d-token budget\n", plural(s.Used, "token", "tokens"), s.Budget)
-	}
 	return 0
 }
 

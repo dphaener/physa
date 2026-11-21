@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,8 +20,8 @@ import (
 )
 
 // fixture is a small map: the product with a rule, a decision and a question,
-// and two capabilities, alpha and beta, each with a rule, a decision and a
-// question.
+// and capabilities alpha and beta, each with a rule, a decision and a
+// question, and gamma, which no test asks for.
 func fixture() *mapfile.Map {
 	entry := func(k mapfile.Kind, heading, slug, body string) mapfile.Entry {
 		e := mapfile.Entry{Kind: k, Heading: heading, Slug: slug, Body: body}
@@ -40,7 +42,8 @@ func fixture() *mapfile.Map {
 	return &mapfile.Map{
 		Product: &mapfile.File{
 			Path: ".physa/product", Name: "product", Title: "Mini",
-			Promise: "Teams ship with confidence.",
+			Promise:  "Teams ship with confidence.",
+			Overview: "Mini is a feature-rich widget.",
 			Entries: []mapfile.Entry{
 				entry(mapfile.Rule, "Never log emails", "no-emails", "Never log customer emails."),
 				entry(mapfile.Decision, "Go core", "go-core", "The core is Go."),
@@ -50,7 +53,8 @@ func fixture() *mapfile.Map {
 		Capabilities: []*mapfile.File{
 			{
 				Path: ".physa/capabilities/alpha", Name: "alpha", Title: "Alpha",
-				Promise: "Alpha keeps the map readable.",
+				Promise:  "Alpha keeps the map readable.",
+				Overview: "Alpha covers how files are laid out.\nIt reads every folder.",
 				Entries: []mapfile.Entry{
 					entry(mapfile.Rule, "Keep it short", "alpha-rule", "Keep every file short."),
 					entry(mapfile.Decision, "One file each", "alpha-decision", "One file per capability."),
@@ -59,7 +63,8 @@ func fixture() *mapfile.Map {
 			},
 			{
 				Path: ".physa/capabilities/beta", Name: "beta", Title: "Beta",
-				Promise: "Beta answers fast.",
+				Promise:  "Beta answers fast.",
+				Overview: "Beta builds the context pack.",
 				Entries: []mapfile.Entry{
 					entry(mapfile.Rule, "Answer fast", "beta-rule", "Answer in under 50 ms."),
 					entry(mapfile.Decision, "No cache", "beta-decision", "No cache until the test fails."),
@@ -74,7 +79,7 @@ func fixture() *mapfile.Map {
 		Glossary: []mapfile.Term{
 			{Name: "Map", Definition: "The product's knowledge.", Avoid: []string{"model", "graph"}},
 			{Name: "Capability", Definition: "A promise the product makes.", Avoid: []string{"feature"}},
-			{Name: "Widget", Definition: "A thing only a question mentions."},
+			{Name: "Widget", Definition: "A thing only the product mentions."},
 			{Name: "Slice", Definition: "The part of the map for one task.", Avoid: []string{"context pack"}},
 			{Name: "Cache", Definition: "A second copy kept for speed."},
 		},
@@ -108,40 +113,22 @@ func jsonOut(t *testing.T, s *Slice) []byte {
 	return b.Bytes()
 }
 
-// costAt is the budget cost of the slice with the first k cuts applied.
-func costAt(t *testing.T, m *mapfile.Map, r Request, k int) int {
+func take(t *testing.T, m *mapfile.Map, slugs ...string) *Taken {
 	t.Helper()
-	a, err := newAssembler(m, r)
+	tk, err := Take(m, slugs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, cost := a.assemble(k)
-	return cost
+	return tk
 }
 
-func cutKeys(t *testing.T, m *mapfile.Map, r Request) []string {
+func takenMD(t *testing.T, tk *Taken) string {
 	t.Helper()
-	a, err := newAssembler(m, r)
-	if err != nil {
+	var b bytes.Buffer
+	if err := WriteTakenMD(&b, tk); err != nil {
 		t.Fatal(err)
 	}
-	var keys []string
-	for _, c := range a.cuts {
-		if c.part == PartTerm {
-			keys = append(keys, a.terms[c.term].Name+"/"+c.part)
-			continue
-		}
-		keys = append(keys, a.secs[c.sec].Entries[c.ent].Slug+"/"+c.part)
-	}
-	return keys
-}
-
-func leftOut(s *Slice) []string {
-	var got []string
-	for _, l := range s.LeftOut {
-		got = append(got, l.Slug+"/"+l.Part)
-	}
-	return got
+	return b.String()
 }
 
 func inOrder(t *testing.T, text string, parts ...string) {
@@ -156,35 +143,83 @@ func inOrder(t *testing.T, text string, parts ...string) {
 	}
 }
 
+const (
+	decisionsLine = "Decisions (take with physa map slice --entry <slug>...)\n"
+	questionsLine = "Questions (take with physa map slice --entry <slug>...)\n"
+)
+
 func TestSectionOrder(t *testing.T) {
-	r := Request{Capabilities: []string{"beta", "alpha"}}
-	r.Budget = costAt(t, fixture(), r, 4) // cuts product's decision and question and the rejected options, keeps the terms
-	s := build(t, fixture(), r)
-	out := md(t, s)
-	if len(s.LeftOut) == 0 {
-		t.Fatalf("budget %d should cut something:\n%s", r.Budget, out)
-	}
+	out := md(t, build(t, fixture(), Request{Capabilities: []string{"beta", "alpha"}}))
 	inOrder(t, out,
-		"# Slice: alpha, beta\n",
-		"Budget: ",
-		"\n## Product: Mini\n",
-		"\n## Alpha\n", "\nFile: .physa/capabilities/alpha/\n", "\nPromise: Alpha keeps the map readable.\n",
-		"\n### Rules\n", "\n#### Keep it short\n",
+		"# Slice: alpha, beta\n\n## Product: Mini\n",
+		"\nFile: .physa/product/\nPromise: Teams ship with confidence.\n",
+		"\n### Rules\n\n#### Never log emails\n",
+		"\n"+decisionsLine+"- go-core: Go core\n",
+		"\n"+questionsLine+"- pricing: How is it priced?\n",
+		"\n## Alpha\nFile: .physa/capabilities/alpha/\nPromise: Alpha keeps the map readable.\n\nAlpha covers how files are laid out.\nIt reads every folder.\n",
+		"\n### Rules\n\n#### Keep it short\n",
+		"\n"+decisionsLine, "\n"+questionsLine,
 		"\n## Beta\n",
 		"\n## Terms\n",
-		"\n## Left out\n",
+		"\n## Reading further\n\n",
 		"\n## How to anchor\n",
 	)
-	if strings.Contains(out, "Gamma") {
-		t.Errorf("a capability that was not asked for is in the slice:\n%s", out)
+	for _, gone := range []string{"Gamma", "Current state", "Tokens:", "Mini is a feature-rich widget."} {
+		if strings.Contains(out, gone) {
+			t.Errorf("%q should not be in the slice:\n%s", gone, out)
+		}
 	}
-	if strings.Contains(out, "Current state") {
-		t.Errorf("section 4 must not be built:\n%s", out)
+}
+
+func TestHeadingLines(t *testing.T) {
+	out := md(t, build(t, fixture(), Request{Capabilities: []string{"alpha"}}))
+	want := "\n" + decisionsLine + "- alpha-decision: One file each\n\n" + questionsLine + "- alpha-question: Split big files?\n\n## Terms\n"
+	if !strings.Contains(out, want) {
+		t.Errorf("want\n%s\nin:\n%s", want, out)
+	}
+	body := out[:strings.Index(out, "\n## Reading further\n")] // the skill names Rejected: lists
+	for _, part := range []string{"The core is Go.", "Postponed until", "One file per capability.", "Should a big file be split?", "Rejected:", "`alpha-decision` ·", "`pricing` ·", "### Decisions", "### Questions"} {
+		if strings.Contains(body, part) {
+			t.Errorf("a bare slice holds %q:\n%s", part, out)
+		}
+	}
+	// Heading lines keep the file's order; they are never sorted.
+	m := fixture()
+	a := m.Capabilities[0]
+	a.Entries = append(a.Entries, mapfile.Entry{Kind: mapfile.Decision, Heading: "Aardvark first", Slug: "aardvark"})
+	if out := md(t, build(t, m, Request{Capabilities: []string{"alpha"}})); !strings.Contains(out, "- alpha-decision: One file each\n- aardvark: Aardvark first\n") {
+		t.Errorf("heading lines out of file order:\n%s", out)
+	}
+}
+
+func TestWithKinds(t *testing.T) {
+	m := fixture()
+	out := md(t, build(t, m, Request{Capabilities: []string{"alpha"}, WithDecisions: true}))
+	inOrder(t, out, "## Product: Mini", "### Decisions\n\n#### Go core\n`go-core` · decided by dana", "The core is Go.", questionsLine+"- pricing: How is it priced?\n",
+		"## Alpha", "### Decisions\n\n#### One file each\n", questionsLine+"- alpha-question: Split big files?\n")
+	if strings.Contains(out, decisionsLine) {
+		t.Errorf("decisions in full and as headings:\n%s", out)
+	}
+	out = md(t, build(t, m, Request{Capabilities: []string{"alpha"}, WithQuestions: true}))
+	inOrder(t, out, "### Questions\n\n#### How is it priced?\n", "Postponed until the widget exists.", "### Questions\n\n#### Split big files?\n")
+	if !strings.Contains(out, decisionsLine+"- alpha-decision: One file each\n") || strings.Contains(out, questionsLine) {
+		t.Errorf("--with questions keeps decisions as headings only:\n%s", out)
+	}
+	s := build(t, m, Request{Capabilities: []string{"alpha"}, WithDecisions: true, WithQuestions: true})
+	out = md(t, s)
+	if strings.Contains(out, "(take with") {
+		t.Errorf("--with all leaves heading lines:\n%s", out)
+	}
+	if len(s.Sections[0].Contents) != 0 || len(s.Sections[0].Entries) != 3 || len(s.Product.Entries) != 3 {
+		t.Errorf("--with all: %+v", s.Sections[0])
+	}
+	if !strings.Contains(out, "\n## Reading further\n") {
+		t.Errorf("--with all lacks the skill:\n%s", out)
 	}
 }
 
 func TestEntryLayout(t *testing.T) {
-	out := md(t, build(t, fixture(), Request{Capabilities: []string{"alpha"}}))
+	out := md(t, build(t, fixture(), Request{Capabilities: []string{"alpha"}, WithDecisions: true, WithQuestions: true}))
 	want := "#### One file each\n" +
 		"`alpha-decision` · decided by dana, accepting a proposal · 2026-03-02 · #12 a1b2c3d\n" +
 		"One file per capability.\n" +
@@ -200,9 +235,6 @@ func TestEntryLayout(t *testing.T) {
 		t.Errorf("question meta line missing:\n%s", out)
 	}
 	inOrder(t, out, "### Rules", "### Decisions", "### Questions", "## Terms")
-	if s := build(t, fixture(), Request{Capabilities: []string{"alpha"}}); len(s.LeftOut) != 0 || strings.Contains(out, "## Left out") {
-		t.Errorf("nothing should be cut without a budget:\n%s", out)
-	}
 }
 
 func TestMetaAnchorsMixed(t *testing.T) {
@@ -215,141 +247,6 @@ func TestMetaAnchorsMixed(t *testing.T) {
 	}
 }
 
-func TestCutOrder(t *testing.T) {
-	got := cutKeys(t, fixture(), Request{Capabilities: []string{"alpha", "beta"}})
-	want := []string{
-		"pricing/entry", "go-core/entry",
-		"beta-decision/rejected", "alpha-decision/rejected",
-		"Cache/term", "Slice/term", "Widget/term", "Capability/term", "Map/term",
-		"beta-question/entry", "alpha-question/entry",
-		"beta-decision/because", "alpha-decision/because",
-		"beta-decision/entry", "alpha-decision/entry",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("cut order:\n got %v\nwant %v", got, want)
-	}
-}
-
-func TestCutTiers(t *testing.T) {
-	m := fixture()
-	r := Request{Capabilities: []string{"alpha", "beta"}}
-	cases := []struct {
-		k    int
-		want []string
-	}{
-		{1, []string{"pricing/entry"}},
-		{2, []string{"go-core/entry", "pricing/entry"}},
-		{4, []string{"go-core/entry", "pricing/entry", "alpha-decision/rejected", "beta-decision/rejected"}},
-		{5, []string{"go-core/entry", "pricing/entry", "alpha-decision/rejected", "beta-decision/rejected", "Cache/term"}},
-		{9, []string{"go-core/entry", "pricing/entry", "alpha-decision/rejected", "beta-decision/rejected", "Map/term", "Capability/term", "Cache/term"}},
-		{11, []string{"go-core/entry", "pricing/entry", "alpha-decision/rejected", "alpha-question/entry", "beta-decision/rejected", "beta-question/entry", "Map/term", "Capability/term", "Cache/term"}},
-		{13, []string{"go-core/entry", "pricing/entry", "alpha-decision/because", "alpha-decision/rejected", "alpha-question/entry", "beta-decision/because", "beta-decision/rejected", "beta-question/entry", "Map/term", "Capability/term", "Cache/term"}},
-		// Cutting the decisions takes the only text that names Capability and
-		// Cache, so those terms are no longer left out: they are not there.
-		{15, []string{"go-core/entry", "pricing/entry", "alpha-decision/entry", "alpha-question/entry", "beta-decision/entry", "beta-question/entry", "Map/term"}},
-	}
-	for _, c := range cases {
-		r.Budget = costAt(t, m, r, c.k)
-		if prev := costAt(t, m, r, c.k-1); prev <= r.Budget {
-			t.Fatalf("k=%d: cost does not fall (%d then %d); fixture too weak", c.k, prev, r.Budget)
-		}
-		s := build(t, m, r)
-		if got := leftOut(s); !reflect.DeepEqual(got, c.want) {
-			t.Errorf("budget %d (k=%d): left out\n got %v\nwant %v", r.Budget, c.k, got, c.want)
-		}
-		if s.OverBudget || s.Used > s.Budget {
-			t.Errorf("k=%d: used %d of %d, over %v", c.k, s.Used, s.Budget, s.OverBudget)
-		}
-	}
-}
-
-func TestCutsAreRemovedFromOutput(t *testing.T) {
-	m := fixture()
-	r := Request{Capabilities: []string{"alpha", "beta"}}
-	r.Budget = costAt(t, m, r, 4)
-	out := md(t, build(t, m, r))
-	for _, gone := range []string{"Rejected:", "`pricing` ·", "`go-core` ·"} {
-		if strings.Contains(out, gone) {
-			t.Errorf("%q should be cut:\n%s", gone, out)
-		}
-	}
-	for _, kept := range []string{"`no-emails` ·", "alpha-decision` · decided by dana", "One file per capability.\nBecause: it was the better trade-off.\n", "`alpha-question` ·", "**Cache**"} {
-		if !strings.Contains(out, kept) {
-			t.Errorf("%q should be kept:\n%s", kept, out)
-		}
-	}
-}
-
-func TestOverBudgetFloor(t *testing.T) {
-	s := build(t, fixture(), Request{Capabilities: []string{"alpha", "beta"}, Budget: 10})
-	out := md(t, s)
-	if !s.OverBudget {
-		t.Fatalf("want over budget:\n%s", out)
-	}
-	want := fmt.Sprintf("Over budget: what is never cut (product rules, promises and rules) is %d tokens, over the 10-token budget.\n", s.Used)
-	if !strings.HasPrefix(out, fmt.Sprintf("# Slice: alpha, beta\nBudget: %d of 10 tokens.\n%s", s.Used, want)) {
-		t.Errorf("header wrong, want %q in:\n%s", want, out)
-	}
-	for _, kept := range []string{
-		"Promise: Teams ship with confidence.", "Never log customer emails.\nBecause: rules hold the product together.",
-		"Promise: Alpha keeps the map readable.", "Keep every file short.",
-		"Promise: Beta answers fast.", "Answer in under 50 ms.",
-	} {
-		if !strings.Contains(out, kept) {
-			t.Errorf("floor lost %q:\n%s", kept, out)
-		}
-	}
-	for _, gone := range []string{"### Decisions", "### Questions", "## Terms"} {
-		if strings.Contains(out, gone) {
-			t.Errorf("%q should be cut over budget:\n%s", gone, out)
-		}
-	}
-	if got := leftOut(s); len(got) != 7 || got[6] != "Map/term" {
-		t.Errorf("want every decision, question and term left out, got %v", got)
-	}
-}
-
-func TestWithDecisionsKeepsThem(t *testing.T) {
-	s := build(t, fixture(), Request{Capabilities: []string{"alpha"}, WithDecisions: true, Budget: 10})
-	out := md(t, s)
-	for _, kept := range []string{"`go-core`", "The core is Go.\nBecause: it was the better trade-off.\nRejected:", "`alpha-decision`", "One file per capability.\nBecause:"} {
-		if !strings.Contains(out, kept) {
-			t.Errorf("--with decisions lost %q:\n%s", kept, out)
-		}
-	}
-	if got, want := leftOut(s), []string{"pricing/entry", "alpha-question/entry", "Map/term", "Capability/term"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("left out %v, want %v", got, want)
-	}
-	for _, l := range s.LeftOut {
-		if l.Command != "physa map slice alpha" {
-			t.Errorf("command %q", l.Command)
-		}
-	}
-	if !strings.Contains(out, "Over budget: what is never cut (product rules, promises, rules and decisions) is ") {
-		t.Errorf("over-budget line should name the decisions:\n%s", out)
-	}
-}
-
-func TestWithQuestionsKeepsThem(t *testing.T) {
-	s := build(t, fixture(), Request{Capabilities: []string{"alpha"}, WithQuestions: true, Budget: 10})
-	out := md(t, s)
-	for _, kept := range []string{"`pricing`", "Postponed until the widget exists.", "`alpha-question`"} {
-		if !strings.Contains(out, kept) {
-			t.Errorf("--with questions lost %q:\n%s", kept, out)
-		}
-	}
-	if got, want := leftOut(s), []string{"go-core/entry", "alpha-decision/entry", "Map/term"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("left out %v, want %v", got, want)
-	}
-}
-
-func TestWithBothCutsOnlyTerms(t *testing.T) {
-	s := build(t, fixture(), Request{Capabilities: []string{"alpha"}, WithDecisions: true, WithQuestions: true, Budget: 10})
-	if got, want := leftOut(s), []string{"Map/term", "Capability/term"}; !reflect.DeepEqual(got, want) || !s.OverBudget {
-		t.Errorf("left out %v, want %v; over %v", got, want, s.OverBudget)
-	}
-}
-
 func termNames(s *Slice) []string {
 	var got []string
 	for _, t := range s.Terms {
@@ -358,16 +255,21 @@ func termNames(s *Slice) []string {
 	return got
 }
 
-func TestTermsMatch(t *testing.T) {
-	s := build(t, fixture(), Request{Capabilities: []string{"alpha", "beta"}})
-	// Map: "map" in Alpha's promise; Capability: in a body; Cache: "No cache"
-	// heading. Widget is only in the product, which never brings in a term, and
-	// Slice is not in the text.
-	if got, want := termNames(s), []string{"Map", "Capability", "Cache"}; !reflect.DeepEqual(got, want) {
+func TestTermsFromHeadings(t *testing.T) {
+	m := fixture()
+	s := build(t, m, Request{Capabilities: []string{"alpha", "beta"}})
+	// Map: Alpha's promise; Slice: "context pack" in Beta's overview; Cache:
+	// the "No cache" heading. Capability is only in a decision's body, which
+	// a bare slice does not show, and Widget and Capability ("feature") only
+	// in the product, which never brings in a term.
+	if got, want := termNames(s), []string{"Map", "Slice", "Cache"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("terms %v, want %v", got, want)
 	}
-	out := md(t, s)
-	inOrder(t, out, "## Terms\n\n**Map**: The product's knowledge.\n_Avoid_: model, graph\n\n**Capability**: A promise the product makes.\n_Avoid_: feature\n\n**Cache**")
+	inOrder(t, md(t, s), "## Terms\n\n**Map**: The product's knowledge.\n_Avoid_: model, graph\n\n**Slice**: The part of the map for one task.\n_Avoid_: context pack\n\n**Cache**")
+	full := build(t, m, Request{Capabilities: []string{"alpha", "beta"}, WithDecisions: true, WithQuestions: true})
+	if got, want := termNames(full), []string{"Map", "Capability", "Slice", "Cache"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("--with all: terms %v, want %v", got, want)
+	}
 }
 
 func TestTermsByAvoidAndWholeWord(t *testing.T) {
@@ -395,37 +297,50 @@ func TestTermsByAvoidAndWholeWord(t *testing.T) {
 	}
 }
 
-func TestTermsRematchedAfterCuts(t *testing.T) {
-	m := fixture()
-	r := Request{Capabilities: []string{"alpha"}}
-	if got := termNames(build(t, m, r)); !reflect.DeepEqual(got, []string{"Map", "Capability"}) {
-		t.Fatalf("terms before cuts: %v", got)
+func TestTermsPhraseStartingWithPunctuation(t *testing.T) {
+	terms := []mapfile.Term{{Name: "Tag", Avoid: []string{"#label"}}, {Name: "Flag", Avoid: []string{"A/B test"}}}
+	cases := map[string][]string{
+		"Use a #label here.":    {"Tag"},
+		"Use a x#label here.":   nil,
+		"Use a #labels here.":   nil,
+		"Run an a/b  test now.": {"Flag"},
 	}
-	r.Budget = 10
-	// Capability is only in the decision, which is cut too, so it is not
-	// left out: it is no longer in the text. Map, in the promise, is.
-	if got, want := leftOut(build(t, m, r)), []string{"go-core/entry", "pricing/entry", "alpha-decision/entry", "alpha-question/entry", "Map/term"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("left out %v, want %v", got, want)
+	for text, want := range cases {
+		m := &mapfile.Map{
+			Capabilities: []*mapfile.File{{Name: "x", Title: "X", Entries: []mapfile.Entry{{Kind: mapfile.Rule, Slug: "r", Body: text}}}},
+			Glossary:     terms,
+		}
+		if got := termNames(build(t, m, Request{Capabilities: []string{"x"}})); !reflect.DeepEqual(got, want) {
+			t.Errorf("%q: terms %v, want %v", text, got, want)
+		}
 	}
 }
 
-func TestLeftOutLines(t *testing.T) {
-	m := fixture()
-	r := Request{Capabilities: []string{"beta", "alpha"}}
-	r.Budget = costAt(t, m, r, 5)
-	s := build(t, m, r)
-	out := md(t, s)
-	want := "## Left out\n\n" +
-		"- `go-core` (product): the entry. Show it with `physa map slice alpha beta`.\n" +
-		"- `pricing` (product): the entry. Show it with `physa map slice alpha beta`.\n" +
-		"- `alpha-decision` (alpha): its rejected options. Show it with `physa map slice alpha beta`.\n" +
-		"- `beta-decision` (beta): its rejected options. Show it with `physa map slice alpha beta`.\n" +
-		"- `Cache` (glossary): the term. Show it with `physa map slice alpha beta`.\n\n"
-	if !strings.Contains(out, want) {
-		t.Errorf("want\n%s\nin:\n%s", want, out)
+func TestSkillInEverySlice(t *testing.T) {
+	if n := len(skill); n == 0 || n > 850 {
+		t.Fatalf("the skill is %d bytes; want about 800 at most", n)
 	}
-	if s.LeftOut[0].Capability != "product" || s.LeftOut[2].Capability != "alpha" || s.LeftOut[4].Capability != "glossary" {
-		t.Errorf("capabilities: %+v", s.LeftOut)
+	for _, want := range []string{"physa map slice --entry <slug>", "Rejected:", "stop and ask", "Capability:"} {
+		if !strings.Contains(skill, want) {
+			t.Errorf("the skill lacks %q", want)
+		}
+	}
+	section := "\n## Reading further\n\n" + strings.TrimRight(skill, "\n") + "\n\n## How to anchor\n"
+	for _, r := range []Request{
+		{Capabilities: []string{"alpha"}},
+		{Capabilities: []string{"alpha", "beta"}, WithDecisions: true},
+		{Capabilities: []string{"beta"}, WithDecisions: true, WithQuestions: true},
+	} {
+		s := build(t, fixture(), r)
+		if out := md(t, s); !strings.Contains(out, section) {
+			t.Errorf("%+v: no Reading further section before how to anchor:\n%s", r, out)
+		}
+		var back struct {
+			ReadingFurther string `json:"reading_further"`
+		}
+		if err := json.Unmarshal(jsonOut(t, s), &back); err != nil || back.ReadingFurther != skill {
+			t.Errorf("%+v: reading_further %q, %v", r, back.ReadingFurther, err)
+		}
 	}
 }
 
@@ -454,79 +369,55 @@ func TestUnknownCapability(t *testing.T) {
 	}
 }
 
-func TestUnknownNoCapabilities(t *testing.T) {
+func TestBadRequests(t *testing.T) {
 	if _, err := Build(fixture(), Request{}); err == nil {
 		t.Errorf("want an error for no capabilities")
-	}
-	if _, err := Build(fixture(), Request{Capabilities: []string{"alpha"}, Budget: -1}); err == nil {
-		t.Errorf("want an error for a negative budget")
 	}
 	if _, err := Build(nil, Request{Capabilities: []string{"alpha"}}); err == nil {
 		t.Errorf("want an error for no map")
 	}
-}
-
-func TestNoBudgetCutsNothing(t *testing.T) {
-	m := fixture()
-	r := Request{Capabilities: []string{"alpha", "beta"}}
-	s := build(t, m, r)
-	out := md(t, s)
-	if s.Budget != 0 || s.OverBudget || len(s.LeftOut) != 0 || strings.Contains(out, "## Left out") {
-		t.Errorf("budget %d, over %v, left out %v:\n%s", s.Budget, s.OverBudget, leftOut(s), out)
+	if _, err := Build(fixture(), Request{Capabilities: []string{"alpha"}, Entries: []string{"go-core"}}); err == nil {
+		t.Errorf("want an error for capabilities and entries both")
 	}
-	if want := fmt.Sprintf("# Slice: alpha, beta\nTokens: %d, no budget.\n\n", s.Used); !strings.HasPrefix(out, want) {
-		t.Errorf("want header %q in:\n%s", want, out)
+	if _, err := Take(fixture(), nil); err == nil {
+		t.Errorf("want an error for no entries")
 	}
-	if s.Used != costAt(t, m, r, 0) {
-		t.Errorf("used %d, want the uncut cost %d", s.Used, costAt(t, m, r, 0))
-	}
-	for _, kept := range []string{"`go-core` ·", "`pricing` ·", "Rejected:", "`alpha-question` ·", "`beta-decision` ·"} {
-		if !strings.Contains(out, kept) {
-			t.Errorf("%q should be in an uncut slice:\n%s", kept, out)
-		}
-	}
-}
-
-func TestUsedCountsBodyOnly(t *testing.T) {
-	m := fixture()
-	r := Request{Capabilities: []string{"alpha", "beta"}, Budget: 200}
-	s := build(t, m, r)
-	out := md(t, s)
-	start := strings.Index(out, "\n## Product")
-	end := strings.Index(out, "\n## Left out")
-	if start < 0 || end < 0 {
-		t.Fatalf("sections missing:\n%s", out)
-	}
-	body := out[start+1 : end]
-	if want := (len(body) + 3) / 4; s.Used != want {
-		t.Errorf("used %d, want ceil(%d/4) = %d", s.Used, len(body), want)
+	if _, err := Take(nil, []string{"go-core"}); err == nil {
+		t.Errorf("want an error for no map")
 	}
 }
 
 func TestProductMissing(t *testing.T) {
 	m := fixture()
 	m.Product = nil
-	out := md(t, build(t, m, Request{Capabilities: []string{"alpha"}, Budget: 60}))
-	if strings.Contains(out, "## Product") {
+	s := build(t, m, Request{Capabilities: []string{"alpha"}})
+	if out := md(t, s); strings.Contains(out, "## Product") || !strings.HasPrefix(out, "# Slice: alpha\n\n## Alpha\n") {
 		t.Errorf("no product section expected:\n%s", out)
+	}
+	if bytes.Contains(jsonOut(t, s), []byte(`"product":`)) {
+		t.Errorf("no product in the JSON expected")
 	}
 }
 
 func TestDeterminism(t *testing.T) {
-	r := Request{Capabilities: []string{"beta", "alpha"}, Budget: 200}
+	r := Request{Capabilities: []string{"beta", "alpha"}, WithQuestions: true}
 	a, b := build(t, fixture(), r), build(t, fixture(), r)
 	if md(t, a) != md(t, b) || md(t, a) != md(t, a) {
 		t.Errorf("markdown differs between runs")
 	}
-	if !bytes.Equal(jsonOut(t, a), jsonOut(t, b)) || !bytes.Equal(jsonOut(t, a), jsonOut(t, a)) {
+	if !bytes.Equal(jsonOut(t, a), jsonOut(t, b)) {
 		t.Errorf("JSON differs between runs")
+	}
+	slugs := []string{"pricing", "beta-rule", "alpha-decision"}
+	if takenMD(t, take(t, fixture(), slugs...)) != takenMD(t, take(t, fixture(), slugs...)) {
+		t.Errorf("taken entries differ between runs")
 	}
 }
 
 var slugLine = regexp.MustCompile("(?m)^`([a-z0-9-]+)` · ")
 
-func TestJSONRoundTrip(t *testing.T) {
-	s := build(t, fixture(), Request{Capabilities: []string{"alpha", "beta"}, Budget: 220})
+func TestJSONFields(t *testing.T) {
+	s := build(t, fixture(), Request{Capabilities: []string{"alpha", "beta"}, WithDecisions: true})
 	raw := jsonOut(t, s)
 	var back Slice
 	if err := json.Unmarshal(raw, &back); err != nil {
@@ -539,11 +430,8 @@ func TestJSONRoundTrip(t *testing.T) {
 		t.Errorf("markdown from decoded JSON differs")
 	}
 	var fromJSON []string
-	for _, e := range back.Product.Entries {
-		fromJSON = append(fromJSON, e.Slug)
-	}
-	for _, c := range back.Sections {
-		for _, e := range c.Entries {
+	for _, sec := range append([]Section{*back.Product}, back.Sections...) {
+		for _, e := range sec.Entries {
 			fromJSON = append(fromJSON, e.Slug)
 		}
 	}
@@ -554,37 +442,103 @@ func TestJSONRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(fromJSON, fromMD) {
 		t.Errorf("entries differ: json %v, md %v", fromJSON, fromMD)
 	}
-	for _, key := range []string{`"capabilities":`, `"budget":`, `"used":`, `"over_budget":`, `"product":`, `"sections":`, `"terms":`, `"left_out":`, `"trailers":`} {
-		if !bytes.Contains(raw, []byte(key)) {
-			t.Errorf("JSON lacks %s", key)
-		}
+	inOrder(t, string(raw), `{"capabilities":["alpha","beta"],"product":{`, `"sections":[`, `"terms":[`, `"reading_further":"`, `"trailers":["Capability: alpha","Capability: beta"]}`)
+	inOrder(t, string(raw), `"sections":[{"name":"alpha","title":"Alpha","file":".physa/capabilities/alpha/","promise":"Alpha keeps the map readable.","overview":"Alpha covers how files are laid out.\nIt reads every folder.","entries":[{"slug":"alpha-rule"`,
+		`"contents":[{"kind":"question","slug":"alpha-question","heading":"Split big files?"}]}`)
+	if !bytes.Contains(raw, []byte(`"product":{"name":"product","title":"Mini","file":".physa/product/","promise":"Teams ship with confidence.","overview":"","entries":[`)) {
+		t.Errorf("product section:\n%s", raw)
 	}
-	inOrder(t, string(raw), `"capabilities":`, `"budget":`, `"used":`, `"over_budget":`, `"product":`, `"sections":`, `"terms":`, `"left_out":`, `"trailers":`)
-}
-
-func TestJSONOmitsCutParts(t *testing.T) {
-	m := fixture()
-	r := Request{Capabilities: []string{"alpha"}}
-	r.Budget = costAt(t, m, r, 3) // product's decision and question go, and alpha-decision loses its rejected options
-	raw := string(jsonOut(t, build(t, m, r)))
-	if strings.Contains(raw, `"rejected":`) {
-		t.Errorf("cut rejected options are in the JSON:\n%s", raw)
-	}
-	if !strings.Contains(raw, `"because":"it was the better trade-off."`) {
-		t.Errorf("because lost:\n%s", raw)
-	}
-}
-
-func TestOwnMap(t *testing.T) {
-	m, _, err := mapfile.Read(filepath.Join("..", ".."))
-	if err != nil {
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &keys); err != nil {
 		t.Fatal(err)
 	}
-	s := build(t, m, Request{Capabilities: []string{"slices", "map"}})
-	out := md(t, s)
-	inOrder(t, out, "# Slice: map, slices\n", "## Product: Physa", "`no-adr`", "## Map\n", "## Slices\n",
-		"Everything in a slice except its current-state section depends only on the map and the request.",
-		"## Terms\n", "**Slice**", "## How to anchor", "`Capability: map`", "`Capability: slices`")
+	var got []string
+	for k := range keys {
+		got = append(got, k)
+	}
+	slices.Sort(got)
+	if want := []string{"capabilities", "product", "reading_further", "sections", "terms", "trailers"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("JSON fields %v, want %v", got, want)
+	}
+}
+
+func TestTakeOrderAndDedupe(t *testing.T) {
+	tk := take(t, fixture(), "beta-decision", "no-emails", "alpha-question", "beta-decision")
+	var got []string
+	for _, e := range tk.Entries {
+		got = append(got, e.Capability+"/"+e.Slug)
+	}
+	if want := []string{"beta/beta-decision", "product/no-emails", "alpha/alpha-question"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("taken %v, want %v", got, want)
+	}
+	want := "### No cache\n" +
+		"`beta-decision` · decided by dana, accepting a proposal · 2026-03-02 · #12 a1b2c3d\n" +
+		"No cache until the test fails.\n" +
+		"Because: it was the better trade-off.\n" +
+		"Rejected:\n- The other way: worse.\n- Doing nothing: costly.\n" +
+		"\n### Never log emails\n" +
+		"`no-emails` · from docs/vision.md\n" +
+		"Never log customer emails.\n" +
+		"Because: rules hold the product together.\n" +
+		"\n### Split big files?\n" +
+		"`alpha-question` · raised by sam · 2026-11-01\n" +
+		"Should a big file be split?\n"
+	if out := takenMD(t, tk); out != want {
+		t.Errorf("got\n%s\nwant\n%s", out, want)
+	}
+}
+
+func TestTakeProductEntries(t *testing.T) {
+	tk := take(t, fixture(), "pricing", "go-core")
+	if len(tk.Entries) != 2 || tk.Entries[0].Capability != "product" || tk.Entries[1].Body != "The core is Go." {
+		t.Errorf("got %+v", tk.Entries)
+	}
+}
+
+func TestTakeUnknownSlugs(t *testing.T) {
+	tk, err := Take(fixture(), []string{"alpha-rule", "nope", "go-core", "also-nope", "nope"})
+	if tk != nil {
+		t.Errorf("want nothing taken, got %+v", tk)
+	}
+	want := `unknown entries "nope", "also-nope"; a slice lists the slugs of its capabilities' decisions and questions`
+	if err == nil || err.Error() != want {
+		t.Fatalf("got %v, want %s", err, want)
+	}
+	t.Logf("error: %v", err)
+	if _, err := Take(fixture(), []string{"nope"}); err == nil || !strings.HasPrefix(err.Error(), `unknown entry "nope";`) {
+		t.Errorf("one unknown slug: %v", err)
+	}
+	var out bytes.Buffer
+	if err := Write(&out, fixture(), Flags{Req: Request{Entries: []string{"go-core", "nope"}}, JSON: true}); err == nil || out.Len() != 0 {
+		t.Errorf("want an error and no output, got %v and %q", err, out.String())
+	}
+}
+
+func TestTakeJSON(t *testing.T) {
+	var b bytes.Buffer
+	if err := Write(&b, fixture(), Flags{Req: Request{Entries: []string{"beta-rule", "pricing"}}, JSON: true}); err != nil {
+		t.Fatal(err)
+	}
+	want := `{"entries":[{"capability":"beta","slug":"beta-rule","kind":"rule","heading":"Answer fast","anchors":["from docs/vision.md"],"body":"Answer in under 50 ms.","because":"rules hold the product together."},` +
+		`{"capability":"product","slug":"pricing","kind":"question","heading":"How is it priced?","role":"raised","person":"sam","date":"2026-11-01","body":"Postponed until the widget exists."}]}` + "\n"
+	if b.String() != want {
+		t.Errorf("got\n%s\nwant\n%s", b.String(), want)
+	}
+	var back Taken
+	if err := json.Unmarshal(b.Bytes(), &back); err != nil || !reflect.DeepEqual(&back, take(t, fixture(), "beta-rule", "pricing")) {
+		t.Errorf("JSON does not round-trip: %v %+v", err, back)
+	}
+}
+
+func TestWriteBareSlice(t *testing.T) {
+	var b bytes.Buffer
+	f := Flags{Req: Request{Capabilities: []string{"alpha"}}}
+	if err := Write(&b, fixture(), f); err != nil {
+		t.Fatal(err)
+	}
+	if b.String() != md(t, build(t, fixture(), f.Req)) {
+		t.Errorf("Write differs from WriteMD")
+	}
 }
 
 func put(t *testing.T, root, rel, text string) {
@@ -611,6 +565,84 @@ func putFolder(t *testing.T, root, dir, text string) {
 	}
 }
 
+// smallMap writes a map the check accepts, with one capability, x, whose
+// rules are given.
+func smallMap(t *testing.T, rules string) string {
+	t.Helper()
+	root := t.TempDir()
+	put(t, root, ".physa/README.md", "# Map\n\nRead the product first.\n")
+	put(t, root, ".physa/glossary.md", "# Glossary\n\n**Map**: The product's knowledge.\n")
+	putFolder(t, root, ".physa/product", "---\npromise: Teams ship.\n---\n\n# Mini\n\n## Rules\n\n### Never log emails\n`no-emails` · #1\nNever log customer emails.\nBecause: customers trust us.\n")
+	putFolder(t, root, ".physa/capabilities/x", "---\npromise: X works.\nstewards: [dana]\n---\n\n# X\n\n## Rules\n\n"+rules)
+	return root
+}
+
+func TestReadAcceptsAGoodMap(t *testing.T) {
+	m, err := Read(smallMap(t, "### Keep it short\n`x-short` · #2 1a2b3c4\nKeep it short.\nBecause: it reads fast.\n"))
+	if err != nil {
+		t.Fatalf("a map the check accepts, with a commit anchor history cannot resolve: %v", err)
+	}
+	if len(m.Capabilities) != 1 || m.Capabilities[0].Name != "x" {
+		t.Errorf("got %+v", m.Capabilities)
+	}
+}
+
+func TestReadFailsOnMalformedMap(t *testing.T) {
+	root := smallMap(t, "### Keep it short\n`x-short` · #2\nKeep it short.\n\n### Bad slug\n`Bad_Slug` · #3\nBecause: no.\n")
+	m, err := Read(root)
+	if m != nil || err == nil {
+		t.Fatalf("want a failure and no map, got %v, %v", m, err)
+	}
+	t.Logf("error:\n%v", err)
+	msg := err.Error()
+	lines := regexp.MustCompile(`(?m)^\.physa/capabilities/x/rules\.md:\d+: .+$`).FindAllString(msg, -1)
+	if len(lines) < 2 || !strings.HasPrefix(msg, "the map has ") {
+		t.Errorf("want every problem as path:line: message, got:\n%s", msg)
+	}
+}
+
+func TestOwnMap(t *testing.T) {
+	m, err := Read(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := build(t, m, Request{Capabilities: []string{"init"}})
+	out := md(t, s)
+	inOrder(t, out, "# Slice: init\n", "## Product: Physa", "`no-adr`", decisionsLine, "## Init\n", "\nPromise: ",
+		s.Sections[0].Overview, "### Rules", "## Reading further\n", "## How to anchor", "`Capability: init`")
+	var init *mapfile.File
+	for _, c := range m.Capabilities {
+		if c.Name == "init" {
+			init = c
+		}
+	}
+	for _, f := range []*mapfile.File{m.Product, init} {
+		for _, e := range f.Entries {
+			if e.Kind == mapfile.Rule {
+				continue
+			}
+			if strings.Contains(out, "`"+e.Slug+"` ·") || (len(e.Body) > 20 && strings.Contains(out, e.Body)) {
+				t.Errorf("the bare slice holds the body of %s", e.Slug)
+			}
+			if !strings.Contains(out, "- "+e.Slug+": "+e.Heading+"\n") {
+				t.Errorf("the bare slice lacks the heading line of %s", e.Slug)
+			}
+		}
+	}
+	var slugs []string
+	for _, f := range []*mapfile.File{m.Product, init} {
+		for _, e := range f.Entries {
+			if e.Kind == mapfile.Decision {
+				slugs = append(slugs, e.Slug)
+				break
+			}
+		}
+	}
+	if tk := take(t, m, slugs...); len(tk.Entries) != len(slugs) || tk.Entries[0].Capability != "product" || tk.Entries[len(slugs)-1].Capability != "init" {
+		t.Errorf("taking %v: %+v", slugs, tk.Entries)
+	}
+}
+
 func capability(n int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "---\npromise: Capability %03d keeps its word to the people who rely on it.\nstewards: [dana]\n---\n\n# Cap %03d\n\n## Rules\n\n", n, n)
@@ -634,8 +666,16 @@ func glossary() string {
 	return b.String()
 }
 
+// TestLatency times the whole path physa map slice runs, reading the map
+// with the check, building and writing, on a generated map of 100
+// capabilities. Every case is warmed once, then seven rounds run each case
+// once in turn, so a burst of load on a busy machine lands on one run of
+// every case rather than on all of one case's runs. Each run starts from a
+// collected heap, as a fresh physa process does. The median of a case's
+// seven runs must be under 50 ms.
 func TestLatency(t *testing.T) {
 	root := t.TempDir()
+	put(t, root, "docs/vision.md", "# Vision\n")
 	put(t, root, ".physa/README.md", "# Map\n\nRead the product first.\n")
 	put(t, root, ".physa/glossary.md", glossary())
 	putFolder(t, root, ".physa/product", "---\npromise: Teams ship with confidence.\n---\n\n# Mini\n\n## Rules\n\n### Never log emails\n`no-emails` · from docs/vision.md\nNever log customer emails.\nBecause: customers trust us.\n")
@@ -644,95 +684,64 @@ func TestLatency(t *testing.T) {
 		putFolder(t, root, fmt.Sprintf(".physa/capabilities/cap-%03d", n), capability(n))
 		all = append(all, fmt.Sprintf("cap-%03d", n))
 	}
-	for _, c := range []struct {
-		name   string
-		caps   []string
-		budget int
+	var ten []string
+	for n := 1; n <= 10; n++ {
+		ten = append(ten, fmt.Sprintf("cap-%03d-decision-%d", n*10-3, n%3+1))
+	}
+	ten[9] = "no-emails"
+	cases := []struct {
+		name string
+		req  Request
+		want int // bytes written at least
 	}{
-		{"three", []string{"cap-007", "cap-042", "cap-099"}, 0},
-		{"all", all, 0},
-		{"all at 3000", all, 3000},
-	} {
-		// The best of three runs, so one descheduling on a busy machine
-		// does not fail the test; each run must still be whole.
-		var (
-			elapsed  time.Duration
-			s        *Slice
-			m        *mapfile.Map
-			problems []mapfile.Problem
-		)
-		for try := range 3 {
-			start := time.Now()
-			var err error
-			m, problems, err = mapfile.Read(root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			s, err = Build(m, Request{Capabilities: c.caps, Budget: c.budget})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := WriteMD(io.Discard, s); err != nil {
-				t.Fatal(err)
-			}
-			if d := time.Since(start); try == 0 || d < elapsed {
-				elapsed = d
+		{"three", Request{Capabilities: []string{"cap-007", "cap-042", "cap-099"}}, 1000},
+		{"all", Request{Capabilities: all}, 50000},
+		{"all --with all", Request{Capabilities: all, WithDecisions: true, WithQuestions: true}, 100000},
+		{"--entry 10", Request{Entries: ten}, 1000},
+	}
+	run := func(req Request) (time.Duration, int) {
+		runtime.GC()
+		start := time.Now()
+		m, err := Read(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var w countWriter
+		if err := Write(&w, m, Flags{Req: req}); err != nil {
+			t.Fatal(err)
+		}
+		return time.Since(start), int(w)
+	}
+	runs := make([][]time.Duration, len(cases))
+	written := make([]int, len(cases))
+	for round := 0; round <= 7; round++ {
+		for i, c := range cases {
+			d, n := run(c.req)
+			written[i] = n
+			if round > 0 {
+				runs[i] = append(runs[i], d)
 			}
 		}
-		if len(problems) != 0 {
-			t.Fatalf("generated map has problems: %v", problems)
+	}
+	for i, c := range cases {
+		slices.Sort(runs[i])
+		median := runs[i][len(runs[i])/2]
+		if written[i] < c.want {
+			t.Fatalf("%s: wrote %d bytes, want at least %d", c.name, written[i], c.want)
 		}
-		if len(m.Glossary) != 40 || len(s.Sections) != len(c.caps) {
-			t.Fatalf("%s: %d terms, %d capabilities", c.name, len(m.Glossary), len(s.Sections))
+		if median >= 50*time.Millisecond {
+			t.Errorf("%s: read with the check, build and write took a median %v, want under 50ms (runs %v)", c.name, median, runs[i])
 		}
-		if elapsed >= 50*time.Millisecond {
-			t.Errorf("%s: read, build and write took %v, want under 50ms", c.name, elapsed)
-		}
-		t.Logf("%s: %v, used %d of %d, %d left out", c.name, elapsed, s.Used, s.Budget, len(s.LeftOut))
+		t.Logf("%s: median %v of %v, %d bytes", c.name, median, runs[i], written[i])
 	}
 }
 
-func TestTermsPhraseStartingWithPunctuation(t *testing.T) {
-	terms := []mapfile.Term{{Name: "Tag", Avoid: []string{"#label"}}, {Name: "Flag", Avoid: []string{"A/B test"}}}
-	cases := map[string][]string{
-		"Use a #label here.":    {"Tag"},
-		"Use a x#label here.":   nil,
-		"Use a #labels here.":   nil,
-		"Run an a/b  test now.": {"Flag"},
-	}
-	for text, want := range cases {
-		m := &mapfile.Map{
-			Capabilities: []*mapfile.File{{Name: "x", Title: "X", Entries: []mapfile.Entry{{Kind: mapfile.Rule, Slug: "r", Body: text}}}},
-			Glossary:     terms,
-		}
-		if got := termNames(build(t, m, Request{Capabilities: []string{"x"}})); !reflect.DeepEqual(got, want) {
-			t.Errorf("%q: terms %v, want %v", text, got, want)
-		}
-	}
+// countWriter counts the bytes written to it and keeps none.
+type countWriter int
+
+func (w *countWriter) Write(p []byte) (int, error) {
+	*w += countWriter(len(p))
+	return len(p), nil
 }
 
-func TestPluralTokensSingularAndPlural(t *testing.T) {
-	for _, c := range []struct {
-		n    int
-		want string
-	}{{0, "0 tokens"}, {1, "1 token"}, {10, "10 tokens"}} {
-		if got := plural(c.n, "token", "tokens"); got != c.want {
-			t.Errorf("plural(%d) = %q, want %q", c.n, got, c.want)
-		}
-	}
-}
-
-func TestBudgetOfOneTokenIsSingular(t *testing.T) {
-	s := build(t, fixture(), Request{Capabilities: []string{"alpha", "beta"}, Budget: 1})
-	out := md(t, s)
-	if want := fmt.Sprintf("Budget: %d of 1 token.\n", s.Used); !strings.Contains(out, want) {
-		t.Errorf("want %q in:\n%s", want, out)
-	}
-	if !s.OverBudget || !strings.Contains(out, "over the 1-token budget.\n") {
-		t.Errorf("want the over-budget line for 1 token:\n%s", out)
-	}
-	s.Used = 1
-	if want := "is 1 token, over the 1-token budget.\n"; !strings.Contains(md(t, s), want) {
-		t.Errorf("want %q for a floor of 1 token", want)
-	}
-}
+var _ io.Writer = (*countWriter)(nil)

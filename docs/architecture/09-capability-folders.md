@@ -216,4 +216,16 @@ The first of the two PRs (Q10) landed the folder format, `physa check map`, `phy
 - **The `file-per-capability` rule is reworded**, the one entry of the map changed: "One folder per capability", from this document, its slug kept. It stated a layout this design replaced.
 - **Init and learning write folders.** Init drops, with a reason in the PR body, an entry the check would reject (an empty heading, a rejected character, a repeated anchor) and a capability whose text does not split, which then holds its promise only. Learning appends each proposal to its kind file, regenerates the contents with the code `physa map fmt` uses, and drops a proposal whose file is already outside the format.
 
-The second PR, still to come, holds the slice that returns the floor and the headings, `--entry`, the slice skill and the removal of `--budget` (§4, §5).
+## 11. Built in the second PR
+
+The second PR (Q10) landed the slice that returns the floor and the headings, `physa map slice --entry`, the slice skill and the removal of `--budget` (§4, §5). Calls made while building it, closed by Claude as arbiter (2026-11-21), for the owner to review:
+
+- **The slice checks form only.** Before it slices, the slice runs the map check with anchors left unresolved: no commit or PR is looked up, so it never opens the repository or calls the forge. A map the check would reject for form fails the slice loudly, naming the file and line (§4.2a); one whose anchors point nowhere still slices. The map is read once, by the check, and the slice uses what it read.
+- **`--entry` takes slugs as bare words** after it (`--entry a b c`), or `--entry=a`, repeated if wanted. It cannot be mixed with capability names or `--with`, and it needs at least one slug. It prints exactly those entries in full, from the product or any capability, in the order named, once each; a slug named twice is taken at its first place. Any unknown slug fails with exit 2, names every unknown slug and prints nothing. `--format json` gives `{"entries": [...]}`, each entry with its capability (`product` for the product's).
+- **The product's headings** are in a bare slice like a capability's: its promise, its rules in full and the headings of its decisions and questions. Its overview is not shown. `--entry` takes the product's entries by slug like any other.
+- **The store migration** (`0007_slice_entries.sql`) adds an `entries` column to slice records and drops `budget`. A record's line shows the entries taken, with or without capabilities. A real copy of the old store migrated with every row kept.
+- **The skill prints in the learning drafter's slice too**, because the drafter reads the same slice as any agent and chooses from the same headings.
+- **The README is an embedded file.** Its text moved from Go source to `internal/mapfolder/readme.md`, embedded in the binary; `.physa/README.md` is a byte copy, and a test keeps init's copy and Physa's own the same.
+- **The latency test takes a median.** `fifty-ms` is tested on the whole slice path, check included, over a generated map of 100 capabilities: every case is warmed once, then run in seven rounds across all cases, with the heap collected before each run, and the median of the seven must be under 50 ms. This holds when other builds load the machine, which a single timing did not.
+
+All of the design's questions are settled and built. What is left is §5's tests of the skill with a fixture task, and the choice of which slices to measure from slice records (`measure-before-budget`).

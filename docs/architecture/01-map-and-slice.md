@@ -117,7 +117,7 @@ Terms are product-wide. A slice includes the terms whose name appears in the tex
 
 ## 5. product/
 
-The same folder and entry formats as a capability (09 §2, §3), with the product's own promise in the front matter. Its rules are included in every slice (they are the always-loaded floor). Its decisions and questions are included when the slice asks for them or when the budget allows.
+The same folder and entry formats as a capability (09 §2, §3), with the product's own promise in the front matter. Its rules are included in every slice (they are the always-loaded floor). Its decisions and questions are listed by heading, and taken with `--entry` or `--with`.
 
 ## 6. README.md
 
@@ -176,34 +176,12 @@ One line per capability, sorted by name. With local data available it adds stren
 ### 8.2 `physa map slice`
 
 ```
-physa map slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]
+physa map slice <capability>... [--with decisions|questions|all] [--format md|json]
+physa map slice --entry <slug>... [--format md|json]
 physa map slice --change <bet>     (for planned work: the capabilities were chosen when it was shaped)
 ```
 
-Output sections, always in this order:
-
-1. **Header**: the capabilities chosen and the budget used.
-2. **Product rules** from product/rules.md. Always included.
-3. **For each capability**: its promise, then its rules, decisions and questions.
-4. **Current state** (from the local store and flag service, not the repo): live flags and ideas growing on these capabilities, recent rollbacks and reverts, guardrails. Marked as a snapshot with its time.
-5. **Terms** that appear in the text above.
-6. **Left out**: entries cut by the budget, each with the command that shows it.
-7. **How to anchor**: the trailers to use for this work.
-
-**Budget**: a slice has no default budget. Without `--budget` it holds everything for the requested capabilities, cuts nothing and has no Left out section.
-
-**Cut order** when `--budget` is given and the slice is too big, the pieces lowest in the output first within each step:
-
-1. product/'s decisions and questions;
-2. rejected options;
-3. terms, whole entries;
-4. questions;
-5. decisions' `Because:` lines;
-6. decisions.
-
-Product rules, promises and the capabilities' rules are never cut, nor decisions or questions the request asked for with `--with`. If those alone exceed the budget, the slice says so and names what they hold. Terms count only when they appear in the requested capabilities' own text, never in product/'s.
-
-**Determinism**: sections 1–3 and 5–7 depend only on the map and the request. Section 4 is a dated snapshot.
+09 §4 says what a slice holds: the floor (product rules, each capability's promise, overview and rules, and the headings of its decisions and questions) and `--entry` for the entries the agent takes. A slice has no budget and nothing is cut by size. Everything in it except its current-state section depends only on the map and the request.
 
 **Recording**: every slice is written to the local store (who asked, which entries, when) so that the PR check can measure misses and excess later.
 
@@ -232,7 +210,7 @@ Settled with the owner (2026-11-20):
 
 Replaced by 09 §6: `index.md` about 30 lines, `rules.md` about 150, `decisions.md` and `questions.md` none, the same for product/. The single-file budgets this section first set (a capability file about 150 lines, product.md about 100) no longer apply.
 
-Slices have no default budget: an agent passes `--budget` when it wants one. There is no limit on how many capabilities a map holds; budgets get tuned from run data (`measure-before-budget` in .physa/capabilities/slices.md).
+Slices have no budget: the agent takes the entries it needs with `--entry` (09 §4). There is no limit on how many capabilities a map holds; budgets get tuned from run data (`measure-before-budget` in .physa/capabilities/slices/).
 
 Teams can change them. Going over a budget never blocks work; it produces a proposed merge or prune on the next PR.
 

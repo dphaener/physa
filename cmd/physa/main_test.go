@@ -341,7 +341,10 @@ func TestIndexOwnMap(t *testing.T) {
 	}
 }
 
-const sliceUsage = "physa map slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]"
+const (
+	sliceUsage      = "physa map slice <capability>... [--with decisions|questions|all] [--format md|json]"
+	sliceEntryUsage = "physa map slice --entry <slug>... [--format md|json]"
+)
 
 // helpOf returns the help text of the command at path, as --help prints it.
 func helpOf(t *testing.T, path ...string) string {
@@ -354,22 +357,25 @@ func helpOf(t *testing.T, path ...string) string {
 }
 
 func TestHelpNamesSlice(t *testing.T) {
-	if help := helpOf(t, "map", "slice"); !strings.Contains(help, sliceUsage) {
-		t.Errorf("help = %q, want it to name %q", help, sliceUsage)
+	help := helpOf(t, "map", "slice")
+	for _, u := range []string{sliceUsage, sliceEntryUsage} {
+		if !strings.Contains(help, u) {
+			t.Errorf("help = %q, want it to name %q", help, u)
+		}
 	}
 }
 
-func TestSliceGoodFixture(t *testing.T) {
-	t.Chdir("../../internal/mapfile/testdata/good")
+func TestSliceGoodMap(t *testing.T) {
+	t.Chdir(tempMap(t, "`r` · from docs/d.md"))
 	useStore(t)
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"map", "slice", "delivery"}, &stdout, &stderr); code != 0 {
+	if code := run([]string{"map", "slice", "a"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, stderr.String())
 	}
-	if !strings.HasPrefix(stdout.String(), "# Slice: delivery\n") {
+	if !strings.HasPrefix(stdout.String(), "# Slice: a\n") {
 		t.Errorf("stdout = %q, want a slice header", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "Capability: delivery") {
+	if !strings.Contains(stdout.String(), "Capability: a") {
 		t.Errorf("stdout = %q, want the anchor trailer", stdout.String())
 	}
 }
@@ -411,13 +417,13 @@ func TestSliceFlagForms(t *testing.T) {
 	t.Chdir("../..")
 	useStore(t)
 	var want bytes.Buffer
-	if code := run([]string{"map", "slice", "slices", "map", "--format", "json", "--budget", "3000", "--with", "all"}, &want, &bytes.Buffer{}); code != 0 {
+	if code := run([]string{"map", "slice", "slices", "map", "--format", "json", "--with", "all"}, &want, &bytes.Buffer{}); code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
 	for _, args := range [][]string{
-		{"--format=json", "--budget=3000", "--with=all", "slices", "map"},
-		{"slices", "--format", "json", "map", "--with", "all", "--budget=3000"},
-		{"map", "slices", "map", "--with=all", "--format=json", "--budget", "3000"},
+		{"--format=json", "--with=all", "slices", "map"},
+		{"slices", "--format", "json", "map", "--with", "all"},
+		{"map", "slices", "map", "--with=all", "--format=json"},
 	} {
 		var got, stderr bytes.Buffer
 		if code := run(append([]string{"map", "slice"}, args...), &got, &stderr); code != 0 {
@@ -446,10 +452,11 @@ func TestSliceBadUsage(t *testing.T) {
 	for _, args := range [][]string{
 		{"map", "slice"},
 		{"map", "slice", "--format", "json"},
-		{"map", "slice", "slices", "--budget=0"},
-		{"map", "slice", "slices", "--budget", "-5"},
-		{"map", "slice", "slices", "--budget", "many"},
-		{"map", "slice", "slices", "--budget"},
+		{"map", "slice", "slices", "--budget", "3000"},
+		{"map", "slice", "--entry"},
+		{"map", "slice", "--entry", "--format", "json"},
+		{"map", "slice", "init", "--entry", "x"},
+		{"map", "slice", "--entry", "x", "--with", "all"},
 		{"map", "slice", "slices", "--with", "bad"},
 		{"map", "slice", "slices", "--format", "bad"},
 		{"map", "slice", "slices", "--change", "x"},
@@ -458,8 +465,8 @@ func TestSliceBadUsage(t *testing.T) {
 		if code := run(args, &stdout, &stderr); code != 2 {
 			t.Errorf("run(%v) = %d, want 2", args, code)
 		}
-		if !strings.Contains(stderr.String(), sliceUsage) {
-			t.Errorf("run(%v) stderr = %q, want the usage", args, stderr.String())
+		if !strings.Contains(stderr.String(), sliceUsage) || !strings.Contains(stderr.String(), sliceEntryUsage) {
+			t.Errorf("run(%v) stderr = %q, want both usages", args, stderr.String())
 		}
 		if stdout.Len() != 0 {
 			t.Errorf("run(%v) stdout = %q, want empty", args, stdout.String())
@@ -499,35 +506,99 @@ func TestSliceNoMapIsError(t *testing.T) {
 	}
 }
 
-func TestSliceMapWithProblem(t *testing.T) {
+func TestSliceMapWithProblemFails(t *testing.T) {
 	t.Chdir(tempMap(t, "r from docs/d.md"))
 	useStore(t)
-	var stdout, stderr bytes.Buffer
-	code := run([]string{"map", "slice", "a"}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("code = %d, want 0; stderr %q", code, stderr.String())
+	for _, args := range [][]string{{"map", "slice", "a"}, {"map", "slice", "--entry", "r"}} {
+		var stdout, stderr bytes.Buffer
+		if code := run(args, &stdout, &stderr); code != 2 {
+			t.Fatalf("run(%v) = %d, want 2; stderr %q", args, code, stderr.String())
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("run(%v) stdout = %q, want empty", args, stdout.String())
+		}
+		if got := stderr.String(); !strings.HasPrefix(got, "physa map slice: the map has ") ||
+			!strings.Contains(got, ".physa/capabilities/a/rules.md:") {
+			t.Errorf("run(%v) stderr = %q, want the problem named by file and line", args, got)
+		}
 	}
-	if !strings.HasPrefix(stdout.String(), "# Slice: a\n") {
-		t.Errorf("stdout = %q, want the slice still printed", stdout.String())
-	}
-	if got, want := stderr.String(), "physa map slice: the map has 1 problem; run physa check map\n"; got != want {
-		t.Errorf("stderr = %q, want %q", got, want)
+	if recs := listed(t); len(recs) != 0 {
+		t.Errorf("records = %+v, want none", recs)
 	}
 }
 
-func TestSliceOverBudget(t *testing.T) {
+// entryText returns the stdout of physa map slice --entry with args, failing the test on a non-zero code.
+func entryText(t *testing.T, args ...string) string {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	if code := run(append([]string{"map", "slice", "--entry"}, args...), &stdout, &stderr); code != 0 {
+		t.Fatalf("run(%v) = %d; stderr %q", args, code, stderr.String())
+	}
+	return stdout.String()
+}
+
+func TestSliceEntriesInOrderFromTwoCapabilities(t *testing.T) {
+	t.Chdir("../..")
+	useStore(t)
+	out := entryText(t, "no-adr", "github-first")
+	i, j := strings.Index(out, "`no-adr`"), strings.Index(out, "`github-first`")
+	if i < 0 || j < i {
+		t.Errorf("stdout = %q, want no-adr then github-first", out)
+	}
+	if strings.Contains(out, "# Slice") {
+		t.Errorf("stdout = %q, want entries only", out)
+	}
+	if rev := entryText(t, "github-first", "no-adr"); strings.Index(rev, "`github-first`") > strings.Index(rev, "`no-adr`") {
+		t.Errorf("reversed ask comes back in the old order: %q", rev)
+	}
+}
+
+func TestSliceEntryProductSlug(t *testing.T) {
+	t.Chdir("../..")
+	useStore(t)
+	if out := entryText(t, "no-adr"); !strings.HasPrefix(out, "### Never write \"ADR\"\n`no-adr`") {
+		t.Errorf("stdout = %q, want the product entry", out)
+	}
+}
+
+func TestSliceEntryUnknownSlugsNamed(t *testing.T) {
 	t.Chdir("../..")
 	useStore(t)
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"map", "slice", "slices", "--budget", "10"}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("code = %d, want 0; stderr %q", code, stderr.String())
+	code := run([]string{"map", "slice", "--entry", "no-adr", "nope-one", "nope-two"}, &stdout, &stderr)
+	if code != 2 {
+		t.Errorf("code = %d, want 2", code)
 	}
-	if !strings.Contains(stdout.String(), "Over budget:") {
-		t.Errorf("stdout lacks the over-budget line")
+	for _, slug := range []string{"nope-one", "nope-two"} {
+		if !strings.Contains(stderr.String(), slug) {
+			t.Errorf("stderr = %q, want it to name %s", stderr.String(), slug)
+		}
 	}
-	if got, want := stderr.String(), "physa map slice: over budget: what is never cut is "; !strings.HasPrefix(got, want) || !strings.HasSuffix(got, " tokens, over the 10-token budget\n") {
-		t.Errorf("stderr = %q, want %q... tokens, over the 10-token budget", got, want)
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+	if recs := listed(t); len(recs) != 0 {
+		t.Errorf("records = %+v, want none", recs)
+	}
+}
+
+func TestSliceEntryJSON(t *testing.T) {
+	t.Chdir("../..")
+	useStore(t)
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"map", "slice", "--entry", "no-adr", "github-first", "--format", "json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("code = %d; stderr %q", code, stderr.String())
+	}
+	var v struct {
+		Entries []struct {
+			Slug string `json:"slug"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &v); err != nil {
+		t.Fatalf("stdout is not JSON: %v", err)
+	}
+	if len(v.Entries) != 2 || v.Entries[0].Slug != "no-adr" || v.Entries[1].Slug != "github-first" {
+		t.Errorf("entries = %+v, want no-adr then github-first", v.Entries)
 	}
 }
 
@@ -754,15 +825,6 @@ func TestNoteProblemsSingularAndPlural(t *testing.T) {
 		if b.String() != c.want {
 			t.Errorf("noteProblems(%d) = %q, want %q", c.n, b.String(), c.want)
 		}
-	}
-}
-
-func TestPluralTokensInTheOverBudgetLine(t *testing.T) {
-	if got := plural(1, "token", "tokens"); got != "1 token" {
-		t.Errorf("plural(1) = %q", got)
-	}
-	if got := plural(11, "token", "tokens"); got != "11 tokens" {
-		t.Errorf("plural(11) = %q", got)
 	}
 }
 

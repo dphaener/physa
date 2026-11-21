@@ -10,7 +10,7 @@
 
 ### The index is derived, not stored
 `derived-index` · decided by dphaener, accepting a proposal · 2026-11-19 · from docs/architecture/01-map-and-slice.md
-`physa map index` builds the index from the capability files on every call.
+`physa map index` builds the index from the capability folders on every call.
 Because: storing it would duplicate every promise.
 
 ### Pull at the start, check at the PR

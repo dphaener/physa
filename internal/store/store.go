@@ -1,8 +1,8 @@
 // Package store keeps Physa's local records for the repo in one SQLite
 // database, physa.db in the store directory the version-control interface
 // names (shared by every worktree, never committed). It keeps slice records:
-// which capabilities were read, with what, under what budget, when and by
-// which session. It also keeps one gather of the repo's sources (docs,
+// which capabilities were read, with what, which entries were taken by slug,
+// when and by which session. It also keeps one gather of the repo's sources (docs,
 // history, PRs), replaced whole in one transaction, and the one init proposal made from it,
 // which a new gather clears. Schema changes are numbered migrations applied at
 // open.
@@ -123,17 +123,19 @@ func apply(db *sql.DB, n int, body string) error {
 	return tx.Commit()
 }
 
-// SliceRecord is one printed slice. Budget is 0 when none was set; Session is
-// empty when the calling session is unknown. Both encode as null then.
+// SliceRecord is one printed slice. Entries holds the slugs of an --entry read,
+// whose Capabilities are empty. Entries and Session are empty when there are
+// none or the calling session is unknown; Entries encodes as null then, and
+// Session likewise.
 type SliceRecord struct {
 	At           time.Time
 	Capabilities []string
 	With         string
-	Budget       int
+	Entries      []string
 	Session      string
 }
 
-// MarshalJSON encodes the record with budget and session null when absent.
+// MarshalJSON encodes the record with entries and session null when absent.
 func (r SliceRecord) MarshalJSON() ([]byte, error) {
 	caps := r.Capabilities
 	if caps == nil {
@@ -143,11 +145,11 @@ func (r SliceRecord) MarshalJSON() ([]byte, error) {
 		At           string   `json:"at"`
 		Capabilities []string `json:"capabilities"`
 		With         string   `json:"with"`
-		Budget       *int     `json:"budget"`
+		Entries      []string `json:"entries"`
 		Session      *string  `json:"session"`
 	}{At: r.At.UTC().Format(time.RFC3339), Capabilities: caps, With: r.With}
-	if r.Budget != 0 {
-		out.Budget = &r.Budget
+	if len(r.Entries) > 0 {
+		out.Entries = r.Entries
 	}
 	if r.Session != "" {
 		out.Session = &r.Session
@@ -165,21 +167,25 @@ func (s *Store) PutSliceRecord(r SliceRecord) error {
 	if err != nil {
 		return err
 	}
-	var budget, session any
-	if r.Budget != 0 {
-		budget = r.Budget
+	var entries, session any
+	if len(r.Entries) > 0 {
+		ej, err := json.Marshal(r.Entries)
+		if err != nil {
+			return err
+		}
+		entries = string(ej)
 	}
 	if r.Session != "" {
 		session = r.Session
 	}
-	_, err = s.db.Exec(`INSERT INTO slice_records (at, capabilities, "with", budget, session) VALUES (?, ?, ?, ?, ?)`,
-		r.At.UTC().Format(time.RFC3339), string(cj), r.With, budget, session)
+	_, err = s.db.Exec(`INSERT INTO slice_records (at, capabilities, "with", entries, session) VALUES (?, ?, ?, ?, ?)`,
+		r.At.UTC().Format(time.RFC3339), string(cj), r.With, entries, session)
 	return err
 }
 
 // SliceRecords returns every slice record, newest first.
 func (s *Store) SliceRecords() ([]SliceRecord, error) {
-	rows, err := s.db.Query(`SELECT at, capabilities, "with", budget, session FROM slice_records ORDER BY at DESC, id DESC`)
+	rows, err := s.db.Query(`SELECT at, capabilities, "with", entries, session FROM slice_records ORDER BY at DESC, id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -187,17 +193,21 @@ func (s *Store) SliceRecords() ([]SliceRecord, error) {
 	var out []SliceRecord
 	for rows.Next() {
 		var at, caps, with string
-		var budget sql.NullInt64
-		var session sql.NullString
-		if err := rows.Scan(&at, &caps, &with, &budget, &session); err != nil {
+		var entries, session sql.NullString
+		if err := rows.Scan(&at, &caps, &with, &entries, &session); err != nil {
 			return nil, err
 		}
-		r := SliceRecord{With: with, Budget: int(budget.Int64), Session: session.String}
+		r := SliceRecord{With: with, Session: session.String}
 		if r.At, err = time.Parse(time.RFC3339, at); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(caps), &r.Capabilities); err != nil {
 			return nil, err
+		}
+		if entries.Valid {
+			if err := json.Unmarshal([]byte(entries.String), &r.Entries); err != nil {
+				return nil, err
+			}
 		}
 		out = append(out, r)
 	}

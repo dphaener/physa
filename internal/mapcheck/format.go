@@ -3,8 +3,6 @@ package mapcheck
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -48,9 +46,9 @@ func (c *checker) indexPart(f *mapfile.File, p mapfile.Part, kinds []mapfile.Kin
 	if p.Lines > MaxIndexLines {
 		c.over(p.Path, p.Lines, MaxIndexLines)
 	}
-	if b, err := os.ReadFile(filepath.Join(c.root, filepath.FromSlash(p.Path))); err == nil && f.Title != "" {
+	if f.Title != "" {
 		var le *mapfolder.FormatError
-		_, err := mapfolder.FormatIndex(string(b), nil)
+		_, err := mapfolder.FormatIndex(p.Text, nil)
 		if errors.As(err, &le) && !known[at(p.Path, le.Line)] {
 			c.add(p.Path, le.Line, "%s", le.Message)
 		}

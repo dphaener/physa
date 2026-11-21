@@ -695,3 +695,41 @@ func TestDocRootResolvesDocAnchors(t *testing.T) {
 		t.Errorf("want no problems with DocRoot, got %v", r.Problems)
 	}
 }
+
+// FormOnly resolves no commit anchor, so one that would be a problem is none.
+func TestFormOnlyLeavesCommitAnchorsUnresolved(t *testing.T) {
+	root := newMap(t, "", commitCap("1a2b3c4"))
+	if r := checkWith(t, root, Options{}); len(r.Problems) != 1 {
+		t.Fatalf("without the option: want one problem, got %v", r.Problems)
+	}
+	calls := 0
+	open := func(string) (vcs.Repo, error) { calls++; return nil, errors.New("must not open") }
+	r := checkWith(t, root, Options{FormOnly: true, OpenRepo: open})
+	if len(r.Problems) != 0 || calls != 0 {
+		t.Errorf("want no problem and no repo opened, got %v after %d opens", r.Problems, calls)
+	}
+}
+
+// FormOnly does not resolve #N anchors, even with a resolver set.
+func TestFormOnlyDoesNotResolvePRAnchors(t *testing.T) {
+	root := newMap(t, "", prCap("10"))
+	exists := func(int) (bool, error) { t.Error("resolver called"); return false, nil }
+	r := checkWith(t, root, Options{FormOnly: true, PRExists: exists})
+	if len(r.Problems) != 0 || r.PRAnchors != PRAnchorsFormOnly {
+		t.Errorf("want no problem and form-only, got %v %q", r.Problems, r.PRAnchors)
+	}
+}
+
+// FormOnly still reports a malformed entry, with its path and line.
+func TestFormOnlyStillReportsMalformedEntry(t *testing.T) {
+	root := newMap(t, "", "## Rules\n\n### A\n`a` · from docs/d.md · 1a2b3c4\n")
+	r := checkWith(t, root, Options{FormOnly: true})
+	if len(r.Problems) == 0 {
+		t.Fatal("want a problem for the entry without Because")
+	}
+	for _, p := range r.Problems {
+		if p.Path == "" || p.Line == 0 {
+			t.Errorf("problem lacks path or line: %+v", p)
+		}
+	}
+}

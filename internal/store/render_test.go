@@ -17,9 +17,11 @@ func TestWriteRecords(t *testing.T) {
 		{"none", nil, false, "No slice records.\n"},
 		{"none json", nil, true, "[]\n"},
 		{"lines", []SliceRecord{
-			{At: at, Capabilities: []string{"a", "b"}, With: "all", Budget: 500, Session: "s1"},
+			{At: at, Capabilities: []string{"a", "b"}, With: "all", Session: "s1"},
 			{At: at, Capabilities: []string{"c"}},
-		}, false, "2026-11-01T12:00:00Z s1 a,b with all budget 500\n2026-11-01T12:00:00Z — c\n"},
+			{At: at, Entries: []string{"a", "b"}, Session: "s2"},
+			{At: at, Capabilities: []string{"c"}, Entries: []string{"d"}},
+		}, false, "2026-11-01T12:00:00Z s1 a,b with all\n2026-11-01T12:00:00Z — c\n2026-11-01T12:00:00Z s2 entries a, b\n2026-11-01T12:00:00Z — c entries d\n"},
 	}
 	for _, c := range cases {
 		var b bytes.Buffer

@@ -8,30 +8,39 @@ import (
 )
 
 // WriteMD writes s as markdown, its sections in a fixed order: the header,
-// the product, each capability, the terms, what was left out and how to
-// anchor. Empty sections are omitted. The same slice always gives the same
-// bytes.
+// the product, each capability, the terms, Reading further (the slice skill)
+// and how to anchor, a blank line between sections. Empty sections are
+// omitted. The same slice always gives the same bytes.
 func WriteMD(w io.Writer, s *Slice) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Slice: %s\n", strings.Join(s.Capabilities, ", "))
-	if s.Budget == 0 {
-		fmt.Fprintf(&b, "Tokens: %d, no budget.\n", s.Used)
-	} else {
-		fmt.Fprintf(&b, "Budget: %d of %s.\n", s.Used, plural(s.Budget, "token", "tokens"))
+	if s.Product != nil {
+		heading := "Product"
+		if s.Product.Title != "" {
+			heading += ": " + s.Product.Title
+		}
+		b.WriteString("\n")
+		writeSection(&b, heading, s.Product)
 	}
-	if s.OverBudget {
-		fmt.Fprintf(&b, "Over budget: what is never cut (%s) is %s, over the %d-token budget.\n", inProse(s.Floor), plural(s.Used, "token", "tokens"), s.Budget)
+	for i := range s.Sections {
+		heading := s.Sections[i].Title
+		if heading == "" {
+			heading = s.Sections[i].Name
+		}
+		b.WriteString("\n")
+		writeSection(&b, heading, &s.Sections[i])
 	}
-	if body := renderBody(s); body != "" {
-		b.WriteString("\n" + body)
-	}
-	if len(s.LeftOut) > 0 {
-		b.WriteString("\n## Left out\n\n")
-		for _, c := range s.LeftOut {
-			for _, part := range []string{"- `", c.Slug, "` (", c.Capability, "): ", partName(c.Part), ". Show it with `", c.Command, "`.\n"} {
-				b.WriteString(part)
+	if len(s.Terms) > 0 {
+		b.WriteString("\n## Terms\n")
+		for _, t := range s.Terms {
+			b.WriteString("\n**" + t.Name + "**: " + t.Definition + "\n")
+			if len(t.Avoid) > 0 {
+				b.WriteString("_Avoid_: " + strings.Join(t.Avoid, ", ") + "\n")
 			}
 		}
+	}
+	if s.ReadingFurther != "" {
+		b.WriteString("\n## Reading further\n\n" + strings.TrimRight(s.ReadingFurther, "\n") + "\n")
 	}
 	if len(s.Trailers) > 0 {
 		b.WriteString("\n## How to anchor\n\nAnchor each commit to the one capability it serves, with a trailer:\n\n")
@@ -46,7 +55,11 @@ func WriteMD(w io.Writer, s *Slice) error {
 // WriteJSON writes s as one line of JSON with the same content as WriteMD,
 // its fields in a fixed order.
 func WriteJSON(w io.Writer, s *Slice) error {
-	b, err := json.Marshal(s)
+	return writeJSON(w, s)
+}
+
+func writeJSON(w io.Writer, v any) error {
+	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
@@ -54,75 +67,20 @@ func WriteJSON(w io.Writer, s *Slice) error {
 	return err
 }
 
-// inProse joins items as a list in prose: "a, b and c".
-func inProse(items []string) string {
-	if len(items) < 2 {
-		return strings.Join(items, "")
-	}
-	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
-}
-
-func partName(part string) string {
-	switch part {
-	case PartTerm:
-		return "the term"
-	case PartBecause:
-		return "its Because line"
-	case PartRejected:
-		return "its rejected options"
-	}
-	return "the entry"
-}
-
-func renderBody(s *Slice) string {
-	var b strings.Builder
-	writeBody(&b, s)
-	return b.String()
-}
-
-// writeBody writes the sections the budget counts: the product, each
-// capability and the terms, a blank line between sections.
-func writeBody(b *strings.Builder, s *Slice) {
-	sep := func() {
-		if b.Len() > 0 {
-			b.WriteString("\n")
-		}
-	}
-	if s.Product != nil {
-		heading := "Product"
-		if s.Product.Title != "" {
-			heading += ": " + s.Product.Title
-		}
-		writeSection(b, heading, s.Product)
-	}
-	for i := range s.Sections {
-		sep()
-		heading := s.Sections[i].Title
-		if heading == "" {
-			heading = s.Sections[i].Name
-		}
-		writeSection(b, heading, &s.Sections[i])
-	}
-	if len(s.Terms) > 0 {
-		sep()
-		b.WriteString("## Terms\n")
-		for _, t := range s.Terms {
-			b.WriteString("\n**" + t.Name + "**: " + t.Definition + "\n")
-			if len(t.Avoid) > 0 {
-				b.WriteString("_Avoid_: " + strings.Join(t.Avoid, ", ") + "\n")
-			}
-		}
-	}
-}
-
 var groups = []struct{ kind, heading string }{
 	{"rule", "Rules"}, {"decision", "Decisions"}, {"question", "Questions"},
 }
 
+// writeSection writes the product or a capability: its file, promise and
+// overview, the kinds it holds in full, then a group of heading lines for
+// each kind shown by heading only, with how to take them.
 func writeSection(b *strings.Builder, heading string, s *Section) {
 	line(b, "## ", heading)
 	line(b, "File: ", s.File)
 	line(b, "Promise: ", s.Promise)
+	if s.Overview != "" {
+		b.WriteString("\n" + s.Overview + "\n")
+	}
 	for _, g := range groups {
 		open := false
 		for _, e := range s.Entries {
@@ -133,15 +91,29 @@ func writeSection(b *strings.Builder, heading string, s *Section) {
 				b.WriteString("\n### " + g.heading + "\n")
 				open = true
 			}
-			writeEntry(b, e)
+			b.WriteString("\n")
+			writeEntry(b, "####", e)
+		}
+	}
+	for _, g := range groups[1:] {
+		open := false
+		for _, h := range s.Contents {
+			if h.Kind != g.kind {
+				continue
+			}
+			if !open {
+				b.WriteString("\n" + g.heading + " (take with physa map slice --entry <slug>...)\n")
+				open = true
+			}
+			b.WriteString("- " + h.Slug + ": " + h.Heading + "\n")
 		}
 	}
 }
 
-func writeEntry(b *strings.Builder, e Entry) {
-	b.WriteString("\n#### ")
-	b.WriteString(e.Heading)
-	b.WriteString("\n")
+// writeEntry writes e as the map writes it, under a heading of the given
+// marks: the heading, the rebuilt meta line, the body, Because and Rejected.
+func writeEntry(b *strings.Builder, marks string, e Entry) {
+	b.WriteString(marks + " " + e.Heading + "\n")
 	if writeMeta(b, e) {
 		b.WriteString("\n")
 	}
@@ -172,7 +144,7 @@ func metaLine(e Entry) string {
 }
 
 // writeMeta writes an entry's rebuilt meta line, without its newline: slug,
-// person, date, anchors. Consecutive PR and commit anchors share a segment;
+// person, date, anchors. Adjacent PR and commit anchors share a segment;
 // each from-anchor has its own. It reports whether it wrote anything.
 func writeMeta(b *strings.Builder, e Entry) bool {
 	n := b.Len()

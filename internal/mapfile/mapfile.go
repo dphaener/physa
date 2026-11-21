@@ -104,6 +104,9 @@ type Part struct {
 	// OutsideEntries are the lines of "###" headings outside ## Entries; in
 	// index.md, every "###" heading.
 	OutsideEntries []int
+	// Text is index.md's text as read, for the checks to judge its grammar;
+	// empty in a kind file.
+	Text string
 }
 
 // Line is one line of a file and its line number.
@@ -199,6 +202,13 @@ func (r *reader) add(p string, line int, format string, args ...any) {
 }
 
 func (r *reader) content(p string) ([]string, int, bool) {
+	_, lines, n, ok := r.text(p)
+	return lines, n, ok
+}
+
+// text reads the file at p: its text as read, its lines, and how many lines
+// wc -l counts.
+func (r *reader) text(p string) (string, []string, int, bool) {
 	b, err := os.ReadFile(path.Join(r.root, p))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -206,12 +216,12 @@ func (r *reader) content(p string) ([]string, int, bool) {
 		} else {
 			r.add(p, 0, "cannot read file: %v", err)
 		}
-		return nil, 0, false
+		return "", nil, 0, false
 	}
-	s := string(b)
-	n := strings.Count(s, "\n")
-	s = strings.TrimSuffix(s, "\n")
-	return strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n"), n, true
+	raw := string(b)
+	n := strings.Count(raw, "\n")
+	s := strings.TrimSuffix(raw, "\n")
+	return raw, strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n"), n, true
 }
 
 // product reads .physa/product. An old .physa/product.md is reported as the
@@ -310,12 +320,12 @@ func (r *reader) folder(d, name string) *File {
 // paragraph after the title) and the link lines. Whether it keeps to
 // index.md's grammar is for the checks; this records what it holds.
 func (r *reader) index(f *File, p string) {
-	lines, n, ok := r.content(p)
+	raw, lines, n, ok := r.text(p)
 	if !ok {
 		return
 	}
 	f.Lines = n
-	part := Part{Path: p, Lines: n}
+	part := Part{Path: p, Lines: n, Text: raw}
 	var overview []string
 	ended := false // the overview's paragraph has ended
 	for i := r.frontMatter(f, p, lines); i < len(lines); i++ {

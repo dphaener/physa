@@ -1,57 +1,77 @@
-// Package mapslice assembles a slice: the part of the map one task needs,
-// from the capabilities an agent chose, within a token budget. It never
-// matches or ranks capabilities; it takes only the ones named. The same map
-// and request always give the same slice. It also parses the flags of
-// physa map slice into a Request.
+// Package mapslice assembles a slice: the part of the map one task needs. A
+// bare slice is the floor and the headings: the product's rules, and for each
+// capability an agent chose its promise, overview and rules in full, with only
+// the headings of its decisions and questions. The agent then takes the
+// entries its task touches by their slugs, from anywhere in the map. It never
+// matches, ranks or searches the map; it takes only what is named, and the
+// same map and request always give the same slice. Every slice carries the
+// slice skill, and no slice is built from a map the check would reject. It
+// also parses the flags of physa map slice into a Request.
 package mapslice
 
 import (
+	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfile"
 )
 
-// Request is what an agent asks for: the capabilities its task touches,
-// whether decisions or questions must be kept whatever the budget, and the
-// budget in tokens. A slice has no default budget: 0 means none, and nothing
-// is cut.
+// skill is the slice skill: the judgment of which entries to take and what
+// to do with them, printed as every slice's Reading further section. It is
+// embedded in Physa only and never read from the repo, so a team cannot
+// replace it.
+//
+//go:embed skill.md
+var skill string
+
+// Request is what an agent asks for: either the capabilities its task
+// touches, with the kinds of entry to print in full in place of their
+// headings, or the entries it chose, by slug. A request never asks for both.
 type Request struct {
 	Capabilities                 []string
 	WithDecisions, WithQuestions bool
-	Budget                       int
+	Entries                      []string // slugs, in the order asked
 }
 
-// Slice is an assembled slice, ready to write as markdown or JSON. Field
+// Slice is an assembled bare slice, ready to write as markdown or JSON. Field
 // order is the JSON field order.
 type Slice struct {
-	Capabilities []string  `json:"capabilities"` // chosen, deduplicated, sorted
-	Budget       int       `json:"budget"`       // 0 when the request named none
-	Used         int       `json:"used"`         // estimated tokens of product, capabilities and terms
-	OverBudget   bool      `json:"over_budget"`
-	Floor        []string  `json:"floor,omitempty"`   // what is never cut, when it alone is over budget
-	Product      *Section  `json:"product,omitempty"` // nil without the product
-	Sections     []Section `json:"sections"`          // one per chosen capability
-	Terms        []Term    `json:"terms"`
-	LeftOut      []Cut     `json:"left_out"`
-	Trailers     []string  `json:"trailers"`
+	Capabilities   []string  `json:"capabilities"`      // chosen, deduplicated, sorted
+	Product        *Section  `json:"product,omitempty"` // nil without the product
+	Sections       []Section `json:"sections"`          // one per chosen capability
+	Terms          []Term    `json:"terms"`
+	ReadingFurther string    `json:"reading_further"` // the slice skill
+	Trailers       []string  `json:"trailers"`
 }
 
-// Section is the product or one capability, with the entries the budget kept.
+// Section is the product or one capability: its rules and any kinds asked for
+// in full as entries, and the other kinds as headings.
 type Section struct {
-	Name    string  `json:"name"` // "product" for the product
-	Title   string  `json:"title"`
-	File    string  `json:"file"`
-	Promise string  `json:"promise"`
-	Entries []Entry `json:"entries"` // rules, then decisions, then questions
+	Name     string    `json:"name"` // "product" for the product
+	Title    string    `json:"title"`
+	File     string    `json:"file"`
+	Promise  string    `json:"promise"`
+	Overview string    `json:"overview"` // empty for the product
+	Entries  []Entry   `json:"entries"`  // rules, then decisions, then questions
+	Contents []Heading `json:"contents"` // decisions, then questions, shown by heading only
 }
 
-// Entry is a rule, decision or question as the slice shows it. A part the
-// budget cut is empty.
+// Heading is one entry shown by its slug and heading alone, to be taken with
+// physa map slice --entry.
+type Heading struct {
+	Kind    string `json:"kind"` // "decision" or "question"
+	Slug    string `json:"slug"`
+	Heading string `json:"heading"`
+}
+
+// Entry is a rule, decision or question in full.
 type Entry struct {
 	Slug     string   `json:"slug"`
 	Kind     string   `json:"kind"` // "rule", "decision" or "question"
@@ -66,101 +86,69 @@ type Entry struct {
 	Rejected []string `json:"rejected,omitempty"`
 }
 
-// Term is a glossary term that appears in the slice's text.
+// Term is a glossary term that appears in the capabilities' text.
 type Term struct {
 	Name       string   `json:"name"`
 	Definition string   `json:"definition"`
 	Avoid      []string `json:"avoid,omitempty"`
 }
 
-// The pieces the budget can cut: a whole entry, its Because line, its
-// rejected options, or a term.
-const (
-	PartEntry    = "entry"
-	PartBecause  = "because"
-	PartRejected = "rejected"
-	PartTerm     = "term"
-)
-
-// Cut is one piece the budget left out and the command that shows it. A cut
-// term has its name as Slug and "glossary" as Capability.
-type Cut struct {
-	Slug       string `json:"slug"`
-	Capability string `json:"capability"` // "product" for the product
-	Part       string `json:"part"`       // PartEntry, PartBecause, PartRejected or PartTerm
-	Command    string `json:"command"`
-}
-
-// Build assembles the slice r asks for from m. It fails when r names no
-// capability, names one the map does not have, or has a negative budget.
-func Build(m *mapfile.Map, r Request) (*Slice, error) {
-	a, err := newAssembler(m, r)
+// Read reads the map in dir/.physa for a slice. It fails when the map has a
+// problem physa check map would report, with anchors checked for their form
+// only, so neither history nor the forge is read; the error names every
+// problem by file and line.
+func Read(dir string) (*mapfile.Map, error) {
+	m, res, err := mapcheck.CheckRead(dir, mapcheck.Options{FormOnly: true})
 	if err != nil {
 		return nil, err
 	}
-	// Cost only falls as more of the cut order is cut, so the fewest cuts
-	// that fit are found by a binary search, after trying both ends.
-	fits := func(k int) bool {
-		_, cost := a.assemble(k)
-		return cost <= a.budget
-	}
-	k, over := 0, false
-	switch n := len(a.cuts); {
-	case a.budget == 0, fits(0):
-	case !fits(n):
-		k, over = n, true
-	default:
-		k = 1 + sort.Search(n-1, func(i int) bool { return fits(i + 1) })
-	}
-	s, cost := a.assemble(k)
-	s.Used, s.OverBudget = cost, over
-	if over {
-		s.Floor = []string{"product rules", "promises", "rules"}
-		if r.WithDecisions {
-			s.Floor = append(s.Floor, "decisions")
+	if n := len(res.Problems); n > 0 {
+		var b strings.Builder
+		fmt.Fprintf(&b, "the map has %s that physa check map reports; fix the map first:", plural(n, "problem", "problems"))
+		for _, p := range res.Problems {
+			b.WriteString("\n" + p.String())
 		}
-		if r.WithQuestions {
-			s.Floor = append(s.Floor, "questions")
-		}
+		return nil, errors.New(b.String())
 	}
-	return s, nil
+	return m, nil
 }
 
-// cut is one step of the budget's cut order: a part of secs[sec].Entries[ent],
-// or terms[term] when part is PartTerm.
-type cut struct {
-	sec, ent, term int
-	part           string
+// Write builds what f asks for from m and writes it to w, as JSON when f.JSON
+// is set: the entries its request names, or else the slice of its
+// capabilities. Nothing is written when the request fails.
+func Write(w io.Writer, m *mapfile.Map, f Flags) error {
+	if len(f.Req.Entries) > 0 {
+		t, err := Take(m, f.Req.Entries)
+		if err != nil {
+			return err
+		}
+		if f.JSON {
+			return WriteTakenJSON(w, t)
+		}
+		return WriteTakenMD(w, t)
+	}
+	s, err := Build(m, f.Req)
+	if err != nil {
+		return err
+	}
+	if f.JSON {
+		return WriteJSON(w, s)
+	}
+	return WriteMD(w, s)
 }
 
-// assembler holds a request's full, uncut content and its cut order.
-type assembler struct {
-	req    Request
-	names  []string
-	budget int
-	secs   []Section // the product first when present, then the capabilities
-	prod   bool      // secs[0] is the product
-	cuts   []cut
-	terms  []mapfile.Term
-	// matches[sec][ent] are the terms each part of an entry mentions;
-	// header[sec] are those of a section's title and promise.
-	header  [][]bool
-	matches [][]partTerms
-	buf     strings.Builder
-	command string // the command that shows everything the budget cut
-}
-
-type partTerms struct{ core, because, rejected []bool }
-
-func newAssembler(m *mapfile.Map, r Request) (*assembler, error) {
+// Build assembles the bare slice r asks for from m. It fails when r names no
+// capability, names one the map does not have, or names entries, which Take
+// takes.
+func Build(m *mapfile.Map, r Request) (*Slice, error) {
 	if m == nil {
 		return nil, errors.New("no map to slice")
 	}
+	if len(r.Entries) > 0 {
+		return nil, errors.New("a slice names capabilities or entries, not both")
+	}
 	if len(r.Capabilities) == 0 {
 		return nil, errors.New("no capabilities named; run physa map index to see them")
-	}
-	if r.Budget < 0 {
-		return nil, fmt.Errorf("budget must be positive, got %d", r.Budget)
 	}
 	byName := map[string]*mapfile.File{}
 	for _, c := range m.Capabilities {
@@ -178,25 +166,60 @@ func newAssembler(m *mapfile.Map, r Request) (*assembler, error) {
 		}
 	}
 	sort.Strings(names)
-	a := &assembler{req: r, names: names, budget: r.Budget, terms: m.Glossary,
-		command: "physa map slice " + strings.Join(names, " ")}
+	full := map[mapfile.Kind]bool{mapfile.Rule: true, mapfile.Decision: r.WithDecisions, mapfile.Question: r.WithQuestions}
+	s := &Slice{Capabilities: names, Sections: []Section{}, Terms: []Term{}, ReadingFurther: skill, Trailers: []string{}}
 	if m.Product != nil {
-		a.secs, a.prod = append(a.secs, toSection(m.Product)), true
+		p := toSection(m.Product, full, nil)
+		s.Product = &p
 	}
+	// Only the capabilities' own text brings in a term, never the product's.
+	var text strings.Builder
 	for _, n := range names {
-		a.secs = append(a.secs, toSection(byName[n]))
+		s.Sections = append(s.Sections, toSection(byName[n], full, &text))
+		s.Trailers = append(s.Trailers, "Capability: "+n)
 	}
-	a.order()
-	a.match()
-	return a, nil
+	used := make([]bool, len(m.Glossary))
+	for _, h := range findTerms(text.String(), m.Glossary) {
+		used[h.term] = true
+	}
+	for i, t := range m.Glossary {
+		if used[i] {
+			s.Terms = append(s.Terms, Term{Name: t.Name, Definition: t.Definition, Avoid: t.Avoid})
+		}
+	}
+	return s, nil
 }
 
-func toSection(f *mapfile.File) Section {
-	s := Section{Name: f.Name, Title: f.Title, File: f.Path + "/", Promise: f.Promise, Entries: []Entry{}}
+// toSection turns f into a section, the kinds full marks in full and the rest
+// as headings. With text set, f is a capability: its overview is kept, and
+// the text shown is added to text, normalized, for the terms; each piece is
+// ended by a byte that is never part of a word, so no term spans two pieces.
+func toSection(f *mapfile.File, full map[mapfile.Kind]bool, text *strings.Builder) Section {
+	s := Section{Name: f.Name, Title: f.Title, File: f.Path + "/", Promise: f.Promise, Entries: []Entry{}, Contents: []Heading{}}
+	own := func(parts ...string) {
+		if text == nil {
+			return
+		}
+		for _, p := range parts {
+			writeNormal(text, p)
+			text.WriteString("\x00")
+		}
+	}
+	if text != nil {
+		s.Overview = f.Overview
+	}
+	own(s.Title, s.Promise, s.Overview)
 	for _, k := range []mapfile.Kind{mapfile.Rule, mapfile.Decision, mapfile.Question} {
 		for _, e := range f.Entries {
-			if e.Kind == k {
+			switch {
+			case e.Kind != k:
+			case full[k]:
 				s.Entries = append(s.Entries, toEntry(e))
+				own(e.Heading, e.Body, e.Because)
+				own(e.Rejected...)
+			default:
+				s.Contents = append(s.Contents, Heading{Kind: k.String(), Slug: e.Slug, Heading: e.Heading})
+				own(e.Heading)
 			}
 		}
 	}
@@ -229,93 +252,6 @@ func toEntry(e mapfile.Entry) Entry {
 		out.Rejected = append([]string(nil), e.Rejected...)
 	}
 	return out
-}
-
-// cuttable reports whether the budget may cut an entry of kind k.
-func (a *assembler) cuttable(k string) bool {
-	switch k {
-	case "decision":
-		return !a.req.WithDecisions
-	case "question":
-		return !a.req.WithQuestions
-	}
-	return false
-}
-
-// order lists the cuts in the budget's order: the product's decisions and
-// questions, then every rejected-option list, then terms, then questions,
-// then decisions' Because lines, then decisions. Within each tier the pieces
-// lowest in the output go first.
-func (a *assembler) order() {
-	add := func(si int, part string, take func(Entry) bool) {
-		es := a.secs[si].Entries
-		for ei := len(es) - 1; ei >= 0; ei-- {
-			if a.cuttable(es[ei].Kind) && take(es[ei]) {
-				a.cuts = append(a.cuts, cut{sec: si, ent: ei, part: part})
-			}
-		}
-	}
-	each := func(part string, take func(Entry) bool) {
-		for si := len(a.secs) - 1; si >= 0; si-- {
-			if si > 0 || !a.prod {
-				add(si, part, take)
-			}
-		}
-	}
-	kind := func(k string) func(Entry) bool { return func(e Entry) bool { return e.Kind == k } }
-	if a.prod {
-		add(0, PartEntry, func(e Entry) bool { return e.Kind != "rule" })
-	}
-	each(PartRejected, func(e Entry) bool { return len(e.Rejected) > 0 })
-	for ti := len(a.terms) - 1; ti >= 0; ti-- {
-		a.cuts = append(a.cuts, cut{term: ti, part: PartTerm})
-	}
-	each(PartEntry, kind("question"))
-	each(PartBecause, func(e Entry) bool { return e.Kind == "decision" && e.Because != "" })
-	each(PartEntry, kind("decision"))
-}
-
-// match finds, once, the terms each piece of the capabilities' text mentions;
-// the product's text never brings in a term. All pieces are joined into one
-// text, split by a byte that is never part of a word, so each term's name and
-// Avoid words are searched for once.
-func (a *assembler) match() {
-	var (
-		text   strings.Builder
-		starts []int // starts[p] is where piece p begins in text
-	)
-	piece := func(parts ...string) []bool {
-		starts = append(starts, text.Len())
-		for _, p := range parts {
-			writeNormal(&text, p)
-			text.WriteString(" ")
-		}
-		text.WriteString("\x00")
-		return make([]bool, len(a.terms))
-	}
-	var hits [][]bool // hits[p] is piece p's terms
-	a.header = make([][]bool, len(a.secs))
-	a.matches = make([][]partTerms, len(a.secs))
-	for si, s := range a.secs {
-		own := func(parts ...string) []string {
-			if a.prod && si == 0 {
-				return nil
-			}
-			return parts
-		}
-		a.header[si] = piece(own(s.Title, s.Promise)...)
-		hits = append(hits, a.header[si])
-		a.matches[si] = make([]partTerms, len(s.Entries))
-		for ei, e := range s.Entries {
-			mt := partTerms{piece(own(e.Heading, e.Body)...), piece(own(e.Because)...), piece(own(e.Rejected...)...)}
-			a.matches[si][ei] = mt
-			hits = append(hits, mt.core, mt.because, mt.rejected)
-		}
-	}
-	all := text.String()
-	for _, h := range findTerms(all, a.terms) {
-		hits[sort.SearchInts(starts, h.at+1)-1][h.term] = true
-	}
 }
 
 // normalize lowercases s, turns every run of white space into one space and
@@ -407,94 +343,3 @@ func wordEnd(s string, i int) int {
 func isWord(r rune) bool {
 	return r != utf8.RuneError && (unicode.IsLetter(r) || unicode.IsDigit(r))
 }
-
-// assemble builds the slice with the first k cuts applied and returns it with
-// its budget cost: the estimated tokens of its product, capability and term
-// sections.
-func (a *assembler) assemble(k int) (*Slice, int) {
-	type gone struct{ entry, because, rejected bool }
-	cutOf := make([][]gone, len(a.secs))
-	for si, s := range a.secs {
-		cutOf[si] = make([]gone, len(s.Entries))
-	}
-	termCut := make([]bool, len(a.terms))
-	for _, c := range a.cuts[:k] {
-		if c.part == PartTerm {
-			termCut[c.term] = true
-			continue
-		}
-		g := &cutOf[c.sec][c.ent]
-		switch c.part {
-		case PartEntry:
-			g.entry = true
-		case PartBecause:
-			g.because = true
-		case PartRejected:
-			g.rejected = true
-		}
-	}
-	s := &Slice{
-		Capabilities: a.names, Budget: a.budget,
-		Sections: []Section{}, Terms: []Term{}, LeftOut: []Cut{}, Trailers: []string{},
-	}
-	used := make([]bool, len(a.terms))
-	union := func(hits []bool) {
-		for i, h := range hits {
-			used[i] = used[i] || h
-		}
-	}
-	for si, sec := range a.secs {
-		out := sec
-		out.Entries = []Entry{}
-		union(a.header[si])
-		for ei, e := range sec.Entries {
-			g, mt := cutOf[si][ei], a.matches[si][ei]
-			if g.entry {
-				s.LeftOut = append(s.LeftOut, a.leftOut(sec.Name, e, PartEntry))
-				continue
-			}
-			union(mt.core)
-			if g.because {
-				e.Because = ""
-				s.LeftOut = append(s.LeftOut, a.leftOut(sec.Name, e, PartBecause))
-			} else {
-				union(mt.because)
-			}
-			if g.rejected {
-				e.Rejected = nil
-				s.LeftOut = append(s.LeftOut, a.leftOut(sec.Name, e, PartRejected))
-			} else {
-				union(mt.rejected)
-			}
-			out.Entries = append(out.Entries, e)
-		}
-		if a.prod && si == 0 {
-			s.Product = &out
-		} else {
-			s.Sections = append(s.Sections, out)
-		}
-	}
-	for i, t := range a.terms {
-		switch {
-		case !used[i]:
-		case termCut[i]:
-			s.LeftOut = append(s.LeftOut, Cut{Slug: t.Name, Capability: "glossary", Part: PartTerm, Command: a.command})
-		default:
-			s.Terms = append(s.Terms, Term{Name: t.Name, Definition: t.Definition, Avoid: t.Avoid})
-		}
-	}
-	for _, n := range a.names {
-		s.Trailers = append(s.Trailers, "Capability: "+n)
-	}
-	a.buf.Reset()
-	writeBody(&a.buf, s)
-	return s, tokens(a.buf.Len())
-}
-
-func (a *assembler) leftOut(capability string, e Entry, part string) Cut {
-	return Cut{Slug: e.Slug, Capability: capability, Part: part, Command: a.command}
-}
-
-// tokens estimates the tokens of n bytes of text: one per four bytes,
-// rounded up.
-func tokens(n int) int { return (n + 3) / 4 }

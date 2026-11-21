@@ -40,10 +40,17 @@ Each step: what lands, what the owner can do with it, and when it is done. Comma
 
 ### 3. Learning
 
-- **Needs a design round first:** 02 §3.3 and §3.5 predate 07. Open: what triggers learning (a merge seen locally, a command, later the engine), what it reads (version control, plus the forge's review discussion when there is one), its token appetite, and whether it runs on every merge or only when asked (07 Q4); how a capability is born from building work (07 Q1).
+- **Status: landed** (2026-11-21; design 08, #19–#23); the first learn PR (#29) merged. Done when a week of PRs shows it.
 - **Lands:** the learning step after merge, run on the developer's machine (07 §1), with its own token appetite; the batched `physa/learn` PR that never merges itself; the three skills Physa ships (mapping, recovering, learning; 02 §4).
 - **The owner can:** watch Physa's map improve from its own PRs, reviewing one batched PR instead of writing entries.
 - **Done when:** a week of Physa PRs produces a `physa/learn` PR the owner mostly accepts.
+
+### 3a. Capability folders
+
+- **Status:** designed (09, settled 2026-11-21).
+- **Lands,** in two PRs (09 Q10): first the folder format, `physa check map` and `physa map fmt`, with Physa's own map converted; then the slice that returns the floor and the headings, `physa map slice --entry`, the slice skill, and `--budget` removed.
+- **Why now:** learning makes capability files grow past their limit within weeks, and nebari's init (step 4) should write the new format, not the old.
+- **Done when:** Physa's map is in folders, and agents building the next step take decisions with `--entry` (seen in slice records).
 
 ### 4. Init, and the first public release
 

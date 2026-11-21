@@ -305,6 +305,20 @@ func (f *fixture) learnOnce() string {
 	return c
 }
 
+func TestLearningCommitCarriesTheDraftSession(t *testing.T) {
+	f := newFixture(t)
+	c := f.change("feat: Retry sends")
+	f.corrected(c)
+	a := agentFor(rule("retry-on-review", c))
+	a.result.SessionID = "11111111-2222-4333-8444-555555555555"
+	if _, err := f.run(f.opts(a, true, true), nil); err != nil {
+		t.Fatal(err)
+	}
+	line := "- rule retry-on-review in delivery, from correction on " + short(c)
+	wantMessage(t, message(t, f.bare, Branch), "docs(map): Learn from 2 changes\n\n"+line+
+		"\n\nLearned-through: "+c+"\nLearned: "+short(c)+"\nSession: "+a.result.SessionID+"\nCapability: learning")
+}
+
 func TestCorrectionIsCommittedPushedAndOpened(t *testing.T) {
 	f := newFixture(t)
 	c := f.change("feat: Retry sends")

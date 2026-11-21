@@ -411,3 +411,34 @@ func TestPushLease(t *testing.T) {
 		t.Error("an expect that is no change id is no error")
 	}
 }
+
+func TestCopySkipsHooks(t *testing.T) {
+	w, dir, _ := newWriter(t)
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	run(t, dir, "config", "--local", "core.hooksPath", shippedHooks(t))
+	x := sideChange(t, dir, "x", "a.txt", "two\n", "docs: Change a\n\nCapability: learning")
+	unchanged(t, dir)
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "s1")
+	c, err := w.NewCopy("main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Remove()
+	run(t, c.Dir(), "commit", "-q", "--allow-empty", "-m", "docs: Control\n\nCapability: learning")
+	if got := message(t, c.Dir(), "HEAD"); !strings.HasSuffix(got, "\nSession: s1") {
+		t.Fatalf("the hook is not active in the copy, so the test proves nothing: %q", got)
+	}
+	if ok, err := c.Replay(x); err != nil || !ok {
+		t.Fatalf("Replay = %v, %v", ok, err)
+	}
+	if got := message(t, c.Dir(), "HEAD"); got != "docs: Change a\n\nCapability: learning" {
+		t.Errorf("a replayed message = %q, want it as written", got)
+	}
+	got, err := c.Commit("docs(map): Learn from 1 change\n\nCapability: learning\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Message != "docs(map): Learn from 1 change\n\nCapability: learning\n" || strings.Contains(message(t, c.Dir(), "HEAD"), "Session:") {
+		t.Errorf("a committed message = %q, want it as written", got.Message)
+	}
+}

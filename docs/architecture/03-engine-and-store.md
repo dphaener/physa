@@ -114,6 +114,8 @@ This is what "durable" means: the engine can be killed at any moment and picks u
 - After done, the engine ends the process itself. Nobody sends `/exit`.
 - A process that exits without saying done is recorded as **lost**, and the run goes to its harness's route for that case.
 
+A note, with no design: because session ids are assigned at launch (04 §10), the engine can resume a session (`--resume`) after a crash, a usage limit or an answered ask, or fork it (`--fork-session`) for a fix round. The owner: "this will also give us resumable sessions." Resuming needs the machine that has the log. The engine designs it in step 5.
+
 ### 7.2 Stalls
 
 - A session that makes no progress (no output, no record, no tool activity reported by its adapter) for a set time is **stalled**. Default: 15 minutes (Q8).

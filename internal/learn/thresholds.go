@@ -18,4 +18,14 @@ const (
 	// UnloadedMinChanges is how many learned-from changes must serve a
 	// capability without their sessions loading it before it is a signal.
 	UnloadedMinChanges = 3
+	// AnsweredAskMin is how many answered asks in a change's sessions make
+	// a signal. A starting value, tuned from real runs.
+	AnsweredAskMin = 1
+	// InterventionMin is how many of a person's messages mid-run in a
+	// change's sessions make a signal. A starting value, tuned from real
+	// runs.
+	InterventionMin = 1
+	// FixedFindingMin is how many fixed findings in a change's sessions make
+	// a signal. A starting value, tuned from real runs.
+	FixedFindingMin = 1
 )

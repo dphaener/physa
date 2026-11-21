@@ -233,7 +233,9 @@ type workCopy struct {
 func (c *workCopy) Dir() string { return c.dir }
 
 // Replay cherry-picks id without committing, tests the staged diff, and
-// commits reusing id's message and author when it holds anything.
+// commits reusing id's message and author when it holds anything. The commit
+// runs no hook (--no-verify still runs prepare-commit-msg), so the message
+// stays as id wrote it.
 func (c *workCopy) Replay(id string) (bool, error) {
 	full, ok := c.w.Resolve(id)
 	if !ok {
@@ -252,7 +254,7 @@ func (c *workCopy) Replay(id string) (bool, error) {
 	if _, _, err := write(c.dir, "", "diff", "--cached", "--quiet"); err == nil {
 		return false, c.reset()
 	}
-	if _, stderr, err := write(c.dir, "", "commit", "--quiet", "--no-verify", "--reuse-message="+full); err != nil {
+	if _, stderr, err := write(c.dir, "", "-c", noHooks, "commit", "--quiet", "--no-verify", "--reuse-message="+full); err != nil {
 		if rErr := c.reset(); rErr != nil {
 			return false, rErr
 		}
@@ -272,7 +274,8 @@ func (c *workCopy) reset() error {
 }
 
 // Commit stages every file in the copy and commits with --allow-empty,
-// skipping hooks so the message stays as written.
+// running no hook so the message stays as written: --no-verify skips only
+// some, so the hooks path is pointed at nothing.
 func (c *workCopy) Commit(message string) (vcs.Change, error) {
 	if strings.TrimSpace(message) == "" {
 		return vcs.Change{}, errors.New("a change needs a message")
@@ -280,7 +283,7 @@ func (c *workCopy) Commit(message string) (vcs.Change, error) {
 	if _, stderr, err := write(c.dir, "", "add", "--all"); err != nil {
 		return vcs.Change{}, gitError(err, stderr)
 	}
-	if _, stderr, err := write(c.dir, message, "commit", "--quiet", "--no-verify", "--allow-empty", "--file=-"); err != nil {
+	if _, stderr, err := write(c.dir, message, "-c", noHooks, "commit", "--quiet", "--no-verify", "--allow-empty", "--file=-"); err != nil {
 		return vcs.Change{}, gitError(err, stderr)
 	}
 	out, stderr, err := write(c.dir, "", "log", "-n", "1", logFormat, "HEAD", "--")

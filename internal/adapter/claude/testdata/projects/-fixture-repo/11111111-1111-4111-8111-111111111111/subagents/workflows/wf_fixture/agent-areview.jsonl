@@ -1,0 +1,2 @@
+{"type":"user","isSidechain":true,"message":{"role":"user","content":"Review the change for quality."},"timestamp":"2026-11-20T10:40:00.000Z","uuid":"r1u1"}
+{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_rso","name":"StructuredOutput","input":{"verdict":"PASS","findings":[{"severity":"minor","taskId":"W1.T1","text":"Name the 8000 bound as a constant."}]}}]},"timestamp":"2026-11-20T10:41:00.000Z","uuid":"r1a1"}

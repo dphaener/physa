@@ -34,11 +34,13 @@ type Report struct {
 	Capabilities int `json:"capabilities"`
 	// Session is SessionNone when no session started, SessionStopped when
 	// the circuit breaker stopped it, and SessionRan otherwise.
-	Session  string         `json:"session"`
-	Appetite int64          `json:"appetite"`
-	Tokens   adapter.Tokens `json:"tokens"`
-	Kept     []Kept         `json:"kept"`
-	Dropped  []Dropped      `json:"dropped"`
+	Session string `json:"session"`
+	// DraftSession is the id of the draft's agent session, empty when none ran.
+	DraftSession string         `json:"draft_session"`
+	Appetite     int64          `json:"appetite"`
+	Tokens       adapter.Tokens `json:"tokens"`
+	Kept         []Kept         `json:"kept"`
+	Dropped      []Dropped      `json:"dropped"`
 }
 
 // WriteMarkdown writes r for people: what was kept, each entry as it would

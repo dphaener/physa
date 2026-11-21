@@ -6,6 +6,7 @@ package draft
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -100,6 +101,21 @@ type Outcome struct {
 	Tokens adapter.Tokens
 	// Stopped says the circuit breaker stopped the session at the appetite.
 	Stopped bool
+	// SessionID is the id the session ran under, as the agent reported it;
+	// empty when the agent did not say.
+	SessionID string
+}
+
+// NewSessionID returns a fresh version 4 UUID, 8-4-4-4-12 in lower-case hex,
+// for a draft session to run under.
+func NewSessionID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("draft: no randomness: " + err.Error())
+	}
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
 // Run starts one prompt-only session of a with prompt, in a fresh empty
@@ -108,8 +124,10 @@ type Outcome struct {
 // session's tokens reaches it, the circuit breaker stops the session and the
 // Outcome is Stopped, with no text and a nil error. Any other failure is the
 // adapter's own error (adapter.ErrNotInstalled, adapter.ErrFailed), with the
-// tokens the session reported when it reported any.
-func Run(ctx context.Context, a adapter.Adapter, prompt string, appetite int64) (Outcome, error) {
+// tokens the session reported when it reported any. sessionID is the id the
+// session is asked to run under (see NewSessionID); the Outcome's SessionID is
+// the one the agent reported, which is empty for an agent that cannot take one.
+func Run(ctx context.Context, a adapter.Adapter, prompt string, appetite int64, sessionID string) (Outcome, error) {
 	if appetite <= 0 {
 		return Outcome{}, fmt.Errorf("the appetite must be a positive number of tokens, not %d", appetite)
 	}
@@ -142,14 +160,14 @@ func Run(ctx context.Context, a adapter.Adapter, prompt string, appetite int64) 
 			cancel()
 		}
 	}
-	s, err := a.Start(ctx, adapter.Spec{Prompt: prompt, Dir: dir, PromptOnly: true, Usage: breaker})
+	s, err := a.Start(ctx, adapter.Spec{Prompt: prompt, SessionID: sessionID, Dir: dir, PromptOnly: true, Usage: breaker})
 	if err != nil {
 		return Outcome{}, err
 	}
 	res, err := s.Wait()
 	mu.Lock()
 	defer mu.Unlock()
-	out := Outcome{Text: res.Text, Model: res.Model, Tokens: res.Tokens}
+	out := Outcome{Text: res.Text, Model: res.Model, Tokens: res.Tokens, SessionID: res.SessionID}
 	if stopped || out.Tokens == (adapter.Tokens{}) {
 		out.Tokens = last
 	}

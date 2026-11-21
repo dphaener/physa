@@ -55,19 +55,20 @@ func Run(ctx context.Context, root string, m *mapfile.Map, res learn.Result, s S
 	if err != nil {
 		return report, err
 	}
+	sessionID := draft.NewSessionID()
 	if s.Progress != nil {
 		cuts := ""
 		if c := batch.Cuts(); c != "" {
 			cuts = "; " + c
 		}
-		fmt.Fprintf(s.Progress, "physa map learn: appetite %d tokens; batch of %d signals on %d changes, %d capabilities%s\n",
-			appetite, batch.SignalCount(), batch.ChangeCount(), batch.CapabilityCount(), cuts)
+		fmt.Fprintf(s.Progress, "physa map learn: appetite %d tokens; batch of %d signals on %d changes, %d capabilities%s; session %s\n",
+			appetite, batch.SignalCount(), batch.ChangeCount(), batch.CapabilityCount(), cuts, sessionID)
 	}
-	out, err := draft.Run(ctx, a, prompt, appetite)
+	out, err := draft.Run(ctx, a, prompt, appetite, sessionID)
 	if err != nil {
 		return report, err
 	}
-	report.Tokens = out.Tokens
+	report.Tokens, report.DraftSession = out.Tokens, out.SessionID
 	if out.Stopped {
 		report.Session = SessionStopped
 		return report, nil

@@ -1,7 +1,6 @@
 package learn
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -357,35 +356,173 @@ func TestRecordsUnavailable(t *testing.T) {
 	r := newTestRepo(t, "main")
 	served(t, r, nil, nil, nil)
 	res := run(t, r.open(), Options{Forge: &fakeForge{}, RecordsReason: "the store cannot be opened", Capabilities: []string{"learning"}})
-	if got := kinds(res.Unavailable); !reflect.DeepEqual(got, []string{KindServedNotLoaded, KindRecurringFinding, KindAsk}) {
+	if got := kinds(res.Unavailable); !reflect.DeepEqual(got, []string{KindServedNotLoaded, KindRecurringFinding, KindAnsweredAsk, KindIntervention, KindFixedFinding}) {
 		t.Errorf("unavailable = %v", got)
 	}
 	if res.RecordsMissing != 0 || len(res.Nothing) != 3 {
 		t.Errorf("records missing %d, nothing %d", res.RecordsMissing, len(res.Nothing))
-	}
-	var b bytes.Buffer
-	if err := WriteText(&b, res); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(b.String(), "Slice records: unavailable (the store cannot be opened).\n") {
-		t.Errorf("text:\n%s", b.String())
 	}
 }
 
 func TestEngineKindsAlwaysUnavailable(t *testing.T) {
 	r := newTestRepo(t, "main")
 	r.commit("one")
+	res := run(t, r.open(), Options{Forge: &fakeForge{}, Sessions: &fakeSessions{}})
+	want := []Unavailable{{KindRecurringFinding, reasonRecurringFinding}}
+	if !reflect.DeepEqual(res.Unavailable, want) {
+		t.Errorf("unavailable = %+v", res.Unavailable)
+	}
+	if !strings.HasPrefix(res.Unavailable[0].Reason, "needs the engine: ") {
+		t.Errorf("reason %q", res.Unavailable[0].Reason)
+	}
+}
+
+func TestNoSessionReaderListsSessionKindsNotChecked(t *testing.T) {
+	r := newTestRepo(t, "main")
+	r.commit("one")
 	res := run(t, r.open(), Options{Forge: &fakeForge{}})
 	want := []Unavailable{
 		{KindRecurringFinding, reasonRecurringFinding},
-		{KindAsk, reasonAsk},
+		{KindAnsweredAsk, "no session reader"},
+		{KindIntervention, "no session reader"},
+		{KindFixedFinding, "no session reader"},
 	}
 	if !reflect.DeepEqual(res.Unavailable, want) {
 		t.Errorf("unavailable = %+v", res.Unavailable)
 	}
-	for _, u := range res.Unavailable {
-		if !strings.HasPrefix(u.Reason, "needs the engine: ") {
-			t.Errorf("reason %q", u.Reason)
+	if res.SessionsRead != 0 || len(res.SessionsUnavailable) != 0 || res.SessionsUnavailable == nil {
+		t.Errorf("sessions read %d, unavailable %#v", res.SessionsRead, res.SessionsUnavailable)
+	}
+	if len(res.Nothing) != 1 {
+		t.Errorf("nothing = %+v: no session reader leaves the change triaged", res.Nothing)
+	}
+}
+
+// sessionCall is one call a fakeSessions received.
+type sessionCall struct {
+	change   string
+	recorded []string
+	after    time.Time
+}
+
+// fakeSessions answers from fixed signals, ids read and gaps per change id,
+// and records its calls.
+type fakeSessions struct {
+	signals map[string][]Signal
+	read    map[string][]string
+	gaps    map[string][]SessionGap
+	calls   []sessionCall
+}
+
+func (f *fakeSessions) Signals(c vcs.Change, recorded []string, after time.Time) ([]Signal, []string, []SessionGap) {
+	f.calls = append(f.calls, sessionCall{c.ID, recorded, after})
+	return f.signals[c.ID], f.read[c.ID], f.gaps[c.ID]
+}
+
+func TestSessionsReceiveRecordedSessionsAndPreviousTime(t *testing.T) {
+	r := newTestRepo(t, "main")
+	first := r.commit("first")
+	a := r.commit("a")
+	b := r.commit("b")
+	c := r.commit("c")
+	at := func(id string, d time.Duration) time.Time { return r.times[id].Add(d) }
+	recs := []store.SliceRecord{
+		{At: at(a, -30*time.Second), Session: "s2", Capabilities: []string{"map"}},
+		{At: at(a, -20*time.Second), Session: "s1", Capabilities: []string{"map"}},
+		{At: at(a, -10*time.Second), Session: "s2", Capabilities: []string{"map"}},
+		{At: at(a, 0), Capabilities: []string{"map"}},
+		{At: at(c, -10*time.Second), Session: "s3", Capabilities: []string{"map"}},
+	}
+	f := &fakeSessions{}
+	run(t, r.open(), Options{Forge: &fakeForge{}, Since: first, Records: recs, Sessions: f})
+	want := []sessionCall{
+		{c, []string{"s3"}, r.times[b]},
+		{b, nil, r.times[a]},
+		{a, []string{"s1", "s2"}, r.times[first]},
+	}
+	if len(f.calls) != len(want) {
+		t.Fatalf("calls = %+v", f.calls)
+	}
+	for i, w := range want {
+		got := f.calls[i]
+		if got.change != w.change || !reflect.DeepEqual(got.recorded, w.recorded) || !got.after.Equal(w.after) {
+			t.Errorf("call %d = %+v, want %+v", i, got, w)
+		}
+	}
+}
+
+func TestSessionSignalsMakeTheChangeLearned(t *testing.T) {
+	r := newTestRepo(t, "main")
+	a := r.commit("a")
+	b := r.commit("b")
+	sig := Signal{Kind: KindIntervention, Rule: RuleMidRun, Changes: []string{b[:7]},
+		Evidence: []string{"1 message mid-run in session 0a1b2c3d"}, Session: "0a1b2c3d-0000-4000-8000-000000000000",
+		MatchedBy: MatchedByTrailer, Quotes: []Quote{{Author: "message in the session", At: r.times[b], Text: "not like that"}}}
+	f := &fakeSessions{
+		signals: map[string][]Signal{b: {sig}},
+		read:    map[string][]string{a: {"s-other", "0a1b2c3d-0000-4000-8000-000000000000"}, b: {"0a1b2c3d-0000-4000-8000-000000000000"}},
+	}
+	res := run(t, r.open(), Options{Forge: &fakeForge{}, Sessions: f})
+	if len(res.Learn) != 1 || res.Learn[0].Change != b {
+		t.Fatalf("learn = %+v", res.Learn)
+	}
+	got := res.Learn[0]
+	if !reflect.DeepEqual(got.Signals, []Signal{sig}) || got.Author != "T" {
+		t.Errorf("signals %+v, author %q", got.Signals, got.Author)
+	}
+	if !reflect.DeepEqual(res.LearnedNow, []string{got.Short}) || !reflect.DeepEqual(ids(res.Nothing), []string{a}) {
+		t.Errorf("learned now %v, nothing %v", res.LearnedNow, ids(res.Nothing))
+	}
+	if res.SessionsRead != 2 {
+		t.Errorf("sessions read = %d, want 2: a session behind two changes counts once", res.SessionsRead)
+	}
+	if res.Through != b {
+		t.Errorf("through = %s, want %s", res.Through, b)
+	}
+}
+
+func TestSessionGapDoesNotHoldTheWatermarkBack(t *testing.T) {
+	r := newTestRepo(t, "main")
+	a := r.commit("a")
+	b := r.commit("b")
+	f := &fakeSessions{gaps: map[string][]SessionGap{
+		b: {{Session: "0a1b2c3d-0000-4000-8000-000000000000", Reason: "no log on this machine"}},
+	}}
+	res := run(t, r.open(), Options{Forge: &fakeForge{}, Sessions: f})
+	want := []SessionGap{{Change: b[:7], Session: "0a1b2c3d-0000-4000-8000-000000000000", Reason: "no log on this machine"}}
+	if !reflect.DeepEqual(res.SessionsUnavailable, want) {
+		t.Errorf("sessions unavailable = %+v", res.SessionsUnavailable)
+	}
+	if len(res.Incomplete) != 0 || !reflect.DeepEqual(ids(res.Nothing), []string{b, a}) {
+		t.Errorf("incomplete %+v, nothing %v: a gap must not make a change incomplete", res.Incomplete, ids(res.Nothing))
+	}
+	if res.Through != b {
+		t.Errorf("through = %s, want %s: the watermark advances past a change whose log is unavailable", res.Through, b)
+	}
+	if len(res.Unavailable) != 1 {
+		t.Errorf("unavailable = %+v: a gap does not make a kind not checked", res.Unavailable)
+	}
+}
+
+func TestResultVersionTwoWithoutQuotes(t *testing.T) {
+	r := newTestRepo(t, "main")
+	b := r.commit("b")
+	f := &fakeSessions{signals: map[string][]Signal{b: {{Kind: KindAnsweredAsk, Rule: RulePersonAnswered,
+		Changes: []string{b[:7]}, Evidence: []string{"1 answered ask(s) in session 0a1b2c3d"}, Session: "0a1b2c3d", MatchedBy: MatchedByTime,
+		Quotes: []Quote{{Author: "person", Text: "which-store-QUOTE", Options: []string{"sqlite-QUOTE"}, Answer: "files-QUOTE"}}}}}}
+	res := run(t, r.open(), Options{Forge: &fakeForge{}, Sessions: f})
+	out, err := json.Marshal(res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"version":2`, `"session":"0a1b2c3d"`, `"matched_by":"time"`, `"sessions_read":0`, `"sessions_unavailable":[]`} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("json lacks %s: %s", want, out)
+		}
+	}
+	for _, banned := range []string{"QUOTE", `"quotes"`, `"author"`} {
+		if strings.Contains(string(out), banned) {
+			t.Errorf("json carries %s: %s", banned, out)
 		}
 	}
 }
@@ -439,66 +576,6 @@ func TestForgeErrorOnOneChange(t *testing.T) {
 	}
 }
 
-func TestWriteText(t *testing.T) {
-	r := newTestRepo(t, "main")
-	if err := os.WriteFile(filepath.Join(r.dir, "f.txt"), []byte("x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	r.git("add", "f.txt")
-	r.commit("feat: Add f")
-	r.revert()
-	res := run(t, r.open(), Options{ForgeReason: "gh is not installed"})
-	var b bytes.Buffer
-	if err := WriteText(&b, res); err != nil {
-		t.Fatal(err)
-	}
-	text := b.String()
-	for _, want := range []string{
-		"Learning from 2 changes (main), 0 already learned.\n",
-		"Forge: unavailable (gh is not installed): correction and argued-options signals not checked.\n",
-		"Slice records: 2 of 2 changes had none and were not counted.\n",
-		"Not checked: correction (gh is not installed).\n",
-		"Not checked: ask (needs the engine: ",
-		"\nSignals (1 changes):\n  " + res.Learn[0].Short + " Revert \"feat: Add f\"\n    revert [revert-message]\n      reverts ",
-		"\nNothing to learn (0):\n",
-		"\nNot fully triaged (1):\n  " + res.Incomplete[0].Short + " feat: Add f (correction and argued-options not checked: gh is not installed)\n",
-	} {
-		if !strings.Contains(text, want) {
-			t.Errorf("text lacks %q:\n%s", want, text)
-		}
-	}
-	res.Forge = "github"
-	b.Reset()
-	if err := WriteText(&b, res); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(b.String(), "Forge: github\n") {
-		t.Errorf("text:\n%s", b.String())
-	}
-}
-
-func TestWriteJSON(t *testing.T) {
-	r := newTestRepo(t, "main")
-	r.commit("one")
-	res := run(t, r.open(), Options{Forge: &fakeForge{}})
-	var b bytes.Buffer
-	if err := WriteJSON(&b, res); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{`"version":1`, `"learn":[]`, `"incomplete":[]`, `"already_learned":0`, `"records_missing":1`} {
-		if !strings.Contains(b.String(), want) {
-			t.Errorf("json lacks %s: %s", want, b.String())
-		}
-	}
-	var back Result
-	if err := json.Unmarshal(b.Bytes(), &back); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(back, res) {
-		t.Errorf("round trip = %+v\nwant         %+v", back, res)
-	}
-}
-
 func TestCorrectionCarriesMessageAndCapability(t *testing.T) {
 	r := newTestRepo(t, "main")
 	fixed := r.commit("fixed after review\n\nCapability: learning")
@@ -518,38 +595,6 @@ func TestCorrectionCarriesMessageAndCapability(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.Capabilities, []string{"learning"}) {
 		t.Errorf("capabilities = %v, want [learning]", got.Capabilities)
-	}
-}
-
-func TestJSONOmitsMessageAndCapabilities(t *testing.T) {
-	r := newTestRepo(t, "main")
-	fixed := r.commit("fixed after review\n\nCapability: learning")
-	at := base.Add(time.Hour)
-	review := forge.Comment{Author: "owner", At: at, Kind: forge.KindReview, Body: "Say change, not ticket."}
-	f := &fakeForge{prs: map[string]forge.PR{
-		fixed: {Number: 9, Comments: []forge.Comment{review},
-			Commits: []forge.Commit{{ID: "bbbbbbb222", At: at.Add(time.Minute)}}},
-	}}
-	res := run(t, r.open(), Options{Forge: f})
-	if len(res.Learn) != 1 || res.Learn[0].Message == "" {
-		t.Fatalf("learn = %+v", res.Learn)
-	}
-	var withFields, without bytes.Buffer
-	if err := WriteJSON(&withFields, res); err != nil {
-		t.Fatal(err)
-	}
-	stripped := res
-	stripped.Learn = []ChangeSignals{{ChangeRef: res.Learn[0].ChangeRef, Signals: res.Learn[0].Signals}}
-	if err := WriteJSON(&without, stripped); err != nil {
-		t.Fatal(err)
-	}
-	if withFields.String() != without.String() {
-		t.Errorf("json differs with message and capabilities set:\n%s\nwant\n%s", withFields.String(), without.String())
-	}
-	for _, banned := range []string{`"message"`, `"capabilities"`, "Capability: learning"} {
-		if strings.Contains(withFields.String(), banned) {
-			t.Errorf("json carries %s: %s", banned, withFields.String())
-		}
 	}
 }
 
@@ -595,15 +640,6 @@ func TestDraftingTextRidesOnTheSignals(t *testing.T) {
 	rv := gotRevert.Signals[0].Reverted
 	if rv == nil || rv.Subject != "feat: Add f" || !strings.Contains(rv.Message, "Why f exists.") {
 		t.Errorf("reverted = %+v", rv)
-	}
-	var b bytes.Buffer
-	if err := WriteJSON(&b, res); err != nil {
-		t.Fatal(err)
-	}
-	for _, key := range []string{"Why f exists", "\"Comments\"", "\"Reverted\"", "\"At\"", "later"} {
-		if strings.Contains(b.String(), key) {
-			t.Errorf("the JSON form carries %q", key)
-		}
 	}
 }
 
@@ -837,35 +873,14 @@ func TestLearnedOnUnmergedLearnCommit(t *testing.T) {
 	}
 }
 
-func TestWatermarkInJSONAndText(t *testing.T) {
+func TestWatermarkReadFromLearnBranch(t *testing.T) {
 	r := newTestRepo(t, "main")
 	a := r.commit("a")
 	r.onLearn(record(a))
 	b := r.commit("b")
 	res := run(t, r.open(), Options{Forge: &fakeForge{}})
-	var j bytes.Buffer
-	if err := WriteJSON(&j, res); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{`"watermark":"` + a + `"`, `"through":"` + b + `"`, `"learned_now":[]`, `"version":1`} {
-		if !strings.Contains(j.String(), want) {
-			t.Errorf("json lacks %s: %s", want, j.String())
-		}
-	}
-	var txt bytes.Buffer
-	if err := WriteText(&txt, res); err != nil {
-		t.Fatal(err)
-	}
-	if want := "Learned through " + b[:7] + " (was " + a[:7] + ")\n"; !strings.Contains(txt.String(), want) {
-		t.Errorf("text lacks %q:\n%s", want, txt.String())
-	}
-	res.Watermark = ""
-	txt.Reset()
-	if err := WriteText(&txt, res); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(txt.String(), "(was none)\n") {
-		t.Errorf("text:\n%s", txt.String())
+	if res.Watermark != a || res.Through != b || len(res.LearnedNow) != 0 {
+		t.Errorf("watermark %q through %q learned now %v", res.Watermark, res.Through, res.LearnedNow)
 	}
 }
 

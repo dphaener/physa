@@ -229,3 +229,37 @@ func TestCheckFilesError(t *testing.T) {
 		t.Errorf("want an error naming the change, got %v", err)
 	}
 }
+
+func TestSessions(t *testing.T) {
+	cases := []struct {
+		name, msg string
+		want      []string
+	}{
+		{"one", "feat: a\n\nCapability: map\nSession: abc", []string{"abc"}},
+		{"comma list", "feat: a\n\nSession: a, b,c", []string{"a", "b", "c"}},
+		{"two lines", "feat: a\n\nSession: a\nSession: b", []string{"a", "b"}},
+		{"duplicates", "feat: a\n\nSession: a, b\nSession: a", []string{"a", "b"}},
+		{"body line is not read", "feat: a\n\nSession: body\n\nSome prose.\n\nCapability: map", []string{}},
+		{"none", "feat: a", []string{}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := Sessions(c.msg); !reflect.DeepEqual(got, c.want) {
+				t.Errorf("Sessions = %#v, want %#v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestReadFillsSessions(t *testing.T) {
+	r, dir := newRepo(t)
+	commit(t, dir, "chore: base")
+	commit(t, dir, "feat: a\n\nCapability: map\nSession: s1, s2")
+	got, err := Read(r, "HEAD~1..HEAD")
+	if err != nil || len(got) != 1 {
+		t.Fatalf("Read = %+v, %v", got, err)
+	}
+	if !reflect.DeepEqual(got[0].Sessions, []string{"s1", "s2"}) {
+		t.Errorf("Sessions = %#v", got[0].Sessions)
+	}
+}

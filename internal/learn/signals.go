@@ -30,6 +30,61 @@ type Signal struct {
 	// signal whose reverted change is in the history, for drafting; not in
 	// the JSON form.
 	Reverted *ChangeText `json:"-"`
+	// Session is the id of the session a session signal was found in.
+	Session string `json:"session,omitempty"`
+	// MatchedBy says how that session was joined to the change:
+	// MatchedByTrailer or MatchedByTime.
+	MatchedBy string `json:"matched_by,omitempty"`
+	// Quotes are the words a session signal rests on, for drafting; not in
+	// the JSON form, and never printed.
+	Quotes []Quote `json:"-"`
+}
+
+// Quote is one thing said in a session that a session signal rests on.
+type Quote struct {
+	// Author is who said it, as far as the log shows: "person" on an
+	// answered ask, the reporting agent's name and label on a fixed finding.
+	// The log does not prove who typed a message mid-run, so an
+	// intervention's author never names a person.
+	Author string
+	At     time.Time
+	Text   string
+	// Options are the options an ask offered; empty for anything else.
+	Options []string
+	// Answer is the person's chosen option or own words, on an ask.
+	Answer string
+}
+
+// How a session was joined to a change.
+const (
+	// MatchedByTrailer is a session the change's Session trailer names.
+	MatchedByTrailer = "trailer"
+	// MatchedByTime is a session with a slice record in the change's window,
+	// which no Session trailer names.
+	MatchedByTime = "time"
+)
+
+// Sessions finds the signals in the sessions behind a change (design 08
+// section 3). It reads the sessions the change's Session trailers name and,
+// matched by time, those of recorded the trailers do not name.
+type Sessions interface {
+	// Signals returns the signals in the sessions behind change c, each with
+	// its Changes, Session and MatchedBy set, the ids of the sessions whose
+	// logs it read, and a gap for each session whose log is unavailable.
+	// recorded are the distinct sessions of the slice records in c's window;
+	// after is the window's start, exclusive (zero means open), so the
+	// window is (after, c's time].
+	Signals(c vcs.Change, recorded []string, after time.Time) (signals []Signal, read []string, gaps []SessionGap)
+}
+
+// SessionGap is a session behind a change whose log could not be read. It
+// never makes the change not fully triaged: session logs are an extra
+// (design 08 section 5).
+type SessionGap struct {
+	// Change is the change's short id; Run sets it.
+	Change  string `json:"change"`
+	Session string `json:"session"`
+	Reason  string `json:"reason"`
 }
 
 // ChangeText is a change's subject and full message.
@@ -56,10 +111,16 @@ const (
 	// engine's records or team digests, and the engine does not exist yet,
 	// so it is always reported as not checked.
 	KindRecurringFinding = "recurring-finding"
-	// KindAsk is an ask or a person's intervention in a session. Not built:
-	// it needs the engine's session records or team digests, and the engine
-	// does not exist yet, so it is always reported as not checked.
-	KindAsk = "ask"
+	// KindAnsweredAsk is an ask in a session that the person answered: a
+	// decision, with the options offered.
+	KindAnsweredAsk = "answered-ask"
+	// KindIntervention is a person's message sent mid-run in a session
+	// (design 03 section 8): a correction, which may be a rule.
+	KindIntervention = "intervention"
+	// KindFixedFinding is a finding in a check's report that a later step
+	// fixed: a later report of the same check in the same run passed, or
+	// the finding is marked fixed.
+	KindFixedFinding = "fixed-finding"
 )
 
 // The rules that find each kind.
@@ -68,13 +129,19 @@ const (
 	RuleLongDiscussion   = "long-discussion"
 	RuleRevertMessage    = "revert-message"
 	RuleServedNotLoaded  = "served-not-loaded"
+	RulePersonAnswered   = "person-answered"
+	RuleMidRun           = "message-mid-run"
+	RuleFailThenPass     = "report-then-pass"
 )
 
-// Why the kinds that need the engine are not checked.
+// Why a kind is not checked when its source is missing.
 const (
 	reasonRecurringFinding = "needs the engine: the engine's records of findings or team digests (07 section 7)"
-	reasonAsk              = "needs the engine: the engine's session records or team digests (07 section 7)"
+	reasonNoSessions       = "no session reader"
 )
+
+// sessionKinds are the kinds found in session logs.
+var sessionKinds = []string{KindAnsweredAsk, KindIntervention, KindFixedFinding}
 
 // evidenceRunes is how much of a comment's body evidence quotes.
 const evidenceRunes = 80

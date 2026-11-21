@@ -327,3 +327,24 @@ func TestBranch(t *testing.T) {
 		t.Errorf("origin only: %v", got)
 	}
 }
+
+func TestChangeAuthor(t *testing.T) {
+	r, dir := newRepo(t)
+	for _, name := range []string{"Dörte van Berg", "李 雷"} {
+		cmd := exec.Command("git", "-C", dir, "-c", "user.name="+name, "-c", "user.email=a@example.com",
+			"-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "by "+name+"\n\nbody")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("commit: %v\n%s", err, out)
+		}
+		got, err := r.Latest("HEAD", 1)
+		if err != nil || len(got) != 1 {
+			t.Fatalf("Latest = %+v, %v", got, err)
+		}
+		if got[0].Author != name {
+			t.Errorf("Author = %q, want %q", got[0].Author, name)
+		}
+		if got[0].Message != "by "+name+"\n\nbody\n" || got[0].Subject != "by "+name {
+			t.Errorf("message changed: %q / %q", got[0].Subject, got[0].Message)
+		}
+	}
+}

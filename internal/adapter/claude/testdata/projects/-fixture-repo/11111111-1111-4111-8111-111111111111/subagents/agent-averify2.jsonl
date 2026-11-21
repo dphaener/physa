@@ -1,0 +1,3 @@
+{"type":"user","isSidechain":true,"message":{"role":"user","content":"Verify task W1.T1 against its contract again."},"timestamp":"2026-11-20T10:30:00.000Z","uuid":"v2u1"}
+{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_v2task","name":"StructuredOutput","input":{"status":"done","checks":[{"command":"go test ./...","exitCode":0}],"summary":"Checked the flag."}}]},"timestamp":"2026-11-20T10:31:00.000Z","uuid":"v2a0"}
+{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_v2so","name":"StructuredOutput","input":{"verdict":"PASS","discrepancies":[]}}]},"timestamp":"2026-11-20T10:32:00.000Z","uuid":"v2a1"}

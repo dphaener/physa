@@ -9,6 +9,7 @@ import (
 
 	"github.com/dphaener/physa/internal/cli"
 	"github.com/dphaener/physa/internal/history"
+	"github.com/dphaener/physa/internal/learnbranch"
 	"github.com/dphaener/physa/internal/mapfile"
 	"github.com/dphaener/physa/internal/mapindex"
 	"github.com/dphaener/physa/internal/mapslice"
@@ -27,6 +28,7 @@ func mapCommand() *cli.Command {
 			"physa map changes [<range>] [--json] [--strict]",
 			"physa map records [--json]",
 			"physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]",
+			"physa map hooks",
 		},
 		Run: func(args []string, stdout, stderr io.Writer) int {
 			if len(args) > 0 {
@@ -91,11 +93,22 @@ func mapCommand() *cli.Command {
 				Summary: "Find what the merged changes have to teach the map, and draft proposals from it for the stewards to review (--signals stops at the signals; --write commits the kept proposals to physa/learn, --push pushes it, --pr opens its PR).",
 				Usage:   []string{"physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]"},
 				Run: func(args []string, stdout, stderr io.Writer) int {
-					opts, ok := parseLearn(args)
+					opts, ok := learnbranch.ParseFlags(args)
 					if !ok {
 						return cli.BadUsage
 					}
 					return learnMap(".", opts, stdout, stderr)
+				},
+			},
+			{
+				Name:    "hooks",
+				Summary: "Point the repo's hooks at the one that stamps Session: on commits made in Claude Code, so learning can join a change to its session.",
+				Usage:   []string{"physa map hooks"},
+				Run: func(args []string, stdout, stderr io.Writer) int {
+					if len(args) > 0 {
+						return cli.BadUsage
+					}
+					return hooks(".", stdout, stderr)
 				},
 			},
 		},

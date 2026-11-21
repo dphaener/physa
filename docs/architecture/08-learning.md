@@ -33,11 +33,21 @@ Four stages. Only the third spends tokens.
 | A discussion where options were argued | the forge | a decision, with the options rejected |
 | A revert or a rollback | version control; rollbacks (05) | a `Rejected:` item or a question on what it undid |
 | The same kind of finding recurring on one capability (03 R4) | the store or team digests (07 §7) | a rule |
-| Asks and human interventions in a session | session logs; digests | a rule, a decision or a question |
+| An answered ask: an agent asked a person, and the person answered | session logs | a decision, with the options not chosen as rejected |
+| An intervention: a person's message mid-run (not the first message) | session logs | a rule, when it corrects |
+| A finding from a check that a later step fixed | session logs | a rule, when it recurs on one capability (03 R4) |
 | A capability served without its slice being loaded, repeatedly (07 §4.1) | slice records; trailers | a sharper index line or promise |
 | A comment saying work deserves its own capability | the forge | a new capability (§8) |
 
-Triage thresholds (how many recurrences, how long a thread) start small and are tuned from real runs.
+Triage thresholds (how many recurrences, how long a thread) start small and are tuned from real runs. They are constants in `internal/learn/thresholds.go`:
+
+- `DefaultChanges` (50): how many of the newest changes are collected when no starting change is given.
+- `CorrectionMinComments` (1): review comments followed by a later commit in the same PR.
+- `ArguedMinComments` (3) and `ArguedMinPeople` (2): comments, and distinct people, for options to count as argued.
+- `UnloadedMinChanges` (3): changes serving a capability without loading its slice.
+- `AnsweredAskMin`, `InterventionMin` and `FixedFindingMin` (each 1): answered asks, mid-run messages and fixed findings in a change's sessions.
+
+The session signals' kinds are `answered-ask`, `intervention` and `fixed-finding`; a fixed finding is one a later report of the same check in the same run passed, or one the report marks fixed.
 
 Drift, a change quietly undoing a decision, is caught only when a signal points at it. That is the price of not reviewing code.
 
@@ -52,7 +62,7 @@ Drift, a change quietly undoing a decision, is caught only when a signal points 
 
 `physa learn` is self-contained, so the same command runs anywhere:
 
-- **Inputs from shared places first**: version control, the forge when there is one, and team digests on `refs/notes/physa` once they exist (07 §7). Local session logs are an extra, added when it runs on the machine that did the work.
+- **Inputs from shared places first**: version control, the forge when there is one, and team digests on `refs/notes/physa` once they exist (07 §7). Local session logs are an extra, added when it runs on the machine that did the work. They are read now, not only with the engine ("yes i think we can learn from both. the more data the better."). Each change is joined to its sessions by its `Session:` trailer (07 §4.1), else by time over slice records, and a time match is labelled "matched by time". A log missing on this machine is reported and does not hold the watermark back.
 - **Non-interactive**: the appetite comes from a flag or the settings, never a prompt; exit codes mean something; output is plain or `--json`.
 - **The agent is a setting**: the adapter (Claude Code first) and its credentials come from settings and the environment.
 - **Safe to run anywhere, any number of times**: see §6.
@@ -85,6 +95,32 @@ Signals that arrive later are still caught: a revert is a merged change of its o
 - **A lost lease redoes the record and the write, not the draft**: there is no second agent session. Proposals whose changes are now learned are dropped and the later watermark is taken. A second loss stops with a clear message.
 - **The PR**: found by its head `physa/learn` among open PRs, refreshed from every unmerged commit's proposal lines. There is no PR for a run with no proposals. Without a forge, the branch stays for the steward to review.
 - **Exit codes**: 0 written, or nothing to write; 1 the circuit breaker stopped and nothing was written; 2 failure.
+
+**Built in step 3d.** Calls made while building session learning, for the owner to check:
+
+- **Three report shapes are recognised** in a check's report: a verdict with findings, a verdict with discrepancies, and `ReportFindings`.
+- **"Fixed"** means a later report from the same check passes.
+- **The event window per change** runs after the previous change, up to this one.
+- **An unavailable log never holds the watermark back**, so a run without the logs (CI) loses those signals for good.
+- **"Mid-run" is any later message** in the session, which includes a fresh request.
+- **A decision from an answer is `decided by` the change's author**, because the log does not name who answered.
+- **The adapter looks a log up by project directory, then by id in every project directory.**
+- **Redaction** removes token- and key-shaped text from every event that leaves the adapter; unprefixed keys are not redacted.
+- **Thresholds** start small, in `internal/learn/thresholds.go`, and are tuned from runs.
+- **The drafting session has an id** and its learning commits carry `Session:`. Each draft leaves its log under a fresh project directory, since it runs in a temp dir.
+- **Physa's own commits skip the repo's hooks.**
+- **The `ReportFindings` shape is from the tool's schema**, not yet seen in a real log.
+- **A person's words**, though redacted of keys, can come back in proposal text published with `--pr`.
+- **`core.hooksPath` at a tracked directory** runs any hook a checked-out branch adds there.
+- **An editor-written commit is not stamped**: the hook runs before the editor, and agents commit with `-m`.
+- **Each draft's prompt, with its quoted text, is now kept in its log on disk.**
+- **`StructuredOutput` with findings and no verdict is ignored.**
+- **A `Session:` trailer on another's commit selects a local log by id.**
+- **`Session:` survives a squash merge only when the forge keeps the commit messages** (GitHub's COMMIT_MESSAGES, as Physa's repo is set).
+- **`--signals` never prints quoted text.**
+- **`physa map hooks`** points `core.hooksPath` at the repo's `tools/hooks` (01 §8). It prints `core.hooksPath set to tools/hooks: commits made in Claude Code now carry Session:.`, or `core.hooksPath is already tools/hooks.` when it was set, and never overwrites another value: it stops with `physa map hooks: <reason>` and exit 2.
+- **The hook stamps nothing** when `CLAUDE_CODE_SESSION_ID` is empty or not letters, digits and hyphens, for a merge or squash message, during a cherry-pick or a rebase, or when the message is empty. A revert is stamped; an amend from another session adds that session too.
+- **On a learning commit the trailers run** `Learned:`, `Session:`, `Capability: learning`.
 
 ## 7. Cost
 
@@ -125,3 +161,6 @@ A documented recipe, not something Physa installs: `docs/recipes/learn-on-github
 - `physa learn` runs wherever a team chooses, including CI with an agent installed; Physa requires none of them.
 - Proposals batch on `physa/learn`, recorded with `Learned:` trailers; it never merges itself.
 - New capabilities are born when the work is done; learning proposes one only on a signal.
+- Learning learns from session logs as well as the forge and version control: "yes i think we can learn from both. the more data the better."
+- Session ids are recorded: "feels like we should just record session ids to make everything more deterministic."
+- Ids are assigned at launch: "when a session starts it gets an id. why wait? you can also give a session a pre determined id when you start it."

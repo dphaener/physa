@@ -143,8 +143,9 @@ The full planned tree. Only `check` and `map` are built today; everything else i
 
 - `physa init` (02), planned.
 - `physa check [map | changes [range]]` (07 §5), built. Bare `check` runs the map check and, when a range is given or `origin/main..HEAD` resolves, the change check on it.
-- `physa map [index | slice | changes | records | learn]` (01, 07 §4.1), built. Bare `map` prints the index.
-- `physa map learn` (08), built (signals, drafting and the physa/learn branch with --write, --push and --pr).
+- `physa map [index | slice | changes | records | learn | hooks]` (01, 07 §4.1), built. Bare `map` prints the index.
+- `physa map learn` (08), built (signals, drafting and the physa/learn branch with --write, --push and --pr); it also reads session logs (08 §5).
+- `physa map hooks` (08 §5), built: points `core.hooksPath` at the hook in the repo's `tools/hooks`, so commits carry `Session:`. Today it works only in a repo that ships one, as Physa does; `physa init` will install the hook in any repo later.
 - `physa sync` (07 §7), planned, after the engine.
 - `physa engine start|status|stop` (03), planned.
 - `physa run <bet>` and `physa watch` (03 §7.5), planned, top-level like `check`.

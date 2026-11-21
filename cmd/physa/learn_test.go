@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -70,7 +71,7 @@ func TestLearnJSON(t *testing.T) {
 	t.Chdir(dir)
 	code, out, _ := runLearn(t, "--signals", "--json")
 	var got struct{ Version int }
-	if code != 0 || json.Unmarshal([]byte(out), &got) != nil || got.Version != 1 {
+	if code != 0 || json.Unmarshal([]byte(out), &got) != nil || got.Version != 2 {
 		t.Errorf("code %d, version %d, stdout %q", code, got.Version, out)
 	}
 }
@@ -98,26 +99,6 @@ func TestLearnBadSince(t *testing.T) {
 	code, _, errOut := runLearn(t, "--signals", "--since=nosuch")
 	if code != 2 || !strings.HasPrefix(errOut, "physa map learn: ") {
 		t.Errorf("code %d, stderr %q", code, errOut)
-	}
-}
-
-func TestLearnBadUsage(t *testing.T) {
-	for _, args := range [][]string{
-		{"--since"}, {"--nosuch"}, {"x"}, {"--appetite", "0"}, {"--appetite=x"}, {"--appetite"},
-		{"--appetite=-3"}, {"--agent"}, {"--agent="}, {"--signals", "--appetite", "5"}, {"--signals", "--agent=claude"},
-		{"--push"}, {"--pr"}, {"--write", "--pr"}, {"--signals", "--write"}, {"--write=x"},
-	} {
-		if _, ok := parseLearn(args); ok {
-			t.Errorf("parseLearn(%v) ok, want not", args)
-		}
-	}
-	o, ok := parseLearn([]string{"--signals", "--since", "abc", "--json"})
-	if !ok || o.since != "abc" || !o.json || !o.signals {
-		t.Errorf("got %+v, %v", o, ok)
-	}
-	o, ok = parseLearn([]string{"--write", "--push", "--pr", "--appetite=9"})
-	if !ok || !o.write || !o.push || !o.pr || o.appetite != 9 {
-		t.Errorf("got %+v, %v", o, ok)
 	}
 }
 
@@ -251,8 +232,9 @@ func TestLearnDraftKeepsAndDrops(t *testing.T) {
 			t.Errorf("stdout lacks %q:\n%s", want, out)
 		}
 	}
-	if want := "physa map learn: appetite 5000 tokens; batch of 1 signals on 1 changes, 1 capabilities\n"; errOut != want {
-		t.Errorf("stderr = %q, want %q", errOut, want)
+	want := regexp.MustCompile(`^physa map learn: appetite 5000 tokens; batch of 1 signals on 1 changes, 1 capabilities; session [0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\n$`)
+	if !want.MatchString(errOut) {
+		t.Errorf("stderr = %q, want the progress line naming the draft session", errOut)
 	}
 	if got := branches(t, dir); got != before {
 		t.Errorf("branches changed: %q -> %q", before, got)
@@ -463,5 +445,107 @@ func TestLearnPRWithoutForgeIsReadyForReview(t *testing.T) {
 	code, out, errOut := runLearn(t, "--write", "--push", "--pr", "--appetite=5000")
 	if code != 0 || !strings.Contains(out, "ready for review") || len(f.created) != 0 {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+}
+
+// copyTree copies the directory src to dst.
+func copyTree(t *testing.T, src, dst string) {
+	t.Helper()
+	err := filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, p)
+		if d.IsDir() {
+			return os.MkdirAll(filepath.Join(dst, rel), 0o755)
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dst, rel), data, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLearnSignalsReadSessionsByTrailer(t *testing.T) {
+	const session = "11111111-1111-4111-8111-111111111111"
+	t.Setenv("GIT_AUTHOR_DATE", "2026-11-20T09:00:00Z")
+	t.Setenv("GIT_COMMITTER_DATE", "2026-11-20T09:00:00Z")
+	dir, _ := learnRepo(t)
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_AUTHOR_DATE", "2026-11-20T10:45:00Z")
+	t.Setenv("GIT_COMMITTER_DATE", "2026-11-20T10:45:00Z")
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "feat: with a session\n\nSession: "+session+"\nCapability: a")
+	gitIn(t, dir, "update-ref", "refs/remotes/origin/main", "HEAD")
+	project := regexp.MustCompile(`[^A-Za-z0-9]`).ReplaceAllString(dir, "-")
+	copyTree(t, filepath.Join("..", "..", "internal", "adapter", "claude", "testdata", "projects", "-fixture-repo"),
+		filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", project))
+	t.Chdir(dir)
+	code, out, errOut := runLearn(t, "--signals")
+	if code != 0 {
+		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	for _, want := range []string{"Session logs: 1 read, 0 unavailable", "matched by trailer", "session 11111111"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, out)
+		}
+	}
+	for _, quote := range []string{"dry-run", "Add the", "hunter2"} {
+		if strings.Contains(out, quote) {
+			t.Errorf("stdout holds quote text %q:\n%s", quote, out)
+		}
+	}
+}
+
+func TestMapHooksSetsThenFindsItSet(t *testing.T) {
+	dir := trailersRepo(t)
+	write(t, dir, "tools/hooks/prepare-commit-msg", "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(filepath.Join(dir, "tools/hooks/prepare-commit-msg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	for _, want := range []string{
+		"core.hooksPath set to tools/hooks: commits made in Claude Code now carry Session:.\n",
+		"core.hooksPath is already tools/hooks.\n",
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{"map", "hooks"}, &stdout, &stderr); code != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("code %d, stdout %q, stderr %q, want %q", code, stdout.String(), stderr.String(), want)
+		}
+	}
+	if got := strings.TrimSpace(gitIn(t, dir, "config", "--get", "core.hooksPath")); got != "tools/hooks" {
+		t.Errorf("core.hooksPath = %q", got)
+	}
+}
+
+func TestMapHooksRefusesAnotherHooksPath(t *testing.T) {
+	dir := trailersRepo(t)
+	write(t, dir, "tools/hooks/prepare-commit-msg", "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(filepath.Join(dir, "tools/hooks/prepare-commit-msg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "config", "core.hooksPath", ".githooks")
+	t.Chdir(dir)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"map", "hooks"}, &stdout, &stderr)
+	if code != 2 || stdout.Len() != 0 || !strings.HasPrefix(stderr.String(), "physa map hooks: ") ||
+		!strings.Contains(stderr.String(), ".githooks") || !strings.Contains(stderr.String(), "left alone") {
+		t.Errorf("code %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
+	}
+	if got := strings.TrimSpace(gitIn(t, dir, "config", "--get", "core.hooksPath")); got != ".githooks" {
+		t.Errorf("core.hooksPath = %q", got)
+	}
+}
+
+func TestMapHooksTakesNoArguments(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"map", "hooks", "x"}, &stdout, &stderr); code != 2 {
+		t.Errorf("code %d, stderr %q", code, stderr.String())
 	}
 }

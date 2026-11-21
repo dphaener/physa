@@ -1,0 +1,2 @@
+{"type":"user","isSidechain":true,"origin":{"kind":"human"},"turnPosition":{"promptIndex":2,"turnIndex":2},"message":{"role":"user","content":"Verify task W1.T1 against its contract."},"timestamp":"2026-11-20T10:20:00.000Z","uuid":"v1u1"}
+{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_v1so","name":"StructuredOutput","input":{"verdict":"FAIL","discrepancies":["The --dry-run flag still writes the branch."]}}]},"timestamp":"2026-11-20T10:21:00.000Z","uuid":"v1a1"}

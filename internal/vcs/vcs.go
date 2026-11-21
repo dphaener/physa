@@ -15,6 +15,8 @@
 // Writer never touches the person's own working copy, index or checked-out
 // branch.
 //
+// A repo's hooks path can be read and set through Hooks (in hooks.go).
+//
 // A revert is a change whose message says which change it reverts. Each
 // system writes that its own way and an adapter reads its form: git's
 // "This reverts commit <id>." (built) and Mercurial's backout message "Backed
@@ -48,6 +50,7 @@ type Change struct {
 	Short   string    // abbreviated id, for people
 	Subject string    // first line of the message
 	Message string    // the full message
+	Author  string    // the author's name, as version control records it
 	Time    time.Time // when the change was committed
 }
 

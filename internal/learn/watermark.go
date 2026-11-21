@@ -107,11 +107,3 @@ func nextWatermark(repo vcs.Repo, read string, collected []vcs.Change, incomplet
 	}
 	return through
 }
-
-// markID abbreviates a watermark for people; "none" when there is none.
-func markID(id string) string {
-	if id == "" {
-		return "none"
-	}
-	return shortID(id)
-}

@@ -29,6 +29,9 @@ type record struct {
 	// commit keeps those its watermark does not pass.
 	carried []string
 	applied []propose.Kept
+	// session is the draft session's id, empty when no session ran; Physa
+	// started that session, so Physa writes its Session: trailer.
+	session string
 }
 
 // message is the commit's message: its subject, one line per applied
@@ -55,6 +58,9 @@ func (r record) message(w vcs.Repo) string {
 	fmt.Fprintf(&b, "%s: %s\n", throughKey, through)
 	if ids := r.learnedIDs(w); len(ids) > 0 {
 		fmt.Fprintf(&b, "%s: %s\n", learnedKey, strings.Join(ids, ", "))
+	}
+	if r.session != "" {
+		fmt.Fprintf(&b, "Session: %s\n", r.session)
 	}
 	b.WriteString("Capability: learning\n")
 	return b.String()

@@ -42,8 +42,8 @@ func Open(dir string) (vcs.Repo, error) {
 	return r, nil
 }
 
-// logFormat is one record per commit, fields split by NUL, records by RS.
-const logFormat = "--format=%H%x00%h%x00%s%x00%cI%x00%B%x1e"
+// logFormat is one record per commit, fields split by NUL (the author's name before the message, which may hold anything), records by RS.
+const logFormat = "--format=%H%x00%h%x00%s%x00%cI%x00%an%x00%B%x1e"
 
 // Changes returns the non-merge commits of the range rng, newest first as git
 // orders them. Git's own message is the error when the range is not valid.
@@ -71,15 +71,15 @@ func parseLog(out string) ([]vcs.Change, error) {
 		if strings.TrimSpace(rec) == "" {
 			continue
 		}
-		f := strings.SplitN(rec, "\x00", 5)
-		if len(f) != 5 {
+		f := strings.SplitN(rec, "\x00", 6)
+		if len(f) != 6 {
 			return nil, fmt.Errorf("unexpected git log record %q", rec)
 		}
 		at, err := time.Parse(time.RFC3339, f[3])
 		if err != nil {
 			return nil, fmt.Errorf("unexpected git commit time %q", f[3])
 		}
-		changes = append(changes, vcs.Change{ID: f[0], Short: f[1], Subject: f[2], Time: at, Message: f[4]})
+		changes = append(changes, vcs.Change{ID: f[0], Short: f[1], Subject: f[2], Time: at, Author: f[4], Message: f[5]})
 	}
 	return changes, nil
 }

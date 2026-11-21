@@ -62,6 +62,9 @@ func Prompt(m *mapfile.Map, b Batch) (string, error) {
 		}
 		fmt.Fprintf(&w, "### Change %d of %d\n\n", i+1, len(b.Changes))
 		head := "change: " + oneLine(c.Short)
+		if c.Author != "" {
+			head += "\nauthor: " + oneLine(c.Author)
+		}
 		if !c.At.IsZero() {
 			head += "\ndate: " + c.At.UTC().Format(time.RFC3339)
 		}
@@ -75,6 +78,10 @@ func Prompt(m *mapfile.Map, b Batch) (string, error) {
 			if s.Capability != "" {
 				t.WriteString("capability: " + oneLine(s.Capability) + "\n")
 			}
+			if s.Session != "" {
+				t.WriteString("session: " + oneLine(first(s.Session, 8)) + "\n")
+				t.WriteString("matched by: " + oneLine(s.MatchedBy) + "\n")
+			}
 			t.WriteString("evidence:")
 			for _, e := range s.Evidence {
 				t.WriteString("\n- " + strings.TrimSpace(e))
@@ -86,10 +93,18 @@ func Prompt(m *mapfile.Map, b Batch) (string, error) {
 	return w.String(), nil
 }
 
+// first returns the first n characters of s.
+func first(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}
+
 // Bounds on what the prompt quotes of others' words (design 08 section 7).
 const (
-	// commentRunes is the most characters quoted of one comment or of one
-	// reverted change's message.
+	// commentRunes is the most characters quoted of one comment, of one
+	// reverted change's message, and of one session quote's text or answer.
 	commentRunes = 1500
 	// batchRunes is the most characters of all such quotes in one batch.
 	batchRunes = 20000
@@ -102,11 +117,13 @@ type quoter struct {
 	cut     int  // quotes cut to commentRunes
 	leftOut int  // comments left out for the batch bound
 	msgOut  int  // reverted messages left out for the batch bound
+	quotes  int  // session quotes left out for the batch bound
 	spent   bool // the batch bound is reached; nothing more is quoted
 }
 
 // quote writes what s quotes, each in its own fenced block, to w; a nil w
-// only counts.
+// only counts. A session quote is a whole or left out: its text and its
+// answer are each bounded, and either passing the batch bound leaves it out.
 func (q *quoter) quote(w *strings.Builder, s learn.Signal) {
 	if w == nil {
 		w = &strings.Builder{}
@@ -120,6 +137,31 @@ func (q *quoter) quote(w *strings.Builder, s learn.Signal) {
 		}
 		fmt.Fprintf(w, "\nComment %d of %d on this signal, oldest first:\n\n", i+1, len(s.Comments))
 		fenced(w, "author: "+oneLine(cm.Author)+"\nat: "+oneLine(cm.At.UTC().Format(time.RFC3339))+"\ntext:\n"+text)
+	}
+	for i, sq := range s.Quotes {
+		text, n := q.take(sq.Text)
+		answer := ""
+		if n >= 0 && strings.TrimSpace(sq.Answer) != "" {
+			answer, n = q.take(sq.Answer)
+		}
+		if n < 0 {
+			q.quotes += len(s.Quotes) - i
+			fmt.Fprintf(w, "\n%d more quotes left out to keep the batch within its bound\n", len(s.Quotes)-i)
+			break
+		}
+		fmt.Fprintf(w, "\nQuote %d of %d on this signal:\n\n", i+1, len(s.Quotes))
+		var t strings.Builder
+		t.WriteString("author: " + oneLine(sq.Author) + "\nat: " + oneLine(sq.At.UTC().Format(time.RFC3339)) + "\ntext:\n" + text)
+		if len(sq.Options) > 0 {
+			t.WriteString("\noptions offered:")
+			for _, o := range sq.Options {
+				t.WriteString("\n- " + oneLine(o))
+			}
+		}
+		if answer != "" {
+			t.WriteString("\nanswer:\n" + answer)
+		}
+		fenced(w, t.String())
 	}
 	if s.Reverted != nil {
 		text, n := q.take(s.Reverted.Message)
@@ -171,6 +213,9 @@ func (b Batch) Cuts() string {
 	}
 	if q.leftOut > 0 {
 		parts = append(parts, fmt.Sprintf("%d comments left out", q.leftOut))
+	}
+	if q.quotes > 0 {
+		parts = append(parts, fmt.Sprintf("%d session quotes left out", q.quotes))
 	}
 	if q.msgOut > 0 {
 		parts = append(parts, fmt.Sprintf("%d reverted messages left out", q.msgOut))

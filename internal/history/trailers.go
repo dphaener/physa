@@ -57,6 +57,21 @@ func Trailers(message, key string) []string {
 	return values
 }
 
+// Sessions returns the values of the Session trailers of a commit message,
+// whether written as `Session: a, b` or on several lines, without
+// duplicates, in the order written.
+func Sessions(message string) []string {
+	ids := []string{}
+	seen := map[string]bool{}
+	for _, id := range Trailers(message, "Session") {
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 // paragraphs splits a message into runs of lines divided by blank lines.
 func paragraphs(message string) [][]string {
 	var paras [][]string

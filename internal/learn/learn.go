@@ -2,8 +2,9 @@
 // collects the merged changes not yet learned from, finds the signals each
 // one carries, and triages them into changes with a signal and changes with
 // nothing to learn. A signal that needs a source Physa cannot read (no forge,
-// no slice records, or the engine, not built yet) is reported as not checked,
-// never as absent.
+// no slice records, no session reader, or the engine, not built yet) is
+// reported as not checked, never as absent. The signals in a change's
+// sessions come from a Sessions reader; learn reads no session log itself.
 //
 // What is already learned is read from the record learning keeps (design 08
 // section 6): the Learned-through watermark, the newest default-branch change
@@ -17,6 +18,7 @@ package learn
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -50,10 +52,13 @@ type Options struct {
 	RecordsReason string
 	// Capabilities are the slugs of the map's capabilities.
 	Capabilities []string
+	// Sessions finds the signals in each change's sessions; nil means none,
+	// and the session kinds are then not checked.
+	Sessions Sessions
 }
 
 // ResultVersion is the version of Result's JSON form.
-const ResultVersion = 1
+const ResultVersion = 2
 
 // Result is one run's triage, newest change first in every list.
 type Result struct {
@@ -70,10 +75,15 @@ type Result struct {
 	Unavailable []Unavailable `json:"unavailable"`
 	// RecordsMissing is how many changes had no slice record in their window
 	// and so do not count toward served-not-loaded.
-	RecordsMissing int             `json:"records_missing"`
-	Learn          []ChangeSignals `json:"learn"`
-	Nothing        []ChangeRef     `json:"nothing"`
-	Incomplete     []Incomplete    `json:"incomplete"`
+	RecordsMissing int `json:"records_missing"`
+	// SessionsRead is how many distinct sessions had their logs read.
+	SessionsRead int `json:"sessions_read"`
+	// SessionsUnavailable are the sessions behind a change whose logs could
+	// not be read. They never hold the watermark back.
+	SessionsUnavailable []SessionGap    `json:"sessions_unavailable"`
+	Learn               []ChangeSignals `json:"learn"`
+	Nothing             []ChangeRef     `json:"nothing"`
+	Incomplete          []Incomplete    `json:"incomplete"`
 	// Watermark is the full id of the change learning was read to have
 	// learned through; empty when there is none.
 	Watermark string `json:"watermark"`
@@ -111,6 +121,8 @@ type ChangeSignals struct {
 	// Capabilities are the values of the change's Capability trailers, for
 	// drafting; not in the JSON form.
 	Capabilities []string `json:"-"`
+	// Author is the change's author, for drafting; not in the JSON form.
+	Author string `json:"-"`
 }
 
 // Incomplete is a change with no signal found whose forge signals could not
@@ -151,7 +163,7 @@ func Run(repo vcs.Repo, o Options) (Result, error) {
 		return Result{}, err
 	}
 	res := Result{Version: ResultVersion, Range: rng, Unavailable: []Unavailable{},
-		Learn: []ChangeSignals{}, Nothing: []ChangeRef{}, Incomplete: []Incomplete{},
+		SessionsUnavailable: []SessionGap{}, Learn: []ChangeSignals{}, Nothing: []ChangeRef{}, Incomplete: []Incomplete{},
 		Watermark: watermark, LearnedNow: []string{}}
 	var entries []*entry
 	for i, c := range collected {
@@ -184,9 +196,14 @@ func Run(repo vcs.Repo, o Options) (Result, error) {
 		res.RecordsMissing = placeRecords(entries, o.Records)
 		servedNotLoaded(entries, o.Capabilities)
 	}
-	res.Unavailable = append(res.Unavailable,
-		Unavailable{KindRecurringFinding, reasonRecurringFinding},
-		Unavailable{KindAsk, reasonAsk})
+	res.Unavailable = append(res.Unavailable, Unavailable{KindRecurringFinding, reasonRecurringFinding})
+	if o.Sessions == nil {
+		for _, k := range sessionKinds {
+			res.Unavailable = append(res.Unavailable, Unavailable{k, reasonNoSessions})
+		}
+	} else {
+		res.SessionsRead, res.SessionsUnavailable = askSessions(entries, o.Sessions)
+	}
 
 	incomplete := map[string]bool{}
 	for _, e := range entries {
@@ -194,7 +211,8 @@ func Run(repo vcs.Repo, o Options) (Result, error) {
 		switch {
 		case len(e.signals) > 0:
 			res.Learn = append(res.Learn, ChangeSignals{ChangeRef: ref, Signals: e.signals,
-				Message: e.change.Message, At: e.change.Time, Capabilities: history.Trailers(e.change.Message, "Capability")})
+				Message: e.change.Message, At: e.change.Time, Capabilities: history.Trailers(e.change.Message, "Capability"),
+				Author: e.change.Author})
 			res.LearnedNow = append(res.LearnedNow, e.change.Short)
 		case e.forgeGap != "":
 			res.Incomplete = append(res.Incomplete, Incomplete{ChangeRef: ref,
@@ -316,6 +334,40 @@ func askForge(entries []*entry, o Options, unavailable []Unavailable) (string, [
 		return "", append(unavailable, Unavailable{KindCorrection, reason}, Unavailable{KindArguedOptions, reason})
 	}
 	return f.Name(), unavailable
+}
+
+// askSessions adds to each change the signals in its sessions. It returns
+// how many distinct sessions were read and the sessions whose logs were
+// unavailable; those leave the change's triage as it is.
+func askSessions(entries []*entry, s Sessions) (int, []SessionGap) {
+	read := map[string]bool{}
+	gaps := []SessionGap{}
+	for _, e := range entries {
+		signals, ids, missing := s.Signals(e.change, sessionsOf(e.records), e.from)
+		e.signals = append(e.signals, signals...)
+		for _, id := range ids {
+			read[id] = true
+		}
+		for _, g := range missing {
+			g.Change = e.change.Short
+			gaps = append(gaps, g)
+		}
+	}
+	return len(read), gaps
+}
+
+// sessionsOf returns the distinct sessions of records, sorted.
+func sessionsOf(records []store.SliceRecord) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range records {
+		if r.Session != "" && !seen[r.Session] {
+			seen[r.Session] = true
+			out = append(out, r.Session)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // placeRecords gives each change the slice records of its window, the time

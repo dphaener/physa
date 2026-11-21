@@ -1,12 +1,9 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/dphaener/physa/internal/mapslice"
@@ -89,33 +86,9 @@ func records(dir string, asJSON bool, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "physa map records: %v\n", err)
 		return 2
 	}
-	if asJSON {
-		if recs == nil {
-			recs = []store.SliceRecord{}
-		}
-		if err := json.NewEncoder(stdout).Encode(recs); err != nil {
-			fmt.Fprintf(stderr, "physa map records: %v\n", err)
-			return 2
-		}
-		return 0
-	}
-	if len(recs) == 0 {
-		fmt.Fprintln(stdout, "No slice records.")
-		return 0
-	}
-	for _, r := range recs {
-		session := r.Session
-		if session == "" {
-			session = "—"
-		}
-		line := fmt.Sprintf("%s %s %s", r.At.UTC().Format(time.RFC3339), session, strings.Join(r.Capabilities, ","))
-		if r.With != "" {
-			line += " with " + r.With
-		}
-		if r.Budget != 0 {
-			line += " budget " + strconv.Itoa(r.Budget)
-		}
-		fmt.Fprintln(stdout, line)
+	if err := store.WriteRecords(stdout, recs, asJSON); err != nil {
+		fmt.Fprintf(stderr, "physa map records: %v\n", err)
+		return 2
 	}
 	return 0
 }

@@ -1,5 +1,7 @@
-// Package claude is the Claude Code adapter: it runs claude -p with streamed
-// JSON output and reads the result and tokens from the stream.
+// Package claude is the Claude Code adapter: it starts sessions with claude -p
+// and streamed JSON output, optionally under an id assigned by whoever starts
+// them (--session-id, so the session keeps its log), reads the result and
+// tokens from the stream, and reads sessions' logs.
 package claude
 
 import (
@@ -13,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -46,17 +49,30 @@ func New() *Adapter { return &Adapter{Command: "claude"} }
 // Name returns "claude-code".
 func (a *Adapter) Name() string { return Name }
 
-// args is the argv after the command for a session of s.
+// uuid is the form Claude Code takes a session id in: 8-4-4-4-12 hex.
+var uuid = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// args is the argv after the command for a session of s. A session with an
+// assigned id keeps its log, so it can be read later; one without leaves none.
 func args(s adapter.Spec) []string {
-	argv := []string{"-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence"}
+	argv := []string{"-p", "--output-format", "stream-json", "--verbose"}
+	if s.SessionID != "" {
+		argv = append(argv, "--session-id", s.SessionID)
+	} else {
+		argv = append(argv, "--no-session-persistence")
+	}
 	if s.PromptOnly {
 		argv = append(argv, "--tools", "", "--strict-mcp-config")
 	}
 	return argv
 }
 
-// Start runs claude -p in s.Dir with the prompt on stdin.
+// Start runs claude -p in s.Dir with the prompt on stdin. An assigned session
+// id that is not a UUID is refused before anything runs.
 func (a *Adapter) Start(ctx context.Context, s adapter.Spec) (adapter.Session, error) {
+	if s.SessionID != "" && !uuid.MatchString(s.SessionID) {
+		return nil, fmt.Errorf("session id %q is not a UUID", s.SessionID)
+	}
 	command := a.Command
 	if command == "" {
 		command = "claude"
@@ -104,7 +120,7 @@ func (s *session) Wait() (adapter.Result, error) {
 	st, readErr := parse(s.out, s.usage)
 	s.out.Close()
 	exitErr := <-s.done
-	res := adapter.Result{Model: st.model}
+	res := adapter.Result{Model: st.model, SessionID: st.id}
 	if st.result != nil {
 		res.Text = st.result.Result
 		res.Tokens = st.result.Usage.tokens()
@@ -149,6 +165,7 @@ func (s *session) message(r *resultLine, exitErr error) string {
 // stream is what Physa reads from one session's streamed JSON.
 type stream struct {
 	model  string
+	id     string
 	result *resultLine
 }
 
@@ -157,6 +174,7 @@ type line struct {
 	Type    string `json:"type"`
 	Subtype string `json:"subtype"`
 	Model   string `json:"model"`
+	Session string `json:"session_id"`
 }
 
 // resultLine is the stream's final line.
@@ -224,7 +242,7 @@ func parse(r io.Reader, onUsage func(adapter.Tokens)) (stream, error) {
 		}
 		switch {
 		case l.Type == "system" && l.Subtype == "init":
-			st.model = l.Model
+			st.model, st.id = l.Model, l.Session
 		case l.Type == "assistant":
 			var a assistantLine
 			if json.Unmarshal(b, &a) == nil && a.Message.Usage != nil {

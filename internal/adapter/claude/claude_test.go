@@ -25,8 +25,8 @@ func TestParseSuccessWithUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.model != "claude-test-1" {
-		t.Errorf("model = %q", st.model)
+	if st.model != "claude-test-1" || st.id != "s" {
+		t.Errorf("model = %q, session id = %q", st.model, st.id)
 	}
 	if st.result == nil || st.result.Result != "the answer" || st.result.IsError {
 		t.Fatalf("result = %+v", st.result)
@@ -90,6 +90,62 @@ func TestArgs(t *testing.T) {
 	want := append(append([]string{}, base...), "--tools", "", "--strict-mcp-config")
 	if got := args(adapter.Spec{PromptOnly: true}); !reflect.DeepEqual(got, want) {
 		t.Errorf("prompt-only args = %q, want %q", got, want)
+	}
+}
+
+const testSessionID = "0f8e7d6c-5b4a-4392-8170-a1b2c3d4e5f6"
+
+func TestArgsWithSessionID(t *testing.T) {
+	want := []string{"-p", "--output-format", "stream-json", "--verbose", "--session-id", testSessionID}
+	if got := args(adapter.Spec{SessionID: testSessionID}); !reflect.DeepEqual(got, want) {
+		t.Errorf("args = %q, want %q", got, want)
+	}
+	want = append(want, "--tools", "", "--strict-mcp-config")
+	if got := args(adapter.Spec{SessionID: testSessionID, PromptOnly: true}); !reflect.DeepEqual(got, want) {
+		t.Errorf("prompt-only args = %q, want %q", got, want)
+	}
+}
+
+func TestSessionArgvWithSessionID(t *testing.T) {
+	cmd, rec := fake(t, okResult+"\n", "", 0)
+	if _, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p", SessionID: testSessionID}); err != nil {
+		t.Fatal(err)
+	}
+	argv := strings.Split(strings.TrimSuffix(read(t, filepath.Join(rec, "argv")), "\n"), "\n")
+	found := false
+	for i, a := range argv {
+		if a == "--no-session-persistence" {
+			t.Errorf("argv %q has --no-session-persistence with a session id", argv)
+		}
+		if a == "--session-id" && i+1 < len(argv) && argv[i+1] == testSessionID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("argv %q lacks --session-id %s", argv, testSessionID)
+	}
+}
+
+func TestStartRefusesBadSessionID(t *testing.T) {
+	cmd, rec := fake(t, okResult+"\n", "", 0)
+	for _, id := range []string{
+		"not-a-uuid",
+		"0f8e7d6c5b4a43928170a1b2c3d4e5f6",
+		"0f8e7d6c-5b4a-4392-8170-a1b2c3d4e5f6x",
+		"0f8e7d6c-5b4a-4392-8170-a1b2c3d4e5g6",
+		"--resume",
+		"../0f8e7d6c-5b4a-4392-8170-a1b2c3d4e5f6",
+	} {
+		sess, err := (&Adapter{Command: cmd}).Start(context.Background(), adapter.Spec{Prompt: "p", SessionID: id})
+		if err == nil || sess != nil {
+			t.Errorf("Start with id %q: session %v, err %v; want an error", id, sess, err)
+		}
+		if err != nil && !strings.Contains(err.Error(), "not a UUID") {
+			t.Errorf("Start with id %q: err = %v", id, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(rec, "argv")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the agent ran for a bad id (argv recorded: %v)", err)
 	}
 }
 
@@ -169,7 +225,7 @@ func TestSessionSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Wait: %v", err)
 	}
-	want := adapter.Result{Text: "the answer", Model: "claude-test-1", Tokens: adapter.Tokens{Input: 3210, CachedInput: 3000, Output: 45}}
+	want := adapter.Result{Text: "the answer", Model: "claude-test-1", SessionID: "s", Tokens: adapter.Tokens{Input: 3210, CachedInput: 3000, Output: 45}}
 	if res != want {
 		t.Errorf("result = %+v, want %+v", res, want)
 	}

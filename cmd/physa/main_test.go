@@ -31,8 +31,16 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	openStore = func(string) (*store.Store, error) { return store.Open(dir) }
+	// Nor the real ~/.claude, nor the running session's id.
+	claudeDir, err := os.MkdirTemp("", "physa-test-claude")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("CLAUDE_CONFIG_DIR", claudeDir)
+	os.Setenv("CLAUDE_CODE_SESSION_ID", "")
 	code := m.Run()
 	os.RemoveAll(dir)
+	os.RemoveAll(claudeDir)
 	os.Exit(code)
 }
 

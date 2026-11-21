@@ -163,7 +163,7 @@ physa spawn <role> --change <name> [--check <name>] [--brief -] [--model <m>]
 ```
 
 - **Starting a role always goes through the engine.** Only a conduct role can spawn. The engine starts the session through the adapter, in the workspace its kind gets, and returns at once. **No sleeping, no polling** (spec §2.10).
-- **A role's subagent definition is not loaded natively** in any session: the verifier, the checks and the critic exist only through `physa spawn`. No hook is needed; the engine decides which subagent definitions each session loads.
+- **A role's subagent definition is not loaded natively** in any session: the verifier, the checks and the critic exist only through `physa spawn`. No hook is needed to do that (this is about loading subagents, not about commit hooks); the engine decides which subagent definitions each session loads.
 - **Native subagents are normal inside a role** (Q15). A planner sending out research agents, or a builder sending one to read the code, is part of that role's work. They run inside its session and inherit its workspace (a check's subagent reads the same read-only checkout), its identity (their tokens are credited to the role, from the agent's stream) and its records (only the role itself can record findings, a pass or done).
 - **A native subagent can never stand in for a role.** If a conductor tells a generic subagent to verify the build, its output is part of the conductor's session and cannot be a pass: the `passed` gate counts only a pass from an engine-started check session that wrote no commits. Trust comes from records and gates, not from policing what agents do.
 - When a child ends, the engine sends its parent a message: role, change, outcome, and what it recorded (spec E11).
@@ -173,6 +173,7 @@ physa spawn <role> --change <name> [--check <name>] [--brief -] [--model <m>]
 
 - Every session gets a **session token** in its environment (`PHYSA_SESSION`). Every CLI call a session makes carries it, so the engine knows which session, role and change is calling, and records as that session only (spec E3).
 - The engine also credits commits by watching each session's worktree, not by trusting trailers (03 §8a). Trailers stay for people reading history and for CI.
+- Before the engine, the `Session:` trailer (07 §4.1) is how a change names its sessions. It is trusted only for finding logs to learn from, never for credit.
 - A commit on a run's branch made by no session is an intervention (03 §8).
 
 ### 5.3 What each role sees
@@ -247,7 +248,8 @@ What the engine needs from an agent, and nothing more (Q10):
 
 | Adapter call | Claude Code |
 |---|---|
-| start a headless session with a prompt, in a directory, with an environment | `claude -p` with streamed JSON in and out |
+| start a headless session with a prompt, in a directory, with an environment, and optionally a session id | `claude -p` with streamed JSON in and out; the id as `--session-id <uuid>` |
+| read a session's log (read-only) | `<config dir>/projects/<project>/<session>.jsonl` and its `subagents/` transcripts |
 | send a message to a running session | streamed JSON input |
 | stream output, for watching (03 §7.5) | streamed JSON output |
 | report progress (tool activity), for stall detection | from the stream |
@@ -259,7 +261,7 @@ What the engine needs from an agent, and nothing more (Q10):
 
 An adapter is one Go package behind one interface. A second adapter (Codex or opencode) is the test that the interface is not Claude-shaped.
 
-Step 2c landed the first rows only: `internal/adapter` offers start (a prompt, a directory, an environment, and a prompt-only flag), wait for the result, and tokens used, with Claude Code first in `internal/adapter/claude` via `claude -p --output-format stream-json`. The other rows come with the engine (step 5), which extends the session rather than replacing it. A prompt-only session has no tools (`--tools ""`); the reviewer uses it because the diff is untrusted and its output is public.
+Step 2c landed the first rows only: `internal/adapter` offers start (a prompt, a directory, an environment, and a prompt-only flag), wait for the result, and tokens used, with Claude Code first in `internal/adapter/claude` via `claude -p --output-format stream-json`. Step 3d added two: start takes an optional session id (`--session-id <uuid>`), and a session's log can be read, read-only, from `<config dir>/projects/<project>/<session>.jsonl` and its `subagents/` transcripts. Only answered asks, a person's messages mid-run and findings in check reports leave the adapter, redacted of token- and key-shaped text. Whoever starts a session assigns its id when it can. The other rows come with the engine (step 5), which extends the session rather than replacing it. A prompt-only session has no tools (`--tools ""`); the reviewer uses it because the diff is untrusted and its output is public.
 
 ## 11. Spikes
 

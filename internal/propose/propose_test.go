@@ -411,7 +411,7 @@ func TestWriteJSON(t *testing.T) {
 		if err := json.Unmarshal(b.Bytes(), &raw); err != nil {
 			t.Fatalf("%s: %v\n%s", session, err, b.String())
 		}
-		for _, key := range []string{"version", "range", "changes", "signals", "capabilities", "session", "appetite", "tokens", "kept", "dropped"} {
+		for _, key := range []string{"version", "range", "changes", "signals", "capabilities", "session", "draft_session", "appetite", "tokens", "kept", "dropped"} {
 			if _, ok := raw[key]; !ok {
 				t.Errorf("%s: no %q in\n%s", session, key, b.String())
 			}

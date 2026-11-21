@@ -45,6 +45,9 @@ type Options struct {
 	RecordsReason string
 	// Session says how the run drafts and checks proposals.
 	Session propose.Session
+	// Sessions reads the session logs that join changes to their sessions;
+	// nil means none.
+	Sessions learn.Sessions
 	// Forge is the forge to read each change's PR from; nil means none, and
 	// ForgeReason says why.
 	Forge       forge.Forge
@@ -139,7 +142,7 @@ func Run(ctx context.Context, w vcs.Writer, o Options) (Outcome, error) {
 		return out, err
 	}
 	lo := learn.Options{Since: o.Since, Forge: o.Forge, ForgeReason: o.ForgeReason,
-		Records: o.Records, RecordsReason: o.RecordsReason}
+		Records: o.Records, RecordsReason: o.RecordsReason, Sessions: o.Sessions}
 	var batch draft.Batch
 	err = inCopy(w, st.def, st.base(o.Push), func(c vcs.Copy, carried []string) error {
 		m, res, err := Read(c.Dir(), w, lo)
@@ -155,7 +158,8 @@ func Run(ctx context.Context, w vcs.Writer, o Options) (Outcome, error) {
 		}
 		batch = draft.NewBatch(m, out.Result)
 		rec := record{changes: out.Result.Changes, watermark: out.Result.Watermark,
-			through: out.Result.Through, learned: out.Result.LearnedNow, carried: carried}
+			through: out.Result.Through, learned: out.Result.LearnedNow, carried: carried,
+			session: out.Report.DraftSession}
 		out.Commit, err = apply(w, c, batch, &out.Report, out.Report.Kept, rec, o.Session.Check)
 		return err
 	})
@@ -353,7 +357,7 @@ func redo(w vcs.Writer, out *Outcome, lo learn.Options, b draft.Batch, o propose
 	out.Commit = nil
 	err = inCopy(w, st.def, st.base(true), func(c vcs.Copy, carried []string) error {
 		rec := record{changes: now.Changes, watermark: now.Watermark, through: through,
-			learned: learned, carried: carried}
+			learned: learned, carried: carried, session: out.Report.DraftSession}
 		var err error
 		out.Commit, err = apply(w, c, b, &out.Report, keep, rec, o)
 		return err

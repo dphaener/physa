@@ -65,6 +65,7 @@ Each step: what lands, what the owner can do with it, and when it is done. Comma
 
 - **Lands:** one engine per machine, its socket API, the store's state tables, events and durable intents at `.git/physa/physa.db` (03 §3–§5; the store itself landed in step 2); ideas, pitches (optional), bets, the plan (`physa bet plan set`), appetite in tokens and its circuit breaker; evidence recorded from here on (05 Q14), including engineering evidence from version control, and from CI where a team runs one.
 - **The owner can:** keep Physa's own ideas and bets in Physa, from the CLI. No backlog file, no issue tracker.
+- **Built as** (03 §16): D the engine process, `physa engine start|status|stop` and its WebSocket API; E state tables, events and durable intents; F ideas, pitches and bets from the CLI (slugs, Charm on a terminal, identity from the forge login); G the plan, appetite and circuit breaker; H evidence from version control and CI.
 - **Done when:** Physa's next ideas live only in Physa, and the engine survives being killed at any moment.
 
 ### 6. Agents run bets: the default harness

@@ -1,6 +1,6 @@
 # Architecture 03: the engine and its local store
 
-Draft 0.5, 2026-11-19. Uses `.physa/glossary.md` terms only. Builds on 01 and 02. Items marked (Q) are open questions for the owner.
+Draft 0.6, 2026-11-21. Uses `.physa/glossary.md` terms only. Builds on 01, 02, 07 and 08; §16 records the step 5 round. Items marked (Q) are open questions for the owner.
 
 The engine is where Rhiza failed: "no orchestrator" was its goal six times and never happened, the owner wrote watch, stall and cleanup scripts around it, and its orchestration became a 55,000-line package with about 85% of all fixes. This design starts from those failures.
 
@@ -33,7 +33,7 @@ The engine is where Rhiza failed: "no orchestrator" was its goal six times and n
 ## 3. Processes
 
 - **One engine per machine** (Q1). It serves every repo registered on that machine, and is the only process that writes engine state.
-- **The CLI talks to it** over a local socket. If the engine is not running, the CLI starts it.
+- **The CLI talks to it** over a local socket. If the engine is not running, the CLI starts it. It stays up while any work is pending (runs, asks, intents, timers) and exits after 30 minutes with nothing pending (§16).
 - **Foreground mode** for CI and one-off use: `physa run --foreground` runs the engine in the current process for a single piece of work and exits.
 - **Views** (the CLI, the Rex plugin, the single-user phone web) read and act only through the engine's API. The engine serves the phone web itself.
 - **Watching a live session** is part of the API, not of any one view (§7.5): the CLI, the Rex plugin and the phone web can all follow a session as it works.
@@ -75,14 +75,16 @@ The engine is where Rhiza failed: "no orchestrator" was its goal six times and n
 | Work | ideas, spikes, pitches, bets, changes, their appetites | in the map |
 | Runs | runs, sessions, their outcomes, harness records (findings, evidence, rounds, verdicts, notes) | in the map |
 | People | asks (§9), sign-offs, answers, interventions | in the map |
-| Measures | slice records, PR check results pulled by `physa sync`, signal and flag results, rollbacks | in the map |
+| Measures | slice records, facts read from version control and the forge (07), signal and flag results, rollbacks | in the map |
 | Derived | strength per idea and capability | stored as truth; recomputed from measures |
 
 ## 5. How the engine changes state
 
 ### 5.1 One writer, one loop
 
-Every change to state, whatever its source (a CLI command, a session's record, a finished process, a timer, a GitHub update), becomes a command handled one at a time in a single transaction. No two code paths write the same table.
+Every change to state, whatever its source (a CLI command, a session's record, a finished process, a timer, a forge update), becomes a command handled one at a time in a single transaction. No two code paths write the same table.
+
+The engine is the only writer of work and run state: ideas, pitches, bets, plans, runs, sessions, asks, intents and their events. The map commands keep writing their own records (slice records, learning's and init's state) directly, in short transactions, so `physa map` never needs the engine running (§16).
 
 ### 5.2 Side effects are durable intents (Q4)
 
@@ -97,7 +99,7 @@ This is what "durable" means: the engine can be killed at any moment and picks u
 | People | CLI, Rex plugin, phone web, through the API |
 | Sessions | API calls from the harness and agents (records, asks, done), and the process ending |
 | Time | timers held in the store: stall checks, retries |
-| GitHub | polled through `gh` with backoff in the open-source core (Q5); webhooks in the hosted layer |
+| The forge | polled through the forge adapter (GitHub first, through `gh`) with backoff in the open-source core (Q5); webhooks in the hosted layer |
 
 ## 6. Workspaces
 
@@ -173,7 +175,7 @@ An **ask** is what an agent needs from a person during a run: an answer, a choic
 Agents ask through the engine:
 
 - The ask is stored with the run and routed by the team's autonomy policy: to the person's Needs you, or to an arbiter role the harness provides.
-- The answer goes back to the session that asked.
+- The answer goes back to the session that asked, recorded with who answered: the person, or the arbiter on their behalf ("Claude as arbiter, on behalf of dphaener"). Learning credits each answer to whoever gave it.
 - An answer becomes a **decision** in the map only if it passes the decision test (hard to reverse, surprising without context, a real trade-off), recorded with how it was reached. Everything else stays with the run and expires. (Rhiza turned 322 automatic answers into decisions.)
 
 ## 10. Appetites and circuit breakers
@@ -204,7 +206,8 @@ Ideas have no named states (`strength-not-mode`). Everything else the engine run
 
 ## 12. The API
 
-- One local API over a socket, JSON in and out, typed once in Go.
+- One local API, typed once in Go, for local clients: a WebSocket on a Unix socket under `~/.config/physa/`, the shape Rex's own API has (§16): methods called by name with JSON in and out, a JSON schema per method, a versioned subprotocol (`physa.v1`), and `physa api list|describe|call` for debugging. Streaming (following a live session, Needs you) uses the same connection.
+- The phone web is server-rendered by the engine and calls the same Go operations directly; only its live parts stream to the browser. The hosted layer never connects to the engine: the engine pushes records out to it, opt-in (06 §10).
 - The CLI, the Rex plugin, the phone web and harness sessions all use it. The hosted layer receives what it needs from it by push.
 - Its operations are budgeted like everything else: Rhiza had 214; the target here is a few dozen.
 
@@ -237,3 +240,15 @@ The engine is the part of Physa most likely to grow by accretion. Its packages g
 
 ## 15. Open questions
 
+
+## 16. Settled with the owner (2026-11-21): the step 5 round
+
+- **Ideas, pitches and bets live in the local store only, for now.** One clone holds them; mirroring to `refs/notes/physa` waits for team digests (07 §7) and the hosted layer.
+- **A person is named by their forge login** (GitHub: `dphaener`), read once and kept in `~/.config/physa/`, with a setting to change it. With no forge, the part of git's email before the `@`. The map, the engine and learning all use this name; an arbiter's answer is "Claude as arbiter, on behalf of dphaener".
+- **Writers are split by table** (§5.1): the engine writes work and run state; the map commands write their own records.
+- **The engine exits when idle**: up while work is pending, gone after 30 minutes with none; the next command that needs it starts it again.
+- **Pitches are written in `$EDITOR` or from a file**: `physa idea shape <slug>` opens a markdown template of the seven parts (problem, appetite, solution, scope, signal, rabbit holes, no-gos); `--from <file>` or stdin is how agents write one. Physa checks the parts and stores it.
+- **Ideas and bets are named by slugs**: "use the slugs. they're user friendly and filterable so a cli user doesn't need to type it up front, but they can."
+- **The CLI is nice**: "i think the cli needs to be NICE. IE use charm libraries." On a terminal, Charm's libraries (Bubble Tea, Lip Gloss, Huh, Bubbles) style output, give a filterable picker when a slug is left out, and drive forms. In a pipe, in CI or for an agent: plain text or `--json`, and a missing slug is an error listing the choices. Map output (slice, `--entry`) is plain everywhere.
+- **The local API is a WebSocket, like Rex's** (§12): "the rex api communicates over websockets i believe? check that. we should do the same." (Checked: Rex upgrades `GET /api/control` on its Unix socket to a WebSocket with subprotocol `rex.control.v1`.)
+- **Step 5 is built as five PRs**, in order: D the engine process and its API; E state tables, events and durable intents; F ideas, pitches and bets from the CLI; G the plan, appetite and its circuit breaker; H evidence from version control and from CI where a team runs one.

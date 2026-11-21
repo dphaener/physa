@@ -36,7 +36,7 @@ Commit messages follow Conventional Commits, written with the `commit-style` ski
 
 ## Code
 
-- Plain Go, mostly the standard library. Small packages, each with one job and a short doc stating its promise in glossary terms.
+- Plain Go, mostly the standard library. Two exceptions, chosen by the owner (03 §16): Charm's libraries for the CLI on a terminal, and one WebSocket library for the engine's API. Small packages, each with one job and a short doc stating its promise in glossary terms.
 - The core imports nothing above it: a package under `internal/` never imports `cmd/` or `plugins/`. CI enforces this with `go run ./tools/codecheck`.
 - Every package stays under 800 non-blank lines of non-test Go and has a doc comment stating its promise (`tools/codecheck`). Going over means cutting scope, not raising the budget.
 - Commits are small and atomic, usually one per PR.

@@ -70,7 +70,6 @@ Init commits to a branch `physa/init` and opens a PR (Q3) containing exactly:
 |---|---|
 | `.physa/README.md`, `product.md`, `glossary.md`, `capabilities/*.md` | the map |
 | 2–3 lines in `AGENTS.md`, between markers | the pointer (01 §7) |
-| `.github/workflows/physa.yml` | the PR check (§3) (Q9) |
 
 The PR description summarises: capabilities proposed, entries recovered with their sources, questions raised, entries dropped, and the tokens spent. The person edits, deletes or merges it like any PR.
 
@@ -171,5 +170,5 @@ They use only glossary terms and return structured output that `physa check map`
 - **Q5** The PR check is non-blocking by default; teams make findings blocking by policy.
 - **Q6** A `Loaded:` trailer records what each change's agent loaded.
 - **Q7** Suggested changes while a PR is open; one batched map update PR after merge, which never merges itself.
-- **Q8** In the open-source core, GitHub check runs keep the results and `physa sync` pulls them into the local store.
-- **Q9** Init adds `.github/workflows/physa.yml`.
+- **Q8** In the open-source core, GitHub check runs keep the results and `physa sync` pulls them into the local store. Superseded by 07 (2026-11-20): checks and sync run on the developer's machine.
+- **Q9** Init adds `.github/workflows/physa.yml`. Superseded by 07 (2026-11-20): there is no workflow to add.

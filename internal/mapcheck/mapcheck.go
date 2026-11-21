@@ -65,6 +65,9 @@ type Options struct {
 	// when the first commit anchor is met. Nil leaves commit anchors
 	// unresolved: each is a problem.
 	OpenRepo func(root string) (vcs.Repo, error)
+	// DocRoot is where `from <path>` anchors resolve; empty means root. A
+	// scratch copy of the map uses it to check against the real repo.
+	DocRoot string
 }
 
 // Check reads the map under root (the repo root) and checks it, with no
@@ -81,7 +84,11 @@ func CheckWith(root string, o Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	c := &checker{root: root, problems: problems, prExists: o.PRExists, prKnown: map[int]bool{}, openRepo: o.OpenRepo}
+	docRoot := o.DocRoot
+	if docRoot == "" {
+		docRoot = root
+	}
+	c := &checker{root: root, docRoot: docRoot, problems: problems, prExists: o.PRExists, prKnown: map[int]bool{}, openRepo: o.OpenRepo}
 	files := m.Capabilities
 	if m.Product != nil {
 		files = append([]*mapfile.File{m.Product}, files...)
@@ -115,6 +122,7 @@ func CheckWith(root string, o Options) (Result, error) {
 
 type checker struct {
 	root     string
+	docRoot  string // where doc anchors resolve
 	problems []mapfile.Problem
 
 	prExists func(n int) (bool, error) // nil once resolving is off
@@ -206,14 +214,14 @@ func (c *checker) needBecause(f *mapfile.File, e *mapfile.Entry) {
 }
 
 // docAnchor checks that a `from <path>` anchor names a regular file inside
-// the repo.
+// the doc root (the repo unless Options.DocRoot is set).
 func (c *checker) docAnchor(f *mapfile.File, line int, p string) {
 	clean := path.Clean(p)
 	if path.IsAbs(p) || filepath.IsAbs(p) || clean == ".." || strings.HasPrefix(clean, "../") {
 		c.add(f.Path, line, "anchor %q must stay inside the repo", p)
 		return
 	}
-	info, err := os.Stat(filepath.Join(c.root, filepath.FromSlash(clean)))
+	info, err := os.Stat(filepath.Join(c.docRoot, filepath.FromSlash(clean)))
 	if err != nil || !info.Mode().IsRegular() {
 		c.add(f.Path, line, "anchor %q does not name a file in the repo", p)
 	}

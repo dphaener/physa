@@ -39,6 +39,10 @@ type Spec struct {
 	// PromptOnly makes the session answer from its prompt alone: no tools of
 	// any kind.
 	PromptOnly bool
+	// Usage, when set, is called with the session's tokens so far each time the
+	// agent reports them, from the goroutine running Wait. The last call
+	// carries the same tokens as Result.
+	Usage func(Tokens)
 }
 
 // Session is a running headless session.

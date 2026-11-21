@@ -87,7 +87,7 @@ func (a *Adapter) Start(ctx context.Context, s adapter.Spec) (adapter.Session, e
 		pw.Close()
 		done <- err
 	}()
-	return &session{ctx: ctx, out: pr, done: done, stderr: tail}, nil
+	return &session{ctx: ctx, out: pr, done: done, stderr: tail, usage: s.Usage}, nil
 }
 
 // session is one running claude -p process.
@@ -96,11 +96,12 @@ type session struct {
 	out    *io.PipeReader
 	done   chan error
 	stderr *tailWriter
+	usage  func(adapter.Tokens)
 }
 
 // Wait reads the stream to its end, then waits for the process.
 func (s *session) Wait() (adapter.Result, error) {
-	st, readErr := parse(s.out)
+	st, readErr := parse(s.out, s.usage)
 	s.out.Close()
 	exitErr := <-s.done
 	res := adapter.Result{Model: st.model}
@@ -182,10 +183,34 @@ func (u usage) tokens() adapter.Tokens {
 	}
 }
 
+// assistantLine is a stream line for one message of the agent; a message can
+// appear on several lines, each with the usage so far.
+type assistantLine struct {
+	Message struct {
+		ID    string `json:"id"`
+		Usage *usage `json:"usage"`
+	} `json:"message"`
+}
+
+// sum is the tokens of all messages, the last usage seen for each.
+func sum(byID map[string]usage) adapter.Tokens {
+	var total usage
+	for _, u := range byID {
+		total.InputTokens += u.InputTokens
+		total.CacheCreationInputTokens += u.CacheCreationInputTokens
+		total.CacheReadInputTokens += u.CacheReadInputTokens
+		total.OutputTokens += u.OutputTokens
+	}
+	return total.tokens()
+}
+
 // parse reads a stream to its end. Lines that are not JSON, and lines of
-// types it does not read, are skipped; the last result line wins.
-func parse(r io.Reader) (stream, error) {
+// types it does not read, are skipped; the last result line wins. After each
+// assistant line that carries usage, and on the result line, it calls onUsage
+// (when not nil) with the tokens so far.
+func parse(r io.Reader, onUsage func(adapter.Tokens)) (stream, error) {
 	var st stream
+	byID := map[string]usage{}
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64<<10), maxLine)
 	for sc.Scan() {
@@ -200,10 +225,21 @@ func parse(r io.Reader) (stream, error) {
 		switch {
 		case l.Type == "system" && l.Subtype == "init":
 			st.model = l.Model
+		case l.Type == "assistant":
+			var a assistantLine
+			if json.Unmarshal(b, &a) == nil && a.Message.Usage != nil {
+				byID[a.Message.ID] = *a.Message.Usage
+				if onUsage != nil {
+					onUsage(sum(byID))
+				}
+			}
 		case l.Type == "result":
 			var res resultLine
 			if json.Unmarshal(b, &res) == nil {
 				st.result = &res
+				if onUsage != nil {
+					onUsage(res.Usage.tokens())
+				}
 			}
 		}
 	}

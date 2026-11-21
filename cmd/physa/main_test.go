@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/cli"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/forge/github"
@@ -22,6 +23,8 @@ import (
 // GitHub knows no PRs and no change came from one.
 func TestMain(m *testing.M) {
 	newForge = func(dir string) forge.Forge { return fakeGitHub(dir, nil) }
+	// No test starts a real agent: an unexpected start stops the binary.
+	agents["claude"] = func() adapter.Adapter { return unexpectedAgent{} }
 	// Safety net: no test reaches the store of this repository.
 	dir, err := os.MkdirTemp("", "physa-test-store")
 	if err != nil {

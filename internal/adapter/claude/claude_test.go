@@ -21,7 +21,7 @@ const okResult = `{"type":"result","subtype":"success","is_error":false,"result"
 
 func TestParseSuccessWithUsage(t *testing.T) {
 	in := initLine + "\n" + `{"type":"assistant","message":{"content":[]}}` + "\n" + okResult + "\n"
-	st, err := parse(strings.NewReader(in))
+	st, err := parse(strings.NewReader(in), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestParseSuccessWithUsage(t *testing.T) {
 
 func TestParseErrorResult(t *testing.T) {
 	in := `{"type":"result","subtype":"error_during_execution","is_error":true,"result":"limit reached"}`
-	st, err := parse(strings.NewReader(in))
+	st, err := parse(strings.NewReader(in), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestParseErrorResult(t *testing.T) {
 }
 
 func TestParseNoResult(t *testing.T) {
-	st, err := parse(strings.NewReader(initLine + "\n"))
+	st, err := parse(strings.NewReader(initLine+"\n"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestParseNoResult(t *testing.T) {
 
 func TestParseSkipsJunk(t *testing.T) {
 	in := "not json\n\n{broken\n[1,2]\n" + `{"type":"stream_event","event":{}}` + "\n" + `{"type":"result","is_error":"not a bool"}` + "\n" + okResult + "\n" + "trailing junk"
-	st, err := parse(strings.NewReader(in))
+	st, err := parse(strings.NewReader(in), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestParseSkipsJunk(t *testing.T) {
 func TestParseVeryLongLine(t *testing.T) {
 	big := strings.Repeat("x", 17<<20)
 	in := initLine + "\n" + `{"type":"result","subtype":"success","is_error":false,"result":"` + big + `"}` + "\n"
-	st, err := parse(strings.NewReader(in))
+	st, err := parse(strings.NewReader(in), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,5 +319,99 @@ func TestTailWriter(t *testing.T) {
 	w.Write([]byte("cdef"))
 	if w.String() != "cdef" {
 		t.Fatalf("tail = %q", w.String())
+	}
+}
+
+const (
+	asstA1 = `{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":1,"cache_creation_input_tokens":2,"cache_read_input_tokens":3,"output_tokens":4}}}`
+	asstA2 = `{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":1,"cache_creation_input_tokens":2,"cache_read_input_tokens":3,"output_tokens":10}}}`
+	asstB  = `{"type":"assistant","message":{"id":"m2","usage":{"input_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":7}}}`
+)
+
+func TestParseUsageRunningSums(t *testing.T) {
+	in := initLine + "\n" + asstA1 + "\n" + asstA2 + "\n" + asstB + "\n" + okResult + "\n"
+	var calls []adapter.Tokens
+	st, err := parse(strings.NewReader(in), func(tk adapter.Tokens) { calls = append(calls, tk) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []adapter.Tokens{
+		{Input: 6, CachedInput: 3, Output: 4},
+		{Input: 6, CachedInput: 3, Output: 10},
+		{Input: 11, CachedInput: 3, Output: 17},
+		st.result.Usage.tokens(),
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("calls = %+v, want %+v", calls, want)
+	}
+	if want[3] != (adapter.Tokens{Input: 3210, CachedInput: 3000, Output: 45}) {
+		t.Errorf("last call = %+v", want[3])
+	}
+}
+
+func TestParseUsageSkipsAssistantWithoutUsage(t *testing.T) {
+	in := `{"type":"assistant","message":{"id":"m1"}}` + "\n" +
+		`{"type":"assistant","message":"junk"}` + "\n" +
+		`{"type":"assistant","message":{"id":"m1","usage":"junk"}}` + "\n" +
+		`{"type":"assistant"` + "\n" + asstB + "\n"
+	var calls []adapter.Tokens
+	_, err := parse(strings.NewReader(in), func(tk adapter.Tokens) { calls = append(calls, tk) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []adapter.Tokens{{Input: 5, Output: 7}}; !reflect.DeepEqual(calls, want) {
+		t.Fatalf("calls = %+v, want %+v", calls, want)
+	}
+}
+
+func TestParseUsageNilCallback(t *testing.T) {
+	st, err := parse(strings.NewReader(asstA1+"\n"+okResult+"\n"), nil)
+	if err != nil || st.result == nil || st.result.Result != "the answer" {
+		t.Fatalf("st = %+v, err = %v", st, err)
+	}
+}
+
+func TestSessionUsageCallbackMatchesResult(t *testing.T) {
+	cmd, _ := fake(t, asstA1+"\n"+okResult+"\n", "", 0)
+	var last adapter.Tokens
+	res, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p", Usage: func(tk adapter.Tokens) { last = tk }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last != res.Tokens {
+		t.Errorf("last usage = %+v, result tokens = %+v", last, res.Tokens)
+	}
+}
+
+func TestSessionUsageCancelAtLimit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake agent is a shell script")
+	}
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "stream"), asstA1+"\n"+asstB+"\n")
+	cmd := filepath.Join(dir, "claude")
+	script := "#!/bin/sh\ncat > /dev/null\ncat '" + dir + "/stream'\nexec sleep 60\n"
+	if err := os.WriteFile(cmd, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	const limit = 10
+	spec := adapter.Spec{Prompt: "p", Usage: func(tk adapter.Tokens) {
+		if tk.Input+tk.Output > limit {
+			cancel()
+		}
+	}}
+	sess, err := (&Adapter{Command: cmd}).Start(ctx, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err = sess.Wait()
+	if !errors.Is(err, adapter.ErrFailed) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want ErrFailed and context.Canceled", err)
+	}
+	if d := time.Since(start); d > 10*time.Second {
+		t.Errorf("Wait took %v after cancel", d)
 	}
 }

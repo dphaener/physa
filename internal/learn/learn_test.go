@@ -498,3 +498,57 @@ func TestWriteJSON(t *testing.T) {
 		t.Errorf("round trip = %+v\nwant         %+v", back, res)
 	}
 }
+
+func TestCorrectionCarriesMessageAndCapability(t *testing.T) {
+	r := newTestRepo(t, "main")
+	fixed := r.commit("fixed after review\n\nCapability: learning")
+	at := base.Add(time.Hour)
+	review := forge.Comment{Author: "owner", At: at, Kind: forge.KindReview, Body: "Say change, not ticket."}
+	f := &fakeForge{prs: map[string]forge.PR{
+		fixed: {Number: 9, Comments: []forge.Comment{review},
+			Commits: []forge.Commit{{ID: "bbbbbbb222", At: at.Add(time.Minute)}}},
+	}}
+	res := run(t, r.open(), Options{Forge: f})
+	if len(res.Learn) != 1 {
+		t.Fatalf("learn = %+v", res.Learn)
+	}
+	got := res.Learn[0]
+	if msg := strings.TrimSpace(got.Message); msg != "fixed after review\n\nCapability: learning" {
+		t.Errorf("message = %q", got.Message)
+	}
+	if !reflect.DeepEqual(got.Capabilities, []string{"learning"}) {
+		t.Errorf("capabilities = %v, want [learning]", got.Capabilities)
+	}
+}
+
+func TestJSONOmitsMessageAndCapabilities(t *testing.T) {
+	r := newTestRepo(t, "main")
+	fixed := r.commit("fixed after review\n\nCapability: learning")
+	at := base.Add(time.Hour)
+	review := forge.Comment{Author: "owner", At: at, Kind: forge.KindReview, Body: "Say change, not ticket."}
+	f := &fakeForge{prs: map[string]forge.PR{
+		fixed: {Number: 9, Comments: []forge.Comment{review},
+			Commits: []forge.Commit{{ID: "bbbbbbb222", At: at.Add(time.Minute)}}},
+	}}
+	res := run(t, r.open(), Options{Forge: f})
+	if len(res.Learn) != 1 || res.Learn[0].Message == "" {
+		t.Fatalf("learn = %+v", res.Learn)
+	}
+	var withFields, without bytes.Buffer
+	if err := WriteJSON(&withFields, res); err != nil {
+		t.Fatal(err)
+	}
+	stripped := res
+	stripped.Learn = []ChangeSignals{{ChangeRef: res.Learn[0].ChangeRef, Signals: res.Learn[0].Signals}}
+	if err := WriteJSON(&without, stripped); err != nil {
+		t.Fatal(err)
+	}
+	if withFields.String() != without.String() {
+		t.Errorf("json differs with message and capabilities set:\n%s\nwant\n%s", withFields.String(), without.String())
+	}
+	for _, banned := range []string{`"message"`, `"capabilities"`, "Capability: learning"} {
+		if strings.Contains(withFields.String(), banned) {
+			t.Errorf("json carries %s: %s", banned, withFields.String())
+		}
+	}
+}

@@ -80,6 +80,13 @@ Signals that arrive later are still caught: a revert is a merged change of its o
 - The default is the smallest that covers one batch, tuned from real runs.
 - Most runs cost nothing, because most changes carry no signal.
 
+**Built in step 3b.** Calls made while building the draft, for the owner to check:
+
+- The appetite counts every token in and out, cached input included.
+- The circuit breaker keeps nothing when it stops a session: no partial text is drafted or proposed, and the stopped run says so.
+- The agent is chosen with `--agent` or `PHYSA_AGENT`, `claude` by default; credentials come from the environment.
+- Each proposal is checked alone on a scratch copy of the map, so one bad proposal cannot take the others down with it.
+
 ## 8. New capabilities
 
 Born when the work is done, not learned later (07 Q1): if a change deserves its own capability, the change adds the capability file and anchors to it, and `physa check` verifies the slug exists. Learning proposes a new capability only when a signal says so.

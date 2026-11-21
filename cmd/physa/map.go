@@ -26,7 +26,7 @@ func mapCommand() *cli.Command {
 			"physa map slice <capability>... [--with decisions|questions|all] [--budget <tokens>] [--format md|json]",
 			"physa map changes [<range>] [--json] [--strict]",
 			"physa map records [--json]",
-			"physa map learn --signals [--since <change>] [--json]",
+			"physa map learn [--signals] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]",
 		},
 		Run: func(args []string, stdout, stderr io.Writer) int {
 			if len(args) > 0 {
@@ -88,8 +88,8 @@ func mapCommand() *cli.Command {
 			},
 			{
 				Name:    "learn",
-				Summary: "Find what the merged changes have to teach the map (signals only; drafting is planned).",
-				Usage:   []string{"physa map learn --signals [--since <change>] [--json]"},
+				Summary: "Find what the merged changes have to teach the map, and draft proposals from it for the stewards to review (--signals stops at the signals).",
+				Usage:   []string{"physa map learn [--signals] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]"},
 				Run: func(args []string, stdout, stderr io.Writer) int {
 					opts, ok := parseLearn(args)
 					if !ok {
@@ -107,18 +107,12 @@ func mapCommand() *cli.Command {
 func index(dir string, stdout, stderr io.Writer) int {
 	m, problems, err := mapfile.Read(dir)
 	if err != nil {
-		fmt.Fprintf(stderr, "physa map index: %v\n", err)
-		return 2
+		return failed(stderr, "index", err)
 	}
 	if err := mapindex.Write(stdout, mapindex.Build(m)); err != nil {
-		fmt.Fprintf(stderr, "physa map index: %v\n", err)
-		return 2
+		return failed(stderr, "index", err)
 	}
-	if n := len(problems); n == 1 {
-		fmt.Fprintln(stderr, "physa map index: the map has 1 problem; run physa check map")
-	} else if n > 1 {
-		fmt.Fprintf(stderr, "physa map index: the map has %d problems; run physa check map\n", n)
-	}
+	noteProblems(stderr, "index", len(problems))
 	return 0
 }
 
@@ -183,28 +177,21 @@ func parseSlice(args []string) (sliceOptions, bool) {
 func slice(dir string, o sliceOptions, stdout, stderr io.Writer) int {
 	m, problems, err := mapfile.Read(dir)
 	if err != nil {
-		fmt.Fprintf(stderr, "physa map slice: %v\n", err)
-		return 2
+		return failed(stderr, "slice", err)
 	}
 	s, err := mapslice.Build(m, o.req)
 	if err != nil {
-		fmt.Fprintf(stderr, "physa map slice: %v\n", err)
-		return 2
+		return failed(stderr, "slice", err)
 	}
 	write := mapslice.WriteMD
 	if o.json {
 		write = mapslice.WriteJSON
 	}
 	if err := write(stdout, s); err != nil {
-		fmt.Fprintf(stderr, "physa map slice: %v\n", err)
-		return 2
+		return failed(stderr, "slice", err)
 	}
 	recordSlice(dir, o.req, stderr)
-	if n := len(problems); n == 1 {
-		fmt.Fprintln(stderr, "physa map slice: the map has 1 problem; run physa check map")
-	} else if n > 1 {
-		fmt.Fprintf(stderr, "physa map slice: the map has %d problems; run physa check map\n", n)
-	}
+	noteProblems(stderr, "slice", len(problems))
 	if s.OverBudget {
 		fmt.Fprintf(stderr, "physa map slice: over budget: what is never cut is %d tokens, over the %d-token budget\n", s.Used, s.Budget)
 	}
@@ -218,28 +205,20 @@ func slice(dir string, o sliceOptions, stdout, stderr io.Writer) int {
 func changes(dir string, o changesOptions, stdout, stderr io.Writer) int {
 	_, problems, err := mapfile.Read(dir)
 	if err != nil {
-		fmt.Fprintf(stderr, "physa map changes: %v\n", err)
-		return 2
+		return failed(stderr, "changes", err)
 	}
-	if n := len(problems); n == 1 {
-		fmt.Fprintln(stderr, "physa map changes: the map has 1 problem; run physa check map")
-	} else if n > 1 {
-		fmt.Fprintf(stderr, "physa map changes: the map has %d problems; run physa check map\n", n)
-	}
+	noteProblems(stderr, "changes", len(problems))
 	repo, err := git.Open(dir)
 	if err != nil {
-		fmt.Fprintf(stderr, "physa map changes: %v\n", err)
-		return 2
+		return failed(stderr, "changes", err)
 	}
 	commits, err := history.Read(repo, o.rng)
 	if err != nil {
-		fmt.Fprintf(stderr, "physa map changes: %v\n", err)
-		return 2
+		return failed(stderr, "changes", err)
 	}
 	findings, err := history.Check(repo, commits)
 	if err != nil {
-		fmt.Fprintf(stderr, "physa map changes: %v\n", err)
-		return 2
+		return failed(stderr, "changes", err)
 	}
 	if o.json {
 		out := struct {
@@ -248,8 +227,7 @@ func changes(dir string, o changesOptions, stdout, stderr io.Writer) int {
 			Findings []history.Finding `json:"findings"`
 		}{o.rng, commits, findings}
 		if err := json.NewEncoder(stdout).Encode(out); err != nil {
-			fmt.Fprintf(stderr, "physa map changes: %v\n", err)
-			return 2
+			return failed(stderr, "changes", err)
 		}
 	} else {
 		for _, c := range commits {
@@ -276,4 +254,21 @@ func slugList(slugs []string) string {
 		return "\u2014"
 	}
 	return strings.Join(slugs, ", ")
+}
+
+// failed prints err as the failure of the command named cmd and returns the
+// exit code 2.
+func failed(stderr io.Writer, cmd string, err error) int {
+	fmt.Fprintf(stderr, "physa map %s: %v\n", cmd, err)
+	return 2
+}
+
+// noteProblems tells on stderr that the map has n problems, when it has any.
+func noteProblems(stderr io.Writer, cmd string, n int) {
+	switch {
+	case n == 1:
+		fmt.Fprintf(stderr, "physa map %s: the map has 1 problem; run physa check map\n", cmd)
+	case n > 1:
+		fmt.Fprintf(stderr, "physa map %s: the map has %d problems; run physa check map\n", cmd, n)
+	}
 }

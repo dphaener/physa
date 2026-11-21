@@ -433,3 +433,16 @@ func TestPRAnchorsWithoutResolverAreFormOnly(t *testing.T) {
 		t.Errorf("got %q %q", r.PRAnchors, r.PRNote)
 	}
 }
+
+func TestDocRootResolvesDocAnchors(t *testing.T) {
+	cap := "## Rules\n\n### A\n`a` · from docs/a.md\nBecause: y.\n"
+	root := newMap(t, "", cap)
+	docs := t.TempDir()
+	write(t, docs, "docs/a.md", "doc\n")
+	r := checkWith(t, root, Options{})
+	expect(t, r, ".physa/capabilities/a.md", 9, "anchor \"docs/a.md\" does not name a file in the repo")
+	r = checkWith(t, root, Options{DocRoot: docs})
+	if len(r.Problems) != 0 {
+		t.Errorf("want no problems with DocRoot, got %v", r.Problems)
+	}
+}

@@ -85,6 +85,11 @@ type ChangeRef struct {
 type ChangeSignals struct {
 	ChangeRef
 	Signals []Signal `json:"signals"`
+	// Message is the change's full message, for drafting; not in the JSON form.
+	Message string `json:"-"`
+	// Capabilities are the values of the change's Capability trailers, for
+	// drafting; not in the JSON form.
+	Capabilities []string `json:"-"`
 }
 
 // Incomplete is a change with no signal found whose forge signals could not
@@ -158,7 +163,8 @@ func Run(repo vcs.Repo, o Options) (Result, error) {
 		ref := ChangeRef{Change: e.change.ID, Short: e.change.Short, Subject: e.change.Subject}
 		switch {
 		case len(e.signals) > 0:
-			res.Learn = append(res.Learn, ChangeSignals{ChangeRef: ref, Signals: e.signals})
+			res.Learn = append(res.Learn, ChangeSignals{ChangeRef: ref, Signals: e.signals,
+				Message: e.change.Message, Capabilities: history.Trailers(e.change.Message, "Capability")})
 		case e.forgeGap != "":
 			res.Incomplete = append(res.Incomplete, Incomplete{ChangeRef: ref,
 				Reason: KindCorrection + " and " + KindArguedOptions + " not checked: " + e.forgeGap})

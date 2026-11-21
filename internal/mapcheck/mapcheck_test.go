@@ -69,6 +69,20 @@ func TestGoodMap(t *testing.T) {
 	}
 }
 
+func TestMapWithoutCapabilitiesPasses(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, ".physa/product.md", front+"")
+	write(t, root, ".physa/glossary.md", "# Glossary\n\n**Map**: a thing.\n")
+	write(t, root, ".physa/README.md", "hi\n")
+	r := check(t, root)
+	if len(r.Problems) != 0 {
+		t.Fatalf("want none, got %v", r.Problems)
+	}
+	if r.Capabilities != 0 {
+		t.Errorf("capabilities = %d, want 0", r.Capabilities)
+	}
+}
+
 func TestMissingMapIsError(t *testing.T) {
 	if _, err := Check(t.TempDir()); err == nil {
 		t.Fatal("want an error for a missing .physa")

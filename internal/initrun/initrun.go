@@ -18,76 +18,84 @@ import (
 )
 
 // Env is what init reaches outside itself through, each a seam the caller
-// owns: the store of the repo at a directory, the repo itself, the forge that
-// hosts it, the agent a name selects (empty for the default) and the clock.
+// owns: the store, repo, forge, writer and hooks of the repo at a directory,
+// the agent a name selects (empty for the default), the clock, and the
+// person's input, where a new codebase's answers are asked when IsTerminal.
+// PRExists resolves #N anchors; nil checks them for form only.
 type Env struct {
-	Store func(dir string) (*store.Store, error)
-	Repo  func(dir string) (vcs.Repo, error)
-	Forge func(dir string) forge.Forge
-	// PRExists resolves #N anchors for the repo at a directory; nil checks
-	// them for form only.
-	PRExists func(dir string) func(int) (bool, error)
-	Agent    func(name string) (adapter.Adapter, error)
-	Now      func() time.Time
+	Store      func(dir string) (*store.Store, error)
+	Repo       func(dir string) (vcs.Repo, error)
+	Forge      func(dir string) forge.Forge
+	PRExists   func(dir string) func(int) (bool, error)
+	Agent      func(name string) (adapter.Adapter, error)
+	Now        func() time.Time
+	Writer     func(dir string) (vcs.Writer, error)
+	Hooks      func(dir string) (vcs.Hooks, error)
+	Stdin      io.Reader
+	IsTerminal func() bool
 }
 
-// Run runs init's --gather, --propose or --recover phase on the repo in the current
-// directory: 0 when it finished, 1 when the circuit breaker stopped it (or
-// some capabilities are not yet recovered), 2 when it could not (or cli.BadUsage when the arguments were not understood).
+// Run runs physa init on the repo in the current directory: the phase named,
+// or every phase in order under one appetite; --write then writes the map to
+// physa/init. It returns 0 when all asked was done, 1 when the circuit
+// breaker stopped proposing or some capabilities are not yet recovered
+// (still written with --write), 2 when it could not (a capability failed,
+// the map failed its check, the hook was refused), and cli.BadUsage for
+// arguments not understood.
 func Run(args []string, stdout, stderr io.Writer, env Env) int {
 	o, ok := ParseFlags(args, env.Now())
 	if !ok {
 		return cli.BadUsage
 	}
-	if o.Propose {
-		return propose(o, stdout, stderr, env)
-	}
-	if o.Recover {
-		return recoverPhase(o, stdout, stderr, env)
-	}
-	if !o.Gather {
-		fmt.Fprintln(stderr, "physa init: name a phase: --gather, --propose or --recover; the PR on physa/init follows (design 02 §2)")
-		return 2
-	}
-	repo, err := env.Repo(".")
+	root, err := filepath.Abs(".")
 	if err != nil {
 		return failed(stderr, err)
+	}
+	st, err := env.Store(".")
+	if err != nil {
+		return failed(stderr, err)
+	}
+	defer st.Close()
+	p, code := newPrinter(o, stdout), 0
+	switch {
+	case o.Propose:
+		code = propose(o, st, p, stderr, env)
+	case o.Recover:
+		code = recoverPhase(o, st, root, p, stderr, env)
+	case o.Full():
+		code = full(o, st, root, p, stderr, env)
+	default:
+		var sum gather.Summary
+		if _, sum, err = gatherInto(st, o, env); err != nil {
+			return failed(stderr, err)
+		}
+		p.gather(sum)
+	}
+	return p.done(code, stderr)
+}
+
+// gatherInto gathers the repo's sources under o's bounds and stores them in
+// st, replacing the earlier gather, and says what it gathered.
+func gatherInto(st *store.Store, o Flags, env Env) (store.Gather, gather.Summary, error) {
+	repo, err := env.Repo(".")
+	if err != nil {
+		return store.Gather{}, gather.Summary{}, err
 	}
 	dir, err := repo.StoreDir()
 	if err != nil {
-		return failed(stderr, err)
+		return store.Gather{}, gather.Summary{}, err
 	}
-	st, err := env.Store(".")
-	if err != nil {
-		return failed(stderr, err)
-	}
-	defer st.Close()
 	bounds := gather.Bounds{Since: o.Since, SinceSet: o.SinceSet, MaxPRs: o.MaxPRs}
 	g, sum, err := gather.Run(".", repo, env.Forge("."), bounds, env.Now())
 	if err != nil {
-		return failed(stderr, err)
-	}
-	if err := st.PutGather(g); err != nil {
-		return failed(stderr, err)
+		return g, sum, err
 	}
 	sum.Store = dir
-	write := gather.WriteText
-	if o.JSON {
-		write = gather.WriteJSON
-	}
-	if err := write(stdout, sum); err != nil {
-		return failed(stderr, err)
-	}
-	return 0
+	return g, sum, st.PutGather(g)
 }
 
 // propose proposes a map from the stored gather and prints it.
-func propose(o Flags, stdout, stderr io.Writer, env Env) int {
-	st, err := env.Store(".")
-	if err != nil {
-		return failed(stderr, err)
-	}
-	defer st.Close()
+func propose(o Flags, st *store.Store, p *printer, stderr io.Writer, env Env) int {
 	res, err := mapping.Propose(context.Background(), st, mapping.Session{
 		Agent:    func() (adapter.Adapter, error) { return env.Agent(o.Agent) },
 		Appetite: o.Appetite,
@@ -100,48 +108,25 @@ func propose(o Flags, stdout, stderr io.Writer, env Env) int {
 		fmt.Fprintf(stderr, "physa init: the circuit breaker stopped the session at %d tokens; nothing was proposed\n", res.Appetite)
 		return 1
 	}
-	write := mapping.WriteText
-	if o.JSON {
-		write = mapping.WriteJSON
-	}
-	if err := write(stdout, res); err != nil {
-		return failed(stderr, err)
-	}
+	p.proposal(res)
 	return 0
 }
 
 // recoverPhase recovers the proposed capabilities into the store and prints
-// how each fared. It writes nothing to the repo.
-func recoverPhase(o Flags, stdout, stderr io.Writer, env Env) int {
-	root, err := filepath.Abs(".")
+// how each fared. Without --write it writes nothing to the repo; with it,
+// it then writes everything stored to physa/init, keeping the files an
+// earlier run recovered.
+func recoverPhase(o Flags, st *store.Store, root string, p *printer, stderr io.Writer, env Env) int {
+	rep, err := recovery.Run(context.Background(), st, recoverySession(o, o.Appetite, o.Only, root, env, stderr))
 	if err != nil {
 		return failed(stderr, err)
 	}
-	st, err := env.Store(".")
-	if err != nil {
-		return failed(stderr, err)
+	p.recovery(rep)
+	code := exitCode(rep)
+	if o.Write {
+		code = max(code, writeStored(st, root, o, env, p, stderr))
 	}
-	defer st.Close()
-	s := recovery.Session{
-		Agent:    func() (adapter.Adapter, error) { return env.Agent(o.Agent) },
-		Appetite: o.Appetite, Only: o.Only, Root: root,
-		OpenRepo: env.Repo, Progress: stderr, Now: env.Now,
-	}
-	if env.PRExists != nil {
-		s.PRExists = env.PRExists(".")
-	}
-	rep, err := recovery.Run(context.Background(), st, s)
-	if err != nil {
-		return failed(stderr, err)
-	}
-	write := writeRecoveryText
-	if o.JSON {
-		write = writeRecoveryJSON
-	}
-	if err := write(stdout, rep); err != nil {
-		return failed(stderr, err)
-	}
-	return exitCode(rep)
+	return code
 }
 
 // failed prints err as init's failure and returns 2.

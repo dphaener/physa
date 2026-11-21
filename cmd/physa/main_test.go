@@ -692,3 +692,21 @@ func TestSyncIsNotBuilt(t *testing.T) {
 		t.Errorf("code %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
 	}
 }
+
+func TestMapHooksWritesEmbeddedHook(t *testing.T) {
+	dir := trailersRepo(t)
+	t.Chdir(dir)
+	var stdout, stderr bytes.Buffer
+	file := filepath.Join(dir, ".git", "hooks", "prepare-commit-msg")
+	if code := run([]string{"map", "hooks"}, &stdout, &stderr); code != 0 || stderr.Len() != 0 ||
+		!strings.HasPrefix(stdout.String(), "prepare-commit-msg written to ") ||
+		!strings.HasSuffix(stdout.String(), "/.git/hooks/prepare-commit-msg: commits made in Claude Code now carry Session:.\n") {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if info, err := os.Stat(file); err != nil || info.Mode().Perm()&0o111 == 0 {
+		t.Errorf("hook not written executable: %v, %v", info, err)
+	}
+	if out, _ := exec.Command("git", "-C", dir, "config", "--local", "--get", "core.hooksPath").Output(); len(out) != 0 {
+		t.Errorf("core.hooksPath = %q, want unset", out)
+	}
+}

@@ -74,9 +74,8 @@ func TestParseFlagsProposeRejections(t *testing.T) {
 		{"--propose", "--appetite"},
 		{"--propose", "--agent"},
 		{"--propose", "--agent="},
-		{"--appetite", "5000"},
 		{"--gather", "--appetite", "5000"},
-		{"--agent", "claude"},
+		{"--gather", "--agent", "claude"},
 		{"--propose=1"},
 	} {
 		if _, ok := ParseFlags(args, now); ok {
@@ -114,6 +113,45 @@ func TestParseFlagsRecoverRejections(t *testing.T) {
 		{"--recover", "--only="},
 		{"--recover", "--only", "a,,b"},
 		{"--gather", "--appetite", "5"},
+	} {
+		if _, ok := ParseFlags(args, now); ok {
+			t.Errorf("%v accepted", args)
+		}
+	}
+}
+
+func TestParseFlagsFull(t *testing.T) {
+	f, ok := ParseFlags(nil, now)
+	if !ok || !f.Full() || f.Write || f.Appetite != 0 {
+		t.Fatalf("bare: %+v %v", f, ok)
+	}
+	f, ok = ParseFlags([]string{"--write", "--push", "--pr", "--hooks", "--appetite", "5000", "--agent=x",
+		"--answers", "a.txt", "--since", "2026-01-02", "--max-prs=5", "--json"}, now)
+	if !ok || !f.Full() || !f.Write || !f.Push || !f.PR || !f.Hooks || f.Appetite != 5000 || f.Agent != "x" ||
+		f.Answers != "a.txt" || !f.SinceSet || f.MaxPRs != 5 || !f.JSON {
+		t.Errorf("every flag: %+v %v", f, ok)
+	}
+	f, ok = ParseFlags([]string{"--recover", "--only", "a", "--write", "--push", "--pr", "--hooks"}, now)
+	if !ok || f.Full() || !f.Recover || !f.Write || !f.Push || !f.PR || !f.Hooks {
+		t.Errorf("recover --write: %+v %v", f, ok)
+	}
+}
+
+func TestParseFlagsFullRejections(t *testing.T) {
+	for _, args := range [][]string{
+		{"--push"},
+		{"--write", "--pr"},
+		{"--pr"},
+		{"--hooks"},
+		{"--write", "--propose"},
+		{"--write", "--gather"},
+		{"--answers", "a.txt", "--recover"},
+		{"--answers", "a.txt", "--gather"},
+		{"--answers"},
+		{"--answers="},
+		{"--write=1"},
+		{"--recover", "--push"},
+		{"--recover", "--hooks"},
 	} {
 		if _, ok := ParseFlags(args, now); ok {
 			t.Errorf("%v accepted", args)

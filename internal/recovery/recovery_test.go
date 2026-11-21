@@ -749,3 +749,42 @@ func TestGlossaryProblemOutsideAnyTermDropsTheTermsAndKeepsTheFile(t *testing.T)
 		t.Fatalf("outcome %+v", o)
 	}
 }
+
+// realPuts keeps what a run reads from the fake and stores into a real store.
+type realPuts struct {
+	*fakeStore
+	real *store.Store
+}
+
+func (r realPuts) PutRecovered(rs []store.Recovered) error { return r.real.PutRecovered(rs) }
+
+func TestRerunKeepsEarlierRecoveredFile(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	h := newHarness(t, map[string][]step{
+		"export": {{text: reply(good("export-deleted"), "")}, {err: errors.New("agent down")}},
+	})
+	h.session.Only = []string{"export"}
+	rs := realPuts{fakeStore: h.store, real: st}
+	if rep, err := Run(context.Background(), rs, h.session); err != nil || statuses(rep)[0] != "export: recovered" {
+		t.Fatalf("first run %v, %v", statuses(rep), err)
+	}
+	rep, err := Run(context.Background(), rs, h.session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := statuses(rep); got[0] != "export: failed" {
+		t.Fatalf("second run %v; want failed", got)
+	}
+	rows, err := st.Recovered()
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows %+v, %v", rows, err)
+	}
+	t.Logf("second run reported %v; stored row status=%q file=%q", statuses(rep), rows[0].Status, rows[0].File)
+	if rows[0].Status != StatusRecovered || rows[0].File == "" {
+		t.Errorf("stored row %+v; want the first recovered file kept", rows[0])
+	}
+}

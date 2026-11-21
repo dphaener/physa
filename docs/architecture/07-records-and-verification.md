@@ -73,6 +73,8 @@ Only F1 and the map. Both are deterministic and rerun from the repo:
 - every change names exactly one capability, and the slug exists in the map as the change leaves it (a change that adds a capability names it);
 - the map passes `physa check map`.
 
+Changes made before the map existed are exempt from the first rule: a change whose parent on the default branch holds no `.physa/product.md`, the root change included, needs no `Capability:` trailer and is not reported. Init's commit that adds the map is one of them (02 §2.6). Decided by the owner (2026-11-21).
+
 `physa check changes` runs both on a range. It runs as an engine gate before a PR, and by hand (or in a team's own CI) for work outside the engine. It reports; it blocks only where a team's policy says so (02 Q5).
 
 Everything else is recorded (F2–F8) or learning's judgment (F9).

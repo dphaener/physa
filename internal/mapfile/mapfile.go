@@ -131,7 +131,9 @@ func ValidSlug(s string) bool { return slugRe.MatchString(s) }
 
 // Read reads the map in root/.physa. The error is for I/O failure, such as a
 // missing .physa directory; every fault in the format is a Problem, and
-// reading goes on past each one.
+// reading goes on past each one. A missing capabilities directory means the
+// map has no capabilities yet and is not a Problem; a capabilities path that
+// is not a directory is one.
 func Read(root string) (*Map, []Problem, error) {
 	info, err := os.Stat(path.Join(root, dir))
 	if err != nil {
@@ -187,11 +189,27 @@ func (r *reader) content(p string) ([]string, int, bool) {
 	return strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n"), n, true
 }
 
+// capabilities reads the files in .physa/capabilities. A missing directory is
+// no capabilities, not a problem: git keeps no empty directories, and a new
+// codebase's map has none yet. A path that exists but is not a directory is a
+// problem.
 func (r *reader) capabilities(m *Map) {
 	cdir := dir + "/capabilities"
+	info, err := os.Stat(path.Join(r.root, cdir))
+	if errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	if err != nil {
+		r.add(cdir, 0, "cannot read directory: %v", err)
+		return
+	}
+	if !info.IsDir() {
+		r.add(cdir, 0, "not a directory: want capabilities as a directory of <name>.md files")
+		return
+	}
 	ents, err := os.ReadDir(path.Join(r.root, cdir))
 	if err != nil {
-		r.add(cdir, 0, "missing directory")
+		r.add(cdir, 0, "cannot read directory: %v", err)
 		return
 	}
 	for _, e := range ents {

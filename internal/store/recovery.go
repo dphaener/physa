@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"time"
 )
 
@@ -23,10 +24,15 @@ type Recovered struct {
 	Input       int64
 	CachedInput int64
 	Output      int64
+	// KeepEarlier, when true, keeps an earlier stored row of the capability
+	// that holds a recovered file (a non-empty File) and does not store this
+	// row: a re-run that ends not yet recovered or failed loses nothing.
+	KeepEarlier bool
 }
 
 // PutRecovered stores rs in one transaction: a capability already stored is
-// replaced, every other stored capability is kept.
+// replaced, every other stored capability is kept. A row with KeepEarlier
+// leaves an earlier row that holds a file as it is.
 func (s *Store) PutRecovered(rs []Recovered) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -37,6 +43,16 @@ func (s *Store) PutRecovered(rs []Recovered) error {
 		details := r.Details
 		if details == nil {
 			details = []byte("{}")
+		}
+		if r.KeepEarlier {
+			var file string
+			err := tx.QueryRow(`SELECT file FROM init_recovery WHERE capability = ?`, r.Capability).Scan(&file)
+			if err != nil && err != sql.ErrNoRows {
+				return err
+			}
+			if err == nil && file != "" {
+				continue
+			}
 		}
 		if _, err := tx.Exec(`INSERT OR REPLACE INTO init_recovery (capability, proposal_at, at, status, file, terms, details, session_id, model, attempts, appetite, input, cached_input, output) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			r.Capability, ts(r.ProposalAt), ts(r.At), r.Status, r.File, r.Terms, string(details), r.SessionID, r.Model, r.Attempts, r.Appetite, r.Input, r.CachedInput, r.Output); err != nil {

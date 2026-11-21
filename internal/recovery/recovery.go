@@ -226,7 +226,7 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 			return rep, err
 		}
 		rows[i] = store.Recovered{
-			Capability: o.Name, ProposalAt: p.At, At: now().UTC(), Status: o.Status, File: o.File, Terms: o.Terms,
+			Capability: o.Name, ProposalAt: p.At, At: now().UTC(), Status: o.Status, File: o.File, Terms: o.Terms, KeepEarlier: o.Status != StatusRecovered,
 			Details: details, SessionID: o.SessionID, Model: o.Model, Attempts: o.Attempts, Appetite: appetite,
 			Input: o.Tokens.Input, CachedInput: o.Tokens.CachedInput, Output: o.Tokens.Output,
 		}

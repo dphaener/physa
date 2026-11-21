@@ -64,11 +64,10 @@ func (h *hooks) SetHooksPath(p string) error {
 // that every working copy of the repo shares. git rev-parse --git-path hooks
 // would follow core.hooksPath instead.
 func (h *hooks) ActiveHooks() ([]string, error) {
-	out, stderr, err := h.git("rev-parse", "--path-format=absolute", "--git-common-dir")
+	dir, err := h.HooksDir()
 	if err != nil {
-		return nil, gitError(err, stderr)
+		return nil, err
 	}
-	dir := filepath.Join(strings.TrimSpace(out), "hooks")
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return []string{}, nil
@@ -89,4 +88,13 @@ func (h *hooks) ActiveHooks() ([]string, error) {
 	}
 	sort.Strings(names)
 	return names, nil
+}
+
+// HooksDir is the hooks directory under git's common dir.
+func (h *hooks) HooksDir() (string, error) {
+	out, stderr, err := h.git("rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", gitError(err, stderr)
+	}
+	return filepath.Join(strings.TrimSpace(out), "hooks"), nil
 }

@@ -16,7 +16,7 @@ From the vision and 01:
 
 ## 2. `physa init`
 
-> **Brought up to date on 2026-11-21, decided by Claude as arbiter for the owner to review.** Gather (§2.2), propose (§2.3), recover (§2.4) and check (§2.5) are built as `physa init --gather`, `--propose` and `--recover`; the PR (§2.6) is not yet built. §2.6 adds the hook, and §2.8 drops the workflow, which 07 removed.
+> **Brought up to date on 2026-11-21, decided by Claude as arbiter for the owner to review.** Gather (§2.2), propose (§2.3), recover (§2.4) and check (§2.5) are built as `physa init --gather`, `--propose` and `--recover`, and a bare `physa init` runs them in order under one appetite (§2.7). `--write`, `--push`, `--pr` and `--hooks` put the map on `physa/init` and open its PR (§2.6), and `--answers` gives a new codebase's answers (§2.8). §2.6 holds the hook, and §2.8 drops the workflow, which 07 removed.
 
 ### 2.1 Phases
 
@@ -72,7 +72,7 @@ Settled as built with `physa init --recover` (decided by Claude as arbiter for t
 - Its reply is the capability file and its glossary terms. Physa writes the front matter, with the proposal's promise on one line, and adds a title when the session wrote none. Questions Physa records carry "raised by physa", the date and their anchors.
 - A decision whose person or date the sources do not show becomes a question.
 - At most three sessions run at once. Each has its session id assigned before it starts, so a retry resumes the same session (§2.5).
-- The store keeps each recovered file and its terms until the `physa/init` PR (4d) writes them to the repo. A new gather or proposal clears them.
+- The store keeps each recovered file and its terms until `physa init --write` writes them to the repo. A new gather or proposal clears them.
 
 ### 2.5 Check (deterministic)
 
@@ -95,9 +95,23 @@ Init commits to a branch `physa/init` and opens a PR (Q3) containing exactly:
 | `.physa/README.md`, `product.md`, `glossary.md`, `capabilities/*.md` | the map |
 | 2–3 lines in `AGENTS.md`, between markers | the pointer (01 §7) |
 
-Init also installs the `Session:` hook, which `physa map hooks` does in a repo that ships one. Init takes that over (08 §5). The hook is local git config (`core.hooksPath`), so it is not part of the PR.
+With `--hooks`, init installs the `Session:` hook after its commit and before its PR, the way `physa map hooks` does (01 §8, 08 §5). In a repo that ships no hook, that is `.git/hooks/prepare-commit-msg`, written when `core.hooksPath` is unset and no such hook exists, with `core.hooksPath` left alone so every hook already there keeps running. Otherwise init refuses and says how to add the hook by hand. The branch is kept and the PR still opens, its body naming the refusal, and the run exits 2. The hook is local, so it is not part of the PR.
 
 The PR description summarises: capabilities proposed, entries recovered with their sources, questions raised, entries dropped, and the tokens spent. The person edits, deletes or merges it like any PR.
+
+Settled as built with `physa init --write` (decided by Claude as arbiter for the owner to review):
+
+- The owner's answers (2026-11-21): changes made before the map are exempt from the change check (07 §5), so init's commit carries no `Capability:` trailer. A bare `physa init` starts fresh, replacing the stored gather and proposal. `physa init --recover --write` continues from what is stored, recovering what is not yet done and writing the branch.
+- The owner's answer on the hook: it is written to `.git/hooks` without touching `core.hooksPath`, else refused. No hook that is already there is ever disabled.
+
+Calls made, for the owner to check:
+
+- Propose gets half the appetite, at most its default (§2.7); recovery gets the rest, less what proposing used.
+- A capability not yet recovered, or failed, is written with its promise only, and the PR body says which.
+- A repo whose default branch already holds a map is refused, and `physa map learn` keeps it learning.
+- An existing `physa/init` is replaced by one fresh commit. The push is leased to the fetched remote branch: a lost lease stops the run without a retry, and the local branch moves only after the push succeeds.
+- The commit carries one `Session:` trailer for each session Physa started (the proposal and each recovery).
+- A refused hook exits 2 with the branch kept (above).
 
 ### 2.7 Appetite for init
 
@@ -110,9 +124,18 @@ Settled as built with `physa init --recover`:
 - A session that reports more tokens than its reservation is stopped by the circuit breaker.
 - When the appetite ends a session, a capability with a checked answer keeps it, with its entries settled by dropping. A capability with no checked answer is "not yet recovered", as are those not started. A capability whose retries run out with no readable answer fails, with the read problem.
 
+Settled as built with a bare `physa init` (decided by Claude as arbiter for the owner to review): the whole run spends one appetite, given by `--appetite` or the default of 300,000 tokens. Before any token is spent, the run prints its plan as one line, for example `physa init: appetite 300000 tokens: gather 0 (no agent); propose up to 150000 (its prompt about P plus R for the reply); recover the rest, about X, shared by its sessions; check and write 0.` The figures are estimates: the propose prompt is fitted as §2.3 describes, and the reply reserve is propose's own.
+
 ### 2.8 A new codebase
 
-With nothing to recover, init asks the person a short round of questions (numbered, each with a suggested answer) to write the product's promise and first terms, creates `product.md` and `glossary.md`, and adds the pointer and the hook. Capabilities arrive with the first PRs.
+With nothing to recover, init asks the person a short round of questions (numbered, each with a suggested answer) to write the product's promise and first terms, creates `product.md` and `glossary.md`, and adds the pointer and, with `--hooks`, the hook. Capabilities arrive with the first PRs.
+
+Built as the new-codebase path of a bare `physa init` (decided by Claude as arbiter for the owner to review):
+
+- **Detection**: a gather is of a new codebase when it has no agent doc, contributing guide or decision record (a README alone does not count, since generators write one), no PRs, and at most five changes. Any other gather runs the phases instead.
+- **The three questions**: (1) what the product is called, suggested from the repo's directory name; (2) what it promises its users in one sentence, suggested from the README's first sentence, else "<Name> lets its users …"; (3) its first terms, each written `Term: meaning` and separated by `;`, suggested as none.
+- **`--answers FILE`**: one line per question, `1: <name>`, `2: <promise>` and `3: <terms>`. A missing number takes its suggestion. A name is one non-empty line, a promise is not empty and holds no `…`, and a term has the form `Name: meaning`. `none` or `none for now` means no terms. A line that fails names its number.
+- **Terminal only**: without `--answers`, the questions are asked on a terminal, on stderr so that `--json` output stays one document. An empty line or `yes` accepts the suggestion, and a bad answer is asked again at most twice before the run fails. Without a terminal and without `--answers`, the run exits 2 and names `--answers`. An answers file is read even on a terminal.
 
 ## 3. Around every PR
 

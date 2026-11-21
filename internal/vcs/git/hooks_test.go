@@ -277,3 +277,20 @@ func TestActiveHooks(t *testing.T) {
 		t.Errorf("no hooks dir: ActiveHooks = %v, %v", got, err)
 	}
 }
+
+func TestHooksDir(t *testing.T) {
+	isolate(t)
+	dir := t.TempDir()
+	run(t, dir, "init", "-q", "-b", "main")
+	h, err := OpenHooks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run(t, dir, "config", "--local", "core.hooksPath", "elsewhere")
+	got, err := h.HooksDir()
+	want, _ := filepath.EvalSymlinks(filepath.Join(dir, ".git", "hooks"))
+	gotReal, _ := filepath.EvalSymlinks(got)
+	if err != nil || gotReal != want {
+		t.Errorf("HooksDir = %q, %v, want %q whatever core.hooksPath says", got, err, want)
+	}
+}

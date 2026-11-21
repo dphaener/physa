@@ -184,14 +184,6 @@ func TestGatherReplaces(t *testing.T) {
 	}
 }
 
-func TestBareSaysWhatIsBuilt(t *testing.T) {
-	newRepo(t)
-	code, out, errOut := runInit(testEnv(t, nil, nil))
-	if code != 2 || out != "" || !strings.Contains(errOut, "physa init: name a phase: --gather, --propose or --recover") {
-		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
-	}
-}
-
 func TestBadSinceIsBadUsage(t *testing.T) {
 	newRepo(t)
 	code, _, _ := runInit(testEnv(t, nil, nil), "--gather", "--since", "yesterday")

@@ -85,3 +85,35 @@ func TestRecoveredEmptyStore(t *testing.T) {
 		t.Errorf("Recovered = %d rows, %v; want none", len(got), err)
 	}
 }
+
+func TestRecoveredKeepEarlierKeepsARecoveredFile(t *testing.T) {
+	s, _ := open(t)
+	first := sampleRecovered("alpha")
+	if err := s.PutRecovered([]Recovered{first}); err != nil {
+		t.Fatal(err)
+	}
+	later := Recovered{Capability: "alpha", ProposalAt: first.ProposalAt, At: first.At.Add(time.Hour), Status: "not yet recovered", KeepEarlier: true}
+	fresh := Recovered{Capability: "beta", ProposalAt: first.ProposalAt, At: first.At, Status: "not yet recovered", KeepEarlier: true}
+	if err := s.PutRecovered([]Recovered{later, fresh}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Recovered()
+	if err != nil || len(got) != 2 {
+		t.Fatalf("Recovered = %+v, %v", got, err)
+	}
+	if got[0].Status != "recovered" || got[0].File != first.File {
+		t.Errorf("alpha = %+v; want the earlier recovered row", got[0])
+	}
+	if got[1].Capability != "beta" || got[1].Status != "not yet recovered" {
+		t.Errorf("beta = %+v; want stored, since nothing earlier holds a file", got[1])
+	}
+	// Without KeepEarlier the row replaces the earlier one.
+	later.KeepEarlier = false
+	if err := s.PutRecovered([]Recovered{later}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.Recovered()
+	if got[0].Status != "not yet recovered" || got[0].File != "" {
+		t.Errorf("alpha = %+v; want replaced", got[0])
+	}
+}

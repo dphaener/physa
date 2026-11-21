@@ -1,0 +1,41 @@
+#!/bin/sh
+# Stamps a change with the session that made it. When Claude Code makes a
+# commit, its CLAUDE_CODE_SESSION_ID joins the message's final trailer block
+# as "Session: <id>", once, so learning can join the change to that session's
+# log (design 07 section 4.1). A person's own commit, made outside Claude
+# Code, carries none. The agent never writes the trailer; this hook does.
+#
+# It stamps nothing for a merge or squash message, or while a rebase or
+# cherry-pick is in progress: those carry someone else's work. A revert is
+# stamped, since the session made it. An empty message is left empty, so the
+# commit still aborts. An amend from another session adds that session too,
+# since both worked on the change.
+#
+# Arguments, as git passes them: $1 the message file, $2 its source.
+
+id=${CLAUDE_CODE_SESSION_ID-}
+case $id in
+'' | *[!A-Za-z0-9-]*) exit 0 ;;
+esac
+
+case ${2-} in
+merge | squash) exit 0 ;;
+esac
+
+if git rev-parse -q --verify CHERRY_PICK_HEAD >/dev/null 2>&1; then
+	exit 0
+fi
+for state in rebase-merge rebase-apply; do
+	path=$(git rev-parse --git-path "$state" 2>/dev/null) || exit 0
+	if [ -d "$path" ]; then
+		exit 0
+	fi
+done
+
+# The message is empty when every line before the scissors line, if any, is
+# blank or a comment.
+if ! sed '/^# -\{24\} >8 -\{24\}$/,$d' "$1" | grep -v -e '^#' -e '^[[:space:]]*$' >/dev/null; then
+	exit 0
+fi
+
+exec git interpret-trailers --in-place --no-divider --if-exists addIfDifferent --trailer "Session: $id" "$1"

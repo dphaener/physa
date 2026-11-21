@@ -53,6 +53,9 @@ func addCapability(t *testing.T, dir, slug, message string) {
 	if err := os.WriteFile(p, []byte("---\npromise: x\n---\n# "+slug+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, ".physa", "product.md"), []byte("# Product\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	run(t, dir, "add", ".")
 	run(t, dir, "commit", "-q", "-m", message)
 }
@@ -281,5 +284,28 @@ func TestTrailerBlock(t *testing.T) {
 				t.Errorf("got %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// A change made before the map serves no capability yet: no finding for a
+// change whose parent leaves no map, the root included, nor for the change
+// that adds the map. The first change after the map needs its trailer.
+func TestCheckExemptsChangesBeforeTheMap(t *testing.T) {
+	r, dir := newRepo(t)
+	commit(t, dir, "root")
+	commit(t, dir, "second")
+	addCapability(t, dir, "map", "chore: add the map")
+	commit(t, dir, "after")
+	got, findings := kinds(t, r, "HEAD~3..HEAD")
+	want := []fk{{"after", KindMissing, ""}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if findings[0].Message != "no Capability trailer" {
+		t.Errorf("message: %q", findings[0].Message)
+	}
+	all, _ := kinds(t, r, "HEAD")
+	if !reflect.DeepEqual(all, want) {
+		t.Errorf("whole history with a root change: got %v, want %v", all, want)
 	}
 }

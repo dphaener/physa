@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -91,11 +93,37 @@ func TestInitGatherJSON(t *testing.T) {
 	}
 }
 
-func TestInitBareSaysWhatIsBuilt(t *testing.T) {
+func TestInitBareNewCodebaseReadsAnswers(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_AUTHOR_NAME", "t")
+	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "t")
+	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
+	dir := filepath.Join(t.TempDir(), "lathe")
+	write(t, dir, "README.md", "# Lathe\n")
+	gitIn(t, dir, "init", "-q")
+	gitIn(t, dir, "add", ".")
+	gitIn(t, dir, "commit", "-q", "-m", "base")
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "more")
+	answers := filepath.Join(t.TempDir(), "answers.txt")
+	write(t, filepath.Dir(answers), "answers.txt", "2: Lathe turns sketches into cut lists.\n")
+	useRepoStore(t, dir)
+	useForge(t, mergedFake{})
+	f := &fakeAgent{}
+	useAgent(t, "claude", f)
+	code, out, errOut := runInit("--answers", answers)
+	if code != 0 || f.starts != 0 || !strings.Contains(out, "A new codebase") ||
+		!strings.Contains(out, "Lathe, promising: Lathe turns sketches into cut lists.") {
+		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
+	}
+}
+
+func TestInitPushWithoutWriteIsBadUsage(t *testing.T) {
 	t.Chdir(trailersRepo(t))
-	code, out, errOut := runInit()
-	if code != 2 || out != "" || !strings.Contains(errOut, "physa init: name a phase: --gather, --propose or --recover") {
-		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
+	code, _, errOut := runInit("--push")
+	if code != 2 || !strings.HasPrefix(errOut, "usage: physa init") {
+		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
@@ -109,7 +137,7 @@ func TestInitBadSinceIsBadUsage(t *testing.T) {
 
 func TestInitHelp(t *testing.T) {
 	code, out, errOut := runInit("--help")
-	if code != 0 || errOut != "" || !strings.HasPrefix(out, "usage: physa init --gather") {
+	if code != 0 || errOut != "" || !strings.HasPrefix(out, "usage: physa init [--write") || !strings.Contains(out, "physa init --gather") {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }
@@ -146,5 +174,24 @@ func TestInitProposeNoGather(t *testing.T) {
 	if code != 2 || out != "" || f.starts != 0 ||
 		!strings.Contains(errOut, "physa init: nothing gathered yet; run physa init --gather first") {
 		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
+	}
+}
+
+func TestStdinIsTerminalNotForNullOrFile(t *testing.T) {
+	old := os.Stdin
+	t.Cleanup(func() { os.Stdin = old })
+	for _, path := range []string{os.DevNull, filepath.Join(t.TempDir(), "in")} {
+		if path != os.DevNull {
+			write(t, filepath.Dir(path), "in", "answer\n")
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		os.Stdin = f
+		if stdinIsTerminal() {
+			t.Errorf("%s reads as a terminal", path)
+		}
 	}
 }

@@ -139,13 +139,13 @@ Settled with the owner on 2026-11-20 (`grouped-cli`): "Rather than having 100 co
 3. A bare group does its most common job.
 4. One way to do each thing, with no aliases.
 
-The full planned tree. `check`, `map`, `physa init --gather`, `physa init --propose` and `physa init --recover` are built today; everything else is planned.
+The full planned tree. `check`, `map` and `physa init`, with its gather, propose and recover phases, are built today; everything else is planned.
 
-- `physa init` (02), its gather, propose, recover and check phases built (`--gather`, `--propose`, `--recover`); the PR on `physa/init` planned.
+- `physa init` (02), built: a bare run gathers, proposes, recovers and checks under one appetite; `--write` commits the map to `physa/init`, `--push` pushes it, `--pr` opens or refreshes its PR, `--hooks` installs the hook, and `--answers` gives a new codebase's answers. Phases alone: `--gather`, `--propose`, `--recover`. A map may have no `capabilities/` directory yet, as a new codebase's map has none (02 §2.8).
 - `physa check [map | changes [range]]` (07 §5), built. Bare `check` runs the map check and, when a range is given or `origin/main..HEAD` resolves, the change check on it.
 - `physa map [index | slice | changes | records | learn | hooks]` (01, 07 §4.1), built. Bare `map` prints the index.
 - `physa map learn` (08), built (signals, drafting and the physa/learn branch with --write, --push and --pr); it also reads session logs (08 §5).
-- `physa map hooks` (08 §5), built: points `core.hooksPath` at the hook in the repo's `tools/hooks`, so commits carry `Session:`. Today it works only in a repo that ships one, as Physa does; `physa init` will install the hook in any repo later.
+- `physa map hooks` (08 §5), built, in any repo: a repo that ships `tools/hooks/prepare-commit-msg` points `core.hooksPath` at `tools/hooks`, as Physa does. Any other repo gets Physa's embedded hook written to `.git/hooks/prepare-commit-msg` when `core.hooksPath` is unset and no such hook exists, leaving `core.hooksPath` alone; otherwise it refuses with exit 2 and says how to add the hook by hand. Either way commits carry `Session:`.
 - `physa sync` (07 §7), planned, after the engine.
 - `physa engine start|status|stop` (03), planned.
 - `physa run <bet>` and `physa watch` (03 §7.5), planned, top-level like `check`.

@@ -133,7 +133,10 @@ func splitSlugs(value string) []string {
 	return slugs
 }
 
-// Check reports the trailer findings of commits. A slug is known when its
+// Check reports the trailer findings of commits. A change made before the
+// map serves no capability yet, so a change whose parent leaves no map (no
+// .physa/product.md, or no parent at all) gets no finding, and that covers the
+// change that adds the map. A slug is known when its
 // file is in the map as that commit leaves it, so a commit that adds a
 // capability may name it, and a slug only a later commit adds is unknown.
 // Findings follow commit order; for each commit, missing or multiple come
@@ -142,6 +145,13 @@ func splitSlugs(value string) []string {
 func Check(repo vcs.Repo, commits []Commit) ([]Finding, error) {
 	findings := []Finding{}
 	for _, c := range commits {
+		before, err := beforeTheMap(repo, c.Hash)
+		if err != nil {
+			return nil, err
+		}
+		if before {
+			continue
+		}
 		add := func(kind, slug, format string, args ...any) {
 			findings = append(findings, Finding{Commit: c.Short, Kind: kind, Slug: slug, Message: fmt.Sprintf(format, args...)})
 		}
@@ -165,6 +175,32 @@ func Check(repo vcs.Repo, commits []Commit) ([]Finding, error) {
 		}
 	}
 	return findings, nil
+}
+
+// productFile is the map's one required file; a change whose parent lacks it
+// was made before the map.
+const productFile = "product.md"
+
+// beforeTheMap reports whether the parent of change id leaves no map. A root
+// change has no parent, so it is before the map.
+func beforeTheMap(repo vcs.Repo, id string) (bool, error) {
+	parent, ok := repo.Resolve(id + "^")
+	if !ok {
+		if _, found := repo.Resolve(id); found {
+			return true, nil
+		}
+		parent = id // not a change: list its files for the adapter's error
+	}
+	files, err := repo.Files(parent, path.Dir(CapabilitiesDir))
+	if err != nil {
+		return false, fmt.Errorf("cannot list the map at %s: %w", id, err)
+	}
+	for _, f := range files {
+		if path.Base(f) == productFile {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // slugsAt returns the capability slugs whose files change id leaves in the

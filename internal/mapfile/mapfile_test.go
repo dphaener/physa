@@ -149,8 +149,51 @@ func TestMissingFiles(t *testing.T) {
 	if m.Product != nil || m.HasReadme {
 		t.Errorf("map: %+v", m)
 	}
-	for _, p := range []string{"product.md", "glossary.md", "README.md", "capabilities"} {
+	for _, p := range []string{"product.md", "glossary.md", "README.md"} {
 		expect(t, ps, ".physa/"+p, 0, "missing")
+	}
+	if has(ps, ".physa/capabilities", 0, "missing") {
+		t.Errorf("a missing capabilities directory is not a problem: %v", ps)
+	}
+}
+
+func TestNoCapabilitiesDir(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".physa")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{
+		"product.md":  "---\npromise: p\n---\n# T\n",
+		"glossary.md": "# Glossary\n\n**Map**: a thing.\n",
+		"README.md":   "hi\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m, ps := mustRead(t, root)
+	if len(ps) != 0 {
+		t.Fatalf("want no problems, got %v", ps)
+	}
+	if len(m.Capabilities) != 0 {
+		t.Errorf("capabilities = %d, want 0", len(m.Capabilities))
+	}
+}
+
+func TestCapabilitiesNotADirectory(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".physa")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "capabilities"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, ps := mustRead(t, root)
+	expect(t, ps, ".physa/capabilities", 0, "not a directory")
+	if len(m.Capabilities) != 0 {
+		t.Errorf("capabilities = %d, want 0", len(m.Capabilities))
 	}
 }
 

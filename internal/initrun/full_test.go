@@ -457,3 +457,77 @@ func TestFullBadCombinationsAreBadUsage(t *testing.T) {
 		}
 	}
 }
+
+// mappedRepo is remoteRepo with a map committed to its default branch.
+func mappedRepo(t *testing.T) {
+	t.Helper()
+	dir, _ := remoteRepo(t)
+	write(t, dir, ".physa/product.md", "---\npromise: P.\n---\n\n# P\n")
+	gitIn(t, dir, "add", ".physa/product.md")
+	gitIn(t, dir, "commit", "-q", "-m", "docs(map): Add a map")
+	gitIn(t, dir, "push", "-q", "origin", "main")
+}
+
+func TestMappedRepoIsRefusedBeforeAnythingIsSpent(t *testing.T) {
+	for _, args := range [][]string{nil, {"--propose"}, {"--recover"}} {
+		mappedRepo(t)
+		a := newRoutedAgent()
+		env := fullEnv(t, onePR(), a)
+		code, out, errOut := runInit(env, args...)
+		if code != 2 || out != "" || !strings.Contains(errOut, "the repo already has a map") || !strings.Contains(errOut, "physa map learn") {
+			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errOut)
+		}
+		if len(a.started) != 0 {
+			t.Errorf("%v: %d agent sessions ran", args, len(a.started))
+		}
+		st, err := env.Store(".")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok, _ := st.Gathered(); ok {
+			t.Errorf("%v: a gather was stored", args)
+		}
+		st.Close()
+	}
+}
+
+func TestMappedRepoStillGathers(t *testing.T) {
+	mappedRepo(t)
+	env := fullEnv(t, onePR(), newRoutedAgent())
+	if code, out, errOut := runInit(env, "--gather"); code != 0 || !strings.Contains(out, "Gathered into") {
+		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	storedGather(t, env)
+}
+
+// trunkRepo is newRepo on a branch named trunk with no remote, so no default
+// branch can be found.
+func trunkRepo(t *testing.T) string {
+	t.Helper()
+	dir := newRepo(t)
+	gitIn(t, dir, "branch", "-m", "trunk")
+	return dir
+}
+
+func TestNoDefaultBranchSkipsTheEarlyCheck(t *testing.T) {
+	trunkRepo(t)
+	code, _, errOut := runInit(testEnv(t, nil, nil), "--propose")
+	if code != 2 || strings.Contains(errOut, "already has a map") || !strings.Contains(errOut, "nothing gathered yet") {
+		t.Errorf("code %d, stderr %q", code, errOut)
+	}
+}
+
+func TestNoDefaultBranchRefusesAMapInTheWorkingTree(t *testing.T) {
+	dir := trunkRepo(t)
+	write(t, dir, ".physa/product.md", "---\npromise: P.\n---\n\n# P\n")
+	a := newRoutedAgent()
+	for _, args := range [][]string{nil, {"--propose"}, {"--recover"}} {
+		code, out, errOut := runInit(testEnv(t, nil, a), args...)
+		if code != 2 || out != "" || !strings.Contains(errOut, "(.physa/product.md in the working tree)") || !strings.Contains(errOut, "physa map learn") {
+			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errOut)
+		}
+	}
+	if len(a.started) != 0 {
+		t.Errorf("%d agent sessions ran", len(a.started))
+	}
+}

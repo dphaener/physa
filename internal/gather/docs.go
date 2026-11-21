@@ -18,6 +18,7 @@ const (
 	KindContributing = "contributing"
 	KindReadme       = "readme"
 	KindDecisions    = "decisions"
+	KindOverview     = "overview"
 )
 
 // MaxDocBytes is the largest doc gathered; a larger file is skipped.
@@ -27,8 +28,10 @@ var ignoredDirs = map[string]bool{"vendor": true, "node_modules": true, "tmp": t
 
 var numbered = regexp.MustCompile(`^[0-9]+[-_]`)
 
-// Docs reads the repo's docs from the working tree under root: agent docs,
-// contributing guides, readmes and decisions, with decision-record folders.
+// Docs reads the repo's docs from the working tree under root: agent docs
+// (including CONTEXT.md), contributing guides, readmes, decisions with
+// decision-record folders, and the plan and overview files (PLAN, ROADMAP,
+// OVERVIEW, ARCHITECTURE, CONTEXT, any case) directly under docs/.
 // Each doc's path is relative to root with forward slashes, sorted. A file
 // over MaxDocBytes is left out and its path returned in skipped.
 func Docs(root string) (docs []store.Doc, skipped []string, err error) {
@@ -55,7 +58,7 @@ func Docs(root string) (docs []store.Doc, skipped []string, err error) {
 		return nil
 	}
 	fixed := []struct{ kind, name string }{
-		{KindAgent, "AGENTS.md"}, {KindAgent, "CLAUDE.md"}, {KindAgent, ".claude/CLAUDE.md"}, {KindAgent, ".cursorrules"},
+		{KindAgent, "AGENTS.md"}, {KindAgent, "CONTEXT.md"}, {KindAgent, "CLAUDE.md"}, {KindAgent, ".claude/CLAUDE.md"}, {KindAgent, ".cursorrules"},
 		{KindContributing, "CONTRIBUTING.md"}, {KindContributing, "CONTRIBUTING"},
 		{KindContributing, "docs/CONTRIBUTING.md"}, {KindContributing, ".github/CONTRIBUTING.md"},
 		{KindReadme, "README.md"}, {KindReadme, "README"}, {KindReadme, "README.rst"}, {KindReadme, "README.txt"},
@@ -67,6 +70,27 @@ func Docs(root string) (docs []store.Doc, skipped []string, err error) {
 	}
 	for _, f := range fixed {
 		if err := add(f.name, f.kind); err != nil {
+			return nil, nil, err
+		}
+	}
+	top, err := os.ReadDir(filepath.Join(root, "docs"))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, nil, err
+	}
+	for _, e := range top {
+		name := e.Name()
+		if e.IsDir() || !strings.EqualFold(path.Ext(name), ".md") {
+			continue
+		}
+		kind := KindOverview
+		switch strings.ToUpper(strings.TrimSuffix(name, path.Ext(name))) {
+		case "CONTEXT":
+			kind = KindAgent
+		case "PLAN", "ROADMAP", "OVERVIEW", "ARCHITECTURE":
+		default:
+			continue
+		}
+		if err := add(path.Join("docs", name), kind); err != nil {
 			return nil, nil, err
 		}
 	}

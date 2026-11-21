@@ -33,10 +33,10 @@ func WriteChanges(w io.Writer, rng string, commits []Commit, findings []Finding,
 		}
 	}
 	if len(findings) == 0 {
-		_, err := fmt.Fprintf(w, "\nphysa map changes: ok (%d commits)\n", len(commits))
+		_, err := fmt.Fprintf(w, "\nphysa map changes: ok (%s)\n", plural(len(commits), "commit", "commits"))
 		return err
 	}
-	if _, err := fmt.Fprintf(w, "\n%d findings:\n", len(findings)); err != nil {
+	if _, err := fmt.Fprintf(w, "\n%s:\n", plural(len(findings), "finding", "findings")); err != nil {
 		return err
 	}
 	for _, f := range findings {
@@ -45,4 +45,12 @@ func WriteChanges(w io.Writer, rng string, commits []Commit, findings []Finding,
 		}
 	}
 	return nil
+}
+
+// plural returns n with its noun in singular or plural form.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }

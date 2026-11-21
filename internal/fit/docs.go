@@ -7,9 +7,9 @@ import (
 	"github.com/dphaener/physa/internal/store"
 )
 
-// kindRank orders docs: agent docs, contributing guides, readmes, decisions,
-// then anything else; within a kind, by path.
-var kindRank = map[string]int{"agent": 0, "contributing": 1, "readme": 2, "decisions": 3}
+// kindRank orders docs: agent docs, contributing guides, readmes, overviews,
+// decisions, then anything else; within a kind, by path.
+var kindRank = map[string]int{"agent": 0, "contributing": 1, "readme": 2, "overview": 3, "decisions": 4}
 
 func rank(kind string) int {
 	if r, ok := kindRank[kind]; ok {

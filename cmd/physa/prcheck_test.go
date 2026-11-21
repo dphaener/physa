@@ -221,7 +221,7 @@ func TestBareCheckWithoutRepositoryChecksTheMap(t *testing.T) {
 	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(t.TempDir()))
 	t.Chdir(tempMap(t, "`r` · from docs/d.md"))
 	code, out, errOut := runCheck(t)
-	if code != 0 || out != "physa check: ok (1 capabilities, 1 entries)\n" || errOut != "" {
+	if code != 0 || out != "physa check: ok (1 capability, 1 entry)\n" || errOut != "" {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }

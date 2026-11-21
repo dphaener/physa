@@ -176,7 +176,7 @@ func TestCheckGoodMap(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, stderr.String())
 	}
-	if got, want := stdout.String(), "physa check map: ok (1 capabilities, 1 entries)\n"; got != want {
+	if got, want := stdout.String(), "physa check map: ok (1 capability, 1 entry)\n"; got != want {
 		t.Errorf("stdout = %q, want %q", got, want)
 	}
 	if stderr.Len() != 0 {
@@ -581,7 +581,7 @@ func TestTrailersText(t *testing.T) {
 func TestTrailersOk(t *testing.T) {
 	t.Chdir(trailersRepo(t))
 	code, out, _ := runTrailers(t, "HEAD~4..HEAD~3", "--strict")
-	if code != 0 || !strings.HasSuffix(out, "\nphysa map changes: ok (1 commits)\n") {
+	if code != 0 || !strings.HasSuffix(out, "\nphysa map changes: ok (1 commit)\n") {
 		t.Errorf("code = %d, stdout = %q, want 0 and ok", code, out)
 	}
 }
@@ -708,5 +708,31 @@ func TestMapHooksWritesEmbeddedHook(t *testing.T) {
 	}
 	if out, _ := exec.Command("git", "-C", dir, "config", "--local", "--get", "core.hooksPath").Output(); len(out) != 0 {
 		t.Errorf("core.hooksPath = %q, want unset", out)
+	}
+}
+
+func TestNoteProblemsSingularAndPlural(t *testing.T) {
+	for _, c := range []struct {
+		n    int
+		want string
+	}{
+		{0, ""},
+		{1, "physa map slice: the map has 1 problem; run physa check map\n"},
+		{2, "physa map slice: the map has 2 problems; run physa check map\n"},
+	} {
+		var b bytes.Buffer
+		noteProblems(&b, "slice", c.n)
+		if b.String() != c.want {
+			t.Errorf("noteProblems(%d) = %q, want %q", c.n, b.String(), c.want)
+		}
+	}
+}
+
+func TestPluralTokensInTheOverBudgetLine(t *testing.T) {
+	if got := plural(1, "token", "tokens"); got != "1 token" {
+		t.Errorf("plural(1) = %q", got)
+	}
+	if got := plural(11, "token", "tokens"); got != "11 tokens" {
+		t.Errorf("plural(11) = %q", got)
 	}
 }

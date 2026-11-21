@@ -119,8 +119,8 @@ func Propose(ctx context.Context, st Store, s Session) (Result, error) {
 		for _, src := range in.Report.Sources {
 			sources += src.Tokens
 		}
-		fmt.Fprintf(s.Progress, "physa init: appetite %d tokens; sources ~%d tokens fitted to ~%d of a %d-token budget; session %s\n",
-			appetite, sources, in.Report.Used, in.Report.Budget, sessionID)
+		fmt.Fprintf(s.Progress, "physa init: appetite %s; sources ~%s fitted to ~%d of a %d-token budget; session %s\n",
+			plural(int(appetite), "token", "tokens"), plural(sources, "token", "tokens"), in.Report.Used, in.Report.Budget, sessionID)
 	}
 	out, err := draft.Run(ctx, a, Prompt(in), appetite, sessionID)
 	res.SessionID, res.Model, res.Tokens = out.SessionID, out.Model, out.Tokens

@@ -47,7 +47,7 @@ func full(o Flags, st *store.Store, root string, p *printer, stderr io.Writer, e
 		return failed(stderr, err)
 	}
 	if res.Stopped {
-		fmt.Fprintf(stderr, "physa init: the circuit breaker stopped proposing at %d tokens; nothing was proposed or written\n", res.Appetite)
+		fmt.Fprintf(stderr, "physa init: the circuit breaker stopped proposing at %s; nothing was proposed or written\n", plural(int(res.Appetite), "token", "tokens"))
 		return 1
 	}
 	p.proposal(res)
@@ -76,8 +76,8 @@ func planLine(g store.Gather, appetite, share int64) (string, error) {
 	prompt := int64(fit.Tokens(mapping.Prompt(fit.Fit(g, budget))))
 	reply := int64(fit.Propose.ReplyReserve)
 	rest := max(appetite-prompt-reply, 0)
-	return fmt.Sprintf("physa init: appetite %d tokens: gather 0 (no agent); propose up to %d (its prompt about %d plus %d for the reply); recover the rest, about %d, shared by its sessions; check and write 0.",
-		appetite, share, prompt, reply, rest), nil
+	return fmt.Sprintf("physa init: appetite %s: gather 0 (no agent); propose up to %d (its prompt about %d plus %d for the reply); recover the rest, about %d, shared by its sessions; check and write 0.",
+		plural(int(appetite), "token", "tokens"), share, prompt, reply, rest), nil
 }
 
 // recoverySession is how recovering runs under appetite: on the

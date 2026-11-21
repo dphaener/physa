@@ -45,7 +45,7 @@ func TestWriteText(t *testing.T) {
 		"Not checked: correction (gh is not installed).\n",
 		"Session logs: 0 read, 0 unavailable.\n",
 		"Not checked: recurring-finding (needs the engine: ",
-		"\nSignals (1 changes):\n  aaaaaaa Revert \"feat: Add f\"\n    revert [revert-message]\n      reverts bbbbbbb\n",
+		"\nSignals (1 change):\n  aaaaaaa Revert \"feat: Add f\"\n    revert [revert-message]\n      reverts bbbbbbb\n",
 		"\nNothing to learn (0):\n",
 		"\nNot fully triaged (1):\n  bbbbbbb feat: Add f (correction and argued-options not checked: gh is not installed)\n",
 	} {
@@ -218,5 +218,25 @@ func TestNoQuotesInOutput(t *testing.T) {
 		if !strings.Contains(js.String(), want) {
 			t.Errorf("json lacks %s: %s", want, js.String())
 		}
+	}
+}
+
+func TestWriteTextWordsCountsOfOneAndMore(t *testing.T) {
+	res := sample()
+	res.Changes, res.RecordsMissing = 1, 1
+	var b bytes.Buffer
+	if err := WriteText(&b, res); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Learning from 1 change (main)", "Slice records: 1 of 1 change had none"} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("text lacks %q:\n%s", want, b.String())
+		}
+	}
+	res.Changes = 2
+	res.Learn = append(res.Learn, res.Learn[0])
+	b.Reset()
+	if err := WriteText(&b, res); err != nil || !strings.Contains(b.String(), "Signals (2 changes):") {
+		t.Errorf("want plural signals heading, err %v:\n%s", err, b.String())
 	}
 }

@@ -97,3 +97,38 @@ func TestDocsEmpty(t *testing.T) {
 		t.Fatalf("%v %v %v", docs, skipped, err)
 	}
 }
+
+func TestDocsContextAndOverviews(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{
+		"CONTEXT.md", "docs/PLAN.md", "docs/roadmap.md", "docs/Architecture.MD", "docs/overview.md", "docs/context.md",
+		"docs/design-brief.md", "docs/sub/PLAN.md", "doc/PLAN.md",
+	} {
+		write(t, root, rel, "body of "+rel)
+	}
+	docs, skipped, err := Docs(root)
+	if err != nil || len(skipped) != 0 {
+		t.Fatal(err, skipped)
+	}
+	got := map[string]string{}
+	for _, d := range docs {
+		got[d.Path] = d.Kind
+	}
+	want := map[string]string{
+		"CONTEXT.md": KindAgent, "docs/context.md": KindAgent,
+		"docs/PLAN.md": KindOverview, "docs/roadmap.md": KindOverview,
+		"docs/Architecture.MD": KindOverview, "docs/overview.md": KindOverview,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v\nwant %v", got, want)
+	}
+}
+
+func TestDocsOverviewOverCapSkipped(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "docs/PLAN.md", strings.Repeat("a", MaxDocBytes+1))
+	docs, skipped, err := Docs(root)
+	if err != nil || len(docs) != 0 || !reflect.DeepEqual(skipped, []string{"docs/PLAN.md"}) {
+		t.Fatalf("%v %v %v", docs, skipped, err)
+	}
+}

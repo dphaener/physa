@@ -33,12 +33,12 @@ type Question struct {
 }
 
 // New reports whether the gather is of a new codebase: no agent doc,
-// contributing guide or decision record (a README alone does not count,
+// contributing guide, overview doc or decision record (a README alone does not count,
 // since generators write one), no PRs, and at most FewChanges changes.
 func New(g store.Gather) bool {
 	for _, d := range g.Docs {
 		switch d.Kind {
-		case gather.KindAgent, gather.KindContributing, gather.KindDecisions:
+		case gather.KindAgent, gather.KindContributing, gather.KindDecisions, gather.KindOverview:
 			return false
 		}
 	}

@@ -23,7 +23,7 @@ const sessionLen = 8
 // and the changes with nothing to learn.
 func WriteText(w io.Writer, r learn.Result) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Learning from %d changes (%s), %d already learned.\n", r.Changes, r.Range, r.AlreadyLearned)
+	fmt.Fprintf(&b, "Learning from %s (%s), %d already learned.\n", plural(r.Changes, "change", "changes"), r.Range, r.AlreadyLearned)
 	fmt.Fprintf(&b, "Learned through %s (was %s)\n", markID(r.Through), markID(r.Watermark))
 	if r.Forge != "" {
 		fmt.Fprintf(&b, "Forge: %s\n", r.Forge)
@@ -34,7 +34,7 @@ func WriteText(w io.Writer, r learn.Result) error {
 	if reason := reasonOf(r, learn.KindServedNotLoaded); reason != "" {
 		fmt.Fprintf(&b, "Slice records: unavailable (%s).\n", reason)
 	} else {
-		fmt.Fprintf(&b, "Slice records: %d of %d changes had none and were not counted.\n", r.RecordsMissing, r.Changes)
+		fmt.Fprintf(&b, "Slice records: %d of %s had none and were not counted.\n", r.RecordsMissing, plural(r.Changes, "change", "changes"))
 	}
 	if reason := reasonOf(r, learn.KindAnsweredAsk); reason != "" {
 		fmt.Fprintf(&b, "Session logs: unavailable (%s).\n", reason)
@@ -48,7 +48,7 @@ func WriteText(w io.Writer, r learn.Result) error {
 		fmt.Fprintf(&b, "Not checked: %s (%s).\n", u.Kind, u.Reason)
 	}
 
-	fmt.Fprintf(&b, "\nSignals (%d changes):\n", len(r.Learn))
+	fmt.Fprintf(&b, "\nSignals (%s):\n", plural(len(r.Learn), "change", "changes"))
 	for _, c := range r.Learn {
 		fmt.Fprintf(&b, "  %s %s\n", c.Short, c.Subject)
 		for _, s := range c.Signals {
@@ -117,4 +117,12 @@ func cut(id string, n int) string {
 		return id[:n]
 	}
 	return id
+}
+
+// plural returns n with its noun in singular or plural form.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }

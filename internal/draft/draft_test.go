@@ -708,7 +708,7 @@ func TestPromptCutsALongSessionMessage(t *testing.T) {
 	if !strings.Contains(p, strings.Repeat("é", 1500)+"\n(cut: 1500 of 4000 characters)") || strings.Contains(p, strings.Repeat("é", 1501)) {
 		t.Error("the message is not cut to 1500 and marked")
 	}
-	if got := b.Cuts(); got != "1 quotes cut to 1500 characters" {
+	if got := b.Cuts(); got != "1 quote cut to 1500 characters" {
 		t.Errorf("cuts = %q", got)
 	}
 }

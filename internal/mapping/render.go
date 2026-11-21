@@ -61,7 +61,7 @@ func WriteText(w io.Writer, r Result) error {
 	var b strings.Builder
 	b.WriteString("# Proposed map\n\n")
 	if r.Stopped {
-		fmt.Fprintf(&b, "Stopped at the appetite (%d tokens) after %s; nothing proposed and nothing stored.\n\n", r.Appetite, r.Tokens)
+		fmt.Fprintf(&b, "Stopped at the appetite (%s) after %s; nothing proposed and nothing stored.\n\n", plural(int(r.Appetite), "token", "tokens"), r.Tokens)
 	} else {
 		p := r.Proposal
 		if p.Product.Promise == "" {
@@ -108,7 +108,7 @@ func WriteText(w io.Writer, r Result) error {
 			b.WriteString("\n")
 		}
 	}
-	fmt.Fprintf(&b, "## Fitting\n\nSources fitted to about %d of a budget of %d tokens.\n\n", r.Fit.Used, r.Fit.Budget)
+	fmt.Fprintf(&b, "## Fitting\n\nSources fitted to about %d of a budget of %s.\n\n", r.Fit.Used, plural(r.Fit.Budget, "token", "tokens"))
 	for _, l := range r.Fit.Lines() {
 		b.WriteString("- " + l + "\n")
 	}
@@ -185,4 +185,12 @@ func WriteJSON(w io.Writer, r Result) error {
 	}
 	_, err = w.Write(append(b, '\n'))
 	return err
+}
+
+// plural returns n with its noun in singular or plural form.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }

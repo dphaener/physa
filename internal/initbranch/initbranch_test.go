@@ -524,3 +524,18 @@ func TestBodySummarisesTheRun(t *testing.T) {
 		}
 	}
 }
+
+func TestHasMap(t *testing.T) {
+	f := newFixture(t, nil)
+	if err := HasMap(f.writer()); err != nil {
+		t.Fatalf("HasMap without a map = %v", err)
+	}
+	writeFile(t, f.dir, ".physa/product.md", "---\npromise: P.\n---\n\n# P\n")
+	gitIn(t, f.dir, "add", ".")
+	gitIn(t, f.dir, "commit", "-q", "-m", "docs(map): Add a map")
+	gitIn(t, f.dir, "push", "-q", "origin", "main")
+	err := HasMap(f.writer())
+	if err == nil || !strings.Contains(err.Error(), "the repo already has a map") || !strings.Contains(err.Error(), "run physa map learn") {
+		t.Fatalf("HasMap with a map = %v, want the refusal", err)
+	}
+}

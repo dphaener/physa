@@ -61,8 +61,8 @@ func Run(ctx context.Context, root string, m *mapfile.Map, res learn.Result, s S
 		if c := batch.Cuts(); c != "" {
 			cuts = "; " + c
 		}
-		fmt.Fprintf(s.Progress, "physa map learn: appetite %d tokens; batch of %d signals on %d changes, %d capabilities%s; session %s\n",
-			appetite, batch.SignalCount(), batch.ChangeCount(), batch.CapabilityCount(), cuts, sessionID)
+		fmt.Fprintf(s.Progress, "physa map learn: appetite %s; batch of %s on %s, %s%s; session %s\n",
+			plural(int(appetite), "token"), plural(batch.SignalCount(), "signal"), plural(batch.ChangeCount(), "change"), plural(batch.CapabilityCount(), "capability"), cuts, sessionID)
 	}
 	out, err := draft.Run(ctx, a, prompt, appetite, sessionID)
 	if err != nil {
@@ -76,7 +76,7 @@ func Run(ctx context.Context, root string, m *mapfile.Map, res learn.Result, s S
 	report.Session = SessionRan
 	proposals, malformed, perr := draft.Parse(out.Text)
 	if perr != nil {
-		report.Dropped = append(report.Dropped, Dropped{Reason: "the session's output: " + perr.Error()})
+		report.Dropped = append(report.Dropped, Dropped{Reason: perr.Error()})
 		return report, nil
 	}
 	kept, dropped := Check(root, batch, proposals, s.Check)

@@ -104,11 +104,12 @@ func testEnv(t *testing.T, f forge.Forge, a adapter.Adapter) Env {
 	t.Helper()
 	sd := t.TempDir()
 	return Env{
-		Store: func(string) (*store.Store, error) { return store.Open(sd) },
-		Repo:  func(dir string) (vcs.Repo, error) { return git.Open(dir) },
-		Forge: func(string) forge.Forge { return f },
-		Agent: func(string) (adapter.Adapter, error) { return a, nil },
-		Now:   time.Now,
+		Store:  func(string) (*store.Store, error) { return store.Open(sd) },
+		Repo:   func(dir string) (vcs.Repo, error) { return git.Open(dir) },
+		Forge:  func(string) forge.Forge { return f },
+		Agent:  func(string) (adapter.Adapter, error) { return a, nil },
+		Now:    time.Now,
+		Writer: git.OpenWriter,
 	}
 }
 

@@ -148,7 +148,7 @@ func slice(dir string, o mapslice.Flags, stdout, stderr io.Writer) int {
 	recordSlice(dir, o.Req, stderr)
 	noteProblems(stderr, "slice", len(problems))
 	if s.OverBudget {
-		fmt.Fprintf(stderr, "physa map slice: over budget: what is never cut is %d tokens, over the %d-token budget\n", s.Used, s.Budget)
+		fmt.Fprintf(stderr, "physa map slice: over budget: what is never cut is %s, over the %d-token budget\n", plural(s.Used, "token", "tokens"), s.Budget)
 	}
 	return 0
 }

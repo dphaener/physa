@@ -99,7 +99,7 @@ func checkMap(dir, name string, stdout, stderr io.Writer) int {
 		}
 		return 1
 	}
-	fmt.Fprintf(stdout, "%s: ok (%d capabilities, %d entries)\n", name, res.Capabilities, res.Entries)
+	fmt.Fprintf(stdout, "%s: ok (%s, %s)\n", name, plural(res.Capabilities, "capability", "capabilities"), plural(res.Entries, "entry", "entries"))
 	return 0
 }
 
@@ -130,4 +130,12 @@ func parseChanges(args []string, allowJSON bool) (changesOptions, bool) {
 		}
 	}
 	return o, true
+}
+
+// plural returns n with its noun in singular or plural form.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }

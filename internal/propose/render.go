@@ -69,7 +69,7 @@ func WriteMarkdown(w io.Writer, r Report) error {
 	case SessionNone:
 		b.WriteString("No signals, so no session started.\n")
 	case SessionStopped:
-		fmt.Fprintf(&b, "Stopped at the appetite (%d tokens) after %s; nothing kept.\n", r.Appetite, r.Tokens)
+		fmt.Fprintf(&b, "Stopped at the appetite (%s) after %s; nothing kept.\n", plural(int(r.Appetite), "token"), r.Tokens)
 	default:
 		fmt.Fprintf(&b, "Tokens: %s of an appetite of %d.\n", r.Tokens, r.Appetite)
 	}
@@ -107,8 +107,11 @@ func filled(p draft.Proposal) draft.Proposal {
 // what names a dropped item for the list: its kind and capability, or that
 // it was not a proposal at all.
 func what(d Dropped) string {
-	if d.Raw != "" && d.Proposal.Kind == "" && d.Proposal.Capability == "" {
-		return "an item that is not a proposal"
+	if d.Proposal.Kind == "" && d.Proposal.Capability == "" {
+		if d.Raw != "" {
+			return "an item that is not a proposal"
+		}
+		return "the session's output, which could not be read"
 	}
 	kind, capability := d.Proposal.Kind, d.Proposal.Capability
 	if kind == "" {

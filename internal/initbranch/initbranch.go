@@ -303,14 +303,8 @@ func read(w vcs.Writer, push bool) (state, error) {
 	if out {
 		return st, fmt.Errorf("%s is checked out in a working copy; switch that copy to another branch first, as Physa never writes a checked-out branch", Branch)
 	}
-	files, err := w.Files(st.def, path.Dir(productPath))
-	if err != nil {
+	if err := HasMap(w); err != nil {
 		return st, err
-	}
-	for _, f := range files {
-		if path.Base(f) == path.Base(productPath) {
-			return st, fmt.Errorf("the repo already has a map (%s on %s); physa map learn keeps it learning", productPath, st.def)
-		}
 	}
 	for _, ref := range w.Branch(Branch) {
 		id, _ := w.Resolve(ref)
@@ -321,6 +315,25 @@ func read(w vcs.Writer, push bool) (state, error) {
 		}
 	}
 	return st, nil
+}
+
+// HasMap returns an error saying how to proceed when the default branch
+// already holds a map (.physa/product.md), and nil when it does not.
+func HasMap(w vcs.Writer) error {
+	def, err := w.DefaultBranch()
+	if err != nil {
+		return err
+	}
+	files, err := w.Files(def, path.Dir(productPath))
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		if path.Base(f) == path.Base(productPath) {
+			return fmt.Errorf("the repo already has a map (%s on %s); init only starts a map, and learning keeps an existing one current: run physa map learn", productPath, def)
+		}
+	}
+	return nil
 }
 
 // inCopy makes a working copy at def and calls fn with it. The copy is

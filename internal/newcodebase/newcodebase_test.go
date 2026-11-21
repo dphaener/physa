@@ -24,6 +24,7 @@ func TestNew(t *testing.T) {
 		{"empty", store.Gather{}, true},
 		{"agent doc", store.Gather{Docs: []store.Doc{{Path: "AGENTS.md", Kind: "agent"}}, Changes: changes(1)}, false},
 		{"contributing", store.Gather{Docs: []store.Doc{{Kind: "contributing"}}}, false},
+		{"overview", store.Gather{Docs: []store.Doc{{Path: "docs/PLAN.md", Kind: "overview"}}}, false},
 		{"decisions", store.Gather{Docs: []store.Doc{{Kind: "decisions"}}}, false},
 		{"6 changes", store.Gather{Docs: []store.Doc{readme}, Changes: changes(6)}, false},
 		{"5 changes", store.Gather{Changes: changes(FewChanges)}, true},

@@ -504,3 +504,22 @@ func TestApplyAllDropsADuplicateSlug(t *testing.T) {
 	}
 	t.Logf("file after:\n%s", raw)
 }
+
+func TestWhatNamesUnreadableOutputPlainly(t *testing.T) {
+	cases := []struct {
+		d    Dropped
+		want string
+	}{
+		{Dropped{Reason: "it has no fenced json block"}, "the session's output, which could not be read"},
+		{Dropped{Raw: "7"}, "an item that is not a proposal"},
+		{Dropped{Proposal: draft.Proposal{Kind: "decision"}}, "decision for no capability"},
+	}
+	for _, c := range cases {
+		if got := what(c.d); got != c.want {
+			t.Errorf("what(%+v) = %q, want %q", c.d, got, c.want)
+		}
+	}
+	if got := plural(1, "token") + " " + plural(2, "token"); got != "1 token 2 tokens" {
+		t.Errorf("plural = %q", got)
+	}
+}

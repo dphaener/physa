@@ -31,7 +31,7 @@ Physa collects sources into the local store. Nothing is written to the repo yet.
 
 | Source | What is kept | How |
 |---|---|---|
-| Existing agent and contributor docs | AGENTS.md, CLAUDE.md, Cursor rules, CONTRIBUTING, README, any decision-record folders | files in the repo |
+| Existing agent and contributor docs | AGENTS.md, CLAUDE.md, CONTEXT.md, Cursor rules, CONTRIBUTING, README, any decision-record folders, and plan and overview files (PLAN, ROADMAP, OVERVIEW, ARCHITECTURE, CONTEXT, any case) directly under `docs/` | files in the repo |
 | Git history | commit messages, trailers, reverts, which files change together | the version-control interface (07 §6) |
 | PRs | titles, bodies, review comments (especially requested changes), linked issues | the forge interface (GitHub through `gh` first) (Q1) |
 
@@ -122,6 +122,7 @@ Settled as built with `physa init --recover`:
 - The default appetite is 300,000 tokens, shared by all of a run's sessions. Input and output both count.
 - Before its first turn a session reserves its prompt plus 12,000 tokens for the reply. Before each retry it reserves what it has used so far, plus the retry's message and another 12,000. A reservation that cannot fit beside what is already spent is refused. One that waits only on other sessions' reservations waits for them to settle.
 - A session that reports more tokens than its reservation is stopped by the circuit breaker.
+- Bare `physa init`, `--propose` and `--recover` refuse a repo whose default branch already holds a map before gathering or running any agent, saying `physa map learn` keeps it current. When no default branch can be found they check the working tree for `.physa/product.md` instead, and `--write` reports the missing default branch as before; `--gather` alone still runs, since it spends no tokens and writes only the store.
 - When the appetite ends a session, a capability with a checked answer keeps it, with its entries settled by dropping. A capability with no checked answer is "not yet recovered", as are those not started. A capability whose retries run out with no readable answer fails, with the read problem.
 
 Settled as built with a bare `physa init` (decided by Claude as arbiter for the owner to review): the whole run spends one appetite, given by `--appetite` or the default of 300,000 tokens. Before any token is spent, the run prints its plan as one line, for example `physa init: appetite 300000 tokens: gather 0 (no agent); propose up to 150000 (its prompt about P plus R for the reply); recover the rest, about X, shared by its sessions; check and write 0.` The figures are estimates: the propose prompt is fitted as §2.3 describes, and the reply reserve is propose's own.

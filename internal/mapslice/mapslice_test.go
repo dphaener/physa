@@ -696,3 +696,29 @@ func TestTermsPhraseStartingWithPunctuation(t *testing.T) {
 		}
 	}
 }
+
+func TestPluralTokensSingularAndPlural(t *testing.T) {
+	for _, c := range []struct {
+		n    int
+		want string
+	}{{0, "0 tokens"}, {1, "1 token"}, {10, "10 tokens"}} {
+		if got := plural(c.n, "token", "tokens"); got != c.want {
+			t.Errorf("plural(%d) = %q, want %q", c.n, got, c.want)
+		}
+	}
+}
+
+func TestBudgetOfOneTokenIsSingular(t *testing.T) {
+	s := build(t, fixture(), Request{Capabilities: []string{"alpha", "beta"}, Budget: 1})
+	out := md(t, s)
+	if want := fmt.Sprintf("Budget: %d of 1 token.\n", s.Used); !strings.Contains(out, want) {
+		t.Errorf("want %q in:\n%s", want, out)
+	}
+	if !s.OverBudget || !strings.Contains(out, "over the 1-token budget.\n") {
+		t.Errorf("want the over-budget line for 1 token:\n%s", out)
+	}
+	s.Used = 1
+	if want := "is 1 token, over the 1-token budget.\n"; !strings.Contains(md(t, s), want) {
+		t.Errorf("want %q for a floor of 1 token", want)
+	}
+}

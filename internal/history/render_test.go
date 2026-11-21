@@ -3,6 +3,7 @@ package history
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -27,7 +28,7 @@ func TestWriteChangesFindings(t *testing.T) {
 	if err := WriteChanges(&b, "r", nil, f, false); err != nil {
 		t.Fatal(err)
 	}
-	if want := "\n1 findings:\nabc1234: no capability\n"; b.String() != want {
+	if want := "\n1 finding:\nabc1234: no capability\n"; b.String() != want {
 		t.Errorf("got %q", b.String())
 	}
 }
@@ -49,5 +50,13 @@ func TestWriteChangesJSON(t *testing.T) {
 func TestSlugListDash(t *testing.T) {
 	if SlugList(nil) != "—" || SlugList([]string{"a", "b"}) != "a, b" {
 		t.Error("SlugList")
+	}
+}
+
+func TestWriteChangesFindingsPlural(t *testing.T) {
+	var b bytes.Buffer
+	f := []Finding{{Commit: "abc1234", Message: "a"}, {Commit: "def5678", Message: "b"}}
+	if err := WriteChanges(&b, "r", nil, f, false); err != nil || !strings.Contains(b.String(), "\n2 findings:\n") {
+		t.Errorf("err %v, got %q", err, b.String())
 	}
 }

@@ -326,8 +326,8 @@ func TestWriteText(t *testing.T) {
 		"  decisions.md (decisions)\n",
 		"  docs/records/ (2 files)\n",
 		"  skipped BIG.md",
-		"History: 10 changes, 4 with trailers, 1 reverts, 9 with altered files, 30 distinct files.\n",
-		"PRs: 3, 5 review comments (2 requesting changes), 1 linked issues.\n",
+		"History: 10 changes, 4 with trailers, 1 revert, 9 with altered files, 30 distinct files.\n",
+		"PRs: 3, 5 review comments (2 requesting changes), 1 linked issue.\n",
 		"About 35 tokens to read it all (an estimate: bytes / 2.3).\n",
 	} {
 		if !strings.Contains(out, want) {
@@ -368,5 +368,36 @@ func TestWriteJSON(t *testing.T) {
 	}
 	if d := m["docs"].(map[string]any); d["skipped"].([]any)[0] != "BIG.md" || d["files"].([]any)[0].(map[string]any)["kind"] != "agent" {
 		t.Errorf("%v", d)
+	}
+}
+
+func TestWriteTextSingular(t *testing.T) {
+	one := Summary{
+		Store: "/s/physa.db", Bound: BoundSummary{Since: "2025-11-21", MaxPRs: 1000},
+		Docs:            DocsSummary{Count: 1, Files: []DocFile{{"AGENTS.md", KindAgent}}},
+		History:         HistorySummary{Changes: 1, WithTrailers: 1, Reverts: 1, WithAltered: 1, DistinctFiles: 1},
+		PRs:             PRsSummary{Available: true, Count: 1, ReviewComments: 1, RequestingChanges: 1, LinkedIssues: 1},
+		EstimatedTokens: 1,
+	}
+	var buf bytes.Buffer
+	if err := WriteText(&buf, one); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Docs: 1 file\n",
+		"History: 1 change, 1 with trailers, 1 revert, 1 with altered files, 1 distinct file.\n",
+		"PRs: 1, 1 review comment (1 requesting changes), 1 linked issue.\n",
+		"About 1 token to read it all",
+	} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("missing %q in %s", want, buf.String())
+		}
+	}
+	buf.Reset()
+	two := fullSummary()
+	two.Docs.Files = append(two.Docs.Files[:1:1], DocFile{"docs/records/0001-a.md", KindDecisions}, DocFile{"docs/records/0002-b.md", KindDecisions})
+	two.Docs.Count = 3
+	if err := WriteText(&buf, two); err != nil || !strings.Contains(buf.String(), "Docs: 3 files\n") || !strings.Contains(buf.String(), "(2 files)") {
+		t.Errorf("%v %s", err, buf.String())
 	}
 }

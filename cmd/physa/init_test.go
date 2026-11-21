@@ -165,14 +165,14 @@ func TestInitProposeWithGatherIsBadUsage(t *testing.T) {
 	}
 }
 
-func TestInitProposeNoGather(t *testing.T) {
+func TestInitProposeOnAMappedRepoIsRefused(t *testing.T) {
 	dir := trailersRepo(t)
 	useRepoStore(t, dir)
 	f := &fakeAgent{}
 	useAgent(t, "claude", f)
 	code, out, errOut := runInit("--propose")
 	if code != 2 || out != "" || f.starts != 0 ||
-		!strings.Contains(errOut, "physa init: nothing gathered yet; run physa init --gather first") {
+		!strings.Contains(errOut, "physa init: the repo already has a map") || !strings.Contains(errOut, "physa map learn") {
 		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
 	}
 }

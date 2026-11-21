@@ -210,16 +210,16 @@ func (b Batch) Cuts() string {
 	}
 	var parts []string
 	if q.cut > 0 {
-		parts = append(parts, fmt.Sprintf("%d quotes cut to %d characters", q.cut, commentRunes))
+		parts = append(parts, fmt.Sprintf("%s cut to %d characters", plural(q.cut, "quote", "quotes"), commentRunes))
 	}
 	if q.leftOut > 0 {
-		parts = append(parts, fmt.Sprintf("%d comments left out", q.leftOut))
+		parts = append(parts, plural(q.leftOut, "comment", "comments") + " left out")
 	}
 	if q.quotes > 0 {
-		parts = append(parts, fmt.Sprintf("%d session quotes left out", q.quotes))
+		parts = append(parts, plural(q.quotes, "session quote", "session quotes") + " left out")
 	}
 	if q.msgOut > 0 {
-		parts = append(parts, fmt.Sprintf("%d reverted messages left out", q.msgOut))
+		parts = append(parts, plural(q.msgOut, "reverted message", "reverted messages") + " left out")
 	}
 	return strings.Join(parts, ", ")
 }
@@ -246,4 +246,12 @@ func Fence(w io.Writer, text string) {
 		fmt.Fprint(w, text+"\n")
 	}
 	fmt.Fprint(w, fence+"\n")
+}
+
+// plural returns n with its noun in singular or plural form.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }

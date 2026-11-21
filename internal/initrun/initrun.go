@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/dphaener/physa/internal/cli"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
+	"github.com/dphaener/physa/internal/initbranch"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/store"
@@ -51,6 +53,11 @@ func Run(args []string, stdout, stderr io.Writer, env Env) int {
 	if err != nil {
 		return failed(stderr, err)
 	}
+	if !o.Gather { // --gather alone spends no tokens and writes only the store
+		if err := refuseMapped(env); err != nil {
+			return failed(stderr, err)
+		}
+	}
 	st, err := env.Store(".")
 	if err != nil {
 		return failed(stderr, err)
@@ -73,6 +80,27 @@ func Run(args []string, stdout, stderr io.Writer, env Env) int {
 	}
 	return p.done(code, stderr)
 }
+
+// refuseMapped is the early refusal: it errors, before anything is spent,
+// when the default branch already holds a map. With no default branch to
+// be found it checks the working tree instead, and leaves a missing default
+// branch for --write to report.
+func refuseMapped(env Env) error {
+	w, err := env.Writer(".")
+	if err != nil {
+		return err
+	}
+	if _, err := w.DefaultBranch(); err == nil {
+		return initbranch.HasMap(w)
+	}
+	if _, err := os.Stat(filepath.FromSlash(mapProduct)); err == nil {
+		return fmt.Errorf("the repo already has a map (%s in the working tree); init only starts a map, and learning keeps an existing one current: run physa map learn", mapProduct)
+	}
+	return nil
+}
+
+// mapProduct is the map's product file, whose presence means a map.
+const mapProduct = ".physa/product.md"
 
 // gatherInto gathers the repo's sources under o's bounds and stores them in
 // st, replacing the earlier gather, and says what it gathered.
@@ -105,7 +133,7 @@ func propose(o Flags, st *store.Store, p *printer, stderr io.Writer, env Env) in
 		return failed(stderr, err)
 	}
 	if res.Stopped {
-		fmt.Fprintf(stderr, "physa init: the circuit breaker stopped the session at %d tokens; nothing was proposed\n", res.Appetite)
+		fmt.Fprintf(stderr, "physa init: the circuit breaker stopped the session at %s; nothing was proposed\n", plural(int(res.Appetite), "token", "tokens"))
 		return 1
 	}
 	p.proposal(res)

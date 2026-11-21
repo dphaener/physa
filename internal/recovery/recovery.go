@@ -203,7 +203,7 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 		check: checker{product: stored.Proposal.Product.Promise, root: s.Root, prExists: resolver(g, s.PRExists), openRepo: s.OpenRepo},
 	}
 	if s.Progress != nil {
-		fmt.Fprintf(s.Progress, "physa init: recovering %s, at most %d at once; appetite %d tokens\n", plural(len(jobs), "capability", "capabilities"), Concurrency, appetite)
+		fmt.Fprintf(s.Progress, "physa init: recovering %s, at most %d at once; appetite %s\n", plural(len(jobs), "capability", "capabilities"), Concurrency, plural(int(appetite), "token", "tokens"))
 	}
 	rep.Capabilities = r.all(ctx, jobs)
 	if err := dedupe(r.check, rep.Capabilities); err != nil {

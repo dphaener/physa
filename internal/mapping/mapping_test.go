@@ -736,3 +736,36 @@ func TestWriteEmptyResult(t *testing.T) {
 
 // The real store is a Store.
 var _ Store = (*store.Store)(nil)
+
+func TestPluralTokensSingularAndPlural(t *testing.T) {
+	for _, c := range []struct {
+		n    int
+		want string
+	}{{0, "0 tokens"}, {1, "1 token"}, {2, "2 tokens"}, {60_000, "60000 tokens"}} {
+		if got := plural(c.n, "token", "tokens"); got != c.want {
+			t.Errorf("plural(%d) = %q, want %q", c.n, got, c.want)
+		}
+	}
+}
+
+func TestWriteTextCountsOneTokenInTheSingular(t *testing.T) {
+	var one, many bytes.Buffer
+	r := Result{Stopped: true, Appetite: 1, Fit: fit.Report{Budget: 1, Used: 1}}
+	if err := WriteText(&one, r); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Stopped at the appetite (1 token) after", "fitted to about 1 of a budget of 1 token.\n"} {
+		if !strings.Contains(one.String(), want) {
+			t.Errorf("text lacks %q:\n%s", want, one.String())
+		}
+	}
+	r = Result{Stopped: true, Appetite: 60_000, Fit: fit.Report{Budget: 1000, Used: 700}}
+	if err := WriteText(&many, r); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Stopped at the appetite (60000 tokens) after", "fitted to about 700 of a budget of 1000 tokens.\n"} {
+		if !strings.Contains(many.String(), want) {
+			t.Errorf("text lacks %q:\n%s", want, many.String())
+		}
+	}
+}

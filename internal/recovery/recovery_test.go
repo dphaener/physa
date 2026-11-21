@@ -788,3 +788,25 @@ func TestRerunKeepsEarlierRecoveredFile(t *testing.T) {
 		t.Errorf("stored row %+v; want the first recovered file kept", rows[0])
 	}
 }
+
+func TestPluralCountsSingularAndPlural(t *testing.T) {
+	for _, c := range []struct {
+		n    int
+		want string
+	}{{1, "1 token"}, {2, "2 tokens"}, {60_000, "60000 tokens"}} {
+		if got := plural(c.n, "token", "tokens"); got != c.want {
+			t.Errorf("plural(%d) = %q, want %q", c.n, got, c.want)
+		}
+	}
+}
+
+func TestProgressLineCountsCapabilitiesAndTokens(t *testing.T) {
+	h := newHarness(t, map[string][]step{"export": {{text: reply(good("export-deleted"), "**Export**: A copy of every note, in a form other tools read.\n")}}})
+	h.session.Only = []string{"export"}
+	h.session.Appetite = 60_000
+	h.run(t)
+	line := strings.SplitN(h.progress.String(), "\n", 2)[0]
+	if want := "physa init: recovering 1 capability, at most 3 at once; appetite 60000 tokens"; line != want {
+		t.Errorf("progress = %q, want %q", line, want)
+	}
+}

@@ -232,7 +232,7 @@ func TestLearnDraftKeepsAndDrops(t *testing.T) {
 			t.Errorf("stdout lacks %q:\n%s", want, out)
 		}
 	}
-	want := regexp.MustCompile(`^physa map learn: appetite 5000 tokens; batch of 1 signals on 1 changes, 1 capabilities; session [0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\n$`)
+	want := regexp.MustCompile(`^physa map learn: appetite 5000 tokens; batch of 1 signal on 1 change, 1 capability; session [0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\n$`)
 	if !want.MatchString(errOut) {
 		t.Errorf("stderr = %q, want the progress line naming the draft session", errOut)
 	}
@@ -267,7 +267,7 @@ func TestLearnUnreadableAnswer(t *testing.T) {
 	signalRepo(t)
 	useAgent(t, "claude", &fakeAgent{result: adapter.Result{Text: "no block here"}})
 	code, out, _ := runLearn(t)
-	if code != 0 || !strings.Contains(out, "the session's output: ") {
+	if code != 0 || !strings.Contains(out, "- the session's output, which could not be read: it has no fenced json block") || strings.Contains(out, "no kind for no capability") {
 		t.Errorf("code %d, stdout %q", code, out)
 	}
 }

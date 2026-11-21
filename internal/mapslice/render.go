@@ -17,10 +17,10 @@ func WriteMD(w io.Writer, s *Slice) error {
 	if s.Budget == 0 {
 		fmt.Fprintf(&b, "Tokens: %d, no budget.\n", s.Used)
 	} else {
-		fmt.Fprintf(&b, "Budget: %d of %d tokens.\n", s.Used, s.Budget)
+		fmt.Fprintf(&b, "Budget: %d of %s.\n", s.Used, plural(s.Budget, "token", "tokens"))
 	}
 	if s.OverBudget {
-		fmt.Fprintf(&b, "Over budget: what is never cut (%s) is %d tokens, over the %d-token budget.\n", inProse(s.Floor), s.Used, s.Budget)
+		fmt.Fprintf(&b, "Over budget: what is never cut (%s) is %s, over the %d-token budget.\n", inProse(s.Floor), plural(s.Used, "token", "tokens"), s.Budget)
 	}
 	if body := renderBody(s); body != "" {
 		b.WriteString("\n" + body)
@@ -209,4 +209,12 @@ func writeMeta(b *strings.Builder, e Entry) bool {
 		inToks = !doc
 	}
 	return b.Len() > n
+}
+
+// plural returns n with its noun in singular or plural form.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }

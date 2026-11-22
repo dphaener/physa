@@ -4,8 +4,8 @@
 
 - [Uncertain knowledge becomes a question](#uncertain-knowledge-becomes-a-question)
 - [The first map arrives as a PR](#the-first-map-arrives-as-a-pr)
-- [Init has an appetite](#init-has-an-appetite)
-- [A known footprint](#a-known-footprint)
+- [Init shows its budget first and stops at it](#init-shows-its-budget-first-and-stops-at-it)
+- [Init adds only the map and a few marked lines](#init-adds-only-the-map-and-a-few-marked-lines)
 - [Init refuses a mapped repo before spending](#init-refuses-a-mapped-repo-before-spending)
 - [Installing a hook never disables the repo's own](#installing-a-hook-never-disables-the-repos-own)
 
@@ -21,12 +21,12 @@ Because: one confident wrong rule costs more trust than ten honest questions.
 Init commits to `physa/init` and opens a PR listing what it added, with sources, questions raised, entries dropped and tokens spent.
 Because: the person reviews the map like any change before it is trusted.
 
-### Init has an appetite
+### Init shows its budget first and stops at it
 `init-appetite` · from docs/architecture/02-init-and-learning.md
 Init shows its token budget before it starts and stops at it, keeping what it finished.
 Because: it spends the customer's tokens.
 
-### A known footprint
+### Init adds only the map and a few marked lines
 `init-footprint` · from docs/architecture/02-init-and-learning.md
 Init adds only the map and two or three marked lines in AGENTS.md.
 Because: teams with existing agent docs must not find Physa rewriting them.

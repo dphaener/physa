@@ -55,7 +55,7 @@ Because: a fixer that never said done stalled a Rhiza run for 9 hours.
 
 ### Appetite is tokens
 `appetite-tokens` · decided by dphaener, in their words · 2026-11-19 · from docs/architecture/03-engine-and-store.md
-A bet's appetite is tokens, as reported by adapters, counted from when the bet is accepted and building starts. The steward is told at 80%; at 100% the circuit breaker stops it.
+A bet's appetite is tokens, as reported by adapters, counted from when the bet is accepted and building starts. The person who made the bet is told at 80%; at 100% the circuit breaker stops it.
 Because: "Time doesn't really matter as much. Agents are fast." Tokens are what is actually spent: "Call it what it is."
 Rejected:
 - Time: "time doesn't matter at all anymore".

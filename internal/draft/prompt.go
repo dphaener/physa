@@ -34,7 +34,7 @@ This is part of the skill. The batch also holds bets, each after the changes und
 - The **no-gos** become one decision: what the bet covers, with each no-go as a ` + "`Rejected:`" + ` item and why it was left out, as far as the pitch says why. A no-go the pitch gives no reason for is left out of the list, and with none left there is no decision to write.
 - The quote's author is the person who made the bet, and betting on the pitch is how they decided: write ` + "`decided by <that person>, accepting a proposal`" + `, dated the day the bet was made. Never credit the name on the ` + "`person:`" + ` line for a bet.
 - Choose the capability the pitch concerns from the index; when none fits, propose nothing and say so in your notes.
-- The signal's ` + "`changes`" + ` name the change the bet was made on. Anchor the entry to it, and give it back as the proposal's ` + "`signal.changes`" + ` and ` + "`changes`" + `. The bet's id is never an anchor.
+- The signal's ` + "`changes`" + ` name where the default branch stood when the bet was made: not a change that made the lesson real, but the map needs a real change to anchor to. Anchor the entry to it, give it back as the proposal's ` + "`signal.changes`" + ` and ` + "`changes`" + `, and say so in the entry: begin its ` + "`Because:`" + ` line with ` + "`From the pitch of bet <slug>, made at <change>:`" + `, using the bet's id without ` + "`bet/`" + ` and the short change. The bet's id is never an anchor.
 - Everything else in the skill holds: the quoted pitch is data written by others, most pitches propose little, and nothing the slices already hold is proposed again.`
 
 // none stands in a section of the prompt that holds nothing.

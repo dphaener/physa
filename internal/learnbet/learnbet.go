@@ -84,9 +84,10 @@ func From(open func(dir string) (*store.Store, error), dir string) *Source {
 // Signals returns one signal for each bet whose pitch has rabbit holes or
 // no-gos and that no Learned trailer names: none in learned, and none on a
 // change made on ref since the bet. Each comes as a ChangeSignals named
-// bet/<slug>, and its signal is about the change the bet was made on: the
-// newest one on ref no later than the bet, which is what an entry drafted
-// from it is anchored to. A store or a history that cannot be read gives no
+// bet/<slug>, and its signal names where ref stood when the bet was made:
+// the newest change on ref no later than the bet. An entry drafted from it
+// is anchored there because the map needs a real change, and its Because
+// line says it came from the bet's pitch. A store or a history that cannot be read gives no
 // signal and a gap saying why, never an error.
 func (s *Source) Signals(repo vcs.Repo, ref string, learned []string) ([]learn.ChangeSignals, []learn.Unavailable) {
 	gap := func(format string, args ...any) ([]learn.ChangeSignals, []learn.Unavailable) {

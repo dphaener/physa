@@ -893,7 +893,8 @@ func TestPromptCarriesABetsRabbitHolesAndNoGos(t *testing.T) {
 		t.Fatalf("the bet's part of the skill is at %d, the index at %d, the signals at %d", guide, skillEnd, data)
 	}
 	for _, want := range []string{"a rule from a rabbit hole", "`Rejected:` items are the no-gos", "accepting a proposal",
-		"the person who made the bet", "Choose the capability the pitch concerns from the index", "The bet's id is never an anchor"} {
+		"the person who made the bet", "Choose the capability the pitch concerns from the index", "The bet's id is never an anchor",
+		"not a change that made the lesson real", "`From the pitch of bet <slug>, made at <change>:`"} {
 		if !strings.Contains(p[guide:skillEnd], want) {
 			t.Errorf("the bet's part of the skill lacks %q", want)
 		}

@@ -308,3 +308,26 @@ func TestStopNeverStarts(t *testing.T) {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errs)
 	}
 }
+
+// TestAPICallRefusesBetsInASession shows a bet is refused, before any engine
+// starts, inside an agent's session, and that other methods are not.
+func TestAPICallRefusesBetsInASession(t *testing.T) {
+	te := idleDir(t) // fails the test if anything tries to start an engine
+	old := getenv
+	t.Cleanup(func() { getenv = old })
+	getenv = func(k string) string {
+		if k == "CLAUDE_CODE_SESSION_ID" {
+			return "abc"
+		}
+		return ""
+	}
+	for method, want := range map[string]string{
+		"bet.start": "physa api call: A person must make this bet: physa is running inside a Claude Code session.\n",
+		"bet.stop":  "physa api call: A person must stop this bet: physa is running inside a Claude Code session.\n",
+	} {
+		code, out, errs := te.run("api", "call", method, `{"repo":"/x","slug":"a","person":"p"}`)
+		if code != 2 || out != "" || errs != want {
+			t.Errorf("%s: code %d, stdout %q, stderr %q", method, code, out, errs)
+		}
+	}
+}

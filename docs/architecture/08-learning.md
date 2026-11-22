@@ -38,6 +38,7 @@ Four stages. Only the third spends tokens.
 | A finding from a check that a later step fixed | session logs | a rule, when it recurs on one capability (03 R4) |
 | A capability served without its slice being loaded, repeatedly (07 §4.1) | slice records; trailers | a sharper index line or promise |
 | A comment saying work deserves its own capability | the forge | a new capability (§8) |
+| A pitch bet on, with rabbit holes or no-gos | the store | rules from its rabbit holes; rejected options on a decision from its no-gos |
 
 Triage thresholds (how many recurrences, how long a thread) start small and are tuned from real runs. They are constants in `internal/learn/thresholds.go`:
 
@@ -52,6 +53,12 @@ The session signals' kinds are `answered-ask`, `intervention` and `fixed-finding
 An answered ask whose answer starts "Answered on behalf of <person> by the arbiter" is credited to the arbiter, and is never the person's decision: it reads `decided by Claude as arbiter, choosing an option` when it picks an offered option, and `decided by Claude as arbiter, in their words` when typed. An intervention starting the same way is treated the same. Every other `decided by` or `raised by` learning names the person running Physa, by the name 03 §16 settles, never git's author name.
 
 Drift, a change quietly undoing a decision, is caught only when a signal points at it. That is the price of not reviewing code.
+
+A bet on a pitch with rabbit holes or no-gos is the one signal read from the store, not from a session or the forge (built in step 5F; the bets themselves are in 03 §19). Its kind is `bet-pitch` and its rule `rabbit-holes-and-no-gos`; its id is `bet/<slug>`, and the learning commit records it as `Learned: bet/<slug>`, so a bet is drafted once. A bet on an idea's text alone, with no pitch, gives no signal. Calls made while building it, for the owner to check:
+
+- **The entry is anchored to the change the bet was made on**: the newest default-branch change made no later than the bet. The map has no anchor form for a bet, and propose and the map check keep an entry only when it cites a real change. Rejected: no anchor, which would drop every proposal from a bet while recording it as learned; and a new anchor form for bets, which changes the map's format.
+- **The `Learned: bet/<slug>` record is read from all history since the bet**, not only from the changes a run collects, so a bet is not drafted again once the learn PR is squash-merged and the watermark has moved past it.
+- **A learned bet is written down even when a run has no proposals**, so the same bet is not spent on again.
 
 ## 4. The draft
 

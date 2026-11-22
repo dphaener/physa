@@ -77,6 +77,12 @@ type Sessions interface {
 	Signals(c vcs.Change, recorded []string, after time.Time) (signals []Signal, read []string, gaps []SessionGap)
 }
 
+// Bets finds the bets not named in learned whose pitch carries a signal, each as a ChangeSignals named
+// bet/<slug> with a signal about the change the bet was made on at ref; gaps say why bets were not read.
+type Bets interface {
+	Signals(repo vcs.Repo, ref string, learned []string) (bets []ChangeSignals, gaps []Unavailable)
+}
+
 // SessionGap is a session behind a change whose log could not be read. It
 // never makes the change not fully triaged: session logs are an extra
 // (design 08 section 5).
@@ -121,6 +127,8 @@ const (
 	// fixed: a later report of the same check in the same run passed, or
 	// the finding is marked fixed.
 	KindFixedFinding = "fixed-finding"
+	// KindBetPitch is a bet on a pitch that has rabbit holes or no-gos: rules, and rejected options.
+	KindBetPitch = "bet-pitch"
 )
 
 // The rules that find each kind.
@@ -132,6 +140,7 @@ const (
 	RulePersonAnswered   = "person-answered"
 	RuleMidRun           = "message-mid-run"
 	RuleFailThenPass     = "report-then-pass"
+	RuleBetPitch         = "rabbit-holes-and-no-gos"
 )
 
 // Why a kind is not checked when its source is missing.

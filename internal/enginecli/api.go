@@ -7,10 +7,15 @@ import (
 	"io"
 	"os"
 
+	"github.com/dphaener/physa/internal/agentenv"
 	"github.com/dphaener/physa/internal/api"
 	"github.com/dphaener/physa/internal/cli"
 	"github.com/dphaener/physa/internal/output"
+	"github.com/dphaener/physa/internal/workapi"
 )
+
+// getenv is how apiCall finds an agent's session; tests replace it.
+var getenv = os.Getenv
 
 func (g group) apiCommand() *cli.Command {
 	return &cli.Command{
@@ -105,6 +110,9 @@ func (g group) apiCall(args []string, stdout, stderr io.Writer) int {
 	f, ok := parse(args)
 	if !ok || len(f.args) < 1 || len(f.args) > 2 {
 		return cli.BadUsage
+	}
+	if agent, in := agentenv.Detect(getenv); in && workapi.PersonOnly(f.args[0]) {
+		return failed(stderr, "api call", errors.New(workapi.Refusal(f.args[0], agent)))
 	}
 	params := []byte("{}")
 	if len(f.args) == 2 && f.args[1] == "-" {

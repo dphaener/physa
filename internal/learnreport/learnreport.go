@@ -48,7 +48,17 @@ func WriteText(w io.Writer, r learn.Result) error {
 		fmt.Fprintf(&b, "Not checked: %s (%s).\n", u.Kind, u.Reason)
 	}
 
-	fmt.Fprintf(&b, "\nSignals (%s):\n", plural(len(r.Learn), "change", "changes"))
+	bets := 0
+	for _, c := range r.Learn {
+		if isBet(c) {
+			bets++
+		}
+	}
+	from := plural(len(r.Learn)-bets, "change", "changes")
+	if bets > 0 {
+		from += ", " + plural(bets, "bet", "bets")
+	}
+	fmt.Fprintf(&b, "\nSignals (%s):\n", from)
 	for _, c := range r.Learn {
 		fmt.Fprintf(&b, "  %s %s\n", c.Short, c.Subject)
 		for _, s := range c.Signals {
@@ -82,6 +92,12 @@ func WriteText(w io.Writer, r learn.Result) error {
 // WriteJSON writes a run's triage for tools, as one JSON object.
 func WriteJSON(w io.Writer, r learn.Result) error {
 	return json.NewEncoder(w).Encode(r)
+}
+
+// isBet reports whether c is a bet with a signal, listed as bet/<slug> with
+// its idea, and not a change.
+func isBet(c learn.ChangeSignals) bool {
+	return len(c.Signals) > 0 && c.Signals[0].Kind == learn.KindBetPitch
 }
 
 // reasonOf returns why kind was not checked, or empty when it was.

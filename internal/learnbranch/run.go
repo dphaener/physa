@@ -20,6 +20,7 @@ import (
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/history"
 	"github.com/dphaener/physa/internal/learn"
+	"github.com/dphaener/physa/internal/learnbet"
 	"github.com/dphaener/physa/internal/mapfile"
 	"github.com/dphaener/physa/internal/propose"
 	"github.com/dphaener/physa/internal/store"
@@ -48,6 +49,8 @@ type Options struct {
 	// Sessions reads the session logs that join changes to their sessions;
 	// nil means none.
 	Sessions learn.Sessions
+	// Bets finds the signals bets carry; nil means none are looked for.
+	Bets learn.Bets
 	// Forge is the forge to read each change's PR from; nil means none, and
 	// ForgeReason says why.
 	Forge       forge.Forge
@@ -142,7 +145,7 @@ func Run(ctx context.Context, w vcs.Writer, o Options) (Outcome, error) {
 		return out, err
 	}
 	lo := learn.Options{Since: o.Since, Forge: o.Forge, ForgeReason: o.ForgeReason,
-		Records: o.Records, RecordsReason: o.RecordsReason, Sessions: o.Sessions}
+		Records: o.Records, RecordsReason: o.RecordsReason, Sessions: o.Sessions, Bets: o.Bets}
 	var batch draft.Batch
 	err = inCopy(w, st.def, st.base(o.Push), func(c vcs.Copy, carried []string) error {
 		m, res, err := Read(c.Dir(), w, lo)
@@ -302,12 +305,13 @@ func inCopy(w vcs.Writer, def, base string, fn func(vcs.Copy, []string) error) (
 
 // apply applies kept to the copy, records in report what was applied and
 // dropped, and commits when there is anything to record: a proposal applied,
-// or a watermark that moves. It returns nil when it commits nothing.
+// a watermark that moves, or a bet learned from, which no watermark records.
+// It returns nil when it commits nothing.
 func apply(w vcs.Writer, c vcs.Copy, b draft.Batch, report *propose.Report, kept []propose.Kept, rec record, o propose.Options) (*Commit, error) {
 	applied, dropped := propose.ApplyAll(c.Dir(), b, kept, o)
 	report.Kept = append([]propose.Kept{}, applied...)
 	report.Dropped = append(report.Dropped, dropped...)
-	if len(applied) == 0 && rec.through == rec.watermark {
+	if len(applied) == 0 && rec.through == rec.watermark && rec.bets() == 0 {
 		return nil, nil
 	}
 	rec.applied = applied
@@ -319,9 +323,9 @@ func apply(w vcs.Writer, c vcs.Copy, b draft.Batch, report *propose.Report, kept
 }
 
 // redo writes the run again after the remote moved: it fetches, re-reads
-// what is learned, drops the applied proposals whose changes another run
-// learned meanwhile, takes the later watermark, rebuilds on the remote's
-// branch and pushes once more. No agent session is spent.
+// what is learned, drops the applied proposals whose changes, or whose bet,
+// another run learned meanwhile, takes the later watermark, rebuilds on the
+// remote's branch and pushes once more. No agent session is spent.
 func redo(w vcs.Writer, out *Outcome, lo learn.Options, b draft.Batch, o propose.Options) error {
 	first := out.Result
 	st, err := read(w, true)
@@ -342,9 +346,13 @@ func redo(w vcs.Writer, out *Outcome, lo learn.Options, b draft.Batch, o propose
 	}
 	var keep []propose.Kept
 	for _, k := range out.Report.Kept {
-		if gone := overlap(k.Proposal.Changes, meanwhile); gone != "" {
+		from, what := k.Proposal.Changes, "change "
+		if k.Proposal.Signal.Kind == learn.KindBetPitch {
+			from, what = betsOf(first, k.Proposal.Signal.Changes), ""
+		}
+		if gone := overlap(from, meanwhile); gone != "" {
 			out.Report.Dropped = append(out.Report.Dropped, propose.Dropped{Proposal: k.Proposal,
-				Reason: fmt.Sprintf("another run on %s learned from change `%s` meanwhile", Branch, gone)})
+				Reason: fmt.Sprintf("another run on %s learned from %s`%s` meanwhile", Branch, what, gone)})
 			out.Superseded++
 			continue
 		}
@@ -373,6 +381,21 @@ func redo(w vcs.Writer, out *Outcome, lo learn.Options, b draft.Batch, o propose
 	return err
 }
 
+// betsOf returns the ids of the run's bets whose signal is about changes: a
+// proposal from a bet's pitch names the change the bet was made on, which
+// says nothing of whether the bet was learned from.
+func betsOf(r learn.Result, changes []string) []string {
+	var ids []string
+	for _, c := range r.Learn {
+		for _, s := range c.Signals {
+			if s.Kind == learn.KindBetPitch && overlap(s.Changes, changes) != "" {
+				ids = append(ids, c.Short)
+			}
+		}
+	}
+	return ids
+}
+
 // contains reports whether ids holds a short id naming the same change as id.
 func contains(ids []string, id string) bool {
 	return overlap([]string{id}, ids) != ""
@@ -392,9 +415,13 @@ func overlap(changes, ids []string) string {
 }
 
 // sameChange reports whether two ids, full or abbreviated, name one change:
-// one is a prefix of the other, at least seven characters long.
+// one is a prefix of the other, at least seven characters long. A bet's id
+// is never abbreviated, so it names only itself.
 func sameChange(a, b string) bool {
 	a, b = strings.ToLower(strings.TrimSpace(a)), strings.ToLower(strings.TrimSpace(b))
+	if learnbet.IsID(a) || learnbet.IsID(b) {
+		return a == b
+	}
 	if len(a) > len(b) {
 		a, b = b, a
 	}

@@ -850,3 +850,87 @@ func TestFenceGetsALongerFenceThanAnyRun(t *testing.T) {
 		t.Fatalf("Fence of plain text wrote %q, want %q", w.String(), want)
 	}
 }
+
+// betResult is a run with one change that has a signal and one bet whose
+// pitch has rabbit holes and no-gos, made on that change.
+func betResult() learn.Result {
+	at := time.Date(2026, 11, 22, 10, 3, 0, 0, time.UTC)
+	r := learn.Result{Learn: testResult().Learn[:1]}
+	r.Learn = append(r.Learn, learn.ChangeSignals{
+		ChangeRef: learn.ChangeRef{Change: "bet/try-a-quiet-mode", Short: "bet/try-a-quiet-mode", Subject: "Try a quiet mode"},
+		At:        at,
+		Signals: []learn.Signal{{Kind: learn.KindBetPitch, Rule: learn.RuleBetPitch, Changes: []string{"aaaaaaa"},
+			Evidence: []string{"bet try-a-quiet-mode on the idea: Try a quiet mode", "made by dana at 2026-11-22T10:03:00Z; entries from it anchor to change aaaaaaa",
+				"its pitch names rabbit holes and no-gos"},
+			Quotes: []learn.Quote{
+				{Author: "dana", At: at, Text: "Rabbit holes:\nPer-team schedules: they need a calendar."},
+				{Author: "dana", At: at, Text: "No-gos:\nNo snoozing of single alerts: it hides outages."},
+			}}},
+	})
+	return r
+}
+
+func TestPromptCarriesABetsRabbitHolesAndNoGos(t *testing.T) {
+	p, b := prompt(t, betResult())
+	if b.SignalCount() != 2 || !IsBet(b.Changes[1]) || IsBet(b.Changes[0]) {
+		t.Fatalf("batch %+v, want the change and then the bet", b.Changes)
+	}
+	for _, want := range []string{
+		"### Change 1 of 1\n",
+		"### Bet 1 of 1\n\n```text\nbet: bet/try-a-quiet-mode\ndate: 2026-11-22T10:03:00Z\nidea: Try a quiet mode\n```\n",
+		"Signal 1 of 1 on this bet:\n\n```text\nkind: bet-pitch\nrule: rabbit-holes-and-no-gos\nchanges: aaaaaaa\nevidence:\n- bet try-a-quiet-mode on the idea: Try a quiet mode\n",
+		"Quote 1 of 2 on this signal:\n\n```text\nauthor: dana\nat: 2026-11-22T10:03:00Z\ntext:\nRabbit holes:\nPer-team schedules: they need a calendar.\n```\n",
+		"Quote 2 of 2 on this signal:\n\n```text\nauthor: dana\nat: 2026-11-22T10:03:00Z\ntext:\nNo-gos:\nNo snoozing of single alerts: it hides outages.\n```\n",
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("the prompt lacks %q:\n%s", want, p[strings.Index(p, "## Signals"):])
+		}
+	}
+	// What to draft from a bet is said in the skill, before the data.
+	skillEnd, data := strings.Index(p, "\n## Index\n"), strings.Index(p, "\n## Signals\n")
+	guide := strings.Index(p, "## A bet on a pitch")
+	if guide < 0 || guide > skillEnd || skillEnd > data {
+		t.Fatalf("the bet's part of the skill is at %d, the index at %d, the signals at %d", guide, skillEnd, data)
+	}
+	for _, want := range []string{"a rule from a rabbit hole", "`Rejected:` items are the no-gos", "accepting a proposal",
+		"the person who made the bet", "Choose the capability the pitch concerns from the index", "The bet's id is never an anchor"} {
+		if !strings.Contains(p[guide:skillEnd], want) {
+			t.Errorf("the bet's part of the skill lacks %q", want)
+		}
+	}
+	if again, _ := prompt(t, betResult()); again != p {
+		t.Error("the same batch gave another prompt")
+	}
+}
+
+func TestPromptWithoutABetReadsAsBefore(t *testing.T) {
+	p, _ := prompt(t, testResult())
+	for _, not := range []string{"## A bet on a pitch", "### Bet ", "bet-pitch", "on this bet"} {
+		if strings.Contains(p, not) {
+			t.Errorf("a batch with no bet says %q", not)
+		}
+	}
+	for _, want := range []string{"### Change 1 of 2\n", "### Change 2 of 2\n", "Signal 2 of 2 on this change:\n"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("the prompt lacks %q", want)
+		}
+	}
+	// Taking the bet out of a batch takes out its part of the skill and its
+	// own heading, and nothing else.
+	r := betResult()
+	with, _ := prompt(t, r)
+	r.Learn = r.Learn[:1]
+	without, _ := prompt(t, r)
+	got := strings.Replace(with, "\n\n"+betSkill, "", 1)
+	if i := strings.Index(got, "\n### Bet 1 of 1\n"); i < 0 || got[:i] != without {
+		t.Errorf("a bet changes more of the prompt than its own two parts:\n%s", without[strings.Index(without, "## Signals"):])
+	}
+}
+
+func TestBetSkillUsesNoAvoidedWord(t *testing.T) {
+	for _, word := range []string{"ADR", "feature", "ticket", "model", "non-goal", "estimate", "spec", "issue"} {
+		if regexp.MustCompile(`(?i)\b` + word + `s?\b`).MatchString(betSkill) {
+			t.Errorf("the bet's part of the skill uses %q", word)
+		}
+	}
+}

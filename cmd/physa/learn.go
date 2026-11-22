@@ -9,6 +9,7 @@ import (
 	"github.com/dphaener/physa/internal/adapter/claude"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/learn"
+	"github.com/dphaener/physa/internal/learnbet"
 	"github.com/dphaener/physa/internal/learnbranch"
 	"github.com/dphaener/physa/internal/learnreport"
 	"github.com/dphaener/physa/internal/learnsession"
@@ -54,7 +55,7 @@ func writeBranch(dir string, o learnbranch.Flags, s propose.Session) (learnbranc
 	if err != nil {
 		return learnbranch.Outcome{}, err
 	}
-	lo := learnbranch.Options{Push: o.Push, PR: o.PR, Since: o.Since, Session: s, Forge: newForge(dir), Sessions: sessionLogs(dir)}
+	lo := learnbranch.Options{Push: o.Push, PR: o.PR, Since: o.Since, Session: s, Forge: newForge(dir), Sessions: sessionLogs(dir), Bets: learnbet.From(openStore, dir)}
 	lo.PRs, _ = lo.Forge.(forge.PRs)
 	lo.Records, lo.RecordsReason = sliceRecords(dir)
 	return learnbranch.Run(context.Background(), w, lo)
@@ -66,7 +67,7 @@ func draftOnly(dir string, o learnbranch.Flags, s propose.Session, stdout io.Wri
 	if err != nil {
 		return propose.Report{}, err
 	}
-	lo := learn.Options{Since: o.Since, Forge: newForge(dir), Sessions: sessionLogs(dir)}
+	lo := learn.Options{Since: o.Since, Forge: newForge(dir), Sessions: sessionLogs(dir), Bets: learnbet.From(openStore, dir)}
 	lo.Records, lo.RecordsReason = sliceRecords(dir)
 	m, res, err := learnbranch.Read(dir, repo, lo)
 	if err != nil {

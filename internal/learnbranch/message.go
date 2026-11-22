@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dphaener/physa/internal/learn"
+	"github.com/dphaener/physa/internal/learnbet"
 	"github.com/dphaener/physa/internal/propose"
 	"github.com/dphaener/physa/internal/vcs"
 )
@@ -19,9 +20,13 @@ const (
 // noProposals is the body of a commit that records only the watermark.
 const noProposals = "No proposals; the watermark advances."
 
+// noBetProposals is the body of a commit with no proposal that records a
+// bet as learned from, whether or not the watermark moves.
+const noBetProposals = "No proposals; what was learned from is recorded."
+
 // record is what one learning commit says.
 type record struct {
-	changes   int    // changes learned from
+	changes   int    // changes learned from; the bets are counted from learned
 	watermark string // the watermark read, full id
 	through   string // the watermark recorded, full id
 	learned   []string
@@ -36,15 +41,21 @@ type record struct {
 
 // message is the commit's message: its subject, one line per applied
 // proposal, and the trailer block, which always holds Learned-through
-// (learn.NoWatermark when there is nothing to learn through yet).
+// (learn.NoWatermark when there is nothing to learn through yet). The
+// subject counts the changes learned from and, when there are any, the bets.
 func (r record) message(w vcs.Repo) string {
 	var b strings.Builder
-	noun := "changes"
-	if r.changes == 1 {
-		noun = "change"
+	from := fmt.Sprintf("%d %s", r.changes, plural(r.changes, "change"))
+	if n := r.bets(); n > 0 && r.changes == 0 {
+		from = fmt.Sprintf("%d %s", n, plural(n, "bet"))
+	} else if n > 0 {
+		from += fmt.Sprintf(" and %d %s", n, plural(n, "bet"))
 	}
-	fmt.Fprintf(&b, "docs(map): Learn from %d %s\n\n", r.changes, noun)
-	if len(r.applied) == 0 {
+	fmt.Fprintf(&b, "docs(map): Learn from %s\n\n", from)
+	switch {
+	case len(r.applied) == 0 && r.bets() > 0:
+		b.WriteString(noBetProposals + "\n")
+	case len(r.applied) == 0:
 		b.WriteString(noProposals + "\n")
 	}
 	for _, k := range r.applied {
@@ -66,15 +77,27 @@ func (r record) message(w vcs.Repo) string {
 	return b.String()
 }
 
+// bets is how many bets the run learned from: its Learned ids that name one.
+func (r record) bets() int {
+	n := 0
+	for _, id := range r.learned {
+		if learnbet.IsID(id) {
+			n++
+		}
+	}
+	return n
+}
+
 // learnedIDs are the run's own Learned ids, then each carried one that names
-// a change the recorded watermark does not pass, each once.
+// a change the recorded watermark does not pass or a bet, each once. A bet
+// is no change, so no watermark passes it: its id is always carried.
 func (r record) learnedIDs(w vcs.Repo) []string {
 	ids := append([]string{}, r.learned...)
 	for _, id := range r.carried {
 		if contains(ids, id) {
 			continue
 		}
-		if full, ok := w.Resolve(id); ok && r.through != "" && w.IsAncestor(full, r.through) {
+		if full, ok := w.Resolve(id); ok && !learnbet.IsID(id) && r.through != "" && w.IsAncestor(full, r.through) {
 			continue
 		}
 		ids = append(ids, id)

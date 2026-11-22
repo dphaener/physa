@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,6 +17,10 @@ import (
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/forge/github"
+	"github.com/dphaener/physa/internal/pitch"
+	"github.com/dphaener/physa/internal/state"
+	"github.com/dphaener/physa/internal/state/work"
+	"github.com/dphaener/physa/internal/store"
 )
 
 // prForge answers one change with a PR, and no PR for the others.
@@ -691,4 +696,98 @@ func logAttribution(t *testing.T, prompt, stderr string) {
 		}
 	}
 	t.Logf("stderr: %q", stderr)
+}
+
+// betOn makes, in the store of the repo at dir, an idea shaped into p and a
+// bet on it a minute ago, as the engine would, and returns the bet's slug.
+func betOn(t *testing.T, dir string, p pitch.Pitch) string {
+	t.Helper()
+	st, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	at := time.Now().Add(-time.Minute)
+	s, err := state.Open(st, state.Options{Now: func() time.Time { return at }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	defer s.Close(ctx)
+	idea, err := work.AddIdea(ctx, s, work.IdeaIn{Text: "Try a quiet mode", Person: "sam"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := work.Shape(ctx, s, work.ShapeIn{Slug: idea.Slug, Pitch: p, Person: "sam"}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := work.StartBet(ctx, s, work.BetIn{Slug: idea.Slug, Person: "dana"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b.Slug
+}
+
+func TestLearnSignalsListABetOnceUntilItIsLearned(t *testing.T) {
+	dir, _ := learnRepo(t)
+	t.Chdir(dir)
+	useNoGH(t)
+	slug := betOn(t, dir, pitch.Pitch{Problem: "Alerts wake people at night.", Appetite: 200000, Solution: "A quiet mode.",
+		Scope: "The alert settings.", Signal: "Fewer night pages.",
+		RabbitHoles: "Per-team schedules: they need a calendar.", NoGos: "No snoozing of single alerts: it hides outages."})
+
+	code, out, errOut := runLearn(t, "--signals")
+	if code != 0 || errOut != "" {
+		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+	t.Logf("physa map learn --signals:\n%s", out)
+	for _, want := range []string{", 1 bet):\n", "  bet/" + slug + " Try a quiet mode\n", "    bet-pitch [rabbit-holes-and-no-gos]\n",
+		"      bet " + slug + " on the idea: Try a quiet mode\n", "      its pitch names rabbit holes and no-gos\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Count(out, "bet-pitch") != 1 {
+		t.Errorf("stdout names bet-pitch %d times, want one signal:\n%s", strings.Count(out, "bet-pitch"), out)
+	}
+	if strings.Contains(out, "calendar") || strings.Contains(out, "outages") {
+		t.Errorf("--signals prints the pitch's words:\n%s", out)
+	}
+	code, out, _ = runLearn(t, "--signals", "--json")
+	var got struct {
+		Learn []struct {
+			Change  string
+			Signals []struct{ Kind string }
+		}
+		LearnedNow []string `json:"learned_now"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); code != 0 || err != nil {
+		t.Fatalf("code %d, %v: %s", code, err, out)
+	}
+	last := got.Learn[len(got.Learn)-1]
+	if last.Change != "bet/"+slug || len(last.Signals) != 1 || last.Signals[0].Kind != "bet-pitch" || got.LearnedNow[len(got.LearnedNow)-1] != "bet/"+slug {
+		t.Errorf("learn ends with %+v, learned now %v", last, got.LearnedNow)
+	}
+
+	// A learn record naming the bet, here the squash merge of the learn
+	// branch, makes the next run skip it.
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "docs(map): Learn from 1 bet\n\n- a proposal\n\nLearned-through: none\nLearned: bet/"+slug+"\nCapability: learning")
+	gitIn(t, dir, "update-ref", "refs/remotes/origin/main", "HEAD")
+	code, out, errOut = runLearn(t, "--signals")
+	if code != 0 || errOut != "" || strings.Contains(out, "bet/") || strings.Contains(out, "bet-pitch") || strings.Contains(out, " bet") {
+		t.Errorf("code %d, stderr %q; after the record the run still names a bet:\n%s", code, errOut, out)
+	}
+}
+
+func TestLearnSignalsSayWhenBetsCannotBeRead(t *testing.T) {
+	dir, _ := learnRepo(t)
+	t.Chdir(dir)
+	useNoGH(t)
+	old := openStore
+	openStore = func(string) (*store.Store, error) { return nil, errors.New("the store is elsewhere") }
+	t.Cleanup(func() { openStore = old })
+	code, out, errOut := runLearn(t, "--signals")
+	if code != 0 || errOut != "" || !strings.Contains(out, "Not checked: bet-pitch (no store: the store is elsewhere).\n") {
+		t.Errorf("code %d, stderr %q, stdout:\n%s", code, errOut, out)
+	}
 }

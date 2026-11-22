@@ -145,7 +145,7 @@ Settled with the owner on 2026-11-20 (`grouped-cli`): "Rather than having 100 co
 3. A bare group does its most common job.
 4. One way to do each thing, with no aliases.
 
-The full planned tree. `check`, `map`, `physa init`, with its gather, propose and recover phases, `physa engine` and `physa api` are built today; everything else is planned.
+The full planned tree. `check`, `map`, `physa init`, with its gather, propose and recover phases, `physa engine`, `physa api`, `physa idea` and `physa bet` (except its `plan` subcommand) are built today; everything else is planned.
 
 - `physa init` (02), built: a bare run gathers, proposes, recovers and checks under one appetite; `--write` commits the map to `physa/init`, `--push` pushes it, `--pr` opens or refreshes its PR, `--hooks` installs the hook, and `--answers` gives a new codebase's answers. Phases alone: `--gather`, `--propose`, `--recover`. A map may have no `capabilities/` directory yet, as a new codebase's map has none (02 §2.8).
 - `physa check [map | changes [range]]` (07 §5), built. Bare `check` runs the map check and, when a range is given or `origin/main..HEAD` resolves, the change check on it.
@@ -155,6 +155,8 @@ The full planned tree. `check`, `map`, `physa init`, with its gather, propose an
 - `physa sync` (07 §7), planned, after the engine.
 - `physa engine [run | start | status | stop]` (03 §12, §17), built. Bare `engine` is `status`. `status` starts the engine when none runs; `start` starts it detached; `run` serves in the foreground; `stop` never starts one. `--idle <duration>` sets when an idle engine exits (default 30m).
 - `physa api [list | describe | call]` (03 §12), built: `list` names the methods, `describe <method>` prints its schema and an example, `call <method> [<json> | -]` calls it. Like `engine status`, each starts the engine when none runs.
+- `physa idea [add | list | show | shape]` (03 §19), built: a bare `idea` lists the ideas. `add "<text>"` makes an idea owned by the person who adds it, with `--slug` to choose its slug; `shape [<slug>]` writes its pitch in `$VISUAL` or `$EDITOR` on a terminal, or from `--from <file>` (`-` for stdin). There is no delete: ideas wither.
+- `physa bet <slug> | list | show | stop` (03 §19), built: `physa bet <slug> --appetite <tokens>` makes a bet, with the pitch's appetite when none is given; `stop <slug> --reason` stops an active bet. Only people bet: inside an agent session `physa bet` and `physa bet stop` refuse with exit 2.
 - `physa run <bet>` and `physa watch` (03 §7.5), planned, top-level like `check`.
 - `physa ask ...` (03 §9), planned.
 - `physa harness install|show|settings` (04 §2), planned.

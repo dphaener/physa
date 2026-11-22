@@ -176,22 +176,3 @@ func TestInitProposeOnAMappedRepoIsRefused(t *testing.T) {
 		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
 	}
 }
-
-func TestStdinIsTerminalNotForNullOrFile(t *testing.T) {
-	old := os.Stdin
-	t.Cleanup(func() { os.Stdin = old })
-	for _, path := range []string{os.DevNull, filepath.Join(t.TempDir(), "in")} {
-		if path != os.DevNull {
-			write(t, filepath.Dir(path), "in", "answer\n")
-		}
-		f, err := os.Open(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer f.Close()
-		os.Stdin = f
-		if stdinIsTerminal() {
-			t.Errorf("%s reads as a terminal", path)
-		}
-	}
-}

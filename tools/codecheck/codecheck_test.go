@@ -143,3 +143,30 @@ func TestGitOutsideAdapter(t *testing.T) {
 		}
 	}
 }
+
+func TestPackageBudget(t *testing.T) {
+	root := writeModule(t, 50, 0)
+	vs, _, err := scan(root, map[string]int{"big": 20})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if got := rules(vs); len(got) != 1 || got[0] != "big size-budget" {
+		t.Fatalf("got %v", got)
+	}
+	if m := vs[0].Message; !strings.Contains(m, "50 non-blank lines") || !strings.Contains(m, "budget is 20") {
+		t.Errorf("message should name lines and budget: %q", m)
+	}
+	t.Logf("reported: %s: %s: %s", vs[0].Dir, vs[0].Rule, vs[0].Message)
+	if vs, _, err := scan(root, map[string]int{"big": 50}); err != nil || len(vs) != 0 {
+		t.Fatalf("at its package budget: err=%v got %v", err, rules(vs))
+	}
+	if vs, _, err := scan(root, map[string]int{"big": sizeBudget + 100}); err != nil || len(vs) != 0 {
+		t.Fatalf("a package budget above the global one must not raise it: err=%v got %v", err, rules(vs))
+	}
+	if vs, _, err := scan(root, map[string]int{"big": 0}); err != nil || len(vs) != 1 {
+		t.Fatalf("zero budget: err=%v got %v", err, rules(vs))
+	}
+	if vs, _, err := scan(root, map[string]int{"other": 1}); err != nil || len(vs) != 0 {
+		t.Fatalf("an entry for another package must not apply: err=%v got %v", err, rules(vs))
+	}
+}

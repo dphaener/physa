@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +24,11 @@ import (
 // TestMain keeps every test off GitHub: unless a test installs its own fake,
 // GitHub knows no PRs and no change came from one.
 func TestMain(m *testing.M) {
+	// The test binary never acts as an engine.
+	if i := slices.Index(os.Args, "engine"); i >= 0 && i+1 < len(os.Args) && os.Args[i+1] == "run" {
+		fmt.Fprintln(os.Stderr, "physa test binary: refusing to run as an engine")
+		os.Exit(3)
+	}
 	newForge = func(dir string) forge.Forge { return fakeGitHub(dir, nil) }
 	// No test starts a real agent: an unexpected start stops the binary.
 	agents["claude"] = func() adapter.Adapter { return unexpectedAgent{} }
@@ -114,10 +120,25 @@ func rootHelp() string {
 
 func TestRootHelpListsTheCommands(t *testing.T) {
 	help := rootHelp()
-	for _, name := range []string{"check ", "map ", "sync ", "version ", "help "} {
+	for _, name := range []string{"check ", "map ", "init ", "engine ", "api ", "sync ", "version ", "help "} {
 		if !strings.Contains(help, "\n  "+name) {
 			t.Errorf("root help lacks %q:\n%s", name, help)
 		}
+	}
+}
+
+func TestHelpListsEngineAndAPI(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("code %d, stderr %q", code, stderr.String())
+	}
+	help, last := stdout.String(), -1
+	for _, name := range []string{"check", "map", "init", "engine", "api", "sync", "version", "help"} {
+		i := strings.Index(help, "\n  "+name+" ")
+		if i <= last {
+			t.Errorf("physa help lists %q out of the order check, map, init, engine, api, sync, version, help:\n%s", name, help)
+		}
+		last = i
 	}
 }
 
@@ -139,6 +160,7 @@ func TestHelpOnGroupsAndLeaves(t *testing.T) {
 		{"map", "--help"}, {"map", "index", "--help"}, {"map", "slice", "--help"},
 		{"map", "changes", "--help"}, {"map", "records", "--help"},
 		{"version", "--help"}, {"sync", "--help"},
+		{"engine", "--help"}, {"engine", "run", "--help"}, {"api", "--help"}, {"api", "call", "--help"},
 	} {
 		var stdout, stderr bytes.Buffer
 		if code := run(args, &stdout, &stderr); code != 0 {

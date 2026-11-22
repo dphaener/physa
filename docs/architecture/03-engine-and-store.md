@@ -1,6 +1,6 @@
 # Architecture 03: the engine and its local store
 
-Draft 0.6, 2026-11-21. Uses `.physa/glossary.md` terms only. Builds on 01, 02, 07 and 08; §16 records the step 5 round. Items marked (Q) are open questions for the owner.
+Draft 0.7, 2026-11-22. Uses `.physa/glossary.md` terms only. Builds on 01, 02, 07 and 08; §16 records the step 5 round and §17 what step 5D built. Items marked (Q) are open questions for the owner.
 
 The engine is where Rhiza failed: "no orchestrator" was its goal six times and never happened, the owner wrote watch, stall and cleanup scripts around it, and its orchestration became a 55,000-line package with about 85% of all fixes. This design starts from those failures.
 
@@ -252,3 +252,19 @@ The engine is the part of Physa most likely to grow by accretion. Its packages g
 - **The CLI is nice**: "i think the cli needs to be NICE. IE use charm libraries." On a terminal, Charm's libraries (Bubble Tea, Lip Gloss, Huh, Bubbles) style output, give a filterable picker when a slug is left out, and drive forms. In a pipe, in CI or for an agent: plain text or `--json`, and a missing slug is an error listing the choices. Map output (slice, `--entry`) is plain everywhere.
 - **The local API is a WebSocket, like Rex's** (§12): "the rex api communicates over websockets i believe? check that. we should do the same." (Checked: Rex upgrades `GET /api/control` on its Unix socket to a WebSocket with subprotocol `rex.control.v1`.)
 - **Step 5 is built as five PRs**, in order: D the engine process and its API; E state tables, events and durable intents; F ideas, pitches and bets from the CLI; G the plan, appetite and its circuit breaker; H evidence from version control and from CI where a team runs one.
+
+## 17. Built in step 5D
+
+Build D, the engine process and its API, had to settle the points below. They are calls made by Claude as arbiter on behalf of dphaener during planning, for the owner to check. They were not settled with the owner.
+
+- **Files.** The engine keeps three files in the config directory: the socket `engine.sock` (mode 0600), the lock `engine.lock` and the log `engine.log`. The directory is mode 0700. The lock is an flock held for the engine's life, with its pid inside as text for messages only. The engine takes the lock first. Holding it proves no engine is alive, so an old socket file is then removed. The kernel releases the lock when the engine is killed, so a lock is never stale. An OS pid shown on screen is not an internal identifier.
+- **Short socket paths.** A socket path of 104 bytes or more is refused on every platform, with an error naming the path and the limit. It is the macOS limit, kept on Linux so both behave alike. There is no fallback directory.
+- **The API.** `GET /api` on the socket upgrades to a WebSocket with the subprotocol `physa.v1`, which both sides require. A request is `{"id", "method", "params"}`. A reply carries the same `id` and either a `result` or an `error` with a code (`bad_request`, `unknown_method` or `internal`) and a message. The engine may send an `event` with a name and data and no id. The API revision is an integer, now 1. Its first methods are `api.list`, `api.describe`, `engine.status` and `engine.stop`.
+- **Schemas.** Each method's schema is derived from its Go input and output types, from a small subset of JSON schema: json names, a `desc` tag, required unless `omitempty`, no unknown properties. Input is checked against the schema before it is decoded.
+- **Starting.** A start runs the same binary as `physa engine run`, detached, with its output appended to `engine.log`, and waits up to 5 seconds for the engine to answer. `engine status` and every `api` command start the engine when none runs. `engine stop` never does: with none running it says `No engine running` and exits 0. `engine run` exits 3 when an engine already runs and 2 on any other failure.
+- **Idle.** `--idle <duration>`, default 30 minutes, on `engine run` and `engine start`. The engine exits when no client has been connected and no call has come for that long.
+- **`engine run` and `run --foreground`.** `physa engine run` serves the engine in the foreground. `physa run --foreground` (§7.5) stays planned and is a different thing: it runs a bet.
+- **Upgrades.** An older engine keeps serving after an upgrade until it exits idle or is stopped. There is no version check yet.
+- **Platforms.** The engine runs on Linux and macOS only. On other platforms the rest of the binary still builds, and the engine commands refuse.
+- **Libraries.** coder/websocket is the one WebSocket library. Lip Gloss v2.0.6 is pinned because it keeps the go line at Go 1.25. Bubble Tea and Bubbles v2, needed by build F, need Go 1.26, so build F will raise the go line.
+- **Budgets.** `tools/codecheck` holds a budget per package: 400 non-blank lines each for `internal/engine`, `internal/api`, `internal/apiclient` (300), `internal/apischema`, `internal/enginestart` and `internal/enginecli`, and 200 for `internal/output` and `internal/configdir`.

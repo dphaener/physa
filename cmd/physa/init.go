@@ -7,6 +7,7 @@ import (
 
 	"github.com/dphaener/physa/internal/cli"
 	"github.com/dphaener/physa/internal/initrun"
+	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/vcs/git"
 )
 
@@ -27,19 +28,8 @@ func initCommand() *cli.Command {
 				Writer:     git.OpenWriter,
 				Hooks:      git.OpenHooks,
 				Stdin:      os.Stdin,
-				IsTerminal: stdinIsTerminal,
+				IsTerminal: func() bool { return output.IsTerminal(os.Stdin) },
 			})
 		},
 	}
-}
-
-// stdinIsTerminal reports whether a person is at standard input to answer:
-// it is a character device, and not the null device, which is one too.
-func stdinIsTerminal() bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
-		return false
-	}
-	null, err := os.Stat(os.DevNull)
-	return err != nil || !os.SameFile(fi, null)
 }

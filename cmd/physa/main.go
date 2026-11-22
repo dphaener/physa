@@ -1,16 +1,10 @@
-// Command physa is Physa's command line, a tree of grouped commands. check
-// checks the map, and the changes of a range against it: check map and check
-// changes. map reads the map: map index lists its capabilities, map slice
-// prints the slice a task needs, map changes lists the capability each change
-// of a range names, map records lists the slice records, map fmt rewrites the map's folders to
-// their format (--check only lists what would change) and map learn
-// finds what the merged changes have to teach the map: with --signals it
-// stops at the signals, without it an agent drafts proposals that are checked
-// on a scratch copy of the map and printed, never written; a bare map
-// prints the index. init --gather gathers a repo's sources into the store and init --propose
-// proposes a map from them, kept in the store and never written to the repo.
-// version prints the version of the build and help prints the commands. It reads version control only through the git adapter.
-// physa sync is not built yet: it returns with digests, after the engine.
+// Command physa is Physa's command line, a tree of grouped commands: check
+// checks the map and a range of changes; map reads the map, slices it, lists
+// changes and records, formats it and learns from merged changes; init
+// gathers a repo's sources and proposes its first map; engine starts, checks
+// and stops the machine's engine; api calls the engine's API by name; sync is
+// not built yet; version prints the build's version and help the commands.
+// It reads version control only through the git adapter.
 package main
 
 import (
@@ -19,6 +13,7 @@ import (
 	"os"
 
 	"github.com/dphaener/physa/internal/cli"
+	"github.com/dphaener/physa/internal/enginecli"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -40,10 +35,8 @@ func rootCommand() *cli.Command {
 		Summary: "Physa: product management for agents.",
 		Usage:   []string{"physa <command> [--help]"},
 	}
-	root.Subs = []*cli.Command{
-		checkCommand(),
-		mapCommand(),
-		initCommand(),
+	root.Subs = append([]*cli.Command{checkCommand(), mapCommand(), initCommand()}, enginecli.Commands(version)...)
+	root.Subs = append(root.Subs, []*cli.Command{
 		{
 			Name:    "sync",
 			Summary: "Not built yet: it returns with digests, after the engine.",
@@ -77,6 +70,6 @@ func rootCommand() *cli.Command {
 				return 0
 			},
 		},
-	}
+	}...)
 	return root
 }

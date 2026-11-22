@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dphaener/physa/internal/configdir"
 )
 
 // Source says where a name came from.
@@ -47,14 +49,11 @@ const fileName = "person"
 
 // ConfigDir returns Physa's config directory.
 func ConfigDir() (string, error) {
-	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" && filepath.IsAbs(x) {
-		return filepath.Join(x, "physa"), nil
+	d, err := configdir.Dir()
+	if err != nil {
+		return "", fmt.Errorf("person: %w", err)
 	}
-	h := os.Getenv("HOME")
-	if h == "" {
-		return "", errors.New("person: no XDG_CONFIG_HOME and no HOME")
-	}
-	return filepath.Join(h, ".config", "physa"), nil
+	return d, nil
 }
 
 // Resolve names the person: setting, else forge login (kept), else email.

@@ -25,6 +25,21 @@ import (
 // over means cutting scope, not raising the budget.
 const sizeBudget = 800
 
+// packageBudgets gives the engine's packages budgets lower than sizeBudget
+// (03 §13: "Its packages get size budgets from day one"). A listed package is
+// checked against its entry, never against more than sizeBudget. An entry for
+// a directory that does not exist yet is harmless.
+var packageBudgets = map[string]int{
+	"internal/engine":      400,
+	"internal/api":         400,
+	"internal/apischema":   400,
+	"internal/enginestart": 400,
+	"internal/enginecli":   400,
+	"internal/apiclient":   300,
+	"internal/output":      200,
+	"internal/configdir":   200,
+}
+
 // aboveCore lists the path prefixes, relative to the module, of the packages
 // that sit above the core: plugins and commands. The core (internal/) must
 // never import them.
@@ -62,7 +77,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "usage: codecheck [module-root]")
 		return 2
 	}
-	violations, n, err := scan(root)
+	violations, n, err := scan(root, packageBudgets)
 	if err != nil {
 		fmt.Fprintf(stderr, "codecheck: %v\n", err)
 		return 2
@@ -83,7 +98,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func check(root string) ([]Violation, error) {
-	v, _, err := scan(root)
+	v, _, err := scan(root, packageBudgets)
 	return v, err
 }
 
@@ -93,7 +108,9 @@ type pkg struct {
 	files []string // file names within dir
 }
 
-func scan(root string) ([]Violation, int, error) {
+// scan checks every package under root. budgets maps a package directory,
+// relative to root, to its budget; packages not in it get sizeBudget.
+func scan(root string, budgets map[string]int) ([]Violation, int, error) {
 	module, err := modulePath(filepath.Join(root, "go.mod"))
 	if err != nil {
 		return nil, 0, err
@@ -130,7 +147,7 @@ func scan(root string) ([]Violation, int, error) {
 
 	var out []Violation
 	for _, pk := range pkgs {
-		vs, err := checkPackage(root, module, pk)
+		vs, err := checkPackage(root, module, pk, budgets)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -149,7 +166,7 @@ func scan(root string) ([]Violation, int, error) {
 	return out, len(pkgs), nil
 }
 
-func checkPackage(root, module string, pk *pkg) ([]Violation, error) {
+func checkPackage(root, module string, pk *pkg, budgets map[string]int) ([]Violation, error) {
 	var out []Violation
 	fset := token.NewFileSet()
 	inCore := pk.dir == "internal" || strings.HasPrefix(pk.dir, "internal/")
@@ -201,8 +218,12 @@ func checkPackage(root, module string, pk *pkg) ([]Violation, error) {
 			}
 		}
 	}
-	if lines > sizeBudget {
-		out = append(out, Violation{pk.dir, ruleSize, fmt.Sprintf("%d non-blank lines, budget is %d", lines, sizeBudget)})
+	budget := sizeBudget
+	if b, ok := budgets[pk.dir]; ok && b < sizeBudget {
+		budget = b
+	}
+	if lines > budget {
+		out = append(out, Violation{pk.dir, ruleSize, fmt.Sprintf("%d non-blank lines, budget is %d", lines, budget)})
 	}
 	if pkgName != "" && !docOK {
 		msg := "no doc comment on the package clause"

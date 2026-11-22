@@ -32,7 +32,7 @@ Each step: what lands, what the owner can do with it, and when it is done. Comma
 
 ### 2. Changes checked against the map
 
-- **Status: landed** (2026-11-20; #11–#17); done when the next builds show it in use.
+- **Status: done** (2026-11-22; #11–#17). CI runs `physa check` on every PR, and builds D–H (#37–#41) left slice records of what each loaded; dphaener confirmed the done-when.
 - **Lands:** reading `Capability:` trailers; anchor checks against version control and, when present, the forge; `physa check` verifying each change's capability and the map (07 §5), with `physa check changes` and `physa map changes`; slice records written by `physa map slice` and listed by `physa map records` (07 §4.1); the version-control interface with git as its adapter (07 §6); the store with only the tables these need; the grouped commands (`grouped-cli`).
 - **The owner can:** run `physa check` on any branch, here, before or after a PR, and see each change's capability and whether the map holds; see which slices each session loaded.
 - **Done when:** `physa check` runs as a step of every Physa build, and the slice records of real builds show which agents loaded which slices.
@@ -47,7 +47,7 @@ Each step: what lands, what the owner can do with it, and when it is done. Comma
 
 ### 3a. Capability folders
 
-- **Status: landed** (2026-11-21; design 09, #33 and the second PR): the folder format, `physa check map` and `physa map fmt` with Physa's own map converted (09 §10, #33); then the slice that returns the floor and the headings, `physa map slice --entry`, the slice skill and `--budget` removed (09 §11). Done when remains.
+- **Status: landed** (2026-11-21; design 09, #33 and the second PR): the folder format, `physa check map` and `physa map fmt` with Physa's own map converted (09 §10, #33); then the slice that returns the floor and the headings, `physa map slice --entry`, the slice skill and `--budget` removed (09 §11). **Done** (2026-11-22): builds D–H took decisions with `--entry` after their capability slices, 1 to 7 entries each, as their slice records show; dphaener confirmed the done-when.
 - **Lands,** in two PRs (09 Q10): first the folder format, `physa check map` and `physa map fmt`, with Physa's own map converted; then the slice that returns the floor and the headings, `physa map slice --entry`, the slice skill, and `--budget` removed.
 - **Why now:** learning makes capability files grow past their limit within weeks, and nebari's init (step 4) should write the new format, not the old.
 - **Done when:** Physa's map is in folders, and agents building the next step take decisions with `--entry` (seen in slice records).

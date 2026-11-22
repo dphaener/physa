@@ -27,7 +27,7 @@ Rejected:
 ### Ideas live only in the local store for now
 `ideas-local-store` · decided by dphaener, choosing an option · 2026-11-21 · 319dc9d
 Ideas, pitches and bets live only in the repo's local store, which is never committed. Until the hosted layer exists they are gone on a re-clone and invisible on a second machine or to a teammate.
-Because: the person chose the local store alone over the other options offered.
+Because: it is the simplest place, and enough while Physa is built from one machine; mirroring comes with team digests and the hosted layer.
 Rejected:
 - The store, mirrored to git notes: team digests on notes are already planned for a later step.
 - Committed files in the repo: ideas stay out of the map, since work is not knowledge.

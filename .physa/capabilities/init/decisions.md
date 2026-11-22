@@ -32,7 +32,7 @@ Rejected:
 
 ### Teams can't replace Physa's skills
 `skills-not-replaceable` · decided by dphaener, in their words · 2026-11-21 · d219c03
-Physa's skills (mapping, recovering, learning) ship embedded in the binary, and a team can't replace them with its own.
+Physa's skills (mapping, recovering, learning, slice) ship embedded in the binary, and a team can't replace them with its own.
 Because: "That steps on our core functionality that we own and could end up with loss of trust in the product due to users making bad decisions."
 Rejected:
 - A flag naming a replacement skill file, or a replacement kept in the map's folder: either hands the core of the product to the team.

@@ -5,6 +5,11 @@
 # log (design 07 section 4.1). A person's own commit, made outside Claude
 # Code, carries none. The agent never writes the trailer; this hook does.
 #
+# It adds "Change: <bet>/<change>" after it, naming the planned change the
+# session works on, as the store says (recorded by "physa bet work", design
+# 03). The hook adds it, never the agent. It adds nothing when physa is not on
+# PATH or names no change, and it never starts the engine.
+#
 # It stamps nothing for a merge or squash message, or while a rebase or
 # cherry-pick is in progress: those carry someone else's work. A revert is
 # stamped, since the session made it. An empty message is left empty, so the
@@ -38,4 +43,20 @@ if ! sed '/^# -\{24\} >8 -\{24\}$/,$d' "$1" | grep -v -e '^#' -e '^[[:space:]]*$
 	exit 0
 fi
 
+# The change comes from "physa bet work --current", which reads the store
+# read-only. Any failure, or any output that is not <slug>/<slug>, means none.
+change=
+if command -v physa >/dev/null 2>&1; then
+	change=$(physa bet work --current 2>/dev/null </dev/null) || change=
+	change=$(printf '%s\n' "$change" | sed -n 1p)
+	case $change in
+	*[!a-z0-9/-]* | */*/* | '' | /* | */) change= ;;
+	*/*) ;;
+	*) change= ;;
+	esac
+fi
+
+if [ -n "$change" ]; then
+	exec git interpret-trailers --in-place --no-divider --if-exists addIfDifferent --trailer "Session: $id" --trailer "Change: $change" "$1"
+fi
 exec git interpret-trailers --in-place --no-divider --if-exists addIfDifferent --trailer "Session: $id" "$1"

@@ -33,20 +33,25 @@ func commandFor(env *ideacli.Env) *cli.Command {
 	}
 	return &cli.Command{
 		Name: "bet",
-		Summary: "Bet on an idea, and list, show and stop bets. Only a person bets or stops a bet: inside an agent's " +
+		Summary: "Bet on an idea, and list, show and stop bets, set and show its plan, and say which change a session works on. Only a person bets or stops a bet: inside an agent's " +
 			"session both are refused. The appetite is the one given, else the pitch's. A slug left out is chosen from a list on a terminal.",
 		Usage: []string{
 			"physa bet [<idea slug>] [--appetite <tokens>] [--json]",
 			"physa bet list [--json]",
 			"physa bet show [<slug>] [--json]",
 			"physa bet stop [<slug>] [--reason <text>] [--yes] [--json]",
+			"physa bet plan set [<bet>] [--reason <text>] [--from <file>|-] [--json]",
+			"physa bet plan show [<bet>] [--history] [--json]",
+			"physa bet work <bet>/<change> [--json]",
 		},
 		Run: b.start,
 		Subs: []*cli.Command{
 			leaf("list", "physa bet list [--json]", "List the bets, newest first, with their appetite and what is spent.", b.list),
-			leaf("show", "physa bet show [<slug>] [--json]", "Show a bet: its facts, a summary of its pitch and why it stopped.", b.show),
+			leaf("show", "physa bet show [<slug>] [--json]", "Show a bet: its facts, a summary of its pitch, its progress as facts and what needs its person.", b.show),
 			leaf("stop", "physa bet stop [<slug>] [--reason <text>] [--yes] [--json]",
 				"Stop an active bet, asking first on a terminal unless --yes.", b.stop),
+			b.planGroup(),
+			workCommand(b),
 		},
 	}
 }
@@ -231,6 +236,7 @@ func (b bets) show(args []string, stdout, stderr io.Writer) int {
 	if o.Pitch != nil {
 		v.Section("Pitch", summary(*o.Pitch))
 	}
+	showProgress(v, o)
 	return 0
 }
 

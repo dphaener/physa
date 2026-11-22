@@ -1,4 +1,4 @@
-// Package workapi is the engine's API for ideas, pitches and bets: eight methods, typed once, each change one command with its event.
+// Package workapi is the engine's API for ideas, pitches and bets: twelve methods, typed once, each change one command with its event.
 package workapi
 
 import (
@@ -82,7 +82,7 @@ func betDetailOut(d work.BetDetail) BetOut {
 	return o
 }
 
-// Methods returns the eight methods, reading and changing the state get
+// Methods returns the twelve methods, reading and changing the state get
 // opens for the repo each call names.
 func Methods(get func(ctx context.Context, repo string) (*state.State, error)) []api.Method {
 	g := getter(get)
@@ -92,7 +92,7 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 		betJSON   = `{"slug":"try-a-quiet-mode","idea":"try-a-quiet-mode","idea_text":"Try a quiet mode","person":"ann","appetite":200000,"spent":0,"state":"active","created_at":"2026-11-22T10:00:00Z","started_at":"2026-11-22T10:00:00Z"}`
 		slugNotes = "An unknown slug replies bad_request naming it."
 	)
-	return []api.Method{
+	return append(planMethods(g), []api.Method{
 		api.Define("idea.add", "Adds an idea, owned by the person who adds it.",
 			[]string{"The slug is made from the text (up to five words) and numbered when taken; a slug that is given and taken replies bad_request.",
 				"An idea has no named states and cannot be deleted."},
@@ -182,15 +182,17 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 				}
 				return out, refused(err)
 			}),
-		api.Define("bet.show", "Shows a bet with the pitch it was made on.",
-			[]string{slugNotes}, `{`+repo+`,"slug":"try-a-quiet-mode"}`, betJSON,
+		api.Define("bet.show", "Shows a bet with the pitch it was made on, its progress and its Needs you items.",
+			[]string{slugNotes, "progress holds facts, never a percentage: planned, landed, in work, asks open, spent against the appetite, replans and spend per change.",
+				"It reads the default branch for the bet's Change: trailers and records what landed; the bet is done when every planned change has. A version-control error leaves progress as the store holds it."},
+			`{`+repo+`,"slug":"try-a-quiet-mode"}`, betJSON,
 			func(ctx context.Context, _ *api.Conn, in SlugIn) (BetOut, error) {
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
 					return BetOut{}, err
 				}
-				d, err := work.Bet(ctx, st, in.Slug)
-				return betDetailOut(d), refused(err)
+				o, err := showBet(ctx, st, in.Repo, in.Slug)
+				return o, refused(err)
 			}),
 		api.Define("bet.stop", "Stops an active bet.",
 			[]string{"Only an active bet stops; any other replies bad_request.", slugNotes},
@@ -203,5 +205,5 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 				d, err := work.StopBet(ctx, st, work.StopIn{Slug: in.Slug, Reason: in.Reason, Person: in.Person})
 				return betDetailOut(d), refused(err)
 			}),
-	}
+	}...)
 }

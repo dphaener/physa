@@ -16,7 +16,7 @@ const (
 
 // reserved are the subcommand names of `physa idea` and `physa bet`. A slug
 // made from text that lands on one gets a number; a chosen one is refused.
-var reserved = map[string]bool{"add": true, "list": true, "show": true, "shape": true, "stop": true, "plan": true}
+var reserved = map[string]bool{"add": true, "list": true, "show": true, "shape": true, "stop": true, "plan": true, "work": true}
 
 var (
 	slugPat = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)

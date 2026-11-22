@@ -8,6 +8,7 @@ import (
 // Flags are a command line's flags and the arguments left.
 type Flags struct {
 	JSON, Yes                    bool
+	History, Current             bool
 	Slug, From, Appetite, Reason string
 	Args                         []string
 }
@@ -16,7 +17,7 @@ type Flags struct {
 var valued = []string{"slug", "from", "appetite", "reason"}
 
 // Parse reads args, taking only the flags named in allowed: --json and
-// --yes alone, and --slug, --from, --appetite and --reason each with a
+// --yes, --history and --current alone, and --slug, --from, --appetite and --reason each with a
 // non-empty value (--name value or --name=value). A lone "-" is an
 // argument. ok is false for any other flag, a short flag, a flag given
 // twice, or a missing value.
@@ -39,6 +40,8 @@ func Parse(args []string, allowed ...string) (f Flags, ok bool) {
 			}
 			f.JSON = f.JSON || name == "json"
 			f.Yes = f.Yes || name == "yes"
+			f.History = f.History || name == "history"
+			f.Current = f.Current || name == "current"
 			continue
 		}
 		if !hasVal {

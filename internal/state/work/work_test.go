@@ -165,7 +165,7 @@ func TestValidSlugReserved(t *testing.T) {
 			t.Errorf("ValidSlug(%q) = %v", s, err)
 		}
 	}
-	for _, s := range []string{"", "Quiet", "quiet--mode", "-quiet", "quiet-", "quiet mode", "add", "list", "show", "shape", "stop", "plan", strings.Repeat("a", 41)} {
+	for _, s := range []string{"", "Quiet", "quiet--mode", "-quiet", "quiet-", "quiet mode", "add", "list", "show", "shape", "stop", "plan", "work", strings.Repeat("a", 41)} {
 		if err := ValidSlug(s); !errors.Is(err, ErrSlugInvalid) {
 			t.Errorf("ValidSlug(%q) = %v, want ErrSlugInvalid", s, err)
 		}

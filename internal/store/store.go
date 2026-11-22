@@ -57,6 +57,25 @@ func Open(dir string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
+// OpenReadOnly opens an existing <path> without creating, migrating or
+// writing it. It is for readers outside the engine that must never write and
+// must work when no engine runs (the commit hook). A missing file gives an
+// error wrapping fs.ErrNotExist.
+func OpenReadOnly(path string) (*sql.DB, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro&_pragma=busy_timeout(250)&_pragma=query_only(1)")
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("open %s read-only: %w", path, err)
+	}
+	return db, nil
+}
+
 // whileBusy runs f again, with a backoff of 10ms doubling, while it fails
 // with SQLITE_BUSY, which busy_timeout does not cover for a connection's
 // first statement on a fresh file. It gives up after 5s.

@@ -191,7 +191,7 @@ func TestBadRequests(t *testing.T) {
 
 func TestDescribeShowsEachMethod(t *testing.T) {
 	e := newEnv(t)
-	for _, m := range []string{"idea.add", "idea.list", "idea.show", "idea.shape", "bet.start", "bet.list", "bet.show", "bet.stop"} {
+	for _, m := range []string{"idea.add", "idea.list", "idea.show", "idea.shape", "bet.start", "bet.list", "bet.show", "bet.stop", "plan.set", "plan.show", "bet.work", "bet.spend"} {
 		var d api.Description
 		if err := e.c.Call(context.Background(), "api.describe", api.DescribeInput{Name: m}, &d); err != nil {
 			t.Fatalf("describe %s: %v", m, err)
@@ -207,7 +207,7 @@ func TestDescribeShowsEachMethod(t *testing.T) {
 	if err := e.c.Call(context.Background(), "api.list", nil, &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list) < 8+4 {
+	if len(list) < 12+2 {
 		t.Errorf("api.list has %d methods", len(list))
 	}
 }
@@ -225,3 +225,124 @@ func TestPersonOnly(t *testing.T) {
 		t.Errorf("Refusal = %q", got)
 	}
 }
+
+const twoChanges = `{"changes":[
+ {"name":"first-step","capability":"alpha","what":"Do the first.","acceptance":["failure case: a bad input exits 2"],"must_not":[],"after":[]},
+ {"name":"second-step","capability":"beta","what":"Do the second.","acceptance":["no failure case: it only reads"],"must_not":[],"after":["first-step"]}]}`
+
+// planEnv is an env whose repo holds a map of two capabilities, a first
+// commit, and an active bet of 100k on an idea, with ann as the person.
+func planEnv(t *testing.T) *env {
+	t.Helper()
+	e := newEnv(t)
+	for _, c := range []string{"alpha", "beta"} {
+		dir := filepath.Join(e.repo, ".physa", "capabilities", c)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "index.md"), []byte("# "+c+"\n\nPromise of "+c+".\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e.git("add", ".")
+	e.git("commit", "-q", "-m", "chore: map")
+	e.must("idea.add", map[string]any{"text": "Try a quiet mode", "person": "ann"}, nil)
+	e.must("bet.start", map[string]any{"slug": "try-a-quiet-mode", "appetite": "100k", "person": "ann"}, nil)
+	return e
+}
+
+func (e *env) git(args ...string) {
+	e.t.Helper()
+	cmd := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
+	cmd.Dir = e.repo
+	if out, err := cmd.CombinedOutput(); err != nil {
+		e.t.Fatalf("git %v: %v: %s", args, err, out)
+	}
+}
+
+func (e *env) setPlan() PlanOut {
+	e.t.Helper()
+	var out PlanOut
+	e.must("plan.set", map[string]any{"bet": "try-a-quiet-mode", "person": "ann", "plan": jsonRaw(twoChanges)}, &out)
+	return out
+}
+
+func TestPlanSetAndShow(t *testing.T) {
+	e := planEnv(t)
+	got := e.setPlan()
+	if got.N != 1 || got.Replans != 0 || len(got.Changes) != 2 || got.Changes[1].After[0] != "first-step" {
+		t.Fatalf("plan.set = %+v", got)
+	}
+	var shown PlanOut
+	e.must("plan.show", map[string]any{"bet": "try-a-quiet-mode", "history": true}, &shown)
+	if shown.N != 1 || len(shown.History) != 1 || strings.Join(shown.History[0].Changes, ",") != "first-step,second-step" {
+		t.Fatalf("plan.show = %+v", shown)
+	}
+	e.badRequest("plan.show", map[string]any{"bet": "nope"}, `"nope"`)
+}
+
+func TestBadPlanAndReason(t *testing.T) {
+	e := planEnv(t)
+	bad := `{"changes":[
+ {"name":"a","capability":"alpha, beta","what":"x","acceptance":["failure case: y"],"after":["b"]},
+ {"name":"b","capability":"alpha","what":"x","acceptance":["failure case: y"],"after":["a"]}]}`
+	e.badRequest("plan.set", map[string]any{"bet": "try-a-quiet-mode", "person": "ann", "plan": jsonRaw(bad)},
+		"the plan has problems:", "names two capabilities", "a -> b -> a")
+	e.setPlan()
+	e.badRequest("plan.set", map[string]any{"bet": "try-a-quiet-mode", "person": "ann", "plan": jsonRaw(twoChanges)}, "needs a reason")
+	var out PlanOut
+	e.must("plan.set", map[string]any{"bet": "try-a-quiet-mode", "person": "ann", "reason": "missed a step", "plan": jsonRaw(twoChanges)}, &out)
+	if out.N != 2 || out.Replans != 1 || out.Reason != "missed a step" {
+		t.Fatalf("second revision = %+v", out)
+	}
+}
+
+func TestSpendBreakerAndNeeds(t *testing.T) {
+	e := planEnv(t)
+	e.setPlan()
+	e.must("bet.work", map[string]any{"bet": "try-a-quiet-mode", "change": "first-step", "session": "s-1"}, nil)
+	var sp SpendOut
+	e.must("bet.spend", map[string]any{"bet": "try-a-quiet-mode", "change": "first-step", "session": "s-1", "tokens": 79000}, &sp)
+	if sp.Warned || sp.Broke || sp.Spent != 79000 {
+		t.Fatalf("79k = %+v", sp)
+	}
+	e.must("bet.spend", map[string]any{"bet": "try-a-quiet-mode", "change": "first-step", "session": "s-1", "tokens": 80000}, &sp)
+	if !sp.Warned || sp.Broke {
+		t.Fatalf("80k = %+v", sp)
+	}
+	e.must("bet.spend", map[string]any{"bet": "try-a-quiet-mode", "change": "first-step", "session": "s-1", "tokens": 80000}, &sp)
+	if sp.Warned || sp.Spent != 80000 {
+		t.Fatalf("repeat = %+v", sp)
+	}
+	e.must("bet.spend", map[string]any{"bet": "try-a-quiet-mode", "change": "first-step", "session": "s-1", "tokens": 100000}, &sp)
+	if !sp.Broke || sp.State != "stopped" || sp.Appetite != 100000 {
+		t.Fatalf("100k = %+v", sp)
+	}
+	var bet BetOut
+	e.must("bet.show", map[string]any{"slug": "try-a-quiet-mode"}, &bet)
+	if bet.State != "stopped" || !strings.HasPrefix(bet.StopReason, "circuit breaker: spent") || len(bet.NeedsYou) != 2 || bet.Appetite != 100000 {
+		t.Fatalf("bet.show = %+v", bet)
+	}
+	if p := bet.Progress; p == nil || p.Spent != 100000 || len(p.PerChange) != 1 || p.PerChange[0].Change != "first-step" || len(p.InWork) != 1 {
+		t.Fatalf("progress = %+v", bet.Progress)
+	}
+	e.badRequest("bet.spend", map[string]any{"bet": "try-a-quiet-mode", "change": "nope", "session": "s-1", "tokens": 1}, "nope")
+}
+
+func TestShowLandsChangesAndFinishesBet(t *testing.T) {
+	e := planEnv(t)
+	e.setPlan()
+	e.git("commit", "-q", "--allow-empty", "-m", "feat: first\n\nChange: try-a-quiet-mode/first-step")
+	var bet BetOut
+	e.must("bet.show", map[string]any{"slug": "try-a-quiet-mode"}, &bet)
+	if bet.State != "active" || len(bet.Progress.Landed) != 1 || bet.Progress.Landed[0].Change != "first-step" || len(bet.Progress.Landed[0].Commit) != 40 {
+		t.Fatalf("one landed = %+v", bet)
+	}
+	e.git("commit", "-q", "--allow-empty", "-m", "feat: second\n\nChange: try-a-quiet-mode/second-step")
+	e.must("bet.show", map[string]any{"slug": "try-a-quiet-mode"}, &bet)
+	if bet.State != "done" || len(bet.Progress.Landed) != 2 || bet.EndedAt == "" {
+		t.Fatalf("both landed = %+v", bet)
+	}
+}
+
+func jsonRaw(s string) json.RawMessage { return json.RawMessage(s) }

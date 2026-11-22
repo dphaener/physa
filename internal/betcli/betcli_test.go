@@ -338,3 +338,258 @@ func TestStopConfirmedOnTerminal(t *testing.T) {
 	te.e.Confirm = func(string) (bool, error) { t.Error("--yes still asked"); return false, nil }
 	te.must("stop", "try-a-quiet-mode-2", "--yes")
 }
+
+const twoChanges = `{"changes":[
+ {"name":"first-step","capability":"alpha","what":"Do the first.","acceptance":["failure case: a bad input exits 2"],"must_not":["touch beta"],"after":[]},
+ {"name":"second-step","capability":"beta","what":"Do the second.","acceptance":["no failure case: it only reads"],"must_not":[],"after":["first-step"]}]}`
+
+// planRepo gives the test repo a map of two capabilities, a first commit and
+// an active bet of 100k on the idea "try-a-quiet-mode".
+func (te *tenv) planRepo() {
+	te.t.Helper()
+	repo, err := te.e.Repo()
+	if err != nil {
+		te.t.Fatal(err)
+	}
+	for _, c := range []string{"alpha", "beta"} {
+		dir := filepath.Join(repo, ".physa", "capabilities", c)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			te.t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "index.md"), []byte("# "+c+"\n\nPromise of "+c+".\n"), 0o644); err != nil {
+			te.t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"add", "."}, {"commit", "-q", "-m", "chore: map"}} {
+		cmd := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
+		cmd.Dir = repo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			te.t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	te.idea("Try a quiet mode", "", "")
+	te.must("try-a-quiet-mode", "--appetite", "100k")
+}
+
+func (te *tenv) planFile(body string) string {
+	te.t.Helper()
+	p := filepath.Join(te.t.TempDir(), "plan.json")
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		te.t.Fatal(err)
+	}
+	return p
+}
+
+func TestPlanSetFromFileAndStdinThenShow(t *testing.T) {
+	te := newTest(t)
+	te.planRepo()
+	out := te.must("plan", "set", "try-a-quiet-mode", "--from", te.planFile(twoChanges))
+	if out != "Plan for try-a-quiet-mode set: revision 1, 2 changes\n" {
+		t.Errorf("plan set: %q", out)
+	}
+	te.e.Stdin = strings.NewReader(twoChanges)
+	if errs := te.fails("plan", "set", "try-a-quiet-mode"); !strings.Contains(errs, "needs a reason") {
+		t.Errorf("second revision without reason: %q", errs)
+	}
+	te.e.Stdin = strings.NewReader(twoChanges)
+	out = te.must("plan", "set", "try-a-quiet-mode", "--reason", "missed a step")
+	if out != "Plan for try-a-quiet-mode set: revision 2, 2 changes, 1 replan\n" {
+		t.Errorf("replan: %q", out)
+	}
+	te.e.Stdin = strings.NewReader(twoChanges)
+	var po workapi.PlanOut
+	if err := json.Unmarshal([]byte(te.must("plan", "set", "try-a-quiet-mode", "--reason", "again", "--from", "-", "--json")), &po); err != nil || po.N != 3 || po.Replans != 2 {
+		t.Errorf("json plan set %+v, %v", po, err)
+	}
+	show := te.must("plan", "show", "try-a-quiet-mode")
+	for _, want := range []string{"Plan for try-a-quiet-mode", "revision", "again", "first-step", "capability  alpha", "failure case: a bad input exits 2", "touch beta", "after       first-step"} {
+		if !strings.Contains(show, want) {
+			t.Errorf("plan show lacks %q:\n%s", want, show)
+		}
+	}
+	if strings.Contains(show, "History") {
+		t.Errorf("plan show without --history:\n%s", show)
+	}
+	hist := te.must("plan", "show", "try-a-quiet-mode", "--history")
+	if !strings.Contains(hist, "History") {
+		t.Errorf("history:\n%s", hist)
+	}
+	if i, j := strings.Index(hist, "reason: missed a step"), strings.Index(hist, "reason: again"); i < 0 || j < i {
+		t.Errorf("history is not oldest first:\n%s", hist)
+	}
+}
+
+func TestPlanSetRefusals(t *testing.T) {
+	te := newTest(t)
+	te.planRepo()
+	bad := `{"changes":[{"name":"a","capability":"alpha, beta","what":"x","acceptance":["failure case: y"],"after":[]}]}`
+	errs := te.fails("plan", "set", "try-a-quiet-mode", "--from", te.planFile(bad))
+	if !strings.HasPrefix(errs, "physa bet plan set: the plan has problems:") || !strings.Contains(errs, "names two capabilities") {
+		t.Errorf("bad plan: %q", errs)
+	}
+	// Nothing on stdin and no --from off a terminal is an empty plan: bad usage.
+	if errs := te.fails("plan", "set", "try-a-quiet-mode"); !strings.Contains(errs, "plan is empty") {
+		t.Errorf("empty stdin: %q", errs)
+	}
+	te.e.IsInteractive = func() bool { return true }
+	if errs := te.fails("plan", "set", "try-a-quiet-mode"); !strings.Contains(errs, "--from") {
+		t.Errorf("terminal without --from: %q", errs)
+	}
+	te.e.IsInteractive = func() bool { return false }
+	if errs := te.fails("plan", "set", "--from", te.planFile(twoChanges), "--bogus"); errs == "" {
+		t.Error("bogus flag accepted")
+	}
+	if errs := te.fails("plan", "show", "try-a-quiet-mode"); !strings.Contains(errs, "try-a-quiet-mode") {
+		t.Errorf("show without a plan: %q", errs)
+	}
+}
+
+func TestPlanSetMissingBetListsActiveBets(t *testing.T) {
+	te := newTest(t)
+	te.planRepo()
+	te.e.Stdin = strings.NewReader(twoChanges)
+	errs := te.fails("plan", "set")
+	if !strings.Contains(errs, "name a bet; the bets are:") || !strings.Contains(errs, "try-a-quiet-mode") {
+		t.Errorf("missing slug: %q", errs)
+	}
+}
+
+func TestPlanAndWorkAllowedInAgentSessions(t *testing.T) {
+	te := newTest(t)
+	te.planRepo()
+	te.env["CLAUDE_CODE_SESSION_ID"], te.env["CLAUDECODE"] = "sess-1", "1"
+	te.must("plan", "set", "try-a-quiet-mode", "--from", te.planFile(twoChanges))
+	te.must("work", "try-a-quiet-mode/first-step")
+}
+
+func TestWorkAndCurrent(t *testing.T) {
+	te := newTest(t)
+	te.planRepo()
+	te.must("plan", "set", "try-a-quiet-mode", "--from", te.planFile(twoChanges))
+	te.env["CLAUDE_CODE_SESSION_ID"] = "sess-1"
+	if out := te.must("work", "--current"); out != "" {
+		t.Errorf("--current before work: %q", out)
+	}
+	if out := te.must("work", "try-a-quiet-mode/first-step"); out != "Session sess-1 works on try-a-quiet-mode/first-step\n" {
+		t.Errorf("work: %q", out)
+	}
+	if out := te.must("work", "--current"); out != "try-a-quiet-mode/first-step\n" {
+		t.Errorf("--current: %q", out)
+	}
+	var wo workapi.WorkOut
+	if err := json.Unmarshal([]byte(te.must("work", "try-a-quiet-mode/second-step", "--json")), &wo); err != nil || wo.Change != "second-step" {
+		t.Errorf("work json %+v, %v", wo, err)
+	}
+	if out := te.must("work", "--current"); out != "try-a-quiet-mode/second-step\n" {
+		t.Errorf("--current after a second work: %q", out)
+	}
+	te.env["CLAUDE_CODE_SESSION_ID"] = "other"
+	if out := te.must("work", "--current"); out != "" {
+		t.Errorf("--current for another session: %q", out)
+	}
+	te.env["CLAUDE_CODE_SESSION_ID"] = "sess-1"
+	if errs := te.fails("work", "try-a-quiet-mode/nope"); !strings.Contains(errs, "nope") {
+		t.Errorf("unknown change: %q", errs)
+	}
+	te.env["CLAUDE_CODE_SESSION_ID"] = ""
+	if out := te.must("work", "--current"); out != "" {
+		t.Errorf("--current with no session: %q", out)
+	}
+}
+
+func TestWorkWithoutSessionAndBadArguments(t *testing.T) {
+	te := newTest(t)
+	te.planRepo()
+	want := "physa bet work: no agent session: run it inside the session that works on the change\n"
+	if errs := te.fails("work", "try-a-quiet-mode/first-step"); errs != want {
+		t.Errorf("no session: %q", errs)
+	}
+	te.env["CLAUDE_CODE_SESSION_ID"] = "sess-1"
+	for _, args := range [][]string{{"work"}, {"work", "nochange"}, {"work", "a/"}, {"work", "/b"}, {"work", "a/b/c"}, {"work", "a/b", "--current"}, {"work", "--current", "--json"}} {
+		code, out, _ := te.bet(args...)
+		if code != 2 || out != "" {
+			t.Errorf("%v: code %d, stdout %q", args, code, out)
+		}
+	}
+}
+
+func TestCurrentWithNoStoreOrRepoPrintsNothing(t *testing.T) {
+	te := newTest(t)
+	te.env["CLAUDE_CODE_SESSION_ID"] = "sess-1"
+	// A repo whose engine never ran has no store, and --current must not make one.
+	repo, err := te.e.Repo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs := te.bet("work", "--current")
+	if code != 0 || out != "" || errs != "" {
+		t.Errorf("no store: %d %q %q", code, out, errs)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".git", "physa")); !os.IsNotExist(err) {
+		t.Errorf("--current made a store: %v", err)
+	}
+	t.Chdir(t.TempDir())
+	if code, out, errs := te.bet("work", "--current"); code != 0 || out != "" || errs != "" {
+		t.Errorf("not a repo: %d %q %q", code, out, errs)
+	}
+}
+
+func TestShowProgressAsFactsAndNeedsYou(t *testing.T) {
+	te := newTest(t)
+	te.planRepo()
+	plain := te.must("show", "try-a-quiet-mode")
+	if !strings.Contains(plain, "Progress") || !strings.Contains(plain, "planned       none yet") || strings.Contains(plain, "landed") {
+		t.Errorf("no plan:\n%s", plain)
+	}
+	te.must("plan", "set", "try-a-quiet-mode", "--from", te.planFile(twoChanges))
+	te.env["CLAUDE_CODE_SESSION_ID"] = "sess-1"
+	te.must("work", "try-a-quiet-mode/first-step")
+	spend := func(change string, tokens int64) {
+		t.Helper()
+		repo, _ := te.e.Repo()
+		in := workapi.SpendIn{Repo: repo, Bet: "try-a-quiet-mode", Change: change, Session: "sess-1", Tokens: tokens}
+		if err := te.e.Call("bet.spend", in, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	spend("first-step", 30000)
+	out := te.must("show", "try-a-quiet-mode")
+	for _, want := range []string{"Progress", "planned       2 changes", "landed        0 of 2: none", "in work       first-step",
+		"asks open     none yet", "spent         30k of 100k", "replans       0", "Spend per change", "first-step  30k"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("show lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Needs you") {
+		t.Errorf("Needs you before 80%%:\n%s", out)
+	}
+	spend("", 55000)
+	out = te.must("show", "try-a-quiet-mode")
+	if !strings.Contains(out, "Needs you") || !strings.Contains(out, "has spent 85k of its 100k appetite") || !strings.Contains(out, "(bet)  55k") {
+		t.Errorf("after 80%%:\n%s", out)
+	}
+	spend("first-step", 45000)
+	out = te.must("show", "try-a-quiet-mode")
+	if !strings.Contains(out, "the circuit breaker stopped the bet") || !strings.Contains(out, "stopped") {
+		t.Errorf("after 100%%:\n%s", out)
+	}
+	if strings.Contains(out, "%") {
+		t.Errorf("a percentage in the output:\n%s", out)
+	}
+	var o workapi.BetOut
+	if err := json.Unmarshal([]byte(te.must("show", "try-a-quiet-mode", "--json")), &o); err != nil || o.Progress == nil || len(o.NeedsYou) != 2 {
+		t.Errorf("show json %+v, %v", o, err)
+	}
+}
+
+func TestHelpListsPlanAndWork(t *testing.T) {
+	te := newTest(t)
+	var out bytes.Buffer
+	root := &cli.Command{Name: "physa", Subs: []*cli.Command{commandFor(te.e)}}
+	cli.Dispatch(root, []string{"bet", "--help"}, &out, io.Discard)
+	for _, want := range []string{"physa bet plan set", "physa bet plan show", "physa bet work"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("help lacks %q:\n%s", want, out.String())
+		}
+	}
+}

@@ -11,7 +11,9 @@ package sessionhook
 
 import (
 	"bytes"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -105,6 +107,9 @@ func write(h vcs.Hooks) (Outcome, error) {
 		if bytes.Equal(existing, script) {
 			return Outcome{Already: true, Path: file}, nil
 		}
+		if sum := sha256.Sum256(existing); hex.EncodeToString(sum[:]) == earlier {
+			return replace(file)
+		}
 		return Outcome{}, fmt.Errorf("%s already holds a different hook, so it was left alone; to stamp Session: on changes, call Physa's hook (%s in the Physa repo) from your own prepare-commit-msg hook", file, Hook)
 	}
 	if !errors.Is(err, os.ErrNotExist) {
@@ -125,6 +130,22 @@ func write(h vcs.Hooks) (Outcome, error) {
 		return Outcome{}, werr
 	}
 	// The creation mode is cut by the umask; this file is ours, so set it.
+	if err := os.Chmod(file, 0o755); err != nil {
+		return Outcome{}, err
+	}
+	return Outcome{Written: true, Path: file}, nil
+}
+
+// earlier is the hex SHA-256 of the only Physa hook before this one, which
+// stamped Session: alone. write replaces a file holding exactly that hook, so
+// a repo that installed it gets Change: too, and nothing else.
+const earlier = "25d4c44a6022894018c57d4310360aa0e724fa1c0b32af0d095593bc58739e64"
+
+// replace writes the embedded hook over file, executable.
+func replace(file string) (Outcome, error) {
+	if err := os.WriteFile(file, script, 0o755); err != nil {
+		return Outcome{}, err
+	}
 	if err := os.Chmod(file, 0o755); err != nil {
 		return Outcome{}, err
 	}

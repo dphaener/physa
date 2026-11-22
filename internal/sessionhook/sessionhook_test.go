@@ -235,3 +235,131 @@ func TestInstallNonExecutableShippedHookWritesEmbedded(t *testing.T) {
 		t.Errorf("core.hooksPath = %q, want it unset", p)
 	}
 }
+
+// runHook runs the embedded hook with sh in a fresh repo on a message holding
+// a trailer block, with a fake physa script (none when fake is "") first on
+// PATH, and returns the message afterwards and the hook's exit code.
+func runHook(t *testing.T, fake string, env ...string) (string, int) {
+	t.Helper()
+	root, _ := repo(t)
+	bin := t.TempDir()
+	if fake != "" {
+		if err := os.WriteFile(filepath.Join(bin, "physa"), []byte("#!/bin/sh\n"+fake+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hook := filepath.Join(bin, "hook")
+	if err := os.WriteFile(hook, script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	msg := filepath.Join(root, "MSG")
+	if err := os.WriteFile(msg, []byte("feat: x\n\nBody.\n\nCapability: ideas\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{hook, msg}
+	for _, e := range env {
+		if strings.HasPrefix(e, "SOURCE=") {
+			args = append(args, strings.TrimPrefix(e, "SOURCE="))
+		}
+	}
+	cmd := exec.Command("sh", args...)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CLAUDE_CODE_SESSION_ID=fake-session-1")
+	for _, e := range env {
+		if !strings.HasPrefix(e, "SOURCE=") {
+			cmd.Env = append(cmd.Env, e)
+		}
+	}
+	code := 0
+	if err := cmd.Run(); err != nil {
+		code = 1
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		}
+	}
+	b, err := os.ReadFile(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b), code
+}
+
+const base = "feat: x\n\nBody.\n\nCapability: ideas\n"
+
+func TestHookAddsChange(t *testing.T) {
+	got, code := runHook(t, "echo my-bet/retry-queue")
+	want := base + "Session: fake-session-1\nChange: my-bet/retry-queue\n"
+	if code != 0 || got != want {
+		t.Errorf("got %q (exit %d), want %q", got, code, want)
+	}
+}
+
+func TestHookAddsNoChange(t *testing.T) {
+	want := base + "Session: fake-session-1\n"
+	for name, fake := range map[string]string{
+		"garbage":  "echo 'not a change'",
+		"exits 1":  "echo my-bet/retry-queue; exit 1",
+		"two bars": "echo a/b/c",
+		"empty":    "exit 0",
+		"absent":   "",
+	} {
+		got, code := runHook(t, fake)
+		if code != 0 || got != want {
+			t.Errorf("%s: got %q (exit %d), want %q", name, got, code, want)
+		}
+	}
+}
+
+func TestHookSkips(t *testing.T) {
+	got, code := runHook(t, "echo my-bet/retry-queue", "CLAUDE_CODE_SESSION_ID=")
+	if code != 0 || got != base {
+		t.Errorf("no session: got %q (exit %d)", got, code)
+	}
+	got, code = runHook(t, "echo my-bet/retry-queue", "SOURCE=merge")
+	if code != 0 || got != base {
+		t.Errorf("merge: got %q (exit %d)", got, code)
+	}
+}
+
+func TestHookTwiceAddsNothingNew(t *testing.T) {
+	root, _ := repo(t)
+	bin := t.TempDir()
+	os.WriteFile(filepath.Join(bin, "physa"), []byte("#!/bin/sh\necho my-bet/retry-queue\n"), 0o755)
+	hook := filepath.Join(bin, "hook")
+	os.WriteFile(hook, script, 0o755)
+	msg := filepath.Join(root, "MSG")
+	os.WriteFile(msg, []byte(base), 0o644)
+	for range 2 {
+		cmd := exec.Command("sh", hook, msg)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CLAUDE_CODE_SESSION_ID=fake-session-1")
+		if err := cmd.Run(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, _ := os.ReadFile(msg)
+	if want := base + "Session: fake-session-1\nChange: my-bet/retry-queue\n"; string(b) != want {
+		t.Errorf("got %q, want %q", b, want)
+	}
+}
+
+func TestInstallReplacesEarlierHook(t *testing.T) {
+	root, h := bare(t)
+	old, err := os.ReadFile(filepath.Join("testdata", "prepare-commit-msg.v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(root, ".git", "hooks", name)
+	if err := os.WriteFile(file, old, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Install(root, h)
+	if err != nil || got != (Outcome{Written: true, Path: file}) {
+		t.Fatalf("Install = %+v, %v, want Written", got, err)
+	}
+	b, _ := os.ReadFile(file)
+	info, _ := os.Stat(file)
+	if !bytes.Equal(b, script) || info.Mode().Perm() != 0o755 {
+		t.Errorf("the earlier hook was not replaced by the embedded one: %v", info.Mode())
+	}
+}

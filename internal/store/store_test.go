@@ -3,6 +3,8 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -134,10 +136,10 @@ func TestMigrationTwoDropsPRChecks(t *testing.T) {
 	}
 }
 
-func TestFreshStoreMigratesToEight(t *testing.T) {
+func TestFreshStoreMigratesToNine(t *testing.T) {
 	s, _ := open(t)
-	if got := version(t, s); got != 8 {
-		t.Errorf("user_version = %d, want 8", got)
+	if got := version(t, s); got != 9 {
+		t.Errorf("user_version = %d, want 9", got)
 	}
 	var n int
 	if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name = 'slice_records'").Scan(&n); err != nil || n != 1 {
@@ -347,5 +349,73 @@ func TestEngineTableChecks(t *testing.T) {
 	}
 	if _, err := s.db.Exec(`INSERT INTO bets (slug, idea_id, person, appetite_tokens, created_at) VALUES ('ok', 1, 'p', 10, ?)`, now); err != nil {
 		t.Errorf("a valid bet was refused: %v", err)
+	}
+}
+
+func TestPlanTables(t *testing.T) {
+	s, _ := open(t)
+	if got := version(t, s); got != 9 {
+		t.Fatalf("user_version = %d, want 9", got)
+	}
+	for _, table := range []string{"changes", "session_changes", "spends", "needs_you"} {
+		var n int
+		if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&n); err != nil || n != 1 {
+			t.Errorf("%s tables = %d, %v; want 1", table, n, err)
+		}
+	}
+}
+
+func TestPlanTableChecks(t *testing.T) {
+	s, _ := open(t)
+	const now = "2026-11-01T12:00:00Z"
+	for _, q := range []string{
+		`INSERT INTO ideas (id, slug, text, person, created_at, updated_at) VALUES (1, 'a', 't', 'p', '` + now + `', '` + now + `')`,
+		`INSERT INTO bets (id, slug, idea_id, person, appetite_tokens, created_at) VALUES (1, 'b', 1, 'p', 10, '` + now + `')`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, q := range map[string]string{
+		"bad change state": `INSERT INTO changes (bet_id, name, capability, state, created_at, updated_at) VALUES (1, 'x', 'c', 'merged', '` + now + `', '` + now + `')`,
+		"bad kind":         `INSERT INTO needs_you (person, kind, text, created_at) VALUES ('p', 'other', 't', '` + now + `')`,
+		"negative tokens":  `INSERT INTO spends (bet_id, session, tokens, at) VALUES (1, 's', -1, '` + now + `')`,
+	} {
+		if _, err := s.db.Exec(q); err == nil {
+			t.Errorf("%s was accepted, want refused", name)
+		}
+	}
+	if _, err := s.db.Exec(`INSERT INTO spends (bet_id, session, tokens, at) VALUES (1, 's', 5, ?)`, now); err != nil {
+		t.Errorf("a valid spend was refused: %v", err)
+	}
+}
+
+func TestOpenReadOnlyReadsAndRefusesWrites(t *testing.T) {
+	s, dir := open(t)
+	if _, err := s.db.Exec(`INSERT INTO ideas (slug, text, person, created_at, updated_at) VALUES ('a', 't', 'p', 'n', 'n')`); err != nil {
+		t.Fatal(err)
+	}
+	db, err := OpenReadOnly(filepath.Join(dir, "physa.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var n int
+	if err := db.QueryRow("SELECT count(*) FROM ideas").Scan(&n); err != nil || n != 1 {
+		t.Errorf("read = %d, %v; want 1", n, err)
+	}
+	if _, err := db.Exec(`INSERT INTO ideas (slug, text, person, created_at, updated_at) VALUES ('b', 't', 'p', 'n', 'n')`); err == nil {
+		t.Error("a write through the read-only handle was accepted")
+	}
+}
+
+func TestOpenReadOnlyMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	_, err := OpenReadOnly(filepath.Join(dir, "physa.db"))
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want one wrapping fs.ErrNotExist", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("the open created %d entries, want none", len(entries))
 	}
 }

@@ -70,7 +70,7 @@ An **adapter** is the other half: what starts and talks to one kind of agent (Cl
 When a bet starts, the harness's conduct role (the conductor, for the owner's harness) writes the plan through the API:
 
 ```
-physa bet plan set <<'EOF'
+physa bet plan set <bet> <<'EOF'
 {"changes":[
   {"name":"retry-queue","capability":"delivery",
    "what":"Retries go through the queue",
@@ -82,10 +82,10 @@ physa bet plan set <<'EOF'
 EOF
 ```
 
-- Each planned change names exactly one capability. A plan with a change that names two is refused (the glossary: it should have been split).
-- **Acceptance** is runnable, scoped to the change's own tests, and holds a failure case or a stated reason why none applies (spec E1).
+- Each planned change names exactly one capability, a slug in the map. A plan with a change that names two is refused (the glossary: it should have been split).
+- **Acceptance** is runnable, scoped to the change's own tests, and holds an entry starting `failure case:`, or `no failure case:` with the reason why none applies (spec E1).
 - `after` orders changes that depend on each other (Q2).
-- Revising the plan is `physa bet plan set` again with a reason; the engine keeps every revision (03 §10a).
+- Revising the plan is `physa bet plan set <bet> --reason <text>` again. A revision after the first is refused without a reason, and the engine keeps every revision with its reason (03 §10a, §20). The plan comes from stdin, or from `--from <file>`.
 - No file lists: agents are good at finding files, and the map holds why, not what. The acceptance is the contract.
 
 ### 3.2 A change's path

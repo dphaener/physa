@@ -24,6 +24,8 @@ const mergedQuery = `query($owner: String!, $name: String!, $cursor: String) {
         title
         body
         mergedAt
+        createdAt
+        mergeCommit { oid }
         updatedAt
         author { login }
         comments(first: 100) { nodes { author { login __typename } createdAt body } }
@@ -36,6 +38,7 @@ const mergedQuery = `query($owner: String!, $name: String!, $cursor: String) {
             comments(first: 100) { nodes { author { login __typename } createdAt body } }
           }
         }
+        commits(first: 100) { nodes { commit { oid committedDate statusCheckRollup { state } } } }
         closingIssuesReferences(first: 10) { nodes { number title body } }
       }
     }
@@ -47,9 +50,24 @@ type mergedNode struct {
 	Title     string    `json:"title"`
 	Body      string    `json:"body"`
 	MergedAt  time.Time `json:"mergedAt"`
+	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
-	Author    *author   `json:"author"`
-	Comments  struct {
+	Merge     *struct {
+		OID string `json:"oid"`
+	} `json:"mergeCommit"`
+	Commits struct {
+		Nodes []struct {
+			Commit struct {
+				OID           string    `json:"oid"`
+				CommittedDate time.Time `json:"committedDate"`
+				Rollup        *struct {
+					State string `json:"state"`
+				} `json:"statusCheckRollup"`
+			} `json:"commit"`
+		} `json:"nodes"`
+	} `json:"commits"`
+	Author   *author `json:"author"`
+	Comments struct {
 		Nodes []comment `json:"nodes"`
 	} `json:"comments"`
 	Reviews struct {
@@ -139,7 +157,7 @@ func (c *Client) MergedPRs(since time.Time, max int) ([]forge.PR, bool, error) {
 
 func (n mergedNode) pr() forge.PR {
 	pr := forge.PR{
-		Number: n.Number, Title: n.Title, Body: n.Body, MergedAt: n.MergedAt,
+		Number: n.Number, Title: n.Title, Body: n.Body, MergedAt: n.MergedAt, CreatedAt: n.CreatedAt,
 		Comments: comments(n.Comments.Nodes, n.Reviews.Nodes),
 		Commits:  []forge.Commit{},
 		Issues:   n.Issues.Nodes,
@@ -147,5 +165,16 @@ func (n mergedNode) pr() forge.PR {
 	if n.Author != nil {
 		pr.Author = n.Author.Login
 	}
+	if n.Merge != nil {
+		pr.MergeCommit = n.Merge.OID
+	}
+	for _, cn := range n.Commits.Nodes {
+		c := forge.Commit{ID: cn.Commit.OID, At: cn.Commit.CommittedDate}
+		if cn.Commit.Rollup != nil {
+			c.Checks = cn.Commit.Rollup.State
+		}
+		pr.Commits = append(pr.Commits, c)
+	}
+	sort.SliceStable(pr.Commits, func(i, j int) bool { return pr.Commits[i].At.Before(pr.Commits[j].At) })
 	return pr
 }

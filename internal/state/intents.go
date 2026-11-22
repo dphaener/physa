@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,12 +15,18 @@ const maxAttempts = 10 // tries before an intent is failed
 // IntentKind names a kind of intent. Repeat says, in one sentence, why
 // carrying it out twice is safe. Check, if set, refuses a bad payload when
 // the intent is written. Do runs off the loop, under a ctx that Close ends.
+// Record, if set, stores what a successful Do found, in the transaction that
+// marks the intent done; if it fails, nothing is kept and Do counts as failed.
 type IntentKind struct {
 	Name   string
 	Repeat string // required
 	Check  func(payload json.RawMessage) error
 	Do     func(ctx context.Context, in Intent) (result string, err error)
+	Record func(tx *Tx, in Intent, result string) error
 }
+
+// recordError is a Record's failure: carry records it as the Do's.
+type recordError struct{ error }
 
 // Intent is one pending intent, as its kind's Do sees it.
 type Intent struct {
@@ -130,7 +137,10 @@ func (s *State) carry(in Intent) {
 	result, doErr := safely("intent", func() (string, error) { return s.intents[in.Kind].Do(s.ctx, in) })
 	for pause := 100 * time.Millisecond; s.ctx.Err() == nil; pause = min(2*pause, 5*time.Second) {
 		err := s.Submit(s.ctx, s.record(in, result, doErr))
-		if err == nil || s.ctx.Err() != nil {
+		if re := (recordError{}); errors.As(err, &re) {
+			doErr = re.error
+			continue
+		} else if err == nil || s.ctx.Err() != nil {
 			return
 		}
 		s.logf("intent %d (%s): could not record its outcome, trying again in %s: %v", in.ID, in.Kind, pause, err)
@@ -141,11 +151,16 @@ func (s *State) carry(in Intent) {
 	}
 }
 
-// record is the command for one outcome: done; pending again after one
-// second doubling up to a minute; or failed, at the tenth failed attempt.
+// record is the command for one outcome: done (with the kind's Record), pending
+// again after 1 s doubling to a minute, or failed at the tenth attempt.
 func (s *State) record(in Intent, result string, doErr error) Command {
 	return func(tx *Tx) error {
-		n, ok := in.Attempts+1, doErr == nil
+		n, ok, k := in.Attempts+1, doErr == nil, s.intents[in.Kind]
+		if ok && k.Record != nil {
+			if _, err := safely("record", func() (string, error) { return "", k.Record(tx, in, result) }); err != nil {
+				return recordError{fmt.Errorf("recording what it found: %w", err)}
+			}
+		}
 		state, event, next, data := "done", "intent.done", tx.now, map[string]any{"kind": in.Kind, "attempts": n}
 		var fail sql.NullString
 		if !ok {

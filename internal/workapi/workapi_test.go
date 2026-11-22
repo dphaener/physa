@@ -15,6 +15,9 @@ import (
 	"github.com/dphaener/physa/internal/api"
 	"github.com/dphaener/physa/internal/apiclient"
 	"github.com/dphaener/physa/internal/engine"
+	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/state"
+	stateevidence "github.com/dphaener/physa/internal/state/evidence"
 )
 
 const goodPitch = "# Try a quiet mode\n## Problem\nToo noisy.\n## Appetite\n200k\n## Solution\nA flag.\n## Scope\nCLI only.\n## Signal\nFewer complaints.\n## Rabbit holes\nColour themes.\n## No-gos\nNo config file.\n"
@@ -27,8 +30,23 @@ type env struct {
 
 // newEnv runs an engine with the eight methods in this process, on a short
 // temporary directory, with a new git repo, and dials it.
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { return newEnvWith(t, &fakeForge{}) }
+
+// fakeForge is a forge with no merged PRs.
+type fakeForge struct{}
+
+func (*fakeForge) Name() string                            { return "fake" }
+func (*fakeForge) PRExists(int) (bool, error)              { return false, nil }
+func (*fakeForge) ChangePR(string) (forge.PR, bool, error) { return forge.PR{}, false, nil }
+func (*fakeForge) MergedPRs(time.Time, int) ([]forge.PR, bool, error) {
+	return nil, false, nil
+}
+
+// newEnvWith is newEnv with the evidence kinds registered on a forge: the
+// poll runs in the engine, the forge is the fake, nothing reaches GitHub.
+func newEnvWith(t *testing.T, ff forge.Forge) *env {
 	t.Helper()
+	timers, intents := stateevidence.Options(func(string) forge.Forge { return ff })
 	tmp, err := os.MkdirTemp("", "px")
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +64,8 @@ func newEnv(t *testing.T) *env {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- engine.Run(ctx, engine.Options{Dir: dir, Idle: time.Minute, Version: "test", Methods: Methods})
+		done <- engine.Run(ctx, engine.Options{Dir: dir, Idle: time.Minute, Version: "test", Methods: Methods,
+			State: state.Options{Timers: timers, Intents: intents}})
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -150,7 +169,9 @@ func TestMethodsHappyPath(t *testing.T) {
 	e.must("engine.events", nil, &evs)
 	kinds := []string{}
 	for _, ev := range evs {
-		kinds = append(kinds, ev.Kind)
+		if ev.Kind != "intent.done" { // the evidence poll's own
+			kinds = append(kinds, ev.Kind)
+		}
 	}
 	if got := strings.Join(kinds, " "); got != "bet.stopped bet.started pitch.shaped idea.added idea.added" {
 		t.Errorf("events = %s", got)
@@ -191,7 +212,7 @@ func TestBadRequests(t *testing.T) {
 
 func TestDescribeShowsEachMethod(t *testing.T) {
 	e := newEnv(t)
-	for _, m := range []string{"idea.add", "idea.list", "idea.show", "idea.shape", "bet.start", "bet.list", "bet.show", "bet.stop", "plan.set", "plan.show", "bet.work", "bet.spend"} {
+	for _, m := range []string{"idea.add", "idea.list", "idea.show", "idea.shape", "bet.start", "bet.list", "bet.show", "bet.stop", "plan.set", "plan.show", "bet.work", "bet.spend", "evidence.list"} {
 		var d api.Description
 		if err := e.c.Call(context.Background(), "api.describe", api.DescribeInput{Name: m}, &d); err != nil {
 			t.Fatalf("describe %s: %v", m, err)
@@ -207,7 +228,7 @@ func TestDescribeShowsEachMethod(t *testing.T) {
 	if err := e.c.Call(context.Background(), "api.list", nil, &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list) < 12+2 {
+	if len(list) < 13+2 {
 		t.Errorf("api.list has %d methods", len(list))
 	}
 }
@@ -346,3 +367,94 @@ func TestShowLandsChangesAndFinishesBet(t *testing.T) {
 }
 
 func jsonRaw(s string) json.RawMessage { return json.RawMessage(s) }
+
+// commitFile commits a new file with message, so each commit changes the tree.
+func (e *env) commitFile(name, message string) {
+	e.t.Helper()
+	if err := os.WriteFile(filepath.Join(e.repo, name), []byte(name), 0o644); err != nil {
+		e.t.Fatal(err)
+	}
+	e.git("add", name)
+	e.git("commit", "-q", "-m", message)
+}
+
+// facts calls evidence.list until it returns want facts: the engine polls
+// on its own, so the facts arrive a moment after the commits.
+func (e *env) facts(want int, params map[string]any) []EvidenceOut {
+	e.t.Helper()
+	var out []EvidenceOut
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		out = nil
+		e.must("evidence.list", params, &out)
+		if len(out) == want {
+			return out
+		}
+		if time.Now().After(deadline) {
+			e.t.Fatalf("evidence.list %v returned %d facts, want %d: %+v", params, len(out), want, out)
+		}
+	}
+}
+
+func TestEvidenceListAndShow(t *testing.T) {
+	e := newEnv(t)
+	e.commitFile("a.txt", "feat: a\n\nCapability: alpha\nChange: try-a-quiet-mode/first-step")
+	e.commitFile("b.txt", "feat: b\n\nCapability: beta")
+	e.must("idea.add", map[string]any{"text": "Try a quiet mode", "person": "ann"}, nil)
+	e.must("bet.start", map[string]any{"slug": "try-a-quiet-mode", "appetite": "100k", "person": "ann"}, nil)
+	all := e.facts(2, nil)
+	if all[0].Kind != "landed" || all[0].Source != "vcs" || len(all[0].Commit) != 8 || all[0].At == "" {
+		t.Fatalf("a fact = %+v", all[0])
+	}
+	if got := e.facts(1, map[string]any{"capability": "alpha"}); got[0].Bet != "try-a-quiet-mode" || got[0].Change != "first-step" || got[0].Capability != "alpha" {
+		t.Errorf("capability filter = %+v", got)
+	}
+	e.facts(1, map[string]any{"bet": "try-a-quiet-mode"})
+	e.facts(0, map[string]any{"bet": "no-such-bet"})
+	e.facts(1, map[string]any{"limit": 1})
+	e.git("revert", "--no-edit", "HEAD")
+	// A new bet wakes the poll, so the revert is seen at once, not in 5 minutes.
+	e.must("idea.add", map[string]any{"text": "Second", "slug": "second", "person": "ann"}, nil)
+	e.must("bet.start", map[string]any{"slug": "second", "appetite": "100k", "person": "ann"}, nil)
+	if got := e.facts(4, nil); len(got) != 4 {
+		t.Fatalf("after a revert: %+v", got)
+	}
+	var bet BetOut
+	e.must("bet.show", map[string]any{"slug": "try-a-quiet-mode"}, &bet)
+	if len(bet.Evidence) == 0 {
+		t.Fatalf("bet.show carries no evidence: %+v", bet)
+	}
+	for _, f := range bet.Evidence {
+		if f.Bet != "try-a-quiet-mode" {
+			t.Errorf("bet.show evidence for another bet: %+v", f)
+		}
+	}
+}
+
+func TestEvidenceBadRepo(t *testing.T) {
+	e := newEnv(t)
+	e.t.Helper()
+	for _, repo := range []string{"some/repo", filepath.Join(t.TempDir(), "not-a-repo")} {
+		err := e.c.Call(context.Background(), "evidence.list", map[string]any{"repo": repo}, nil)
+		ae, ok := err.(*api.Error)
+		if !ok || ae.Code != api.CodeBadRequest || !strings.Contains(ae.Message, repo) {
+			t.Errorf("evidence.list %q: err = %v, want bad_request naming the path", repo, err)
+		}
+	}
+}
+
+func TestProductionRegistersThePoll(t *testing.T) {
+	o := StateOptions()
+	var timers, intents []string
+	for _, k := range o.Timers {
+		timers = append(timers, k.Name)
+	}
+	for _, k := range o.Intents {
+		intents = append(intents, k.Name)
+	}
+	if got := strings.Join(timers, " "); !strings.Contains(got, stateevidence.PollKind) || !strings.Contains(got, stateevidence.ExpireKind) {
+		t.Errorf("timers = %v", timers)
+	}
+	if got := strings.Join(intents, " "); got != stateevidence.PollKind {
+		t.Errorf("intents = %v", intents)
+	}
+}

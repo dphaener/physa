@@ -95,6 +95,7 @@ A signal is named during shaping, before code (glossary: Signal). Three shapes c
 - A signal names its event (or engineering measure), what it is counted per (a person, a request), the direction it expects, and what it is compared with: the flag off, or the other variants of an experiment.
 - **Engineering signals need no events in the app, and are always on** (`engineering-always-on`), with earned release on or off. Git, PRs and CI give reverts, rework, defects and lead time (`engineering-evidence`); OpenTelemetry gives errors and latency, split by the flag through OpenTelemetry's feature flag attributes on spans, which the Physa hook sets.
 - **A guardrail is a signal with "no worse" that never decays** while its capability lives (glossary: Guardrail).
+- **Built in step 5H.** Engineering evidence is recorded from version control and, when there is one, the forge. Observed so far: changes landed and reverted, from version control; and each merged PR's lead time and its CI result, passed, failed or passed after failing, from the forge. A rerun on one commit is invisible, since CI is read per commit. Waiting: rework, because history shows no plain mark of one change fixing another, so it comes from step 6's run records; defects; and errors and latency, through OpenTelemetry. Facts carry no weight (§6.5), and they are kept a year (Q14).
 
 ### 4.2 Results, honestly
 

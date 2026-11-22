@@ -78,20 +78,21 @@ type IdeaOut struct {
 
 // BetOut is a bet. Pitch is set only by bet.show, bet.start and bet.stop.
 type BetOut struct {
-	Slug       string       `json:"slug" desc:"The bet's slug."`
-	Idea       string       `json:"idea" desc:"The slug of the idea it bets on."`
-	IdeaText   string       `json:"idea_text" desc:"The idea."`
-	Person     string       `json:"person" desc:"The person who made the bet."`
-	Appetite   int64        `json:"appetite" desc:"The appetite in tokens."`
-	Spent      int64        `json:"spent" desc:"The tokens spent so far."`
-	State      string       `json:"state" desc:"active, done or stopped."`
-	StopReason string       `json:"stop_reason,omitempty" desc:"Why it stopped; left out unless it did."`
-	CreatedAt  string       `json:"created_at" desc:"When it was made, RFC 3339 in UTC."`
-	StartedAt  string       `json:"started_at,omitempty" desc:"When it started, RFC 3339 in UTC."`
-	EndedAt    string       `json:"ended_at,omitempty" desc:"When it ended, RFC 3339 in UTC; left out while active."`
-	Pitch      *PitchOut    `json:"pitch,omitempty" desc:"The pitch it was made on; left out when there was none."`
-	Progress   *ProgressOut `json:"progress,omitempty" desc:"Its progress as facts; set by bet.show."`
-	NeedsYou   []NeedOut    `json:"needs_you,omitempty" desc:"Its open Needs you items, newest first; set by bet.show."`
+	Slug       string        `json:"slug" desc:"The bet's slug."`
+	Idea       string        `json:"idea" desc:"The slug of the idea it bets on."`
+	IdeaText   string        `json:"idea_text" desc:"The idea."`
+	Person     string        `json:"person" desc:"The person who made the bet."`
+	Appetite   int64         `json:"appetite" desc:"The appetite in tokens."`
+	Spent      int64         `json:"spent" desc:"The tokens spent so far."`
+	State      string        `json:"state" desc:"active, done or stopped."`
+	StopReason string        `json:"stop_reason,omitempty" desc:"Why it stopped; left out unless it did."`
+	CreatedAt  string        `json:"created_at" desc:"When it was made, RFC 3339 in UTC."`
+	StartedAt  string        `json:"started_at,omitempty" desc:"When it started, RFC 3339 in UTC."`
+	EndedAt    string        `json:"ended_at,omitempty" desc:"When it ended, RFC 3339 in UTC; left out while active."`
+	Pitch      *PitchOut     `json:"pitch,omitempty" desc:"The pitch it was made on; left out when there was none."`
+	Progress   *ProgressOut  `json:"progress,omitempty" desc:"Its progress as facts; set by bet.show."`
+	Evidence   []EvidenceOut `json:"evidence,omitempty" desc:"The facts observed for the bet, newest first, at most 50; set by bet.show."`
+	NeedsYou   []NeedOut     `json:"needs_you,omitempty" desc:"Its open Needs you items, newest first; set by bet.show."`
 }
 
 // PlanSetIn is plan.set's input.
@@ -193,4 +194,27 @@ type NeedOut struct {
 	Kind string `json:"kind" desc:"appetite or breaker."`
 	Text string `json:"text" desc:"What the person needs to know."`
 	At   string `json:"at" desc:"When it was raised, RFC 3339 in UTC."`
+}
+
+// EvidenceIn is evidence.list's input.
+type EvidenceIn struct {
+	Repo       string `json:"repo" desc:"The repo, as an absolute path to it or to a directory inside it."`
+	Capability string `json:"capability,omitempty" desc:"Only facts for this capability's slug."`
+	Bet        string `json:"bet,omitempty" desc:"Only facts for this bet's slug."`
+	Limit      int    `json:"limit,omitempty" desc:"The most facts to return; 50 when left out, at most 500."`
+}
+
+// EvidenceOut is one observed fact.
+type EvidenceOut struct {
+	Kind       string `json:"kind" desc:"landed, reverted, lead_time, ci_passed, ci_failed or ci_passed_after_failing."`
+	Commit     string `json:"commit,omitempty" desc:"The commit, as its first eight characters."`
+	PR         int    `json:"pr,omitempty" desc:"The merged PR's number, for facts the forge showed."`
+	Capability string `json:"capability,omitempty" desc:"The capability's slug, from the commit's Capability: trailer."`
+	Bet        string `json:"bet,omitempty" desc:"The bet's slug, from the commit's Change: trailer."`
+	Change     string `json:"change,omitempty" desc:"The planned change's name, from the commit's Change: trailer."`
+	Idea       string `json:"idea,omitempty" desc:"The slug of the bet's idea."`
+	At         string `json:"at" desc:"When it was observed to happen, RFC 3339 in UTC."`
+	Source     string `json:"source" desc:"vcs or forge."`
+	Seconds    *int64 `json:"seconds,omitempty" desc:"The lead time in seconds; set only for lead_time."`
+	ByCommit   string `json:"by_commit,omitempty" desc:"For reverted, the revert's commit, as its first eight characters."`
 }

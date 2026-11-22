@@ -7,6 +7,7 @@ package github
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,8 +45,14 @@ type StdinRunner func(dir string, stdin []byte, args ...string) (stdout []byte, 
 
 func ghRunner(dir string, args ...string) ([]byte, error) { return ghStdinRunner(dir, nil, args...) }
 
+// ghTimeout bounds every gh call, so a hung gh never holds up a caller or an
+// engine shutdown.
+const ghTimeout = 30 * time.Second
+
 func ghStdinRunner(dir string, stdin []byte, args ...string) ([]byte, error) {
-	cmd := exec.Command("gh", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), ghTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "gh", args...)
 	cmd.Dir = dir
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
@@ -53,6 +60,9 @@ func ghStdinRunner(dir string, stdin []byte, args ...string) ([]byte, error) {
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("gh %s: timed out after %s", strings.Join(args, " "), ghTimeout)
+		}
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
 			return out.Bytes(), &Error{Args: args, Stderr: errb.String(), ExitCode: ee.ExitCode()}

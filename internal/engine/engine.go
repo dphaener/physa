@@ -55,7 +55,7 @@ type Options struct {
 	Dir     string        // the settings directory, absolute
 	Idle    time.Duration // how long to wait with nothing pending; ≤ 0 means DefaultIdle
 	Version string        // the version engine.status reports
-	State   state.Options // for tests: kinds and a clock for every repo; StoreDir is set per repo
+	State   state.Options // kinds (and in tests a clock) for every repo; StoreDir is set per repo
 	// Methods (nil by default) is how tests add methods; get opens a repo's state.
 	Methods func(get func(ctx context.Context, repo string) (*state.State, error)) []api.Method
 }

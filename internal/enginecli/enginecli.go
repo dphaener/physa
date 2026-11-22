@@ -96,7 +96,7 @@ func (g group) engineRun(args []string, _, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	err = engine.Run(ctx, engine.Options{Dir: dir, Idle: f.idle, Version: g.version, Methods: workapi.Methods})
+	err = engine.Run(ctx, engine.Options{Dir: dir, Idle: f.idle, Version: g.version, Methods: workapi.Methods, State: workapi.StateOptions()})
 	var running *engine.RunningError
 	if errors.As(err, &running) {
 		failed(stderr, "engine run", err)

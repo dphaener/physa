@@ -206,6 +206,29 @@ func TestEngineTablesWriterFlagsSpends(t *testing.T) {
 	}
 }
 
+func TestEngineTablesWriterFlagsEvidence(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "internal", "other")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		filepath.Join(root, "go.mod"): "module example.com/evidence\n",
+		filepath.Join(dir, "other.go"): "// Package other writes a table only internal/state may.\npackage other\n\n" +
+			"// Add inserts.\nvar Add = \"INSERT INTO evidence (kind) VALUES (?)\"\n\n" +
+			"// Poll updates.\nvar Poll = \"UPDATE evidence_polls SET vcs_commit = ?\"\n",
+	}
+	for p, body := range files {
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vs := mustCheck(t, root)
+	if got := rules(vs); len(got) != 2 || !strings.Contains(vs[0].Message, "writes the engine's table evidence") || !strings.Contains(vs[1].Message, "writes the engine's table evidence_polls") {
+		t.Fatalf("got %v %v", got, vs)
+	}
+}
+
 func TestEngineTablesWriterAllowed(t *testing.T) {
 	if vs := mustCheck(t, "testdata/tablewriterok"); len(vs) != 0 {
 		t.Fatalf("got %v", vs)

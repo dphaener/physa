@@ -95,6 +95,7 @@ func showBet(ctx context.Context, st work.Submitter, repo, slug string) (BetOut,
 	}
 	o := betDetailOut(d)
 	o.Progress, o.NeedsYou = progressOut(f)
+	o.Evidence = betEvidence(ctx, st, slug)
 	return o, nil
 }
 

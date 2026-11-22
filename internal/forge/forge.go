@@ -68,6 +68,11 @@ type PR struct {
 	Title    string    `json:"title,omitempty"`
 	Body     string    `json:"body,omitempty"`
 	MergedAt time.Time `json:"merged_at,omitzero"`
+	// CreatedAt is when the PR was opened. MergedPRs fills it.
+	CreatedAt time.Time `json:"created_at,omitzero"`
+	// MergeCommit is the id of the commit the merge made on the base branch;
+	// empty when the forge names none. MergedPRs fills it.
+	MergeCommit string `json:"merge_commit,omitempty"`
 	// Issues are the issues the PR closes, as the forge links them.
 	Issues []Issue `json:"issues,omitempty"`
 }
@@ -103,6 +108,10 @@ type Comment struct {
 type Commit struct {
 	ID string    `json:"id"`
 	At time.Time `json:"at"`
+	// Checks is the commit's check rollup state as the forge names it, such
+	// as SUCCESS, FAILURE, ERROR or PENDING; empty when the commit has no
+	// checks. MergedPRs fills it.
+	Checks string `json:"checks,omitempty"`
 }
 
 // Sentinel errors, checked with errors.Is.

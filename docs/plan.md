@@ -63,10 +63,10 @@ Each step: what lands, what the owner can do with it, and when it is done. Comma
 
 ### 5. The engine, without agents
 
-- **Status:** in progress (2026-11-22): D, E, F and G are built (03 §17–§20); H is to come.
+- **Status:** D–H built (2026-11-22; 03 §17–§21). The engine half of done-when is met by the kill test (03 §18) and this build's QA. That Physa's next ideas live only in Physa is for the owner to confirm.
 - **Lands:** one engine per machine, its socket API, the store's state tables, events and durable intents at `.git/physa/physa.db` (03 §3–§5; the store itself landed in step 2); ideas, pitches (optional), bets, the plan (`physa bet plan set`), appetite in tokens and its circuit breaker; evidence recorded from here on (05 Q14), including engineering evidence from version control, and from CI where a team runs one.
 - **The owner can:** keep Physa's own ideas and bets in Physa, from the CLI. No backlog file, no issue tracker.
-- **Built as** (03 §16): D the engine process, `physa engine` and `physa api` over its WebSocket API (built, 03 §17); E state tables, events and durable intents (built, 03 §18); F ideas, pitches and bets from the CLI (built, 03 §19); G the plan, appetite and circuit breaker (built, 03 §20); H evidence from version control and CI.
+- **Built as** (03 §16): D the engine process, `physa engine` and `physa api` over its WebSocket API (built, 03 §17); E state tables, events and durable intents (built, 03 §18); F ideas, pitches and bets from the CLI (built, 03 §19); G the plan, appetite and circuit breaker (built, 03 §20); H evidence from version control and CI (built, 03 §21).
 - **Done when:** Physa's next ideas live only in Physa, and the engine survives being killed at any moment.
 
 ### 6. Agents run bets: the default harness

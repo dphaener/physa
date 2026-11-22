@@ -465,3 +465,110 @@ func TestKindNeedsRepeat(t *testing.T) {
 		t.Errorf("log.append's Repeat text is %q", got)
 	}
 }
+
+// recordKind is an intent kind whose Record adds an idea named by Do's result
+// and fails while fail says so, after its write, so a rollback must undo it.
+func recordKind(t *testing.T, dir string, calls *atomic.Int32, fail func() bool) IntentKind {
+	return IntentKind{
+		Name: "test.record", Repeat: "Record keeps one idea per result",
+		Do: func(context.Context, Intent) (string, error) { calls.Add(1); return "found", nil },
+		Record: func(tx *Tx, in Intent, result string) error {
+			if got := tx.StoreDir(); got != dir {
+				t.Errorf("StoreDir = %q, want %q", got, dir)
+			}
+			at := tx.Now().UTC().Format(time.RFC3339)
+			if _, err := tx.Exec(`INSERT INTO ideas (slug, text, person, created_at, updated_at) VALUES (?, ?, 'test', ?, ?)
+				ON CONFLICT (slug) DO NOTHING`, result, in.Kind, at, at); err != nil {
+				return err
+			}
+			if fail() {
+				return errors.New("the store said no")
+			}
+			return nil
+		},
+	}
+}
+
+func TestRecordCommitsWithDone(t *testing.T) {
+	var calls atomic.Int32
+	dir, c := t.TempDir(), newClock()
+	st := openStore(t, dir)
+	s := openIntents(t, st, dir, c, recordKind(t, dir, &calls, func() bool { return false }))
+	id := writeIntent(t, s, "test.record", nil)
+	eventually(t, "the intent to be done", func() bool { return readIntent(t, st, id).state == "done" })
+	if r := readIntent(t, st, id); r.attempts != 1 || r.result.String != "found" || r.lastErr.Valid {
+		t.Errorf("the done intent is %+v, want 1 attempt and result found", r)
+	}
+	// Record's write appended no event of its own: intent.done is its event, in the same commit.
+	if n := count(t, st, `SELECT count(*) FROM ideas WHERE slug = 'found' AND text = 'test.record'`); n != 1 {
+		t.Errorf("%d ideas written by Record, want 1", n)
+	}
+	if n := count(t, st, `SELECT count(*) FROM events WHERE kind = 'intent.done' AND subject_id = ?`, id); n != 1 {
+		t.Errorf("%d intent.done events, want 1", n)
+	}
+	if got := kinds(t, s); len(got) != 2 || got[0] != "intent.done" || got[1] != "test.asked" {
+		t.Errorf("events = %v, want [intent.done test.asked]", got)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("Do ran %d times, want 1", n)
+	}
+}
+
+func TestRecordFailureLeavesPending(t *testing.T) {
+	var calls atomic.Int32
+	var failing atomic.Bool
+	failing.Store(true)
+	dir, c := t.TempDir(), newClock()
+	st := openStore(t, dir)
+	s := openIntents(t, st, dir, c, recordKind(t, dir, &calls, failing.Load))
+	id := writeIntent(t, s, "test.record", nil)
+	eventually(t, "the attempt to be recorded", func() bool { return readIntent(t, st, id).attempts == 1 })
+	r := readIntent(t, st, id)
+	if r.state != "pending" || r.lastErr.String != "recording what it found: the store said no" || r.result.Valid || r.done.Valid ||
+		!r.next.Equal(c.Now().Add(time.Second)) {
+		t.Fatalf("after a failing Record: %+v, want pending with its error, no result and next_at in a second", r)
+	}
+	t.Logf("after the failing Record: state %s, attempts %d, last_error %q", r.state, r.attempts, r.lastErr.String)
+	if n := count(t, st, `SELECT count(*) FROM ideas`); n != 0 {
+		t.Fatalf("%d ideas kept from a failing Record, want 0", n)
+	}
+	if n := count(t, st, `SELECT count(*) FROM events WHERE kind = 'intent.done'`); n != 0 {
+		t.Fatalf("%d intent.done events for a failing Record, want 0", n)
+	}
+	if n := count(t, st, `SELECT count(*) FROM events WHERE kind = 'intent.retry' AND subject_id = ?`, id); n != 1 {
+		t.Fatalf("%d intent.retry events, want 1", n)
+	}
+	settle(t, s)
+	if n := s.PendingIntents(); n != 1 {
+		t.Fatalf("PendingIntents = %d, want 1", n)
+	}
+	t.Log("ideas 0, intent.done 0, intent.retry 1, pending 1")
+
+	// The retry carries it out again, like a failed Do, and now Record holds.
+	failing.Store(false)
+	c.Add(time.Second)
+	s.poke()
+	eventually(t, "the retry to be done", func() bool { return readIntent(t, st, id).state == "done" })
+	if r := readIntent(t, st, id); r.attempts != 2 || r.result.String != "found" || !r.done.Valid {
+		t.Errorf("after the retry: %+v, want done at attempt 2", r)
+	}
+	if n := count(t, st, `SELECT count(*) FROM ideas`); n != 1 {
+		t.Errorf("%d ideas after the retry, want 1", n)
+	}
+	if n := calls.Load(); n != 2 {
+		t.Errorf("Do ran %d times, want 2", n)
+	}
+}
+
+func TestRecordPanicIsAnError(t *testing.T) {
+	s, st, _, _ := newIntents(t, IntentKind{
+		Name: "test.record", Repeat: "it changes nothing",
+		Do:     func(context.Context, Intent) (string, error) { return "ok", nil },
+		Record: func(*Tx, Intent, string) error { panic("kaboom") },
+	})
+	id := writeIntent(t, s, "test.record", nil)
+	eventually(t, "the attempt to be recorded", func() bool { return readIntent(t, st, id).attempts == 1 })
+	if r := readIntent(t, st, id); r.state != "pending" || r.lastErr.String != "recording what it found: the record panicked: kaboom" {
+		t.Errorf("after a Record that panicked: %+v, want pending with the panic as its error", r)
+	}
+}

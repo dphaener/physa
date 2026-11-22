@@ -593,3 +593,33 @@ func TestHelpListsPlanAndWork(t *testing.T) {
 		}
 	}
 }
+
+func TestShowPrintsEvidenceAfterProgress(t *testing.T) {
+	te := newTest(t)
+	secs := int64(7500)
+	o := workapi.BetOut{
+		Progress: &workapi.ProgressOut{},
+		Evidence: []workapi.EvidenceOut{
+			{Kind: "lead_time", PR: 12, Commit: "3f9a2c1d", Capability: "cli", At: "2026-11-22T10:00:00Z", Seconds: &secs},
+			{Kind: "landed", Commit: "3f9a2c1d", Capability: "cli", At: "2026-11-22T09:00:00Z"},
+		},
+		NeedsYou: []workapi.NeedOut{{Text: "ask"}},
+	}
+	var out bytes.Buffer
+	showProgress(te.e.View(&out), o)
+	got := out.String()
+	for _, want := range []string{"Evidence", "lead time  #12  cli  2026-11-22 10:00 UTC  lead time 2h 5m", "landed  3f9a2c1d  cli  2026-11-22 09:00 UTC"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("no %q in:\n%s", want, got)
+		}
+	}
+	if p, e, n := strings.Index(got, "Progress"), strings.Index(got, "Evidence"), strings.Index(got, "Needs you"); !(p < e && e < n) {
+		t.Errorf("order wrong (%d %d %d):\n%s", p, e, n, got)
+	}
+	out.Reset()
+	o.Evidence = nil
+	showProgress(te.e.View(&out), o)
+	if strings.Contains(out.String(), "Evidence") {
+		t.Errorf("an empty Evidence section:\n%s", out.String())
+	}
+}

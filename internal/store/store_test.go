@@ -136,10 +136,10 @@ func TestMigrationTwoDropsPRChecks(t *testing.T) {
 	}
 }
 
-func TestFreshStoreMigratesToNine(t *testing.T) {
+func TestFreshStoreMigratesToTen(t *testing.T) {
 	s, _ := open(t)
-	if got := version(t, s); got != 9 {
-		t.Errorf("user_version = %d, want 9", got)
+	if got := version(t, s); got != 10 {
+		t.Errorf("user_version = %d, want 10", got)
 	}
 	var n int
 	if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name = 'slice_records'").Scan(&n); err != nil || n != 1 {
@@ -354,8 +354,8 @@ func TestEngineTableChecks(t *testing.T) {
 
 func TestPlanTables(t *testing.T) {
 	s, _ := open(t)
-	if got := version(t, s); got != 9 {
-		t.Fatalf("user_version = %d, want 9", got)
+	if got := version(t, s); got != 10 {
+		t.Fatalf("user_version = %d, want 10", got)
 	}
 	for _, table := range []string{"changes", "session_changes", "spends", "needs_you"} {
 		var n int
@@ -417,5 +417,47 @@ func TestOpenReadOnlyMissingFile(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Errorf("the open created %d entries, want none", len(entries))
+	}
+}
+
+func TestEvidenceTables(t *testing.T) {
+	s, _ := open(t)
+	for _, table := range []string{"evidence", "evidence_polls"} {
+		var n int
+		if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&n); err != nil || n != 1 {
+			t.Errorf("%s tables = %d, %v; want 1", table, n, err)
+		}
+	}
+	rows, err := s.db.Query("SELECT name FROM pragma_table_info('evidence')")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(name, "weight") || strings.Contains(name, "strength") {
+			t.Errorf("evidence has a %s column, want none", name)
+		}
+	}
+}
+
+func TestEvidenceUnique(t *testing.T) {
+	s, _ := open(t)
+	const q = `INSERT INTO evidence (kind, commit_id, pr, at, source, recorded_at) VALUES ('landed', 'abc', 0, '2026-11-01T12:00:00Z', 'vcs', '2026-11-01T12:00:00Z')`
+	if _, err := s.db.Exec(q); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.db.Exec(q)
+	if err == nil || !strings.Contains(err.Error(), "UNIQUE constraint failed") {
+		t.Fatalf("duplicate evidence row: err = %v, want a UNIQUE failure", err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO evidence_polls (id) VALUES (1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO evidence_polls (id) VALUES (2)`); err == nil {
+		t.Error("a second evidence_polls row was accepted, want one per store")
 	}
 }

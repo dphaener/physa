@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dphaener/physa/internal/cli"
+	"github.com/dphaener/physa/internal/evidencecli"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/pitch"
@@ -214,6 +215,13 @@ func showProgress(v *ideacli.View, o workapi.BetOut) {
 				v.Section("Spend per change", strings.Join(rows, "\n"))
 			}
 		}
+	}
+	if len(o.Evidence) > 0 {
+		lines := make([]string, len(o.Evidence))
+		for i, f := range o.Evidence {
+			lines[i] = evidencecli.Line(f)
+		}
+		v.Section("Evidence", strings.Join(lines, "\n"))
 	}
 	if len(o.NeedsYou) > 0 {
 		texts := make([]string, len(o.NeedsYou))

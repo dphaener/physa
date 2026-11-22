@@ -179,3 +179,44 @@ func TestMergedPRsErrors(t *testing.T) {
 		t.Errorf("no repository: no error")
 	}
 }
+
+func TestMergedPRsOpenedMergeCommitAndChecks(t *testing.T) {
+	n := node(7, "2026-11-10T00:00:00Z", "2026-11-10T00:00:00Z", `,"createdAt":"2026-11-09T00:00:00Z","mergeCommit":{"oid":"m7"},
+	  "commits":{"nodes":[
+	    {"commit":{"oid":"c2","committedDate":"2026-11-09T02:00:00Z","statusCheckRollup":{"state":"SUCCESS"}}},
+	    {"commit":{"oid":"c1","committedDate":"2026-11-09T01:00:00Z","statusCheckRollup":{"state":"FAILURE"}}},
+	    {"commit":{"oid":"c3","committedDate":"2026-11-09T03:00:00Z","statusCheckRollup":null}}]}`)
+	p := &pager{pages: []string{pageOf("", n)}}
+	prs, _, err := NewWithRunner(".", p.run).MergedPRs(at("2026-11-01T00:00:00Z"), 5)
+	if err != nil || len(prs) != 1 {
+		t.Fatalf("got %v, %v", prs, err)
+	}
+	pr := prs[0]
+	if !pr.CreatedAt.Equal(at("2026-11-09T00:00:00Z")) || pr.MergeCommit != "m7" {
+		t.Errorf("created %v, merge commit %q", pr.CreatedAt, pr.MergeCommit)
+	}
+	want := []forge.Commit{
+		{ID: "c1", At: at("2026-11-09T01:00:00Z"), Checks: "FAILURE"},
+		{ID: "c2", At: at("2026-11-09T02:00:00Z"), Checks: "SUCCESS"},
+		{ID: "c3", At: at("2026-11-09T03:00:00Z")},
+	}
+	if !reflect.DeepEqual(pr.Commits, want) {
+		t.Errorf("commits = %+v, want %+v", pr.Commits, want)
+	}
+}
+
+func TestMergedPRsNoRollupNoMergeCommit(t *testing.T) {
+	n := node(8, "2026-11-10T00:00:00Z", "2026-11-10T00:00:00Z", `,"mergeCommit":null,
+	  "commits":{"nodes":[{"commit":{"oid":"c1","committedDate":"2026-11-09T01:00:00Z"}}]}`)
+	p := &pager{pages: []string{pageOf("", n, node(9, "2026-11-09T00:00:00Z", "2026-11-09T00:00:00Z", ""))}}
+	prs, _, err := NewWithRunner(".", p.run).MergedPRs(at("2026-11-01T00:00:00Z"), 5)
+	if err != nil || len(prs) != 2 {
+		t.Fatalf("got %v, %v", prs, err)
+	}
+	if len(prs[0].Commits) != 1 || prs[0].Commits[0].Checks != "" || prs[0].MergeCommit != "" {
+		t.Errorf("pr = %+v", prs[0])
+	}
+	if prs[1].Commits == nil || len(prs[1].Commits) != 0 {
+		t.Errorf("a PR with no commits: %#v", prs[1].Commits)
+	}
+}

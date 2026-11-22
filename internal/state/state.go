@@ -1,7 +1,8 @@
-// Package state is the engine's one writer for a repo's store: every change to ideas, pitches, bets, plans, intents and timers is a command applied one at a time in one transaction that appends its event. Reads come from the state tables; events are never replayed to answer one.
+// Package state is the engine's one writer for a repo's store: every change to ideas, pitches, bets, plans, intents and timers is a command applied one at a time in one transaction that appends its event. Reads come from the state tables; events are never replayed to answer one. Outside work runs as an intent off the loop, and its kind's Record stores what it found with its intent.done; a timer kind can be ensured on open.
 package state
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -25,8 +26,8 @@ var (
 	errTxDone  = errors.New("the command has returned; its Tx is no longer usable")
 )
 
-// Options configures a State. Now defaults to time.Now. Timers and Intents
-// hold extra kinds; the retention timer and log.append are always present.
+// Options configures a State. Now defaults to time.Now. Timers and Intents hold extra kinds (a
+// TimerKind's Key is ensured on open; an IntentKind's Record keeps what Do found); retention and log.append are always present.
 type Options struct {
 	StoreDir string
 	Now      func() time.Time
@@ -57,22 +58,19 @@ type State struct {
 	mine     string       // "(?, ?)": one mark per name
 	boot     int64        // worker only: see dueIntent
 
-	mu      sync.Mutex // guards next and hasNext
-	next    time.Time
-	hasNext bool
-
+	next atomic.Pointer[time.Time] // the earliest due timer; nil with none
 	// Used by the loop only (and by Open before the loop starts).
 	fails  map[[2]string]int   // consecutive failed fires per (kind, key)
 	held   map[int64]time.Time // backoffs that could not be written to the row
 	logged map[string]bool     // kinds already logged as unknown
 }
 
-// Open ensures the retention timer, loads the next due time and the pending
+// Open ensures the keyed timers, loads the next due time and the pending
 // count, and starts the loop and the worker. Close it before the store.
 func Open(st *store.Store, o Options) (*State, error) {
 	s := &State{
 		db: st.DB(), storeDir: o.StoreDir, now: o.Now,
-		kinds: map[string]TimerKind{retentionKind: {Name: retentionKind, Fire: expireEvents}},
+		kinds: map[string]TimerKind{retentionKind: {Name: retentionKind, Fire: expireEvents, Key: retentionKey, Delay: retentionEvery}},
 		cmds:  make(chan func()), pokes: make(chan struct{}, 1),
 		done: make(chan struct{}), wake: make(chan struct{}, 1),
 		fails: map[[2]string]int{}, held: map[int64]time.Time{}, logged: map[string]bool{},
@@ -89,10 +87,11 @@ func Open(st *store.Store, o Options) (*State, error) {
 	if err := s.register(o.Intents); err != nil {
 		return nil, err
 	}
-	// A timer row only, so no event; an existing row keeps its due time.
-	if _, err := s.db.Exec(`INSERT INTO timers (kind, key, due_at) VALUES (?, ?, ?) ON CONFLICT (kind, key) DO NOTHING`,
-		retentionKind, retentionKey, stamp(s.now().Add(retentionEvery))); err != nil {
-		return nil, fmt.Errorf("ensure the retention timer: %w", err)
+	for _, k := range s.kinds { // ensure each Key: a timer row only, so no event, keeping the earlier due time
+		if _, err := s.db.Exec(`INSERT INTO timers (kind, key, due_at) SELECT ?1, ?2, ?3 WHERE ?2 != ''
+			ON CONFLICT (kind, key) DO UPDATE SET due_at = min(due_at, excluded.due_at)`, k.Name, k.Key, stamp(s.now().Add(k.Delay))); err != nil {
+			return nil, fmt.Errorf("ensure the timer %s %s: %w", k.Name, k.Key, err)
+		}
 	}
 	if _, err := s.load(); err != nil {
 		return nil, err
@@ -109,8 +108,8 @@ func Open(st *store.Store, o Options) (*State, error) {
 }
 
 // Submit hands c to the loop and waits for its commit. A command error or
-// panic rolls back and is returned. After Close, or when ctx ends before the
-// loop took c, nothing is applied; once taken, c is applied whatever ctx does.
+// panic rolls back and is returned. After Close, or if ctx ends before the
+// loop took c, nothing is applied; once taken, c is applied.
 func (s *State) Submit(ctx context.Context, c Command) error {
 	if s.ctx.Err() != nil {
 		return ErrClosed
@@ -128,8 +127,8 @@ func (s *State) Submit(ctx context.Context, c Command) error {
 	}
 }
 
-// Close stops taking commands and cuts short the intent in hand. It returns
-// once the loop and the worker have stopped, or with ctx's error.
+// Close stops taking commands and cuts short the intent in hand; it returns
+// once both have stopped, or with ctx's error.
 func (s *State) Close(ctx context.Context) error {
 	s.cancel()
 	select {
@@ -140,8 +139,7 @@ func (s *State) Close(ctx context.Context) error {
 	}
 }
 
-// poke makes the loop look at its timers and the worker at its intents now.
-// It is the clock seam: a test moves its fake clock and pokes.
+// poke makes the loop and the worker look now: the clock seam for tests.
 func (s *State) poke() { nudge(s.pokes); nudge(s.wake) }
 
 func nudge(c chan struct{}) {
@@ -184,8 +182,7 @@ func (s *State) apply(c Command) error {
 	tx.done.Store(true)
 	if err == nil && tx.changed && !tx.evented {
 		err = ErrNoEvent
-	}
-	if err == nil {
+	} else if err == nil {
 		err = sqlTx.Commit()
 	}
 	if err != nil {
@@ -226,11 +223,12 @@ type Tx struct {
 	set                               map[[2]string]bool
 }
 
-// Now is the command's time: one instant for the whole transaction.
+// Now is the command's time, one instant for the transaction.
 func (tx *Tx) Now() time.Time { return tx.now }
 
-// Exec runs a statement on the state tables. A write that changed a row is a
-// state change, and the command must then append an Event.
+func (tx *Tx) StoreDir() string { return tx.s.storeDir } // the store directory
+
+// Exec runs a statement. A write that changed a row needs an Event.
 func (tx *Tx) Exec(query string, args ...any) (sql.Result, error) {
 	if tx.done.Load() {
 		return nil, errTxDone
@@ -243,8 +241,7 @@ func (tx *Tx) Exec(query string, args ...any) (sql.Result, error) {
 	return res, err
 }
 
-// Query reads rows. A write given to it (with RETURNING) counts as a state
-// change whether or not it changed a row, since no count comes back.
+// Query reads rows. A write given to it (RETURNING) counts as a state change.
 func (tx *Tx) Query(query string, args ...any) (*sql.Rows, error) {
 	if tx.done.Load() {
 		return nil, errTxDone
@@ -307,14 +304,10 @@ type Event struct {
 	Data          json.RawMessage
 }
 
-// Events returns the newest events first (by id: at has one-second
-// precision), from the table. limit is clamped to 1..500, and 0 means 50.
+// Events returns the newest events first (by id). limit is clamped to 1..500; 0 is 50.
 func (s *State) Events(ctx context.Context, limit int) ([]Event, error) {
-	if limit == 0 {
-		limit = 50
-	}
 	rows, err := s.db.QueryContext(ctx, `SELECT at, kind, subject, coalesce(subject_id, 0), coalesce(person, ''), data FROM events ORDER BY id DESC LIMIT ?`,
-		min(max(limit, 1), 500))
+		min(max(cmp.Or(limit, 50), 1), 500))
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package state
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -29,14 +30,16 @@ type Timer struct {
 // TimerKind names a kind of timer and what the loop does when one is due.
 // Fire runs as a command: it may set the same (kind, key) again with
 // tx.SetTimer; if it does not, the row is deleted in the same transaction.
+// With a Key, Open ensures that timer, due within Delay (0 is at once).
 type TimerKind struct {
-	Name string
-	Fire func(tx *Tx, t Timer) error
+	Name  string
+	Fire  func(tx *Tx, t Timer) error
+	Key   string
+	Delay time.Duration
 }
 
 // SetTimer sets the timer (kind, key) to fire at due, replacing its due time
-// and payload if it exists. The kind must be registered, or nothing would
-// ever fire it. A nil payload is {}.
+// and payload. The kind must be registered. A nil payload is {}.
 func (tx *Tx) SetTimer(kind, key string, due time.Time, payload any) error {
 	if tx.done.Load() {
 		return errTxDone
@@ -65,15 +68,8 @@ func (tx *Tx) DeleteTimer(kind, key string) error {
 // NextTimer returns the earliest due time of the timers this engine can
 // fire, from memory. Timers of a kind it does not register are left out.
 func (s *State) NextTimer() (time.Time, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.next, s.hasNext
-}
-
-func (s *State) setNext(t time.Time, ok bool) {
-	s.mu.Lock()
-	s.next, s.hasNext = t, ok
-	s.mu.Unlock()
+	t := s.next.Load()
+	return *cmp.Or(t, new(time.Time)), t != nil
 }
 
 // load reads the timers, stores the earliest due time of the registered
@@ -87,12 +83,11 @@ func (s *State) load() ([]Timer, error) {
 	}
 	defer rows.Close()
 	var due []Timer
-	var next time.Time
-	found, now := false, s.now()
-	for rows.Next() {
+	var next *time.Time
+	for now := s.now(); rows.Next(); {
 		var t Timer
-		var at, payload string
-		if err := rows.Scan(&t.ID, &t.Kind, &t.Key, &at, &payload); err != nil {
+		var at string
+		if err := rows.Scan(&t.ID, &t.Kind, &t.Key, &at, (*[]byte)(&t.Payload)); err != nil {
 			return nil, err
 		}
 		if _, ok := s.kinds[t.Kind]; !ok {
@@ -105,13 +100,12 @@ func (s *State) load() ([]Timer, error) {
 		if t.Due, err = time.Parse(time.RFC3339Nano, at); err != nil {
 			return nil, err
 		}
-		t.Payload = json.RawMessage(payload)
 		when := t.Due
-		if h, ok := s.held[t.ID]; ok && h.After(when) {
+		if h := s.held[t.ID]; h.After(when) {
 			when = h
 		}
-		if !found || when.Before(next) {
-			next, found = when, true
+		if next == nil || when.Before(*next) {
+			next = &when
 		}
 		if !when.After(now) {
 			due = append(due, t)
@@ -120,7 +114,7 @@ func (s *State) load() ([]Timer, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	s.setNext(next, found)
+	s.next.Store(next)
 	return due, nil
 }
 
@@ -130,7 +124,7 @@ func (s *State) refresh() []Timer {
 	due, err := s.load()
 	if err != nil {
 		s.logf("reading timers: %v", err)
-		s.setNext(s.now().Add(5*time.Second), true)
+		s.next.Store(new(s.now().Add(5 * time.Second)))
 	}
 	return due
 }

@@ -1,15 +1,17 @@
-// Package workapi is the engine's API for ideas, pitches and bets: twelve methods, typed once, each change one command with its event.
+// Package workapi is the engine's API for ideas, pitches, bets and evidence: thirteen methods, typed once, each change one command with its event.
 package workapi
 
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/dphaener/physa/internal/api"
 	"github.com/dphaener/physa/internal/pitch"
 	"github.com/dphaener/physa/internal/repos"
 	"github.com/dphaener/physa/internal/state"
+	stateevidence "github.com/dphaener/physa/internal/state/evidence"
 	"github.com/dphaener/physa/internal/state/work"
 )
 
@@ -82,7 +84,7 @@ func betDetailOut(d work.BetDetail) BetOut {
 	return o
 }
 
-// Methods returns the twelve methods, reading and changing the state get
+// Methods returns the thirteen methods, reading and changing the state get
 // opens for the repo each call names.
 func Methods(get func(ctx context.Context, repo string) (*state.State, error)) []api.Method {
 	g := getter(get)
@@ -92,7 +94,7 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 		betJSON   = `{"slug":"try-a-quiet-mode","idea":"try-a-quiet-mode","idea_text":"Try a quiet mode","person":"ann","appetite":200000,"spent":0,"state":"active","created_at":"2026-11-22T10:00:00Z","started_at":"2026-11-22T10:00:00Z"}`
 		slugNotes = "An unknown slug replies bad_request naming it."
 	)
-	return append(planMethods(g), []api.Method{
+	return append(append(planMethods(g), evidenceMethods(g)...), []api.Method{
 		api.Define("idea.add", "Adds an idea, owned by the person who adds it.",
 			[]string{"The slug is made from the text (up to five words) and numbered when taken; a slug that is given and taken replies bad_request.",
 				"An idea has no named states and cannot be deleted."},
@@ -165,6 +167,11 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 					return BetOut{}, err
 				}
 				d, err := work.StartBet(ctx, st, work.BetIn{Slug: in.Slug, Appetite: tokens, Person: in.Person})
+				if err == nil {
+					if werr := stateevidence.Wake(ctx, st); werr != nil {
+						log.Printf("bet.start %s: waking the evidence poll: %v", in.Slug, werr)
+					}
+				}
 				return betDetailOut(d), refused(err)
 			}),
 		api.Define("bet.list", "Lists the repo's bets, newest first.",

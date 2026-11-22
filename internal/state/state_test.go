@@ -638,3 +638,86 @@ func TestBadTimerKindRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestEnsuredTimerCatchesUpOnOpen(t *testing.T) {
+	fired := TimerKind{Name: "test.catchup", Key: "poll", Fire: func(tx *Tx, tm Timer) error {
+		return tx.Event("test.fired", "timer", tm.ID, "", map[string]string{"key": tm.Key})
+	}}
+	plain := TimerKind{Name: "test.plain", Fire: func(*Tx, Timer) error { return nil }}
+	c := newClock()
+	dir := t.TempDir()
+	for open := 1; open <= 2; open++ { // each open, a restart, ensures it due at once
+		st := openStore(t, dir)
+		s := openState(t, st, c, fired, plain)
+		if err := s.Submit(bg, func(*Tx) error { return nil }); err != nil { // no poke: Open alone makes it due
+			t.Fatal(err)
+		}
+		if n := count(t, st, `SELECT count(*) FROM events WHERE kind = 'test.fired'`); n != open {
+			t.Fatalf("open %d: %d fires, want %d", open, n, open)
+		}
+		if n := count(t, st, `SELECT count(*) FROM timers WHERE kind IN ('test.catchup', 'test.plain')`); n != 0 {
+			t.Fatalf("open %d: %d rows left: the fired one is deleted and a kind without a Key gets none", open, n)
+		}
+		s.Close(bg)
+		st.Close()
+	}
+}
+
+func TestEnsuredTimerKeepsEarlierDue(t *testing.T) {
+	hourly := TimerKind{Name: "test.hourly", Key: "k", Delay: time.Hour, Fire: func(*Tx, Timer) error { return nil }}
+	c := newClock()
+	dir := t.TempDir()
+	st := openStore(t, dir)
+	s := openState(t, st, c, hourly)
+	want := c.Now().Add(time.Hour)
+	if due := dueOf(t, st, "test.hourly", "k"); !due.Equal(want) {
+		t.Fatalf("ensured due %s, want %s", due, want)
+	}
+	s.Close(bg)
+	st.Close()
+
+	c.Add(30 * time.Minute) // a reopen would make it due at +1h30; the earlier +1h stays
+	st = openStore(t, dir)
+	s = openState(t, st, c, hourly)
+	if due := dueOf(t, st, "test.hourly", "k"); !due.Equal(want) {
+		t.Fatalf("after a reopen, due %s, want the earlier %s", due, want)
+	}
+	if next, ok := s.NextTimer(); !ok || !next.Equal(want) {
+		t.Fatalf("NextTimer = %s, %v; want %s", next, ok, want)
+	}
+	if err := s.Submit(bg, func(tx *Tx) error { return tx.SetTimer("test.hourly", "k", tx.Now().Add(5*time.Hour), nil) }); err != nil {
+		t.Fatal(err)
+	}
+	s.Close(bg)
+	st.Close()
+
+	st = openStore(t, dir) // a due time later than open plus the delay is pulled in
+	openState(t, st, c, hourly)
+	if due, want := dueOf(t, st, "test.hourly", "k"), c.Now().Add(time.Hour); !due.Equal(want) {
+		t.Fatalf("after a reopen, due %s, want %s", due, want)
+	}
+	if n := count(t, st, `SELECT count(*) FROM timers WHERE kind = 'test.hourly'`); n != 1 {
+		t.Fatalf("%d rows of the ensured kind, want 1", n)
+	}
+}
+
+func TestRetentionEnsuredOnce(t *testing.T) {
+	c := newClock()
+	dir := t.TempDir()
+	for open := 1; open <= 2; open++ {
+		st := openStore(t, dir)
+		s := openState(t, st, c)
+		if n := count(t, st, `SELECT count(*) FROM timers WHERE kind = 'events.expire' AND key = 'retention'`); n != 1 {
+			t.Fatalf("open %d: %d retention rows, want 1", open, n)
+		}
+		if n := count(t, st, `SELECT count(*) FROM timers`); n != 1 {
+			t.Fatalf("open %d: %d timers, want 1", open, n)
+		}
+		if due, want := dueOf(t, st, retentionKind, retentionKey), newClock().Now().Add(24*time.Hour); !due.Equal(want) {
+			t.Fatalf("open %d: retention due %s, want %s", open, due, want)
+		}
+		s.Close(bg)
+		st.Close()
+		c.Add(time.Hour)
+	}
+}

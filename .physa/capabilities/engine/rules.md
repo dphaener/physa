@@ -4,7 +4,7 @@
 
 - [The engine never judges](#the-engine-never-judges)
 - [The engine owns gates, identity and records](#the-engine-owns-gates-identity-and-records)
-- [Supervision is built in](#supervision-is-built-in)
+- [The engine supervises its own sessions](#the-engine-supervises-its-own-sessions)
 - [Count "needed a person"](#count-needed-a-person)
 - [Run records never enter the map](#run-records-never-enter-the-map)
 
@@ -20,7 +20,7 @@ Because: "the daemon should be dumb but durable" (the owner, about Rhiza).
 No harness can grade its own work: verdicts come from the engine's records.
 Because: it is what made the owner's harness trustworthy.
 
-### Supervision is built in
+### The engine supervises its own sessions
 `built-in-supervision` · from docs/research/rhiza-v1-lessons.md
 Stall detection, resource limits and session cleanup belong to the engine.
 Because: Rhiza needed watch, stall and cleanup scripts around it, and five resource incidents in 17 days.

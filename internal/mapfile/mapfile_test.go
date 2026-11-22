@@ -306,27 +306,16 @@ func TestOwnMap(t *testing.T) {
 	}
 }
 
-// TestOwnMapCounts holds the converted map to the entry counts per kind that
-// physa map index printed before the conversion.
-func TestOwnMapCounts(t *testing.T) {
+// TestOwnMapShape holds each capability of the repo's own map to the folder
+// shape: a promise, an overview and its path. Entry counts are not pinned,
+// since learning adds entries to this map; TestOwnMap checks that every
+// heading is read as an entry.
+func TestOwnMapShape(t *testing.T) {
 	m, _ := mustRead(t, "../..")
-	want := map[string][3]int{
-		"confidence": {4, 1, 0}, "earned-release": {2, 5, 0}, "engine": {5, 8, 0},
-		"harnesses": {2, 7, 0}, "ideas": {4, 2, 0}, "init": {6, 4, 1}, "learning": {4, 5, 0},
-		"map": {5, 3, 0}, "rollback": {3, 1, 0}, "signals": {4, 4, 0}, "slices": {4, 3, 0},
-		"strength": {3, 3, 1}, "views": {3, 11, 1},
-	}
-	if len(m.Capabilities) != len(want) {
-		t.Errorf("got %d capabilities, want %d", len(m.Capabilities), len(want))
+	if len(m.Capabilities) == 0 {
+		t.Fatal("own map has no capabilities")
 	}
 	for _, c := range m.Capabilities {
-		var got [3]int
-		for _, e := range c.Entries {
-			got[e.Kind-1]++
-		}
-		if got != want[c.Name] {
-			t.Errorf("%s: counts %v, want %v", c.Name, got, want[c.Name])
-		}
 		if c.Promise == "" || c.Overview == "" || c.OverviewLine == 0 || c.Path != ".physa/capabilities/"+c.Name {
 			t.Errorf("%s: promise %q, overview %q at %d, path %q", c.Name, c.Promise, c.Overview, c.OverviewLine, c.Path)
 		}

@@ -1,6 +1,8 @@
 // Command codecheck checks that the core imports nothing above it and that
 // every package stays within its size budget and has a doc comment stating
-// its promise. It also checks that nothing outside the git adapter
+// its promise. It also checks that no package outside internal/state writes
+// the engine's tables (a string literal holding SQL that inserts into,
+// updates or deletes from one). It also checks that nothing outside the git adapter
 // (internal/vcs/git) runs git: a non-test file calling exec.Command or
 // exec.CommandContext with the literal program "git" is reported.
 package main
@@ -16,6 +18,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -38,6 +41,8 @@ var packageBudgets = map[string]int{
 	"internal/apiclient":   300,
 	"internal/output":      200,
 	"internal/configdir":   200,
+	"internal/state":       700,
+	"internal/repos":       350,
 }
 
 // aboveCore lists the path prefixes, relative to the module, of the packages
@@ -51,7 +56,31 @@ const (
 	ruleSize    = "size-budget"
 	ruleDoc     = "package-doc"
 	ruleGit     = "git-adapter-only"
+	ruleTables  = "engine-tables-writer"
 )
+
+// stateDir is the one package, with its subdirectories, that may write the
+// engine's tables (03 §5.1).
+const stateDir = "internal/state"
+
+// tablePat names the engine's tables, whole word, optionally quoted.
+const tablePat = "[\"`'\\[]?\\b(ideas|pitches|bets|plans|plan_revisions|events|intents|timers)\\b[\"`'\\]]?"
+
+// writePats match SQL in its write shape; group 1 of each is the table.
+var writePats = func() []*regexp.Regexp {
+	tail := `\s*(?:\(|VALUES\b|SELECT\b|DEFAULT\b)`
+	shapes := []string{
+		`\bINSERT(?:\s+OR\s+\w+)?\s+INTO\s+` + tablePat + tail,
+		`\bREPLACE\s+INTO\s+` + tablePat + tail,
+		`\bUPDATE(?:\s+OR\s+\w+)?\s+` + tablePat + `\s+SET\b`,
+		`\bDELETE\s+FROM\s+` + tablePat + `\s*(?:WHERE\b|;|$)`,
+	}
+	out := make([]*regexp.Regexp, len(shapes))
+	for i, sh := range shapes {
+		out[i] = regexp.MustCompile(`(?is)` + sh)
+	}
+	return out
+}()
 
 // gitAdapterDir is the one package, relative to the module, that may run git.
 const gitAdapterDir = "internal/vcs/git"
@@ -201,6 +230,11 @@ func checkPackage(root, module string, pk *pkg, budgets map[string]int) ([]Viola
 				out = append(out, Violation{pk.dir, ruleGit, fmt.Sprintf("%s:%d runs git; only %s may", name, fset.Position(pos).Line, gitAdapterDir)})
 			}
 		}
+		if pk.dir != stateDir && !strings.HasPrefix(pk.dir, stateDir+"/") {
+			for _, w := range tableWrites(f, fset) {
+				out = append(out, Violation{pk.dir, ruleTables, fmt.Sprintf("%s:%d: writes the engine's table %s; only %s writes it (03 §5.1)", name, w.line, w.table, stateDir)})
+			}
+		}
 		n, err := countLines(full)
 		if err != nil {
 			return nil, err
@@ -278,6 +312,40 @@ func gitCalls(f *ast.File) []token.Pos {
 		if lit, ok := call.Args[prog].(*ast.BasicLit); ok && lit.Kind == token.STRING {
 			if v, err := strconv.Unquote(lit.Value); err == nil && v == "git" {
 				out = append(out, call.Pos())
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// tableWrite is one string literal that writes one of the engine's tables.
+type tableWrite struct {
+	line  int
+	table string
+}
+
+// tableWrites returns the single string literals of f that hold SQL writing
+// one of the engine's tables. Literals built by concatenation or Sprintf are
+// out of reach: this is a check, not a proof.
+func tableWrites(f *ast.File, fset *token.FileSet) []tableWrite {
+	var out []tableWrite
+	ast.Inspect(f, func(n ast.Node) bool {
+		lit, ok := n.(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return true
+		}
+		v, err := strconv.Unquote(lit.Value)
+		if err != nil {
+			return true
+		}
+		seen := map[string]bool{}
+		for _, re := range writePats {
+			for _, m := range re.FindAllStringSubmatch(v, -1) {
+				if t := strings.ToLower(m[1]); !seen[t] {
+					seen[t] = true
+					out = append(out, tableWrite{fset.Position(lit.Pos()).Line, t})
+				}
 			}
 		}
 		return true

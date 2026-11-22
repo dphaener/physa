@@ -152,7 +152,7 @@ func TestAPIList(t *testing.T) {
 		if !strings.HasPrefix(out, "Method") {
 			t.Errorf("%v: no header:\n%s", args, out)
 		}
-		for _, m := range []string{"api.describe", "api.list", "engine.status", "engine.stop"} {
+		for _, m := range []string{"api.describe", "api.list", "engine.events", "engine.status", "engine.stop"} {
 			if !strings.Contains(out, "\n"+m+" ") {
 				t.Errorf("%v: lacks %s:\n%s", args, m, out)
 			}
@@ -160,7 +160,7 @@ func TestAPIList(t *testing.T) {
 	}
 	code, out, _ := te.run("api", "list", "--json")
 	var list []struct{ Name, Summary string }
-	if code != 0 || json.Unmarshal([]byte(out), &list) != nil || len(list) != 4 {
+	if code != 0 || json.Unmarshal([]byte(out), &list) != nil || len(list) != 5 {
 		t.Errorf("--json: code %d, %q", code, out)
 	}
 }

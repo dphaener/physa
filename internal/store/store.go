@@ -4,7 +4,9 @@
 // which capabilities were read, with what, which entries were taken by slug,
 // when and by which session. It also keeps one gather of the repo's sources (docs,
 // history, PRs), replaced whole in one transaction, and the one init proposal made from it,
-// which a new gather clears. Schema changes are numbered migrations applied at
+// which a new gather clears. It also holds the engine's tables (ideas, pitches,
+// bets, plans, plan revisions, events, intents and timers), which only the
+// engine's state package writes. Schema changes are numbered migrations applied at
 // open.
 package store
 
@@ -38,18 +40,47 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	dsn := "file:" + filepath.Join(dir, "physa.db") +
-		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_txlock=immediate"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if err := migrate(db); err != nil {
+	if err := whileBusy(func() error { return db.Ping() }); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := whileBusy(func() error { return migrate(db) }); err != nil {
 		db.Close()
 		return nil, err
 	}
 	return &Store{db: db}, nil
 }
+
+// whileBusy runs f again, with a backoff of 10ms doubling, while it fails
+// with SQLITE_BUSY, which busy_timeout does not cover for a connection's
+// first statement on a fresh file. It gives up after 5s.
+func whileBusy(f func() error) error {
+	deadline := time.Now().Add(5 * time.Second)
+	wait := 10 * time.Millisecond
+	for {
+		err := f()
+		if err == nil || !isBusy(err) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(wait)
+		wait *= 2
+	}
+}
+
+func isBusy(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "SQLITE_BUSY") || strings.Contains(msg, "database is locked")
+}
+
+// DB returns the open database. It is for the engine's state package, which
+// alone writes the engine's tables (codecheck's engine-tables-writer rule).
+func (s *Store) DB() *sql.DB { return s.db }
 
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
@@ -114,6 +145,13 @@ func apply(db *sql.DB, n int, body string) error {
 		return err
 	}
 	defer tx.Rollback()
+	var current int
+	if err := tx.QueryRow("PRAGMA user_version").Scan(&current); err != nil {
+		return err
+	}
+	if current >= n {
+		return nil // another process applied it meanwhile
+	}
 	if _, err := tx.Exec(body); err != nil {
 		return err
 	}

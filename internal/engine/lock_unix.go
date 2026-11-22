@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -20,9 +21,10 @@ import (
 )
 
 // Run is the engine: it takes the machine's lock, serves the API on the
-// socket, and returns once ctx ends, engine.stop is called, or nothing was
-// pending for the idle duration. Each of those returns nil. Another engine
-// holding the lock returns *RunningError.
+// socket, opens the registered repos off the start path, and returns once
+// ctx ends, engine.stop is called, or nothing was pending for the idle
+// duration. Each of those returns nil. Another engine holding the lock
+// returns *RunningError.
 func Run(ctx context.Context, o Options) error {
 	p, err := PathsIn(o.Dir)
 	if err != nil {
@@ -57,11 +59,21 @@ func Run(ctx context.Context, o Options) error {
 	if idle <= 0 {
 		idle = DefaultIdle
 	}
-	e := newEngine(o.Version, time.Now())
+	o.Dir, o.Idle = p.Dir, idle
+	e := newEngine(o, time.Now())
 	srv := api.NewServer(e.table(), e.hooks())
 	hs := &http.Server{Handler: srv, ReadHeaderTimeout: 5 * time.Second}
 	served := make(chan error, 1)
 	go func() { served <- hs.Serve(ln) }()
+	// Stores open after the socket answers; a call naming a repo opens it.
+	opening, stopOpening := context.WithTimeout(context.Background(), 30*time.Second)
+	defer stopOpening()
+	var opened sync.WaitGroup
+	opened.Go(func() {
+		for _, err := range e.set.OpenRegistered(opening) {
+			fmt.Fprintf(os.Stderr, "physa engine: skipping repo %v\n", err)
+		}
+	})
 
 	why, runErr := e.wait(ctx, idle, served)
 	ln.Close() // removes the socket
@@ -83,6 +95,13 @@ func Run(ctx context.Context, o Options) error {
 	if why != serveFailed {
 		<-served
 	}
+	stopOpening()
+	opened.Wait()
+	closing, cancel = context.WithTimeout(context.Background(), time.Second)
+	if err := e.set.Close(closing); err != nil {
+		fmt.Fprintf(os.Stderr, "physa engine: closing the repos: %v\n", err)
+	}
+	cancel()
 	if err := os.Remove(p.Socket); err != nil && !errors.Is(err, fs.ErrNotExist) && runErr == nil {
 		runErr = fmt.Errorf("removing the socket: %w", err)
 	}

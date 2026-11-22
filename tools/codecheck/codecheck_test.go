@@ -170,3 +170,31 @@ func TestPackageBudget(t *testing.T) {
 		t.Fatalf("an entry for another package must not apply: err=%v got %v", err, rules(vs))
 	}
 }
+
+func TestEngineTablesWriterFlagged(t *testing.T) {
+	vs := mustCheck(t, "testdata/tablewriter")
+	if got := rules(vs); len(got) != 2 || got[0] != "internal/other engine-tables-writer" || got[1] != "internal/other engine-tables-writer" {
+		t.Fatalf("got %v", got)
+	}
+	for i, want := range []string{"other.go:7: writes the engine's table ideas", "other.go:8: writes the engine's table events"} {
+		if !strings.Contains(vs[i].Message, want) || !strings.Contains(vs[i].Message, "03 §5.1") {
+			t.Errorf("violation %d: want %q in %q", i, want, vs[i].Message)
+		}
+		t.Logf("reported: %s: %s: %s", vs[i].Dir, vs[i].Rule, vs[i].Message)
+	}
+}
+
+func TestEngineTablesWriterAllowed(t *testing.T) {
+	if vs := mustCheck(t, "testdata/tablewriterok"); len(vs) != 0 {
+		t.Fatalf("got %v", vs)
+	}
+}
+
+func TestStateBudget(t *testing.T) {
+	if got := packageBudgets["internal/state"]; got != 700 {
+		t.Errorf("internal/state budget = %d, want 700", got)
+	}
+	if got := packageBudgets["internal/repos"]; got != 350 {
+		t.Errorf("internal/repos budget = %d, want 350", got)
+	}
+}

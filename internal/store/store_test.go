@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -28,6 +29,15 @@ func version(t *testing.T, s *Store) int {
 		t.Fatal(err)
 	}
 	return v
+}
+
+func newestMigration(t *testing.T) int {
+	t.Helper()
+	ms, err := migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ms[len(ms)-1].n
 }
 
 func TestOpenCreatesFile(t *testing.T) {
@@ -115,8 +125,8 @@ func TestMigrationTwoDropsPRChecks(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if got := version(t, s); got != 7 {
-		t.Errorf("user_version = %d, want 7", got)
+	if got, want := version(t, s), newestMigration(t); got != want {
+		t.Errorf("user_version = %d, want %d", got, want)
 	}
 	var n int
 	if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name = 'pr_checks'").Scan(&n); err != nil || n != 0 {
@@ -124,10 +134,10 @@ func TestMigrationTwoDropsPRChecks(t *testing.T) {
 	}
 }
 
-func TestFreshStoreMigratesToSeven(t *testing.T) {
+func TestFreshStoreMigratesToEight(t *testing.T) {
 	s, _ := open(t)
-	if got := version(t, s); got != 7 {
-		t.Errorf("user_version = %d, want 7", got)
+	if got := version(t, s); got != 8 {
+		t.Errorf("user_version = %d, want 8", got)
 	}
 	var n int
 	if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name = 'slice_records'").Scan(&n); err != nil || n != 1 {
@@ -241,8 +251,8 @@ func TestMigrationSevenKeepsOldSliceRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if got := version(t, s); got != 7 {
-		t.Errorf("user_version = %d, want 7", got)
+	if got, want := version(t, s), newestMigration(t); got != want {
+		t.Errorf("user_version = %d, want %d", got, want)
 	}
 	got, err := s.SliceRecords()
 	if err != nil || len(got) != 2 {
@@ -262,5 +272,80 @@ func TestMigrationSevenKeepsOldSliceRecords(t *testing.T) {
 	}
 	if err := s.db.QueryRow("SELECT count(*) FROM pragma_table_info('slice_records') WHERE name = 'entries'").Scan(&n); err != nil || n != 1 {
 		t.Errorf("entries columns = %d, %v; want 1", n, err)
+	}
+}
+
+func TestConcurrentOpenMigrates(t *testing.T) {
+	dir := t.TempDir()
+	var wg sync.WaitGroup
+	errs := make(chan error, 4)
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s, err := Open(dir)
+			if err != nil {
+				errs <- err
+				return
+			}
+			s.Close()
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+}
+
+func TestEngineTables(t *testing.T) {
+	s, _ := open(t)
+	want := map[string][]string{
+		"ideas":          {"id", "slug", "text", "person", "created_at", "updated_at"},
+		"pitches":        {"id", "idea_id", "problem", "appetite_tokens", "solution", "scope", "signal", "rabbit_holes", "no_gos", "person", "created_at", "updated_at"},
+		"bets":           {"id", "slug", "idea_id", "pitch_id", "person", "appetite_tokens", "spent_tokens", "state", "stop_reason", "created_at", "started_at", "ended_at"},
+		"plans":          {"id", "bet_id", "created_at"},
+		"plan_revisions": {"id", "plan_id", "n", "changes", "reason", "person", "created_at"},
+		"events":         {"id", "at", "kind", "subject", "subject_id", "person", "data"},
+		"intents":        {"id", "kind", "payload", "state", "attempts", "next_at", "last_error", "result", "created_at", "done_at"},
+		"timers":         {"id", "kind", "key", "due_at", "payload"},
+	}
+	for table, cols := range want {
+		rows, err := s.DB().Query("SELECT name FROM pragma_table_info(?)", table)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for rows.Next() {
+			var c string
+			if err := rows.Scan(&c); err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, c)
+		}
+		rows.Close()
+		if strings.Join(got, ",") != strings.Join(cols, ",") {
+			t.Errorf("%s columns = %v, want %v", table, got, cols)
+		}
+	}
+}
+
+func TestEngineTableChecks(t *testing.T) {
+	s, _ := open(t)
+	const now = "2026-11-01T12:00:00Z"
+	if _, err := s.db.Exec(`INSERT INTO ideas (id, slug, text, person, created_at, updated_at) VALUES (1, 'a', 't', 'p', ?, ?)`, now, now); err != nil {
+		t.Fatal(err)
+	}
+	for name, q := range map[string]string{
+		"paused bet":       `INSERT INTO bets (slug, idea_id, person, appetite_tokens, state, created_at) VALUES ('b', 1, 'p', 10, 'paused', '` + now + `')`,
+		"zero appetite":    `INSERT INTO pitches (idea_id, appetite_tokens, person, created_at, updated_at) VALUES (1, 0, 'p', '` + now + `', '` + now + `')`,
+		"bet without idea": `INSERT INTO bets (slug, idea_id, person, appetite_tokens, created_at) VALUES ('c', 99, 'p', 10, '` + now + `')`,
+	} {
+		if _, err := s.db.Exec(q); err == nil {
+			t.Errorf("%s was accepted, want refused", name)
+		}
+	}
+	if _, err := s.db.Exec(`INSERT INTO bets (slug, idea_id, person, appetite_tokens, created_at) VALUES ('ok', 1, 'p', 10, ?)`, now); err != nil {
+		t.Errorf("a valid bet was refused: %v", err)
 	}
 }

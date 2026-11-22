@@ -111,8 +111,8 @@ func TestMigrationFiveUpgradesVersionFourStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if got := version(t, s); got != 7 {
-		t.Errorf("user_version = %d, want 7", got)
+	if got, want := version(t, s), newestMigration(t); got != want {
+		t.Errorf("user_version = %d, want %d", got, want)
 	}
 	g, ok, err := s.Gathered()
 	if err != nil || !ok || g.Run.MaxPRs != 10 || g.Run.ForgeReason != "none" {

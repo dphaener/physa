@@ -2,13 +2,13 @@
 
 ## Contents
 
-- [Cheapest first](#cheapest-first)
+- [Roll back the cheapest way first](#roll-back-the-cheapest-way-first)
 - [Every rollback is evidence](#every-rollback-is-evidence)
 - [Show dependents before reverting](#show-dependents-before-reverting)
 
 ## Entries
 
-### Cheapest first
+### Roll back the cheapest way first
 `cheapest-first` · from docs/vision.md
 Turn the flag off, when earned release is on; then revert the anchored changes; then reverse the decision and list what relied on it.
 Because: most problems are fixed instantly by a flag, with no deploy.

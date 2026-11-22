@@ -23,7 +23,7 @@ Rejected:
 
 ### Measure before setting budgets
 `measure-before-budget` · decided by dphaener, in their words · 2026-11-20 · #10
-A slice has no default budget and the map has no limit on how many capabilities it holds. Budgets get tuned from run data.
+A slice has no token budget (`--budget` is gone: the slice gives the index, the rules and the slugs, and `--entry` takes the rest) and the map has no limit on how many capabilities it holds. Sizes get tuned from run data.
 Because: if we collect run data we will know from real runs how to tune these things as the product matures.
 Rejected:
 - A 3,000-token default slice budget: it cut the capability's own reasons first.

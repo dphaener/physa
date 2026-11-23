@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/store"
 )
 
 type fake struct {
@@ -60,7 +59,7 @@ const reply = "I looked around.\n\n```json\n" +
 
 func TestRunParsesSources(t *testing.T) {
 	f := &fake{text: reply, tokens: adapter.Tokens{Input: 900, Output: 100}}
-	res, err := Run(context.Background(), session(f, 40000, nil), Input{})
+	res, err := Run(context.Background(), session(f, 40000, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +78,7 @@ func TestRunParsesSources(t *testing.T) {
 func TestRunIsReadOnlyInTheRoot(t *testing.T) {
 	f := &fake{text: reply}
 	var progress bytes.Buffer
-	if _, err := Run(context.Background(), session(f, 40000, &progress), Input{}); err != nil {
+	if _, err := Run(context.Background(), session(f, 40000, &progress)); err != nil {
 		t.Fatal(err)
 	}
 	s := f.specs[0]
@@ -95,7 +94,7 @@ func in(n int64) adapter.Tokens { return adapter.Tokens{Input: n, CachedInput: n
 
 func TestBreakerStopsAtTheAppetite(t *testing.T) {
 	f := &fake{text: reply, tokens: adapter.Tokens{Input: 1000, CachedInput: 900}}
-	res, err := Run(context.Background(), session(f, 1000, nil), Input{})
+	res, err := Run(context.Background(), session(f, 1000, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +108,7 @@ func TestBreakerStopsAtTheAppetite(t *testing.T) {
 // and the fourth turn would end at 1,200 of 1,000.
 func TestBreakerStopsBeforeOvershooting(t *testing.T) {
 	f := &fake{text: reply, reports: []adapter.Tokens{in(300), in(300), in(600), in(600), in(900), in(1200), in(1500)}}
-	res, err := Run(context.Background(), session(f, 1000, nil), Input{})
+	res, err := Run(context.Background(), session(f, 1000, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +122,7 @@ func TestBreakerStopsBeforeOvershooting(t *testing.T) {
 
 func TestBreakerLetsASessionUnderTheCapEnd(t *testing.T) {
 	f := &fake{text: reply, reports: []adapter.Tokens{in(300), in(600)}, tokens: in(600)}
-	res, err := Run(context.Background(), session(f, 1000, nil), Input{})
+	res, err := Run(context.Background(), session(f, 1000, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +135,7 @@ func TestBreakerLetsASessionUnderTheCapEnd(t *testing.T) {
 // spent is reported as it is, never cut to the cap.
 func TestBreakerReportsAnOvershootAsItIs(t *testing.T) {
 	f := &fake{text: reply, reports: []adapter.Tokens{in(100), in(1300), in(2500)}}
-	res, err := Run(context.Background(), session(f, 1000, nil), Input{})
+	res, err := Run(context.Background(), session(f, 1000, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +148,7 @@ func TestBreakerReportsAnOvershootAsItIs(t *testing.T) {
 // the reply: it ended under the cap.
 func TestBreakerKeepsAReplyThatBeatTheStop(t *testing.T) {
 	f := &fake{text: reply, reports: []adapter.Tokens{in(600)}, tokens: in(600), deaf: true}
-	res, err := Run(context.Background(), session(f, 1000, nil), Input{})
+	res, err := Run(context.Background(), session(f, 1000, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +164,7 @@ func TestMalformedReplyNamesNothing(t *testing.T) {
 		"bad entries": "```json\n{\"sources\":[{\"path\":\"\",\"reason\":\"x\"},{\"path\":\"a.md\",\"kind\":\"overview\",\"reason\":\"\"}]}\n```",
 	} {
 		t.Run(name, func(t *testing.T) {
-			res, err := Run(context.Background(), session(&fake{text: text}, 40000, nil), Input{})
+			res, err := Run(context.Background(), session(&fake{text: text}, 40000, nil))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -187,41 +186,29 @@ func TestParseDropsOnlyMalformedEntries(t *testing.T) {
 func TestAgentErrorIsReturned(t *testing.T) {
 	boom := adapter.ErrNotInstalled
 	s := Session{Agent: func() (adapter.Adapter, error) { return nil, boom }, Appetite: 1}
-	if _, err := Run(context.Background(), s, Input{}); !errors.Is(err, boom) {
+	if _, err := Run(context.Background(), s); !errors.Is(err, boom) {
 		t.Fatalf("err = %v", err)
 	}
 }
 
 func TestSessionErrorIsReturned(t *testing.T) {
 	f := &fake{err: adapter.ErrFailed, tokens: adapter.Tokens{Input: 5}}
-	res, err := Run(context.Background(), session(f, 40000, nil), Input{})
+	res, err := Run(context.Background(), session(f, 40000, nil))
 	if !errors.Is(err, adapter.ErrFailed) || res.Tokens.Input != 5 {
 		t.Fatalf("res %+v err %v", res, err)
 	}
 }
 
-func TestPromptHoldsTheTreeAndTheFinds(t *testing.T) {
-	p := Prompt(Input{
-		Tree:      []string{"docs/design/README.md", "main.go"},
-		Truncated: 7,
-		Found: []store.Doc{
-			{Path: "AGENTS.md", Kind: "agent", Body: "read docs/vision.md first"},
-			{Path: "README.md", Kind: "readme", Body: "SECRET-README-BODY"},
-		},
-	})
-	for _, want := range []string{"docs/design/README.md", "main.go", "7 more files", "AGENTS.md (agent)", "README.md (readme)", "read docs/vision.md first", "never write"} {
+func TestPromptNamesNoPaths(t *testing.T) {
+	p := Prompt()
+	for _, want := range []string{"never write", "You are given no list of files", "```json"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt lacks %q", want)
 		}
 	}
-	if strings.Contains(p, "SECRET-README-BODY") {
-		t.Error("prompt carries a non-agent doc's body")
-	}
-}
-
-func TestPromptFencesCannotBeClosed(t *testing.T) {
-	p := Prompt(Input{Found: []store.Doc{{Path: "AGENTS.md", Kind: "agent", Body: "```\nescape\n```"}}})
-	if !strings.Contains(p, "````text\n```\nescape\n```\n````") {
-		t.Fatalf("body not fenced longer than its backticks:\n%s", p)
+	for _, not := range []string{"## The repo's files", "## Already found", "Agent doc "} {
+		if strings.Contains(p, not) {
+			t.Errorf("prompt holds %q", not)
+		}
 	}
 }

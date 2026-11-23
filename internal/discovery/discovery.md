@@ -6,10 +6,12 @@ You may read and search the repo's files. You never write, run commands or reach
 
 ## What to look for
 
-- Follow the pointers in the agent docs below: a doc they name is likely a source.
-- Look for architecture, design, reference and product docs, decision records, and other tools' product models, wherever they live, including in folders that start with a dot.
-- Work in as few steps as you can, because every step re-reads everything so far and your tokens are capped: a session that reaches its cap names nothing. The list of the repo's files below is complete unless it says otherwise, so name sources from their paths. Read a file only when its path does not tell you what it is, and ask for all the reads you need at once.
-- Skip code, generated files, vendored or build output, and secrets. Skip docs you were already given.
+You are given no list of files: finding where this repo keeps its prior art is your job.
+
+- Start where a person new to the repo would: its agent instructions (AGENTS.md, CLAUDE.md and the like), its README and contributing guide. Follow every doc they point to.
+- Look for architecture, design, reference and product docs, decision records, plans, and other tools' product models, wherever they live, including in folders that start with a dot.
+- Look before you read: list a folder, or glob for names, before opening files, and read a file only when its name and place don't tell you whether it is a source. Ask for several reads at once. Every step re-reads everything so far and your tokens are capped: a session that reaches its cap names nothing.
+- Skip code, tests, generated files, logs and journals, vendored or build output, and secrets.
 
 ## Kinds
 

@@ -12,7 +12,6 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/draft"
-	"github.com/dphaener/physa/internal/store"
 )
 
 // DefaultAppetite is how many tokens a discovery session may use when init
@@ -37,16 +36,6 @@ func TooSmall(cap int64) string {
 
 // MaxNamed is how many sources a session may name; gather refuses the rest.
 const MaxNamed = 200
-
-// Input is what the session starts from.
-type Input struct {
-	// Tree lists the repo's files as slash paths relative to its root.
-	Tree []string
-	// Truncated counts the files of the repo that Tree leaves out.
-	Truncated int
-	// Found are the deterministic finds; agent docs carry their bodies.
-	Found []store.Doc
-}
 
 // Source is one source the session names.
 type Source struct {
@@ -81,7 +70,7 @@ type Result struct {
 // Run starts the session and parses what it names. An agent that cannot be
 // resolved or a session that fails is an error; a session stopped at its
 // appetite, or a reply that names nothing readable, is not.
-func Run(ctx context.Context, s Session, in Input) (Result, error) {
+func Run(ctx context.Context, s Session) (Result, error) {
 	agent, err := s.Agent()
 	if err != nil {
 		return Result{}, err
@@ -89,7 +78,7 @@ func Run(ctx context.Context, s Session, in Input) (Result, error) {
 	if s.Progress != nil {
 		fmt.Fprintf(s.Progress, "physa init: discovery: the agent reads the repo for sources, up to %d tokens\n", s.Appetite)
 	}
-	spec := adapter.Spec{Prompt: Prompt(in), Dir: s.Root, ReadOnly: true, SessionID: draft.NewSessionID()}
+	spec := adapter.Spec{Prompt: Prompt(), Dir: s.Root, ReadOnly: true, SessionID: draft.NewSessionID()}
 	res, stopped, err := attempt(ctx, agent, spec, s.Appetite)
 	out := Result{Model: res.Model, Tokens: res.Tokens, Stopped: stopped}
 	if err != nil || stopped {

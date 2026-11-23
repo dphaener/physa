@@ -3,18 +3,12 @@ package gather
 import (
 	"context"
 	"errors"
-	"io/fs"
-	"path/filepath"
-	"sort"
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/discovery"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
 )
-
-// maxTree is the most paths of the repo's tree that discovery is shown.
-const maxTree = 4000
 
 // Discover asks for the agent's search for more sources. Its zero value asks
 // for none. Off, when set, is the reason not to start one and is reported as
@@ -43,13 +37,7 @@ func discover(root string, repo vcs.Repo, d Discover, found []store.Doc) ([]stor
 		info.Why = why
 		return nil, nil, info
 	}
-	tree, listed := fileTree(root, repo)
-	in := discovery.Input{Found: found}
-	if len(tree) > maxTree {
-		in.Truncated = len(tree) - maxTree
-		tree = tree[:maxTree]
-	}
-	in.Tree = tree
+	listed := listedFiles(repo)
 
 	s := d.Session
 	s.Root = root
@@ -60,7 +48,7 @@ func discover(root string, repo vcs.Repo, d Discover, found []store.Doc) ([]stor
 		resolveErr = err
 		return a, err
 	}
-	res, err := discovery.Run(context.Background(), s, in)
+	res, err := discovery.Run(context.Background(), s)
 	info.Model, info.Tokens = res.Model, res.Tokens
 	switch {
 	case resolveErr != nil:
@@ -96,32 +84,21 @@ func discover(root string, repo vcs.Repo, d Discover, found []store.Doc) ([]stor
 	return added, skipped, info
 }
 
-// fileTree lists the repo's files as slash paths, sorted: through the repo
-// when it can list them, and otherwise by walking root, skipping .git and
-// the ignored folders. listed is the set of the repo's listed files, or nil
-// when the tree came from a walk.
-func fileTree(root string, repo vcs.Repo) (tree []string, listed map[string]bool) {
-	if l, ok := repo.(vcs.Lister); ok {
-		if paths, err := l.Listed(); err == nil {
-			listed = make(map[string]bool, len(paths))
-			for _, p := range paths {
-				listed[p] = true
-			}
-			return paths, listed
-		}
-	}
-	_ = filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if e.IsDir() && (e.Name() == ".git" || ignoredDirs[e.Name()]) {
-			return filepath.SkipDir
-		}
-		if rel, err := filepath.Rel(root, p); err == nil && !e.IsDir() {
-			tree = append(tree, filepath.ToSlash(rel))
-		}
+// listedFiles is the set of the repo's files the version-control interface
+// lists, which gather holds named sources to; nil when the repo cannot list
+// them, and the named sources are then checked against the working tree only.
+func listedFiles(repo vcs.Repo) map[string]bool {
+	l, ok := repo.(vcs.Lister)
+	if !ok {
 		return nil
-	})
-	sort.Strings(tree)
-	return tree, nil
+	}
+	paths, err := l.Listed()
+	if err != nil {
+		return nil
+	}
+	listed := make(map[string]bool, len(paths))
+	for _, p := range paths {
+		listed[p] = true
+	}
+	return listed
 }

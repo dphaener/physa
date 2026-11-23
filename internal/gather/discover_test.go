@@ -204,7 +204,7 @@ func TestDiscoverZeroValueIsNotAsked(t *testing.T) {
 	}
 }
 
-func TestDiscoverTreeComesFromALister(t *testing.T) {
+func TestDiscoverRefusesWhatTheListerDoesNotList(t *testing.T) {
 	r := discoverRepo(t)
 	f := &fakeAgent{t: t, text: reply(source("docs/design/api.md", "overview", "x"))}
 	repo := listerRepo{Repo: r.open(), paths: []string{"README.md", "listed-only.go", "docs/design/index.md"}}
@@ -212,17 +212,13 @@ func TestDiscoverTreeComesFromALister(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt := f.specs[0].Prompt
-	if !strings.Contains(prompt, "listed-only.go") || strings.Contains(prompt, "main.go") {
-		t.Fatalf("the tree did not come from the Lister: %s", prompt)
-	}
 	// docs/design/api.md exists but the repo does not list it.
 	if len(g.Docs) != 1 || s.Discovery.Added != 0 || len(s.Docs.Skipped) != 1 {
 		t.Fatalf("docs = %+v, discovery = %+v, skipped = %+v", g.Docs, s.Discovery, s.Docs.Skipped)
 	}
 }
 
-func TestDiscoverTreeIsWalkedWithoutALister(t *testing.T) {
+func TestDiscoverWithoutAListerReadsTheWorkingTree(t *testing.T) {
 	r := discoverRepo(t)
 	write(t, r.dir, "node_modules/dep/index.js", "x")
 	f := &fakeAgent{t: t, text: reply(source("docs/design/api.md", "overview", "the api"))}
@@ -230,28 +226,19 @@ func TestDiscoverTreeIsWalkedWithoutALister(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt := f.specs[0].Prompt
-	if !strings.Contains(prompt, "main.go") || strings.Contains(prompt, "node_modules") || strings.Contains(prompt, ".git/") {
-		t.Fatalf("prompt = %s", prompt)
-	}
 	if len(g.Docs) != 2 || s.Discovery.Added != 1 {
 		t.Fatalf("docs = %+v, discovery = %+v", g.Docs, s.Discovery)
 	}
 }
 
-func TestDiscoverTruncatesTheTree(t *testing.T) {
-	paths := make([]string, maxTree+25)
-	for i := range paths {
-		paths[i] = fmt.Sprintf("f/%05d.go", i)
-	}
+func TestDiscoverPromptListsNoPaths(t *testing.T) {
 	r := discoverRepo(t)
 	f := &fakeAgent{t: t, text: reply()}
-	if _, _, err := Run(r.dir, listerRepo{Repo: r.open(), paths: paths}, nil, bounds(t), f.discover(40000), gatherNow(t)); err != nil {
+	if _, _, err := Run(r.dir, r.open(), nil, bounds(t), f.discover(40000), gatherNow(t)); err != nil {
 		t.Fatal(err)
 	}
-	prompt := f.specs[0].Prompt
-	if !strings.Contains(prompt, fmt.Sprintf("f/%05d.go", maxTree-1)) || strings.Contains(prompt, fmt.Sprintf("f/%05d.go", maxTree)) {
-		t.Fatalf("tree was not cut at %d", maxTree)
+	if p := f.specs[0].Prompt; p != discovery.Prompt() || strings.Contains(p, "main.go") || strings.Contains(p, "README.md (readme)") {
+		t.Fatalf("prompt = %s", p)
 	}
 }
 

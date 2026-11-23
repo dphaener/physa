@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/discovery"
 	"github.com/dphaener/physa/internal/fit"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/newcodebase"
@@ -28,7 +27,7 @@ func full(o Flags, st *store.Store, root string, p *printer, stderr io.Writer, e
 	if appetite == 0 {
 		appetite = recovery.DefaultAppetite
 	}
-	limit := min(discovery.DefaultAppetite, appetite/4)
+	limit := appetite / 4                             // a share of the appetite, never a fixed cap (10 Q3)
 	share := min(appetite/2, mapping.DefaultAppetite) // recovering gets the rest, less what discovery and proposing used
 	budget, err := fit.Budget(share, mapping.Overhead())
 	if err != nil {

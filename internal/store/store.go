@@ -4,8 +4,8 @@
 // which capabilities were read, with what, which entries were taken by slug,
 // when and by which session. It also keeps one gather of the repo's sources (docs,
 // history, PRs), replaced whole in one transaction, and the one init proposal made from it,
-// which a new gather clears. It also holds the engine's tables (ideas, pitches,
-// bets, plans, plan revisions, events, intents and timers), which only the
+// which a new gather clears. It also holds the engine's tables (ideas, pursuits,
+// plans, plan revisions, events, intents and timers), which only the
 // engine's state package writes. Schema changes are numbered migrations applied at
 // open.
 package store

@@ -1,6 +1,6 @@
-// Package ideacli is the idea commands and what the bet commands share:
-// talking to the engine, the one interactive test, choosing a slug, and
-// styles.
+// Package ideacli is the idea commands and what the pursuit commands share:
+// talking to the engine, the one interactive test, choosing a slug, opening
+// an editor, and styles.
 package ideacli
 
 import (
@@ -11,7 +11,7 @@ import (
 	"github.com/dphaener/physa/internal/cli"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/output"
-	"github.com/dphaener/physa/internal/pitch"
+	"github.com/dphaener/physa/internal/tokens"
 	"github.com/dphaener/physa/internal/workapi"
 )
 
@@ -24,14 +24,13 @@ func Command(newForge func(dir string) forge.Forge) *cli.Command {
 func (e *Env) command() *cli.Command {
 	return &cli.Command{
 		Name: "idea",
-		Summary: "Add, list, show and shape ideas: a bare idea lists them. An idea belongs to the person who adds it; " +
+		Summary: "Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; " +
 			"its facts say where it stands. A slug left out is chosen from a list on a terminal.",
 		Usage: []string{
 			"physa idea [--json]",
 			`physa idea add "<text>" [--slug <slug>] [--json]`,
 			"physa idea list [--json]",
 			"physa idea show [<slug>] [--json]",
-			"physa idea shape [<slug>] [--from <file>|-] [--json]",
 		},
 		Run: e.list,
 		Subs: []*cli.Command{
@@ -40,10 +39,7 @@ func (e *Env) command() *cli.Command {
 			leaf("list", "physa idea list [--json]",
 				"List the ideas, newest first, with who added them and their facts.", e.list),
 			leaf("show", "physa idea show [<slug>] [--json]",
-				"Show an idea: its text, who added it, its latest pitch and its bets.", e.show),
-			leaf("shape", "physa idea shape [<slug>] [--from <file>|-] [--json]",
-				"Shape an idea into a pitch of seven parts, in $VISUAL or $EDITOR on a terminal; "+
-					"--from reads the pitch from a file, or stdin for -, which is how agents shape. Shaping again keeps the earlier pitch.", e.shape),
+				"Show an idea: its text, who added it, and its pursuits.", e.show),
 		},
 	}
 }
@@ -112,21 +108,24 @@ func (e *Env) list(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// Facts says where an idea stands: whether it was shaped, and its latest
-// bet's state.
+// Facts says where an idea stands: its latest pursuit's state, or that it
+// was never pursued.
 func Facts(o workapi.IdeaOut) string {
-	fs := []string{"not shaped"}
-	if o.Pitches == 1 {
-		fs[0] = "shaped"
-	} else if o.Pitches > 1 {
-		fs[0] = fmt.Sprintf("shaped %d times", o.Pitches)
+	switch {
+	case o.Pursuit == "":
+		return "not pursued"
+	case o.Pursuit == o.Slug:
+		return "pursuit " + o.PursuitState
 	}
-	if o.Bet == o.Slug && o.Bet != "" {
-		fs = append(fs, "bet "+o.BetState)
-	} else if o.Bet != "" {
-		fs = append(fs, "bet "+o.Bet+" "+o.BetState)
+	return "pursuit " + o.Pursuit + " " + o.PursuitState
+}
+
+// Appetite writes a pursuit's appetite, or "none" when it has none.
+func Appetite(n int64) string {
+	if n <= 0 {
+		return "none"
 	}
-	return strings.Join(fs, ", ")
+	return tokens.Format(n)
 }
 
 // IdeaChoices makes the choices for ChooseSlug from ideas.
@@ -177,34 +176,19 @@ func (e *Env) show(args []string, stdout, stderr io.Writer) int {
 
 func (e *Env) showIdea(v *View, o workapi.IdeaOut) {
 	v.Title(o.Text)
-	bets := "none"
-	if len(o.Bets) > 0 {
-		bs := make([]string, len(o.Bets))
-		for i, b := range o.Bets {
-			bs[i] = fmt.Sprintf("%s (%s, %s)", b.Slug, b.State, pitch.Tokens(b.Appetite))
+	pursuits := "none"
+	if len(o.Pursuits) > 0 {
+		ps := make([]string, len(o.Pursuits))
+		for i, p := range o.Pursuits {
+			ps[i] = fmt.Sprintf("%s (%s, appetite %s, spent %s)", p.Slug, p.State, Appetite(p.Appetite), tokens.Format(p.Spent))
 		}
-		bets = strings.Join(bs, ", ")
+		pursuits = strings.Join(ps, ", ")
 	}
 	v.Fields(
 		[2]string{"slug", o.Slug},
 		[2]string{"person", o.Person},
 		[2]string{"added", When(o.CreatedAt)},
 		[2]string{"facts", Facts(o)},
-		[2]string{"bets", bets},
+		[2]string{"pursuits", pursuits},
 	)
-	if o.Pitch != nil {
-		ShowPitch(v, *o.Pitch)
-	}
-}
-
-// ShowPitch prints a pitch's seven parts under who shaped it and when.
-func ShowPitch(v *View, p workapi.PitchOut) {
-	v.Line("")
-	v.Line(fmt.Sprintf("Pitch, shaped by %s on %s", p.Person, When(p.At)))
-	for _, part := range [][2]string{
-		{"Problem", p.Problem}, {"Appetite", pitch.Tokens(p.Appetite)}, {"Solution", p.Solution},
-		{"Scope", p.Scope}, {"Signal", p.Signal}, {"Rabbit holes", p.RabbitHoles}, {"No-gos", p.NoGos},
-	} {
-		v.Section(part[0], part[1])
-	}
 }

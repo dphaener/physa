@@ -43,7 +43,7 @@ type Fact struct {
 	Commit     string    `json:"commit,omitempty"`
 	PR         int       `json:"pr,omitempty"`
 	Capability string    `json:"capability,omitempty"`
-	Bet        string    `json:"bet,omitempty"`
+	Pursuit    string    `json:"pursuit,omitempty"`
 	Change     string    `json:"change,omitempty"` // the plan change's name
 	Idea       string    `json:"idea,omitempty"`
 	At         time.Time `json:"at"`
@@ -147,15 +147,15 @@ func reverted(repo Repo, c vcs.Change) (Fact, bool) {
 	return f, true
 }
 
-// fromMessage fills a fact's capability, bet and change from the trailers of
+// fromMessage fills a fact's capability, pursuit and change from the trailers of
 // a change's message.
 func fromMessage(f Fact, message string) Fact {
 	if v := history.Trailers(message, "Capability"); len(v) > 0 {
 		f.Capability = v[0]
 	}
 	for _, v := range history.Trailers(message, progress.Trailer) {
-		if bet, change, ok := progress.Parse(v); ok {
-			f.Bet, f.Change = bet, change
+		if pursuit, change, ok := progress.Parse(v); ok {
+			f.Pursuit, f.Change = pursuit, change
 			break
 		}
 	}

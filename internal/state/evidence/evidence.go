@@ -6,7 +6,7 @@
 // moves the watermark in the transaction that marks it done, so a kill at any
 // moment loses nothing and doubles nothing. Facts are observed, never
 // reported, and hold no weight (design 05 section 6.5). The engine polls at
-// once on open, every 5 minutes while a bet is active and daily otherwise,
+// once on open, every 5 minutes while a pursuit is active and daily otherwise,
 // and backs off from a forge that fails.
 package evidence
 
@@ -30,7 +30,7 @@ const (
 )
 
 const (
-	activeEvery = 5 * time.Minute      // the poll's cadence while a bet is active
+	activeEvery = 5 * time.Minute      // the poll's cadence while a pursuit is active
 	idleEvery   = 24 * time.Hour       // and otherwise
 	expireEvery = 24 * time.Hour       // the retention timer's cadence
 	keepFacts   = 365 * 24 * time.Hour // evidence is kept a year (05 Q14)

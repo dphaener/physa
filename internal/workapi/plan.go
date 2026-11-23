@@ -34,7 +34,7 @@ func capabilities(repo string) []string {
 }
 
 func planOut(d stateplan.Detail) PlanOut {
-	o := PlanOut{Bet: d.Bet, N: d.N, Replans: d.Replans, Reason: d.Reason, Person: d.Person, At: stamp(d.At), Changes: d.Changes}
+	o := PlanOut{Pursuit: d.Pursuit, N: d.N, Replans: d.Replans, Reason: d.Reason, Person: d.Person, At: stamp(d.At), Changes: d.Changes}
 	if o.Changes == nil {
 		o.Changes = []plan.Change{}
 	}
@@ -67,35 +67,35 @@ func orEmpty(s []string) []string {
 	return s
 }
 
-// showBet reads a bet and its progress. It first looks at the default branch
-// for the bet's Change: trailers and records what landed (and the bet done
+// showPursuit reads a pursuit and its progress. It first looks at the default branch
+// for the pursuit's Change: trailers and records what landed (and the pursuit done
 // when every planned change has); a version-control error is logged and the
 // progress shown is what the store holds.
-func showBet(ctx context.Context, st work.Submitter, repo, slug string) (BetOut, error) {
-	d, err := work.Bet(ctx, st, slug)
+func showPursuit(ctx context.Context, st work.Submitter, repo, slug string) (PursuitOut, error) {
+	d, err := work.Pursuit(ctx, st, slug)
 	if err != nil {
-		return BetOut{}, err
+		return PursuitOut{}, err
 	}
 	var landed map[string]progress.Landing
 	if r, err := git.Open(repo); err != nil {
-		log.Printf("bet.show %s: progress from version control: %v", slug, err)
+		log.Printf("pursuit.show %s: progress from version control: %v", slug, err)
 	} else if landed, err = progress.Landed(r, slug, d.CreatedAt); err != nil {
-		log.Printf("bet.show %s: progress from version control: %v", slug, err)
+		log.Printf("pursuit.show %s: progress from version control: %v", slug, err)
 		landed = nil
 	}
 	if err := stateplan.Land(ctx, st, slug, landed); err != nil {
-		return BetOut{}, err
+		return PursuitOut{}, err
 	}
-	if d, err = work.Bet(ctx, st, slug); err != nil {
-		return BetOut{}, err
+	if d, err = work.Pursuit(ctx, st, slug); err != nil {
+		return PursuitOut{}, err
 	}
 	f, err := stateplan.Progress(ctx, st, slug)
 	if err != nil {
-		return BetOut{}, err
+		return PursuitOut{}, err
 	}
-	o := betDetailOut(d)
+	o := pursuitDetailOut(d)
 	o.Progress, o.NeedsYou = progressOut(f)
-	o.Evidence = betEvidence(ctx, st, slug)
+	o.Evidence = pursuitEvidence(ctx, st, slug)
 	return o, nil
 }
 
@@ -103,13 +103,13 @@ func planMethods(g getter) []api.Method {
 	const (
 		slugNotes = "An unknown slug replies bad_request naming it."
 		repo      = `"repo":"/home/me/code/shop"`
-		planJSON  = `{"bet":"try-a-quiet-mode","n":1,"replans":0,"person":"ann","at":"2026-11-22T10:00:00Z","changes":[{"name":"quiet-flag","capability":"cli","what":"Add --quiet.","acceptance":["failure case: an unknown flag exits 2"],"must_not":[],"after":[]}]}`
+		planJSON  = `{"pursuit":"try-a-quiet-mode","n":1,"replans":0,"person":"ann","at":"2026-11-22T10:00:00Z","changes":[{"name":"quiet-flag","capability":"cli","what":"Add --quiet.","acceptance":["failure case: an unknown flag exits 2"],"must_not":[],"after":[]}]}`
 	)
 	return []api.Method{
-		api.Define("plan.set", "Stores a bet's plan as its next revision.",
+		api.Define("plan.set", "Stores a pursuit's plan as its next revision.",
 			[]string{"The plan is checked against the repo's map; a plan with problems replies bad_request listing each one: a change with no capability or two, a capability not in the map, an after naming an unknown change or making a cycle, acceptance with no failure case and no stated reason.",
-				"A revision after the first needs a reason: what shaping missed. Only an active bet takes a plan."},
-			`{`+repo+`,"bet":"try-a-quiet-mode","person":"ann","plan":{"changes":[{"name":"quiet-flag","capability":"cli","what":"Add --quiet.","acceptance":["failure case: an unknown flag exits 2"],"must_not":[],"after":[]}]}}`, planJSON,
+				"A revision after the first needs a reason: what the plan missed. Only an active pursuit takes a plan."},
+			`{`+repo+`,"pursuit":"try-a-quiet-mode","person":"ann","plan":{"changes":[{"name":"quiet-flag","capability":"cli","what":"Add --quiet.","acceptance":["failure case: an unknown flag exits 2"],"must_not":[],"after":[]}]}}`, planJSON,
 			func(ctx context.Context, _ *api.Conn, in PlanSetIn) (PlanOut, error) {
 				p, err := plan.Parse(in.Plan, capabilities(in.Repo))
 				if err != nil {
@@ -119,42 +119,42 @@ func planMethods(g getter) []api.Method {
 				if err != nil {
 					return PlanOut{}, err
 				}
-				d, err := stateplan.Set(ctx, st, stateplan.SetIn{Bet: in.Bet, Reason: in.Reason, Person: in.Person, Plan: p})
+				d, err := stateplan.Set(ctx, st, stateplan.SetIn{Pursuit: in.Pursuit, Reason: in.Reason, Person: in.Person, Plan: p})
 				return planOut(d), refused(err)
 			}),
-		api.Define("plan.show", "Shows a bet's current plan, and every revision when asked.",
-			[]string{"A bet with no plan replies bad_request saying how to set one.", slugNotes},
-			`{`+repo+`,"bet":"try-a-quiet-mode","history":true}`, planJSON,
+		api.Define("plan.show", "Shows a pursuit's current plan, and every revision when asked.",
+			[]string{"A pursuit with no plan replies bad_request saying how to set one.", slugNotes},
+			`{`+repo+`,"pursuit":"try-a-quiet-mode","history":true}`, planJSON,
 			func(ctx context.Context, _ *api.Conn, in PlanShowIn) (PlanOut, error) {
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
 					return PlanOut{}, err
 				}
-				d, err := stateplan.Show(ctx, st, in.Bet, in.History)
+				d, err := stateplan.Show(ctx, st, in.Pursuit, in.History)
 				return planOut(d), refused(err)
 			}),
-		api.Define("bet.work", "Records the change a session works on.",
-			[]string{"The change must be planned in the bet's current revision; a session's later call replaces its earlier change.",
+		api.Define("pursuit.work", "Records the change a session works on.",
+			[]string{"The change must be planned in the pursuit's current revision; a session's later call replaces its earlier change.",
 				"The prepare-commit-msg hook reads it to add the Change: trailer to the session's commits."},
-			`{`+repo+`,"bet":"try-a-quiet-mode","change":"quiet-flag","session":"abc-123"}`, `{"bet":"try-a-quiet-mode","change":"quiet-flag"}`,
+			`{`+repo+`,"pursuit":"try-a-quiet-mode","change":"quiet-flag","session":"abc-123"}`, `{"pursuit":"try-a-quiet-mode","change":"quiet-flag"}`,
 			func(ctx context.Context, _ *api.Conn, in WorkIn) (WorkOut, error) {
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
 					return WorkOut{}, err
 				}
-				err = stateplan.Work(ctx, st, stateplan.WorkIn{Session: in.Session, Bet: in.Bet, Change: in.Change})
-				return WorkOut{in.Bet, in.Change}, refused(err)
+				err = stateplan.Work(ctx, st, stateplan.WorkIn{Session: in.Session, Pursuit: in.Pursuit, Change: in.Change})
+				return WorkOut{in.Pursuit, in.Change}, refused(err)
 			}),
-		api.Define("bet.spend", "Reports a session's running token total on a bet and change.",
+		api.Define("pursuit.spend", "Reports a session's running token total on a pursuit and change.",
 			[]string{"It is how an adapter reports a session's tokens (step 6's adapters call it). Tokens is the session's running total, not an increase: reporting the same or a lower total changes nothing, so it is safe to repeat.",
-				"The increase is added and the appetite checked in one transaction: a Needs you item at 80% of the appetite, and at 100% the circuit breaker stops the bet and it goes back to shaping. The appetite is never raised."},
-			`{`+repo+`,"bet":"try-a-quiet-mode","change":"quiet-flag","session":"abc-123","tokens":52000}`, `{"spent":52000,"appetite":200000,"state":"active","warned":false,"broke":false}`,
+				"The increase is added and the appetite checked in one transaction: a Needs you item at 80% of the appetite, and at 100% the circuit breaker stops the pursuit, and the idea may be pursued again. A pursuit with no appetite has neither; its spend is still counted. The appetite is never raised."},
+			`{`+repo+`,"pursuit":"try-a-quiet-mode","change":"quiet-flag","session":"abc-123","tokens":52000}`, `{"spent":52000,"appetite":200000,"state":"active","warned":false,"broke":false}`,
 			func(ctx context.Context, _ *api.Conn, in SpendIn) (SpendOut, error) {
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
 					return SpendOut{}, err
 				}
-				o, err := stateplan.Spend(ctx, st, stateplan.SpendIn{Bet: in.Bet, Change: in.Change, Session: in.Session, Tokens: in.Tokens})
+				o, err := stateplan.Spend(ctx, st, stateplan.SpendIn{Pursuit: in.Pursuit, Change: in.Change, Session: in.Session, Tokens: in.Tokens})
 				return SpendOut{o.Spent, o.Appetite, o.State, o.Warned, o.Broke}, refused(err)
 			}),
 	}

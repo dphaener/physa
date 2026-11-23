@@ -14,6 +14,7 @@ import (
 
 	observe "github.com/dphaener/physa/internal/evidence"
 	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/signal"
 	"github.com/dphaener/physa/internal/state"
 	"github.com/dphaener/physa/internal/state/work"
 	"github.com/dphaener/physa/internal/store"
@@ -159,12 +160,12 @@ func (e *env) commit(message string) string {
 	return e.git("rev-parse", "HEAD")
 }
 
-func (e *env) bet(slug string) {
+func (e *env) pursuit(slug string) {
 	e.t.Helper()
 	if _, err := work.AddIdea(bg, e.s, work.IdeaIn{Text: slug, Slug: slug, Person: "ana"}); err != nil {
 		e.t.Fatal(err)
 	}
-	if _, err := work.StartBet(bg, e.s, work.BetIn{Slug: slug, Appetite: 1000, Person: "ana"}); err != nil {
+	if _, err := work.StartPursuit(bg, e.s, work.PursueIn{Slug: slug, Appetite: 1000, Person: "ana", Signal: signal.Signal{Claim: "c", For: "f", Against: "a", Window: "2099-01-01", Resolver: "ana"}}); err != nil {
 		e.t.Fatal(err)
 	}
 }
@@ -222,13 +223,13 @@ func kinds(facts []observe.Fact) map[string]int {
 const facts = `SELECT count(*) FROM evidence`
 
 // (a) A poll records the landed changes, a revert and the forge's facts,
-// each with its bet's idea.
+// each with its pursuit's idea.
 func TestPollRecordsFacts(t *testing.T) {
 	ff := &fakeForge{}
 	e := newEnv(t, ff)
-	e.bet("my-bet")
-	one := e.commit("feat: One\n\nCapability: ideas\nChange: my-bet/one\n")
-	two := e.commit("feat: Two\n\nCapability: map\nChange: my-bet/two\n")
+	e.pursuit("my-pursuit")
+	one := e.commit("feat: One\n\nCapability: ideas\nChange: my-pursuit/one\n")
+	two := e.commit("feat: Two\n\nCapability: map\nChange: my-pursuit/two\n")
 	e.git("revert", "--no-edit", two)
 	now := e.c.Now()
 	ff.set([]forge.PR{{Number: 7, CreatedAt: now.Add(-2 * time.Hour), MergedAt: now.Add(-time.Hour), MergeCommit: one,
@@ -241,8 +242,8 @@ func TestPollRecordsFacts(t *testing.T) {
 		t.Fatalf("kinds = %v", k)
 	}
 	for _, f := range all {
-		if f.Bet == "my-bet" && f.Idea != "my-bet" {
-			t.Fatalf("a fact of the bet has no idea: %+v", f)
+		if f.Pursuit == "my-pursuit" && f.Idea != "my-pursuit" {
+			t.Fatalf("a fact of the pursuit has no idea: %+v", f)
 		}
 		if f.Kind == observe.KindLeadTime && (f.Seconds == nil || *f.Seconds != 3600 || f.PR != 7 || f.Source != observe.SourceForge) {
 			t.Fatalf("lead time = %+v", f)
@@ -348,23 +349,23 @@ func TestReopenPollsAtOnce(t *testing.T) {
 	}
 }
 
-// (e) The poll comes every 5 minutes while a bet is active, daily otherwise.
+// (e) The poll comes every 5 minutes while a pursuit is active, daily otherwise.
 func TestCadence(t *testing.T) {
 	e := newEnv(t, nil)
 	if got, want := e.due(PollKind), e.c.Now().Add(24*time.Hour); !got.Equal(want) {
-		t.Fatalf("with no bet the poll is due %v, want %v", got, want)
+		t.Fatalf("with no pursuit the poll is due %v, want %v", got, want)
 	}
-	e.bet("my-bet")
+	e.pursuit("my-pursuit")
 	e.poll()
 	if got, want := e.due(PollKind), e.c.Now().Add(5*time.Minute); !got.Equal(want) {
-		t.Fatalf("with an active bet the poll is due %v, want %v", got, want)
+		t.Fatalf("with an active pursuit the poll is due %v, want %v", got, want)
 	}
-	if _, err := work.StopBet(bg, e.s, work.StopIn{Slug: "my-bet", Person: "ana"}); err != nil {
+	if _, err := work.StopPursuit(bg, e.s, work.StopIn{Slug: "my-pursuit", Person: "ana"}); err != nil {
 		t.Fatal(err)
 	}
 	e.poll()
 	if got, want := e.due(PollKind), e.c.Now().Add(24*time.Hour); !got.Equal(want) {
-		t.Fatalf("after the bet stopped the poll is due %v, want %v", got, want)
+		t.Fatalf("after the pursuit stopped the poll is due %v, want %v", got, want)
 	}
 }
 
@@ -429,10 +430,10 @@ func TestFactsExpire(t *testing.T) {
 	}
 }
 
-// (h) List filters by capability and by bet, newest first.
+// (h) List filters by capability and by pursuit, newest first.
 func TestListFilters(t *testing.T) {
 	e := newEnv(t, nil)
-	e.bet("alpha")
+	e.pursuit("alpha")
 	e.commit("feat: A\n\nCapability: ideas\nChange: alpha/a\n")
 	e.commit("feat: B\n\nCapability: map\nChange: alpha/b\n")
 	e.commit("feat: C\n\nCapability: ideas\n")
@@ -440,11 +441,11 @@ func TestListFilters(t *testing.T) {
 	if got := e.list(Filter{Capability: "ideas"}); len(got) != 2 || got[0].Capability != "ideas" || got[1].Capability != "ideas" {
 		t.Fatalf("ideas = %+v", got)
 	}
-	alpha := e.list(Filter{Bet: "alpha"})
-	if len(alpha) != 2 || alpha[0].Bet != "alpha" || alpha[0].Idea != "alpha" {
+	alpha := e.list(Filter{Pursuit: "alpha"})
+	if len(alpha) != 2 || alpha[0].Pursuit != "alpha" || alpha[0].Idea != "alpha" {
 		t.Fatalf("alpha = %+v", alpha)
 	}
-	if got := e.list(Filter{Bet: "alpha", Capability: "map"}); len(got) != 1 || got[0].Change != "b" {
+	if got := e.list(Filter{Pursuit: "alpha", Capability: "map"}); len(got) != 1 || got[0].Change != "b" {
 		t.Fatalf("alpha and map = %+v", got)
 	}
 	if all := e.list(Filter{Limit: 2}); len(all) != 2 || all[0].At.Before(all[1].At) {

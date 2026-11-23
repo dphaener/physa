@@ -10,14 +10,15 @@ type Flags struct {
 	JSON, Yes                    bool
 	History, Current             bool
 	Slug, From, Appetite, Reason string
+	SignalFrom                   string
 	Args                         []string
 }
 
 // valued are the flags that take a value.
-var valued = []string{"slug", "from", "appetite", "reason"}
+var valued = []string{"slug", "from", "signal-from", "appetite", "reason"}
 
 // Parse reads args, taking only the flags named in allowed: --json and
-// --yes, --history and --current alone, and --slug, --from, --appetite and --reason each with a
+// --yes, --history and --current alone, and --slug, --from, --signal-from, --appetite and --reason each with a
 // non-empty value (--name value or --name=value). A lone "-" is an
 // argument. ok is false for any other flag, a short flag, a flag given
 // twice, or a missing value.
@@ -59,6 +60,8 @@ func Parse(args []string, allowed ...string) (f Flags, ok bool) {
 			f.Slug = val
 		case "from":
 			f.From = val
+		case "signal-from":
+			f.SignalFrom = val
 		case "appetite":
 			f.Appetite = val
 		case "reason":

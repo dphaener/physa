@@ -1,4 +1,4 @@
-package betcli
+package pursuitcli
 
 import (
 	"encoding/json"
@@ -11,33 +11,33 @@ import (
 	"github.com/dphaener/physa/internal/evidencecli"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/output"
-	"github.com/dphaener/physa/internal/pitch"
 	"github.com/dphaener/physa/internal/plan"
+	"github.com/dphaener/physa/internal/tokens"
 	"github.com/dphaener/physa/internal/workapi"
 )
 
-// planGroup is the `physa bet plan` group: set and show a bet's plan.
-func (b bets) planGroup() *cli.Command {
+// planGroup is the `physa pursuit plan` group: set and show a pursuit's plan.
+func (p pursuits) planGroup() *cli.Command {
 	return &cli.Command{
 		Name:    "plan",
-		Summary: "Set and show a bet's plan: the changes it will land, each in one capability, with what to do and how to tell it is done.",
+		Summary: "Set and show a pursuit's plan: the changes it will land, each in one capability, with what to do and how to tell it is done.",
 		Usage: []string{
-			"physa bet plan set [<bet>] [--reason <text>] [--from <file>|-] [--json]",
-			"physa bet plan show [<bet>] [--history] [--json]",
+			"physa pursuit plan set [<pursuit>] [--reason <text>] [--from <file>|-] [--json]",
+			"physa pursuit plan show [<pursuit>] [--history] [--json]",
 		},
 		Subs: []*cli.Command{
 			{
 				Name:  "set",
-				Usage: []string{"physa bet plan set [<bet>] [--reason <text>] [--from <file>|-] [--json]"},
-				Summary: "Set a bet's plan as its next revision, reading the plan's JSON from --from, or from stdin off a terminal. " +
-					"A revision after the first needs --reason: what shaping missed. Agents may set a plan.",
-				Run: b.planSet,
+				Usage: []string{"physa pursuit plan set [<pursuit>] [--reason <text>] [--from <file>|-] [--json]"},
+				Summary: "Set a pursuit's plan as its next revision, reading the plan's JSON from --from, or from stdin off a terminal. " +
+					"A revision after the first needs --reason: what the plan missed. Agents may set a plan.",
+				Run: p.planSet,
 			},
 			{
 				Name:    "show",
-				Usage:   []string{"physa bet plan show [<bet>] [--history] [--json]"},
-				Summary: "Show a bet's current plan and its changes; --history lists every revision, oldest first, with its reason.",
-				Run:     b.planShow,
+				Usage:   []string{"physa pursuit plan show [<pursuit>] [--history] [--json]"},
+				Summary: "Show a pursuit's current plan and its changes; --history lists every revision, oldest first, with its reason.",
+				Run:     p.planShow,
 			},
 		},
 	}
@@ -45,14 +45,14 @@ func (b bets) planGroup() *cli.Command {
 
 // planInput reads the plan's JSON: from --from (a file, or - for stdin),
 // else from stdin when no person is at a terminal.
-func (b bets) planInput(from string) ([]byte, error) {
+func (p pursuits) planInput(from string) ([]byte, error) {
 	var data []byte
 	var err error
 	switch {
-	case from == "" && b.Interactive():
+	case from == "" && p.Interactive():
 		return nil, &ideacli.UsageError{Msg: "on a terminal the plan comes from a file; pass --from <file>"}
 	case from == "" || from == "-":
-		data, err = io.ReadAll(b.Stdin)
+		data, err = io.ReadAll(p.Stdin)
 	default:
 		data, err = os.ReadFile(from)
 	}
@@ -72,68 +72,68 @@ func plural(n int, one, many string) string {
 	return fmt.Sprintf("%d %s", n, many)
 }
 
-func (b bets) planSet(args []string, stdout, stderr io.Writer) int {
+func (p pursuits) planSet(args []string, stdout, stderr io.Writer) int {
 	f, ok := ideacli.Parse(args, "reason", "from", "json")
 	if !ok || len(f.Args) > 1 {
 		return cli.BadUsage
 	}
-	if f.From == "" && b.Interactive() {
-		return ideacli.Failed(stderr, "bet plan set", &ideacli.UsageError{Msg: "on a terminal the plan comes from a file; pass --from <file>"})
+	if f.From == "" && p.Interactive() {
+		return ideacli.Failed(stderr, "pursuit plan set", &ideacli.UsageError{Msg: "on a terminal the plan comes from a file; pass --from <file>"})
 	}
-	repo, err := b.Repo()
+	repo, err := p.Repo()
 	if err != nil {
-		return ideacli.Failed(stderr, "bet plan set", err)
+		return ideacli.Failed(stderr, "pursuit plan set", err)
 	}
-	who := b.Who(repo, stderr)
+	who := p.Who(repo, stderr)
 	if who == "" {
 		return 2
 	}
-	slug, err := b.chooseBet(repo, firstArg(f.Args), func(o workapi.BetOut) bool { return o.State == "active" })
+	slug, err := p.choose(repo, firstArg(f.Args), func(o workapi.PursuitOut) bool { return o.State == "active" })
 	if err != nil {
-		return ideacli.Failed(stderr, "bet plan set", err)
+		return ideacli.Failed(stderr, "pursuit plan set", err)
 	}
-	data, err := b.planInput(f.From)
+	data, err := p.planInput(f.From)
 	if err != nil {
-		return ideacli.Failed(stderr, "bet plan set", err)
+		return ideacli.Failed(stderr, "pursuit plan set", err)
 	}
 	var out workapi.PlanOut
-	in := workapi.PlanSetIn{Repo: repo, Bet: slug, Reason: f.Reason, Person: who, Plan: json.RawMessage(data)}
-	if err := b.Call("plan.set", in, &out); err != nil {
-		return ideacli.Failed(stderr, "bet plan set", err)
+	in := workapi.PlanSetIn{Repo: repo, Pursuit: slug, Reason: f.Reason, Person: who, Plan: json.RawMessage(data)}
+	if err := p.Call("plan.set", in, &out); err != nil {
+		return ideacli.Failed(stderr, "pursuit plan set", err)
 	}
 	if f.JSON {
-		return ideacli.Written(stderr, "bet plan set", output.JSON(stdout, out))
+		return ideacli.Written(stderr, "pursuit plan set", output.JSON(stdout, out))
 	}
-	line := fmt.Sprintf("Plan for %s set: revision %d, %s", out.Bet, out.N, plural(len(out.Changes), "change", "changes"))
+	line := fmt.Sprintf("Plan for %s set: revision %d, %s", out.Pursuit, out.N, plural(len(out.Changes), "change", "changes"))
 	if out.Replans > 0 {
 		line += ", " + plural(out.Replans, "replan", "replans")
 	}
-	b.View(stdout).Title(line)
+	p.View(stdout).Title(line)
 	return 0
 }
 
-func (b bets) planShow(args []string, stdout, stderr io.Writer) int {
+func (p pursuits) planShow(args []string, stdout, stderr io.Writer) int {
 	f, ok := ideacli.Parse(args, "history", "json")
 	if !ok || len(f.Args) > 1 {
 		return cli.BadUsage
 	}
-	repo, err := b.Repo()
+	repo, err := p.Repo()
 	if err != nil {
-		return ideacli.Failed(stderr, "bet plan show", err)
+		return ideacli.Failed(stderr, "pursuit plan show", err)
 	}
-	slug, err := b.chooseBet(repo, firstArg(f.Args), func(workapi.BetOut) bool { return true })
+	slug, err := p.choose(repo, firstArg(f.Args), func(workapi.PursuitOut) bool { return true })
 	if err != nil {
-		return ideacli.Failed(stderr, "bet plan show", err)
+		return ideacli.Failed(stderr, "pursuit plan show", err)
 	}
 	var out workapi.PlanOut
-	if err := b.Call("plan.show", workapi.PlanShowIn{Repo: repo, Bet: slug, History: f.History}, &out); err != nil {
-		return ideacli.Failed(stderr, "bet plan show", err)
+	if err := p.Call("plan.show", workapi.PlanShowIn{Repo: repo, Pursuit: slug, History: f.History}, &out); err != nil {
+		return ideacli.Failed(stderr, "pursuit plan show", err)
 	}
 	if f.JSON {
-		return ideacli.Written(stderr, "bet plan show", output.JSON(stdout, out))
+		return ideacli.Written(stderr, "pursuit plan show", output.JSON(stdout, out))
 	}
-	v := b.View(stdout)
-	v.Title(fmt.Sprintf("Plan for %s", out.Bet))
+	v := p.View(stdout)
+	v.Title(fmt.Sprintf("Plan for %s", out.Pursuit))
 	pairs := [][2]string{{"revision", fmt.Sprint(out.N)}}
 	if out.Reason != "" {
 		pairs = append(pairs, [2]string{"reason", out.Reason})
@@ -173,9 +173,9 @@ func changeText(c plan.Change) string {
 	}, "\n")
 }
 
-// showProgress prints a bet's progress as facts, never a percentage, then
-// what needs its person. A bet with no plan says only that nothing is planned.
-func showProgress(v *ideacli.View, o workapi.BetOut) {
+// showProgress prints a pursuit's progress as facts, never a percentage, then
+// what needs its person. A pursuit with no plan says only that nothing is planned.
+func showProgress(v *ideacli.View, o workapi.PursuitOut) {
 	p := o.Progress
 	if p != nil {
 		if len(p.Planned) == 0 {
@@ -200,7 +200,7 @@ func showProgress(v *ideacli.View, o workapi.BetOut) {
 				fmt.Sprintf("landed        %d of %d: %s", len(p.Landed), len(p.Planned), names(landed)),
 				"in work       " + names(p.InWork),
 				"asks open     " + asks,
-				fmt.Sprintf("spent         %s of %s", pitch.Tokens(p.Spent), pitch.Tokens(p.Appetite)),
+				"spent         " + spentOf(p.Spent, p.Appetite),
 				fmt.Sprintf("replans       %d", p.Replans),
 			}, "\n"))
 			if len(p.PerChange) > 0 {
@@ -208,9 +208,9 @@ func showProgress(v *ideacli.View, o workapi.BetOut) {
 				for i, c := range p.PerChange {
 					name := c.Change
 					if name == "" {
-						name = "(bet)"
+						name = "(pursuit)"
 					}
-					rows[i] = fmt.Sprintf("%s  %s", name, pitch.Tokens(c.Tokens))
+					rows[i] = fmt.Sprintf("%s  %s", name, tokens.Format(c.Tokens))
 				}
 				v.Section("Spend per change", strings.Join(rows, "\n"))
 			}
@@ -230,4 +230,13 @@ func showProgress(v *ideacli.View, o workapi.BetOut) {
 		}
 		v.Section("Needs you", strings.Join(texts, "\n"))
 	}
+}
+
+// spentOf writes spend against the appetite, "N of M", or "N, no appetite"
+// when the pursuit has none.
+func spentOf(spent, appetite int64) string {
+	if appetite <= 0 {
+		return tokens.Format(spent) + ", no appetite"
+	}
+	return tokens.Format(spent) + " of " + tokens.Format(appetite)
 }

@@ -60,7 +60,7 @@ const intentStamp = "2006-01-02T15:04:05.000Z"
 
 // firePoll is the poll timer's Fire. Unless a poll is already pending it
 // writes one from the stored watermark; then it sets itself 5 minutes out
-// while any bet is active, and a day out otherwise. It reads nothing outside
+// while any pursuit is active, and a day out otherwise. It reads nothing outside
 // the store.
 func firePoll(tx *state.Tx, t state.Timer) error {
 	var pending, active int
@@ -77,7 +77,7 @@ func firePoll(tx *state.Tx, t state.Timer) error {
 			return err
 		}
 	}
-	if err := tx.QueryRow(`SELECT count(*) FROM bets WHERE state = 'active'`).Scan(&active); err != nil {
+	if err := tx.QueryRow(`SELECT count(*) FROM pursuits WHERE state = 'active'`).Scan(&active); err != nil {
 		return err
 	}
 	every := idleEvery
@@ -146,7 +146,7 @@ func doPoll(ctx context.Context, in state.Intent, newForge func(string) forge.Fo
 }
 
 // recordPoll is the poll intent's Record, in the transaction of its
-// intent.done. Each fact is kept once, with its bet's idea when the bet is
+// intent.done. Each fact is kept once, with its pursuit's idea when the pursuit is
 // known. The watermarks and the forge's backoff move only from the values
 // the poll started at, so a poll recorded twice moves nothing twice.
 func recordPoll(tx *state.Tx, in state.Intent, result string) error {
@@ -160,9 +160,9 @@ func recordPoll(tx *state.Tx, in state.Intent, result string) error {
 	}
 	added, total := map[string]int64{}, int64(0)
 	for _, f := range out.Facts {
-		res, err := tx.Exec(`INSERT OR IGNORE INTO evidence (kind, commit_id, pr, capability, bet, change, idea, at, source, seconds, by_commit, recorded_at)
-			VALUES (?1, ?2, ?3, ?4, ?5, ?6, coalesce((SELECT i.slug FROM bets b JOIN ideas i ON i.id = b.idea_id WHERE b.slug = ?5 AND ?5 != ''), ''), ?7, ?8, ?9, ?10, ?11)`,
-			f.Kind, f.Commit, f.PR, f.Capability, f.Bet, f.Change, factAt(f.At), f.Source, nullInt(f.Seconds), f.ByCommit, ts(tx.Now()))
+		res, err := tx.Exec(`INSERT OR IGNORE INTO evidence (kind, commit_id, pr, capability, pursuit, change, idea, at, source, seconds, by_commit, recorded_at)
+			VALUES (?1, ?2, ?3, ?4, ?5, ?6, coalesce((SELECT i.slug FROM pursuits b JOIN ideas i ON i.id = b.idea_id WHERE b.slug = ?5 AND ?5 != ''), ''), ?7, ?8, ?9, ?10, ?11)`,
+			f.Kind, f.Commit, f.PR, f.Capability, f.Pursuit, f.Change, factAt(f.At), f.Source, nullInt(f.Seconds), f.ByCommit, ts(tx.Now()))
 		if err != nil {
 			return fmt.Errorf("store a %s fact: %w", f.Kind, err)
 		}

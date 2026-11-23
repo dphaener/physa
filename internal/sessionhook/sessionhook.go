@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/dphaener/physa/internal/vcs"
@@ -107,7 +108,7 @@ func write(h vcs.Hooks) (Outcome, error) {
 		if bytes.Equal(existing, script) {
 			return Outcome{Already: true, Path: file}, nil
 		}
-		if sum := sha256.Sum256(existing); hex.EncodeToString(sum[:]) == earlier {
+		if sum := sha256.Sum256(existing); slices.Contains(earlier, hex.EncodeToString(sum[:])) {
 			return replace(file)
 		}
 		return Outcome{}, fmt.Errorf("%s already holds a different hook, so it was left alone; to stamp Session: on changes, call Physa's hook (%s in the Physa repo) from your own prepare-commit-msg hook", file, Hook)
@@ -136,10 +137,14 @@ func write(h vcs.Hooks) (Outcome, error) {
 	return Outcome{Written: true, Path: file}, nil
 }
 
-// earlier is the hex SHA-256 of the only Physa hook before this one, which
-// stamped Session: alone. write replaces a file holding exactly that hook, so
-// a repo that installed it gets Change: too, and nothing else.
-const earlier = "25d4c44a6022894018c57d4310360aa0e724fa1c0b32af0d095593bc58739e64"
+// earlier are the hex SHA-256 sums of the Physa hooks before this one: the
+// first, which stamped Session: alone, and the second, which read the change
+// from a command since renamed. write replaces a file holding exactly one of
+// them, so a repo that installed it gets this hook, and nothing else.
+var earlier = []string{
+	"25d4c44a6022894018c57d4310360aa0e724fa1c0b32af0d095593bc58739e64",
+	"28332fe8792ed7947f3bb71625bcf449e33bff8464c3221f0b57a2308c39f336",
+}
 
 // replace writes the embedded hook over file, executable.
 func replace(file string) (Outcome, error) {

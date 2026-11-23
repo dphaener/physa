@@ -39,7 +39,7 @@ Because: people can check it, and stale knowledge can be found.
 
 ### Opinionated about mechanisms, not policy
 `teams-set-policy` · from docs/vision.md
-Physa decides how things work. Teams decide who may bet on what, how strict each level of stakes is, and how much agents may do.
+Physa decides how things work. Teams decide who may pursue what, how strict each level of stakes is, and how much agents may do.
 Because: teams work differently, and the owner wants the core opinionated but the edges flexible.
 
 ### No internal IDs on screens

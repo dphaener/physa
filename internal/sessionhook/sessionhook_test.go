@@ -287,8 +287,8 @@ func runHook(t *testing.T, fake string, env ...string) (string, int) {
 const base = "feat: x\n\nBody.\n\nCapability: ideas\n"
 
 func TestHookAddsChange(t *testing.T) {
-	got, code := runHook(t, "echo my-bet/retry-queue")
-	want := base + "Session: fake-session-1\nChange: my-bet/retry-queue\n"
+	got, code := runHook(t, "echo my-pursuit/retry-queue")
+	want := base + "Session: fake-session-1\nChange: my-pursuit/retry-queue\n"
 	if code != 0 || got != want {
 		t.Errorf("got %q (exit %d), want %q", got, code, want)
 	}
@@ -298,7 +298,7 @@ func TestHookAddsNoChange(t *testing.T) {
 	want := base + "Session: fake-session-1\n"
 	for name, fake := range map[string]string{
 		"garbage":  "echo 'not a change'",
-		"exits 1":  "echo my-bet/retry-queue; exit 1",
+		"exits 1":  "echo my-pursuit/retry-queue; exit 1",
 		"two bars": "echo a/b/c",
 		"empty":    "exit 0",
 		"absent":   "",
@@ -311,11 +311,11 @@ func TestHookAddsNoChange(t *testing.T) {
 }
 
 func TestHookSkips(t *testing.T) {
-	got, code := runHook(t, "echo my-bet/retry-queue", "CLAUDE_CODE_SESSION_ID=")
+	got, code := runHook(t, "echo my-pursuit/retry-queue", "CLAUDE_CODE_SESSION_ID=")
 	if code != 0 || got != base {
 		t.Errorf("no session: got %q (exit %d)", got, code)
 	}
-	got, code = runHook(t, "echo my-bet/retry-queue", "SOURCE=merge")
+	got, code = runHook(t, "echo my-pursuit/retry-queue", "SOURCE=merge")
 	if code != 0 || got != base {
 		t.Errorf("merge: got %q (exit %d)", got, code)
 	}
@@ -324,7 +324,7 @@ func TestHookSkips(t *testing.T) {
 func TestHookTwiceAddsNothingNew(t *testing.T) {
 	root, _ := repo(t)
 	bin := t.TempDir()
-	os.WriteFile(filepath.Join(bin, "physa"), []byte("#!/bin/sh\necho my-bet/retry-queue\n"), 0o755)
+	os.WriteFile(filepath.Join(bin, "physa"), []byte("#!/bin/sh\necho my-pursuit/retry-queue\n"), 0o755)
 	hook := filepath.Join(bin, "hook")
 	os.WriteFile(hook, script, 0o755)
 	msg := filepath.Join(root, "MSG")
@@ -338,28 +338,32 @@ func TestHookTwiceAddsNothingNew(t *testing.T) {
 		}
 	}
 	b, _ := os.ReadFile(msg)
-	if want := base + "Session: fake-session-1\nChange: my-bet/retry-queue\n"; string(b) != want {
+	if want := base + "Session: fake-session-1\nChange: my-pursuit/retry-queue\n"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
 	}
 }
 
-func TestInstallReplacesEarlierHook(t *testing.T) {
-	root, h := bare(t)
-	old, err := os.ReadFile(filepath.Join("testdata", "prepare-commit-msg.v1"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	file := filepath.Join(root, ".git", "hooks", name)
-	if err := os.WriteFile(file, old, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, err := Install(root, h)
-	if err != nil || got != (Outcome{Written: true, Path: file}) {
-		t.Fatalf("Install = %+v, %v, want Written", got, err)
-	}
-	b, _ := os.ReadFile(file)
-	info, _ := os.Stat(file)
-	if !bytes.Equal(b, script) || info.Mode().Perm() != 0o755 {
-		t.Errorf("the earlier hook was not replaced by the embedded one: %v", info.Mode())
+func TestInstallReplacesEarlierHooks(t *testing.T) {
+	for _, v := range []string{"prepare-commit-msg.v1", "prepare-commit-msg.v2"} {
+		t.Run(v, func(t *testing.T) {
+			root, h := bare(t)
+			old, err := os.ReadFile(filepath.Join("testdata", v))
+			if err != nil {
+				t.Fatal(err)
+			}
+			file := filepath.Join(root, ".git", "hooks", name)
+			if err := os.WriteFile(file, old, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			got, err := Install(root, h)
+			if err != nil || got != (Outcome{Written: true, Path: file}) {
+				t.Fatalf("Install = %+v, %v, want Written", got, err)
+			}
+			b, _ := os.ReadFile(file)
+			info, _ := os.Stat(file)
+			if !bytes.Equal(b, script) || info.Mode().Perm() != 0o755 {
+				t.Errorf("the earlier hook was not replaced by the embedded one: %v", info.Mode())
+			}
+		})
 	}
 }

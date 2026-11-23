@@ -20,7 +20,8 @@ import (
 	stateevidence "github.com/dphaener/physa/internal/state/evidence"
 )
 
-const goodPitch = "# Try a quiet mode\n## Problem\nToo noisy.\n## Appetite\n200k\n## Solution\nA flag.\n## Scope\nCLI only.\n## Signal\nFewer complaints.\n## Rabbit holes\nColour themes.\n## No-gos\nNo config file.\n"
+// goodSignal is a whole signal, read on a day well after any test runs.
+var goodSignal = map[string]any{"claim": "Fewer complaints.", "for": "complaints fall", "against": "complaints stay", "window": "2099-01-01", "resolver": "ann"}
 
 type env struct {
 	t    *testing.T
@@ -133,7 +134,7 @@ func TestMethodsHappyPath(t *testing.T) {
 	e := newEnv(t)
 	var idea IdeaOut
 	e.must("idea.add", map[string]any{"text": "Try a quiet mode", "person": "ann"}, &idea)
-	if idea.Slug != "try-a-quiet-mode" || idea.Person != "ann" || idea.Pitches != 0 || !strings.HasSuffix(idea.CreatedAt, "Z") {
+	if idea.Slug != "try-a-quiet-mode" || idea.Person != "ann" || idea.Pursuit != "" || !strings.HasSuffix(idea.CreatedAt, "Z") {
 		t.Fatalf("idea.add = %+v", idea)
 	}
 	e.must("idea.add", map[string]any{"text": "Second", "slug": "second", "person": "bo"}, &idea)
@@ -142,28 +143,25 @@ func TestMethodsHappyPath(t *testing.T) {
 	if len(list) != 2 || list[0].Slug != "second" || list[1].Slug != "try-a-quiet-mode" {
 		t.Fatalf("idea.list = %+v", list)
 	}
-	e.must("idea.shape", map[string]any{"slug": "try-a-quiet-mode", "markdown": goodPitch, "person": "ann"}, &idea)
-	if idea.Pitches != 1 || idea.Pitch == nil || idea.Pitch.Appetite != 200000 || idea.Pitch.RabbitHoles != "Colour themes." {
-		t.Fatalf("idea.shape = %+v", idea)
-	}
-	var bet BetOut
-	e.must("bet.start", map[string]any{"slug": "try-a-quiet-mode", "person": "ann"}, &bet)
-	if bet.State != "active" || bet.Appetite != 200000 || bet.Idea != "try-a-quiet-mode" || bet.Pitch == nil || bet.StartedAt == "" || bet.EndedAt != "" {
-		t.Fatalf("bet.start = %+v", bet)
+	var pursuit PursuitOut
+	e.must("pursuit.start", map[string]any{"slug": "try-a-quiet-mode", "appetite": "200k", "signal": goodSignal, "person": "ann"}, &pursuit)
+	if pursuit.State != "active" || pursuit.Appetite != 200000 || pursuit.Idea != "try-a-quiet-mode" || pursuit.Signal == nil ||
+		pursuit.Signal.Window != "2099-01-01" || pursuit.Signal.Against != "complaints stay" || pursuit.StartedAt == "" || pursuit.EndedAt != "" {
+		t.Fatalf("pursuit.start = %+v", pursuit)
 	}
 	e.must("idea.show", map[string]any{"slug": "try-a-quiet-mode"}, &idea)
-	if idea.Bet != bet.Slug || idea.BetState != "active" || len(idea.Bets) != 1 || idea.Pitch == nil {
+	if idea.Pursuit != pursuit.Slug || idea.PursuitState != "active" || len(idea.Pursuits) != 1 {
 		t.Fatalf("idea.show = %+v", idea)
 	}
-	var bets []BetOut
-	e.must("bet.list", nil, &bets)
-	if len(bets) != 1 || bets[0].Slug != bet.Slug {
-		t.Fatalf("bet.list = %+v", bets)
+	var pursuits []PursuitOut
+	e.must("pursuit.list", nil, &pursuits)
+	if len(pursuits) != 1 || pursuits[0].Slug != pursuit.Slug {
+		t.Fatalf("pursuit.list = %+v", pursuits)
 	}
-	e.must("bet.show", map[string]any{"slug": bet.Slug}, &bet)
-	e.must("bet.stop", map[string]any{"slug": bet.Slug, "reason": "not worth it", "person": "ann"}, &bet)
-	if bet.State != "stopped" || bet.StopReason != "not worth it" || bet.EndedAt == "" {
-		t.Fatalf("bet.stop = %+v", bet)
+	e.must("pursuit.show", map[string]any{"slug": pursuit.Slug}, &pursuit)
+	e.must("pursuit.stop", map[string]any{"slug": pursuit.Slug, "reason": "not worth it", "person": "ann"}, &pursuit)
+	if pursuit.State != "stopped" || pursuit.StopReason != "not worth it" || pursuit.EndedAt == "" {
+		t.Fatalf("pursuit.stop = %+v", pursuit)
 	}
 	var evs []engine.EventOut
 	e.must("engine.events", nil, &evs)
@@ -173,14 +171,14 @@ func TestMethodsHappyPath(t *testing.T) {
 			kinds = append(kinds, ev.Kind)
 		}
 	}
-	if got := strings.Join(kinds, " "); got != "bet.stopped bet.started pitch.shaped idea.added idea.added" {
+	if got := strings.Join(kinds, " "); got != "pursuit.stopped pursuit.started idea.added idea.added" {
 		t.Errorf("events = %s", got)
 	}
 }
 
 func TestEmptyLists(t *testing.T) {
 	e := newEnv(t)
-	for _, m := range []string{"idea.list", "bet.list"} {
+	for _, m := range []string{"idea.list", "pursuit.list"} {
 		var raw json.RawMessage
 		e.must(m, nil, &raw)
 		if string(raw) != "[]" {
@@ -193,17 +191,26 @@ func TestBadRequests(t *testing.T) {
 	e := newEnv(t)
 	e.must("idea.add", map[string]any{"text": "Try a quiet mode", "person": "ann"}, nil)
 	e.badRequest("idea.show", map[string]any{"slug": "nope"}, `"nope"`)
-	e.badRequest("bet.show", map[string]any{"slug": "nope"}, `"nope"`)
-	e.badRequest("bet.stop", map[string]any{"slug": "nope", "person": "ann"}, `"nope"`)
+	e.badRequest("pursuit.show", map[string]any{"slug": "nope"}, `"nope"`)
+	e.badRequest("pursuit.stop", map[string]any{"slug": "nope", "person": "ann"}, `"nope"`)
 	e.badRequest("idea.add", map[string]any{"text": "x", "slug": "try-a-quiet-mode", "person": "ann"}, "try-a-quiet-mode")
 	e.badRequest("idea.add", map[string]any{"text": "x", "person": "ann", "extra": 1}, "extra")
-	e.badRequest("idea.shape", map[string]any{"slug": "try-a-quiet-mode", "markdown": "## Problem\nOnly this.\n", "person": "ann"}, "Appetite", "Solution", "No-gos")
-	e.badRequest("bet.start", map[string]any{"slug": "try-a-quiet-mode", "person": "ann"}, "appetite")
-	e.badRequest("bet.start", map[string]any{"slug": "try-a-quiet-mode", "appetite": "lots", "person": "ann"}, "lots")
-	e.must("bet.start", map[string]any{"slug": "try-a-quiet-mode", "appetite": "10k", "person": "ann"}, nil)
-	e.badRequest("bet.start", map[string]any{"slug": "try-a-quiet-mode", "appetite": "10k", "person": "ann"}, "active bet")
-	e.must("bet.stop", map[string]any{"slug": "try-a-quiet-mode", "person": "ann"}, nil)
-	e.badRequest("bet.stop", map[string]any{"slug": "try-a-quiet-mode", "person": "ann"}, "not active")
+	for _, gone := range []string{"idea.shape", "bet.start", "bet.list"} {
+		if ae, ok := e.call(gone, map[string]any{"slug": "try-a-quiet-mode", "person": "ann"}, nil).(*api.Error); !ok || ae.Code != api.CodeUnknownMethod {
+			t.Errorf("%s: err = %v, want unknown_method", gone, ae)
+		}
+	}
+	e.badRequest("pursuit.start", map[string]any{"slug": "try-a-quiet-mode", "person": "ann"}, `missing required "signal"`)
+	blank := map[string]any{"claim": " ", "for": "", "against": "a", "window": "", "resolver": ""}
+	e.badRequest("pursuit.start", map[string]any{"slug": "try-a-quiet-mode", "signal": blank, "person": "ann"},
+		"the signal has problems: ", `empty part "Claim"`, `empty "For:" in Direction`, `empty part "Window"`, `empty part "Resolver"`)
+	past := map[string]any{"claim": "c", "for": "f", "against": "a", "window": "2020-01-01", "resolver": "ann"}
+	e.badRequest("pursuit.start", map[string]any{"slug": "try-a-quiet-mode", "signal": past, "person": "ann"}, "window 2020-01-01 is before today")
+	e.badRequest("pursuit.start", map[string]any{"slug": "try-a-quiet-mode", "appetite": "lots", "signal": goodSignal, "person": "ann"}, "lots")
+	e.must("pursuit.start", map[string]any{"slug": "try-a-quiet-mode", "signal": goodSignal, "person": "ann"}, nil)
+	e.badRequest("pursuit.start", map[string]any{"slug": "try-a-quiet-mode", "appetite": "10k", "signal": goodSignal, "person": "ann"}, "active pursuit")
+	e.must("pursuit.stop", map[string]any{"slug": "try-a-quiet-mode", "person": "ann"}, nil)
+	e.badRequest("pursuit.stop", map[string]any{"slug": "try-a-quiet-mode", "person": "ann"}, "not active")
 	err := e.c.Call(context.Background(), "idea.list", map[string]any{"repo": "some/repo"}, nil)
 	if ae, ok := err.(*api.Error); !ok || ae.Code != api.CodeBadRequest {
 		t.Errorf("a repo that is not absolute: %v", err)
@@ -212,7 +219,7 @@ func TestBadRequests(t *testing.T) {
 
 func TestDescribeShowsEachMethod(t *testing.T) {
 	e := newEnv(t)
-	for _, m := range []string{"idea.add", "idea.list", "idea.show", "idea.shape", "bet.start", "bet.list", "bet.show", "bet.stop", "plan.set", "plan.show", "bet.work", "bet.spend", "evidence.list"} {
+	for _, m := range []string{"idea.add", "idea.list", "idea.show", "pursuit.start", "pursuit.list", "pursuit.show", "pursuit.stop", "plan.set", "plan.show", "pursuit.work", "pursuit.spend", "evidence.list"} {
 		var d api.Description
 		if err := e.c.Call(context.Background(), "api.describe", api.DescribeInput{Name: m}, &d); err != nil {
 			t.Fatalf("describe %s: %v", m, err)
@@ -228,21 +235,21 @@ func TestDescribeShowsEachMethod(t *testing.T) {
 	if err := e.c.Call(context.Background(), "api.list", nil, &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list) < 13+2 {
+	if len(list) < 12+2 {
 		t.Errorf("api.list has %d methods", len(list))
 	}
 }
 
 func TestPersonOnly(t *testing.T) {
-	for m, want := range map[string]bool{"bet.start": true, "bet.stop": true, "bet.list": false, "idea.add": false, "idea.shape": false} {
+	for m, want := range map[string]bool{"pursuit.start": true, "pursuit.stop": true, "pursuit.list": false, "idea.add": false, "plan.set": false} {
 		if PersonOnly(m) != want {
 			t.Errorf("PersonOnly(%s) = %v", m, !want)
 		}
 	}
-	if got := Refusal("bet.start", "Claude Code"); got != "A person must make this bet: physa is running inside a Claude Code session." {
+	if got := Refusal("pursuit.start", "Claude Code"); got != "A person must start this pursuit: physa is running inside a Claude Code session." {
 		t.Errorf("Refusal = %q", got)
 	}
-	if got := Refusal("bet.stop", "Claude Code"); !strings.HasPrefix(got, "A person must stop this bet:") {
+	if got := Refusal("pursuit.stop", "Claude Code"); !strings.HasPrefix(got, "A person must stop this pursuit:") {
 		t.Errorf("Refusal = %q", got)
 	}
 }
@@ -252,7 +259,7 @@ const twoChanges = `{"changes":[
  {"name":"second-step","capability":"beta","what":"Do the second.","acceptance":["no failure case: it only reads"],"must_not":[],"after":["first-step"]}]}`
 
 // planEnv is an env whose repo holds a map of two capabilities, a first
-// commit, and an active bet of 100k on an idea, with ann as the person.
+// commit, and an active pursuit of 100k on an idea, with ann as the person.
 func planEnv(t *testing.T) *env {
 	t.Helper()
 	e := newEnv(t)
@@ -268,7 +275,7 @@ func planEnv(t *testing.T) *env {
 	e.git("add", ".")
 	e.git("commit", "-q", "-m", "chore: map")
 	e.must("idea.add", map[string]any{"text": "Try a quiet mode", "person": "ann"}, nil)
-	e.must("bet.start", map[string]any{"slug": "try-a-quiet-mode", "appetite": "100k", "person": "ann"}, nil)
+	e.must("pursuit.start", map[string]any{"slug": "try-a-quiet-mode", "appetite": "100k", "signal": goodSignal, "person": "ann"}, nil)
 	return e
 }
 
@@ -284,7 +291,7 @@ func (e *env) git(args ...string) {
 func (e *env) setPlan() PlanOut {
 	e.t.Helper()
 	var out PlanOut
-	e.must("plan.set", map[string]any{"bet": "try-a-quiet-mode", "person": "ann", "plan": jsonRaw(twoChanges)}, &out)
+	e.must("plan.set", map[string]any{"pursuit": "try-a-quiet-mode", "person": "ann", "plan": jsonRaw(twoChanges)}, &out)
 	return out
 }
 
@@ -295,11 +302,11 @@ func TestPlanSetAndShow(t *testing.T) {
 		t.Fatalf("plan.set = %+v", got)
 	}
 	var shown PlanOut
-	e.must("plan.show", map[string]any{"bet": "try-a-quiet-mode", "history": true}, &shown)
+	e.must("plan.show", map[string]any{"pursuit": "try-a-quiet-mode", "history": true}, &shown)
 	if shown.N != 1 || len(shown.History) != 1 || strings.Join(shown.History[0].Changes, ",") != "first-step,second-step" {
 		t.Fatalf("plan.show = %+v", shown)
 	}
-	e.badRequest("plan.show", map[string]any{"bet": "nope"}, `"nope"`)
+	e.badRequest("plan.show", map[string]any{"pursuit": "nope"}, `"nope"`)
 }
 
 func TestBadPlanAndReason(t *testing.T) {
@@ -307,12 +314,12 @@ func TestBadPlanAndReason(t *testing.T) {
 	bad := `{"changes":[
  {"name":"a","capability":"alpha, beta","what":"x","acceptance":["failure case: y"],"after":["b"]},
  {"name":"b","capability":"alpha","what":"x","acceptance":["failure case: y"],"after":["a"]}]}`
-	e.badRequest("plan.set", map[string]any{"bet": "try-a-quiet-mode", "person": "ann", "plan": jsonRaw(bad)},
+	e.badRequest("plan.set", map[string]any{"pursuit": "try-a-quiet-mode", "person": "ann", "plan": jsonRaw(bad)},
 		"the plan has problems:", "names two capabilities", "a -> b -> a")
 	e.setPlan()
-	e.badRequest("plan.set", map[string]any{"bet": "try-a-quiet-mode", "person": "ann", "plan": jsonRaw(twoChanges)}, "needs a reason")
+	e.badRequest("plan.set", map[string]any{"pursuit": "try-a-quiet-mode", "person": "ann", "plan": jsonRaw(twoChanges)}, "needs a reason")
 	var out PlanOut
-	e.must("plan.set", map[string]any{"bet": "try-a-quiet-mode", "person": "ann", "reason": "missed a step", "plan": jsonRaw(twoChanges)}, &out)
+	e.must("plan.set", map[string]any{"pursuit": "try-a-quiet-mode", "person": "ann", "reason": "missed a step", "plan": jsonRaw(twoChanges)}, &out)
 	if out.N != 2 || out.Replans != 1 || out.Reason != "missed a step" {
 		t.Fatalf("second revision = %+v", out)
 	}
@@ -321,48 +328,48 @@ func TestBadPlanAndReason(t *testing.T) {
 func TestSpendBreakerAndNeeds(t *testing.T) {
 	e := planEnv(t)
 	e.setPlan()
-	e.must("bet.work", map[string]any{"bet": "try-a-quiet-mode", "change": "first-step", "session": "s-1"}, nil)
+	e.must("pursuit.work", map[string]any{"pursuit": "try-a-quiet-mode", "change": "first-step", "session": "s-1"}, nil)
 	var sp SpendOut
-	e.must("bet.spend", map[string]any{"bet": "try-a-quiet-mode", "change": "first-step", "session": "s-1", "tokens": 79000}, &sp)
+	e.must("pursuit.spend", map[string]any{"pursuit": "try-a-quiet-mode", "change": "first-step", "session": "s-1", "tokens": 79000}, &sp)
 	if sp.Warned || sp.Broke || sp.Spent != 79000 {
 		t.Fatalf("79k = %+v", sp)
 	}
-	e.must("bet.spend", map[string]any{"bet": "try-a-quiet-mode", "change": "first-step", "session": "s-1", "tokens": 80000}, &sp)
+	e.must("pursuit.spend", map[string]any{"pursuit": "try-a-quiet-mode", "change": "first-step", "session": "s-1", "tokens": 80000}, &sp)
 	if !sp.Warned || sp.Broke {
 		t.Fatalf("80k = %+v", sp)
 	}
-	e.must("bet.spend", map[string]any{"bet": "try-a-quiet-mode", "change": "first-step", "session": "s-1", "tokens": 80000}, &sp)
+	e.must("pursuit.spend", map[string]any{"pursuit": "try-a-quiet-mode", "change": "first-step", "session": "s-1", "tokens": 80000}, &sp)
 	if sp.Warned || sp.Spent != 80000 {
 		t.Fatalf("repeat = %+v", sp)
 	}
-	e.must("bet.spend", map[string]any{"bet": "try-a-quiet-mode", "change": "first-step", "session": "s-1", "tokens": 100000}, &sp)
+	e.must("pursuit.spend", map[string]any{"pursuit": "try-a-quiet-mode", "change": "first-step", "session": "s-1", "tokens": 100000}, &sp)
 	if !sp.Broke || sp.State != "stopped" || sp.Appetite != 100000 {
 		t.Fatalf("100k = %+v", sp)
 	}
-	var bet BetOut
-	e.must("bet.show", map[string]any{"slug": "try-a-quiet-mode"}, &bet)
-	if bet.State != "stopped" || !strings.HasPrefix(bet.StopReason, "circuit breaker: spent") || len(bet.NeedsYou) != 2 || bet.Appetite != 100000 {
-		t.Fatalf("bet.show = %+v", bet)
+	var pursuit PursuitOut
+	e.must("pursuit.show", map[string]any{"slug": "try-a-quiet-mode"}, &pursuit)
+	if pursuit.State != "stopped" || !strings.HasPrefix(pursuit.StopReason, "circuit breaker: spent") || len(pursuit.NeedsYou) != 2 || pursuit.Appetite != 100000 {
+		t.Fatalf("pursuit.show = %+v", pursuit)
 	}
-	if p := bet.Progress; p == nil || p.Spent != 100000 || len(p.PerChange) != 1 || p.PerChange[0].Change != "first-step" || len(p.InWork) != 1 {
-		t.Fatalf("progress = %+v", bet.Progress)
+	if p := pursuit.Progress; p == nil || p.Spent != 100000 || len(p.PerChange) != 1 || p.PerChange[0].Change != "first-step" || len(p.InWork) != 1 {
+		t.Fatalf("progress = %+v", pursuit.Progress)
 	}
-	e.badRequest("bet.spend", map[string]any{"bet": "try-a-quiet-mode", "change": "nope", "session": "s-1", "tokens": 1}, "nope")
+	e.badRequest("pursuit.spend", map[string]any{"pursuit": "try-a-quiet-mode", "change": "nope", "session": "s-1", "tokens": 1}, "nope")
 }
 
-func TestShowLandsChangesAndFinishesBet(t *testing.T) {
+func TestShowLandsChangesAndFinishesPursuit(t *testing.T) {
 	e := planEnv(t)
 	e.setPlan()
 	e.git("commit", "-q", "--allow-empty", "-m", "feat: first\n\nChange: try-a-quiet-mode/first-step")
-	var bet BetOut
-	e.must("bet.show", map[string]any{"slug": "try-a-quiet-mode"}, &bet)
-	if bet.State != "active" || len(bet.Progress.Landed) != 1 || bet.Progress.Landed[0].Change != "first-step" || len(bet.Progress.Landed[0].Commit) != 40 {
-		t.Fatalf("one landed = %+v", bet)
+	var pursuit PursuitOut
+	e.must("pursuit.show", map[string]any{"slug": "try-a-quiet-mode"}, &pursuit)
+	if pursuit.State != "active" || len(pursuit.Progress.Landed) != 1 || pursuit.Progress.Landed[0].Change != "first-step" || len(pursuit.Progress.Landed[0].Commit) != 40 {
+		t.Fatalf("one landed = %+v", pursuit)
 	}
 	e.git("commit", "-q", "--allow-empty", "-m", "feat: second\n\nChange: try-a-quiet-mode/second-step")
-	e.must("bet.show", map[string]any{"slug": "try-a-quiet-mode"}, &bet)
-	if bet.State != "done" || len(bet.Progress.Landed) != 2 || bet.EndedAt == "" {
-		t.Fatalf("both landed = %+v", bet)
+	e.must("pursuit.show", map[string]any{"slug": "try-a-quiet-mode"}, &pursuit)
+	if pursuit.State != "done" || len(pursuit.Progress.Landed) != 2 || pursuit.EndedAt == "" {
+		t.Fatalf("both landed = %+v", pursuit)
 	}
 }
 
@@ -400,32 +407,32 @@ func TestEvidenceListAndShow(t *testing.T) {
 	e.commitFile("a.txt", "feat: a\n\nCapability: alpha\nChange: try-a-quiet-mode/first-step")
 	e.commitFile("b.txt", "feat: b\n\nCapability: beta")
 	e.must("idea.add", map[string]any{"text": "Try a quiet mode", "person": "ann"}, nil)
-	e.must("bet.start", map[string]any{"slug": "try-a-quiet-mode", "appetite": "100k", "person": "ann"}, nil)
+	e.must("pursuit.start", map[string]any{"slug": "try-a-quiet-mode", "appetite": "100k", "signal": goodSignal, "person": "ann"}, nil)
 	all := e.facts(2, nil)
 	if all[0].Kind != "landed" || all[0].Source != "vcs" || len(all[0].Commit) != 8 || all[0].At == "" {
 		t.Fatalf("a fact = %+v", all[0])
 	}
-	if got := e.facts(1, map[string]any{"capability": "alpha"}); got[0].Bet != "try-a-quiet-mode" || got[0].Change != "first-step" || got[0].Capability != "alpha" {
+	if got := e.facts(1, map[string]any{"capability": "alpha"}); got[0].Pursuit != "try-a-quiet-mode" || got[0].Change != "first-step" || got[0].Capability != "alpha" {
 		t.Errorf("capability filter = %+v", got)
 	}
-	e.facts(1, map[string]any{"bet": "try-a-quiet-mode"})
-	e.facts(0, map[string]any{"bet": "no-such-bet"})
+	e.facts(1, map[string]any{"pursuit": "try-a-quiet-mode"})
+	e.facts(0, map[string]any{"pursuit": "no-such-pursuit"})
 	e.facts(1, map[string]any{"limit": 1})
 	e.git("revert", "--no-edit", "HEAD")
-	// A new bet wakes the poll, so the revert is seen at once, not in 5 minutes.
+	// A new pursuit wakes the poll, so the revert is seen at once, not in 5 minutes.
 	e.must("idea.add", map[string]any{"text": "Second", "slug": "second", "person": "ann"}, nil)
-	e.must("bet.start", map[string]any{"slug": "second", "appetite": "100k", "person": "ann"}, nil)
+	e.must("pursuit.start", map[string]any{"slug": "second", "appetite": "100k", "signal": goodSignal, "person": "ann"}, nil)
 	if got := e.facts(4, nil); len(got) != 4 {
 		t.Fatalf("after a revert: %+v", got)
 	}
-	var bet BetOut
-	e.must("bet.show", map[string]any{"slug": "try-a-quiet-mode"}, &bet)
-	if len(bet.Evidence) == 0 {
-		t.Fatalf("bet.show carries no evidence: %+v", bet)
+	var pursuit PursuitOut
+	e.must("pursuit.show", map[string]any{"slug": "try-a-quiet-mode"}, &pursuit)
+	if len(pursuit.Evidence) == 0 {
+		t.Fatalf("pursuit.show carries no evidence: %+v", pursuit)
 	}
-	for _, f := range bet.Evidence {
-		if f.Bet != "try-a-quiet-mode" {
-			t.Errorf("bet.show evidence for another bet: %+v", f)
+	for _, f := range pursuit.Evidence {
+		if f.Pursuit != "try-a-quiet-mode" {
+			t.Errorf("pursuit.show evidence for another pursuit: %+v", f)
 		}
 	}
 }

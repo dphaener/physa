@@ -54,7 +54,7 @@ The network view is the signature, and every drawing of a tube anywhere follows 
 
 - Needs you is the home screen: one column of NeedsYouItem rows, most urgent first, with Running now beside it on desktop and below it on a phone. Running now never notifies.
 - Every view is designed phone-first for the single-user phone web: rows stack their actions under the title, and sections run in a single column.
-- A bet's progress is always a RunProgress; a run's quiet sessions say why they are quiet (StreamEvent `--quiet`).
+- A pursuit's progress is always a RunProgress; a run's quiet sessions say why they are quiet (StreamEvent `--quiet`).
 - Respect `prefers-reduced-motion`. Nothing pulses or flows continuously.
 
 ## Iconography

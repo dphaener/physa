@@ -1,4 +1,4 @@
-// Package state is the engine's one writer for a repo's store: every change to ideas, pitches, bets, plans, intents and timers is a command applied one at a time in one transaction that appends its event. Reads come from the state tables; events are never replayed to answer one. Outside work runs as an intent off the loop, and its kind's Record stores what it found with its intent.done; a timer kind can be ensured on open.
+// Package state is the engine's one writer for a repo's store: every change to ideas, pursuits, plans, intents and timers is a command applied one at a time in one transaction that appends its event. Reads come from the state tables; events are never replayed to answer one. Outside work runs as an intent off the loop, and its kind's Record stores what it found with its intent.done; a timer kind can be ensured on open.
 package state
 
 import (

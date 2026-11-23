@@ -14,7 +14,6 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/forge"
-	"github.com/dphaener/physa/internal/learn"
 	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/propose"
 	"github.com/dphaener/physa/internal/vcs"
@@ -632,173 +631,13 @@ func TestFirstRunWithoutForgeStillRecordsLearnedThrough(t *testing.T) {
 	}
 }
 
-// fakeBets is a learn.Bets source holding one bet with a signal about the
-// change on, which it leaves out once a Learned id names the bet.
-type fakeBets struct {
-	slug string
-	on   string // the short id of the change the bet was made on
-}
-
-func (b *fakeBets) Signals(_ vcs.Repo, _ string, learned []string) ([]learn.ChangeSignals, []learn.Unavailable) {
-	id := "bet/" + b.slug
-	for _, l := range learned {
-		if l == id {
-			return nil, nil
-		}
+// TestIDWithASlashNamesOnlyItself shows a Learned id that names no commit,
+// as older learning records hold, matches only itself, never a change.
+func TestIDWithASlashNamesOnlyItself(t *testing.T) {
+	if sameChange("old/quiet-mode", "old/quiet-mode-2") || !sameChange("old/quiet-mode", " Old/Quiet-Mode ") {
+		t.Error("an id with a slash does not name exactly itself")
 	}
-	return []learn.ChangeSignals{{ChangeRef: learn.ChangeRef{Change: id, Short: id, Subject: "Try a quiet mode"},
-		At: time.Date(2026, 11, 22, 10, 3, 0, 0, time.UTC),
-		Signals: []learn.Signal{{Kind: learn.KindBetPitch, Rule: learn.RuleBetPitch, Changes: []string{b.on},
-			Evidence: []string{"bet " + b.slug + " on the idea: Try a quiet mode"},
-			Quotes:   []learn.Quote{{Author: "dana", Text: "Rabbit holes:\nPer-team schedules need a calendar."}}}}}}, nil
-}
-
-// betRule is a session's proposal of a rule in delivery from a bet's pitch,
-// anchored to the change the bet was made on.
-func betRule(slug, on string) string {
-	return fmt.Sprintf(`{"kind":"rule","capability":"delivery","section":"Rules","signal":{"kind":"bet-pitch","changes":[%q]},"changes":[%q],"entry":"### Rule %s\n`+"`%s`"+` · %s\nQuiet mode never keeps its own schedule.\nBecause: per-team schedules need a calendar."}`, on, on, slug, slug, on)
-}
-
-func TestBetIsAppliedAndItsLearnedTrailerWritten(t *testing.T) {
-	f := newFixture(t)
-	tidy := f.change("chore: Tidy")
-	a := agentFor(betRule("no-own-schedule", short(tidy)))
-	o := f.opts(a, true, true)
-	o.Bets = &fakeBets{slug: "try-a-quiet-mode", on: short(tidy)}
-	out, err := f.run(o, nil)
-	if err != nil || out.Commit == nil || a.starts != 1 {
-		t.Fatalf("run: %v, commit %+v, %d sessions", err, out.Commit, a.starts)
-	}
-	line := "- rule no-own-schedule in delivery, from bet-pitch on " + short(tidy)
-	wantMessage(t, message(t, f.bare, Branch), "docs(map): Learn from 2 changes and 1 bet\n\n"+line+
-		"\n\nLearned-through: "+tidy+"\nLearned: bet/try-a-quiet-mode\nCapability: learning")
-	if len(out.Report.Kept) != 1 || out.Report.Kept[0].Slug != "no-own-schedule" {
-		t.Errorf("kept %+v, dropped %+v", out.Report.Kept, out.Report.Dropped)
-	}
-	if got := gitIn(t, f.bare, "show", Branch+":.physa/capabilities/delivery/rules.md"); !strings.Contains(got, "`no-own-schedule` · "+short(tidy)) {
-		t.Errorf("the rule is not in the branch's map, anchored to the change the bet was made on:\n%s", got)
-	}
-	if f.forge.body != prIntro+"\n\n"+line+"\n" {
-		t.Errorf("PR body %q", f.forge.body)
-	}
-
-	// The next run reads the trailer from the branch: no signal, no session.
-	tip := ref(f.bare, Branch)
-	again := agentFor()
-	o.Session.Agent = func() (adapter.Adapter, error) { return again, nil }
-	out, err = f.run(o, nil)
-	if err != nil || out.Commit != nil || again.starts != 0 || ref(f.bare, Branch) != tip {
-		t.Fatalf("second run: %v, commit %+v, %d sessions", err, out.Commit, again.starts)
-	}
-	if len(out.Result.Learn) != 0 {
-		t.Errorf("second run learns from %+v", out.Result.Learn)
-	}
-}
-
-// A bet is no change, so no watermark records it: a bet that gave no
-// proposal is still written down as learned, or every run would draft from
-// it again. A later record keeps the id while the branch is unmerged.
-func TestBetWithNoProposalIsRecordedOnceAndCarried(t *testing.T) {
-	f := newFixture(t)
-	c := f.learnOnce()
-	first := ref(f.bare, Branch)
-	a := agentFor()
-	o := f.opts(a, true, false)
-	o.Bets = &fakeBets{slug: "try-a-quiet-mode", on: short(c)}
-	out, err := f.run(o, nil)
-	if err != nil || out.Commit == nil || a.starts != 1 {
-		t.Fatalf("run: %v, commit %+v, %d sessions", err, out.Commit, a.starts)
-	}
-	wantMessage(t, message(t, f.bare, Branch), "docs(map): Learn from 1 bet\n\n"+noBetProposals+
-		"\n\nLearned-through: "+c+"\nLearned: bet/try-a-quiet-mode\nCapability: learning")
-	// The branch is rebuilt on the default branch each run, so its earlier
-	// commit is replayed as a new change: the same message and files, an id
-	// that differs whenever the clock's second has turned.
-	if got := subjects(t, f.bare, "main.."+Branch); len(got) != 2 ||
-		message(t, f.bare, Branch+"^") != message(t, f.bare, first) ||
-		ref(f.bare, Branch+"^^{tree}") != ref(f.bare, first+"^{tree}") {
-		t.Errorf("the record is not on top of the branch's earlier commit: %q", got)
-	}
-
-	again := agentFor()
-	o.Session.Agent = func() (adapter.Adapter, error) { return again, nil }
-	if out, err = f.run(o, nil); err != nil || out.Commit != nil || again.starts != 0 {
-		t.Fatalf("second run: %v, commit %+v, %d sessions", err, out.Commit, again.starts)
-	}
-
-	sign := f.change("feat: Sign payloads")
-	f.corrected(sign)
-	third := agentFor(rule("sign-on-review", sign))
-	o.Session.Agent = func() (adapter.Adapter, error) { return third, nil }
-	if out, err = f.run(o, nil); err != nil || out.Commit == nil {
-		t.Fatalf("third run: %v, commit %+v", err, out.Commit)
-	}
-	wantMessage(t, message(t, f.bare, Branch), "docs(map): Learn from 1 change\n\n- rule sign-on-review in delivery, from correction on "+short(sign)+
-		"\n\nLearned-through: "+sign+"\nLearned: "+short(sign)+", bet/try-a-quiet-mode\nCapability: learning")
-}
-
-// Another run learning the change a bet was made on has not learned the
-// bet: the bet's proposal stays, and only the change's own is dropped.
-func TestBetProposalOutlivesItsChangeBeingLearnedMeanwhile(t *testing.T) {
-	f := newFixture(t)
-	retry := f.change("feat: Retry sends")
-	f.corrected(retry)
-	a := agentFor(rule("retry-on-review", retry), betRule("no-own-schedule", short(retry)))
-	rw := &racingWriter{Writer: f.writer(), races: 1, race: func(int) {
-		f.otherLearns("other.txt", "docs(map): Learn from 1 change\n\n- rule retried in delivery, from correction on "+short(retry)+
-			"\n\nLearned-through: "+retry+"\nLearned: "+short(retry)+"\nCapability: learning")
-	}}
-	o := f.opts(a, true, false)
-	o.Bets = &fakeBets{slug: "try-a-quiet-mode", on: short(retry)}
-	out, err := f.run(o, rw)
-	if err != nil || !out.Redone || out.Superseded != 1 || a.starts != 1 {
-		t.Fatalf("run: %v, redone %v, superseded %d, %d sessions", err, out.Redone, out.Superseded, a.starts)
-	}
-	if len(out.Report.Kept) != 1 || out.Report.Kept[0].Slug != "no-own-schedule" {
-		t.Errorf("kept %+v, want the bet's rule alone", out.Report.Kept)
-	}
-	wantMessage(t, message(t, f.bare, Branch), "docs(map): Learn from 1 bet\n\n- rule no-own-schedule in delivery, from bet-pitch on "+short(retry)+
-		"\n\nLearned-through: "+retry+"\nLearned: bet/try-a-quiet-mode\nCapability: learning")
-}
-
-func TestBetProposalIsDroppedWhenItsBetWasLearnedMeanwhile(t *testing.T) {
-	f := newFixture(t)
-	retry := f.change("feat: Retry sends")
-	f.corrected(retry)
-	a := agentFor(rule("retry-on-review", retry), betRule("no-own-schedule", short(retry)))
-	rw := &racingWriter{Writer: f.writer(), races: 1, race: func(int) {
-		f.otherLearns("other.txt", "docs(map): Learn from 1 bet\n\n- rule quiet in delivery, from bet-pitch on "+short(retry)+
-			"\n\nLearned-through: "+f.first+"\nLearned: bet/try-a-quiet-mode\nCapability: learning")
-	}}
-	o := f.opts(a, true, false)
-	o.Bets = &fakeBets{slug: "try-a-quiet-mode", on: short(retry)}
-	out, err := f.run(o, rw)
-	if err != nil || !out.Redone || out.Superseded != 1 {
-		t.Fatalf("run: %v, redone %v, superseded %d", err, out.Redone, out.Superseded)
-	}
-	if len(out.Report.Kept) != 1 || out.Report.Kept[0].Slug != "retry-on-review" {
-		t.Errorf("kept %+v, want the change's rule alone", out.Report.Kept)
-	}
-	last := out.Report.Dropped[len(out.Report.Dropped)-1]
-	if want := "another run on physa/learn learned from `bet/try-a-quiet-mode` meanwhile"; last.Reason != want {
-		t.Errorf("dropped %q, want %q", last.Reason, want)
-	}
-	if got := message(t, f.bare, Branch); strings.Contains(got, "bet/") || !strings.Contains(got, "Learned: "+short(retry)+"\n") {
-		t.Errorf("the redone record names the bet the other run learned:\n%s", got)
-	}
-}
-
-func TestBetIDNamesOnlyItself(t *testing.T) {
-	if sameChange("bet/quiet-mode", "bet/quiet-mode-2") || sameChange("bet/quiet-mode-2", "bet/quiet-mode") {
-		t.Error("a bet's id names the idea's next bet too")
-	}
-	if !sameChange("bet/quiet-mode", " Bet/Quiet-Mode ") || !sameChange("abc1234", "abc1234def") {
-		t.Error("the same id no longer names itself")
-	}
-	if sameChange("bet1234", "bet/bet1234") {
-		t.Error("a change's id names a bet")
-	}
-	if !contains([]string{"abc1234", "bet/quiet-mode"}, "bet/quiet-mode") || contains([]string{"bet/quiet-mode-2"}, "bet/quiet-mode") {
-		t.Error("contains does not match a bet's id whole")
+	if sameChange("abc1234", "abc1234/x") || !sameChange("abc1234", "abc1234def") {
+		t.Error("a change id matches an id with a slash, or no longer its own prefix")
 	}
 }

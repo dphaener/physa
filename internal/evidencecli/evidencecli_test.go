@@ -169,14 +169,14 @@ func TestListsFactsPlainAndFiltered(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &facts); err != nil || len(facts) != 1 {
 		t.Errorf("--limit 1 --json: %v, %q", err, out)
 	}
-	if _, out, _ = evidence(e, "--bet", "no-such-bet"); strings.TrimSpace(out) != "No evidence yet" {
-		t.Errorf("--bet no-such-bet:\n%s", out)
+	if _, out, _ = evidence(e, "--pursuit", "no-such-pursuit"); strings.TrimSpace(out) != "No evidence yet" {
+		t.Errorf("--pursuit no-such-pursuit:\n%s", out)
 	}
 }
 
 func TestBadUsageExitsTwo(t *testing.T) {
 	e := newTest(t)
-	for _, args := range [][]string{{"--bogus"}, {"extra"}, {"--limit", "x"}, {"--limit", "0"}, {"--limit"}, {"--json=1"}, {"--bet", "a", "--bet", "b"}} {
+	for _, args := range [][]string{{"--bogus"}, {"extra"}, {"--limit", "x"}, {"--limit", "0"}, {"--limit"}, {"--json=1"}, {"--pursuit", "a", "--pursuit", "b"}} {
 		code, out, errs := evidence(e, args...)
 		if code != 2 || out != "" || !strings.Contains(errs, "physa evidence [--capability <slug>]") {
 			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)

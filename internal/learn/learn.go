@@ -4,7 +4,7 @@
 // nothing to learn. A signal that needs a source Physa cannot read (no forge,
 // no slice records, no session reader, or the engine, not built yet) is
 // reported as not checked, never as absent. The signals in a change's sessions come from a Sessions
-// reader and those a bet carries from a Bets reader; learn reads no session log and no store itself.
+// reader; learn reads no session log and no store itself.
 //
 // What is already learned is read from the record learning keeps (design 08
 // section 6): the Learned-through watermark, the newest default-branch change
@@ -55,14 +55,12 @@ type Options struct {
 	// Sessions finds the signals in each change's sessions; nil means none,
 	// and the session kinds are then not checked.
 	Sessions Sessions
-	// Bets finds the signals bets carry; nil means none are looked for.
-	Bets Bets
 }
 
 // ResultVersion is the version of Result's JSON form.
 const ResultVersion = 2
 
-// Result is one run's triage, newest change first in every list; in Learn Bets follow the changes in Learn.
+// Result is one run's triage, newest change first in every list.
 type Result struct {
 	Version int `json:"version"`
 	// Range names the changes collected, as a range of version control.
@@ -95,7 +93,7 @@ type Result struct {
 	// change the run started after; empty only when the run started at the
 	// first change of the history.
 	Through string `json:"through"`
-	// LearnedNow are the run's changes with signals, by short id, then its bets with one, as bet/<slug>.
+	// LearnedNow are the run's changes with signals, by short id.
 	LearnedNow []string `json:"learned_now"`
 }
 
@@ -219,13 +217,6 @@ func Run(repo vcs.Repo, o Options) (Result, error) {
 			incomplete[e.change.ID] = true
 		default:
 			res.Nothing = append(res.Nothing, ref)
-		}
-	}
-	if o.Bets != nil {
-		bets, gaps := o.Bets.Signals(repo, ref, learned)
-		res.Learn, res.Unavailable = append(res.Learn, bets...), append(res.Unavailable, gaps...)
-		for _, b := range bets {
-			res.LearnedNow = append(res.LearnedNow, b.Short)
 		}
 	}
 	res.Through = nextWatermark(repo, watermark, collected, incomplete)

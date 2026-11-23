@@ -87,7 +87,7 @@ func accessible(input string) (config, *bytes.Buffer) {
 func TestConfirmReadsYesAndNo(t *testing.T) {
 	for input, want := range map[string]bool{"y\n": true, "yes\n": true, "n\n": false, "\n": false} {
 		c, _ := accessible(input)
-		got, err := confirm(c, "Stop the bet?")
+		got, err := confirm(c, "Stop the pursuit?")
 		if err != nil || got != want {
 			t.Errorf("confirm(%q) = %v, %v; want %v", input, got, err, want)
 		}

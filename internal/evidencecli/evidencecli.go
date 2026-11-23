@@ -1,8 +1,8 @@
 // Package evidencecli is the evidence command: it lists the facts the engine
 // observed in version control and the forge, newest first, for the repo or
-// narrowed to a capability or a bet. It reads what the engine stored and
+// narrowed to a capability or a pursuit. It reads what the engine stored and
 // starts no poll. Evidence is a top-level command because it spans
-// capabilities and bets, so it belongs to neither the bet group nor map.
+// capabilities and pursuits, so it belongs to neither the pursuit group nor map.
 package evidencecli
 
 import (
@@ -20,7 +20,7 @@ import (
 	"github.com/dphaener/physa/internal/workapi"
 )
 
-const usage = "physa evidence [--capability <slug>] [--bet <slug>] [--limit N] [--json]"
+const usage = "physa evidence [--capability <slug>] [--pursuit <slug>] [--limit N] [--json]"
 
 // Command returns the evidence command, naming people through the forge
 // newForge builds for a repo.
@@ -38,13 +38,13 @@ func commandFor(env *ideacli.Env) *cli.Command {
 	}
 }
 
-// parse reads the flags: --capability, --bet and --limit with values, --json
+// parse reads the flags: --capability, --pursuit and --limit with values, --json
 // alone. ok is false for anything else, a repeated flag or a bad limit.
 func parse(args []string) (in workapi.EvidenceIn, asJSON, ok bool) {
 	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
 		name, val, hasVal := strings.Cut(strings.TrimPrefix(args[i], "--"), "=")
-		if !strings.HasPrefix(args[i], "--") || seen[name] || !slices.Contains([]string{"capability", "bet", "limit", "json"}, name) {
+		if !strings.HasPrefix(args[i], "--") || seen[name] || !slices.Contains([]string{"capability", "pursuit", "limit", "json"}, name) {
 			return in, false, false
 		}
 		seen[name] = true
@@ -68,8 +68,8 @@ func parse(args []string) (in workapi.EvidenceIn, asJSON, ok bool) {
 		switch name {
 		case "capability":
 			in.Capability = val
-		case "bet":
-			in.Bet = val
+		case "pursuit":
+			in.Pursuit = val
 		case "limit":
 			n, err := strconv.Atoi(val)
 			if err != nil || n < 1 {
@@ -131,7 +131,7 @@ func Cells(f workapi.EvidenceOut) []string {
 	return []string{kindWords(f.Kind), dash(ref), dash(f.Capability), ideacli.When(f.At), detail}
 }
 
-// Line is a fact as one line of plain words, for a bet's Evidence section.
+// Line is a fact as one line of plain words, for a pursuit's Evidence section.
 func Line(f workapi.EvidenceOut) string {
 	return strings.TrimSpace(strings.Join(Cells(f), "  "))
 }

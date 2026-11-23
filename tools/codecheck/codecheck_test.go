@@ -193,7 +193,7 @@ func TestEngineTablesWriterFlagsSpends(t *testing.T) {
 	files := map[string]string{
 		filepath.Join(root, "go.mod"): "module example.com/spends\n",
 		filepath.Join(dir, "other.go"): "// Package other writes a table only internal/state may.\npackage other\n\n" +
-			"// Add inserts.\nvar Add = \"INSERT INTO spends (bet_id) VALUES (?)\"\n",
+			"// Add inserts.\nvar Add = \"INSERT INTO spends (pursuit_id) VALUES (?)\"\n",
 	}
 	for p, body := range files {
 		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {

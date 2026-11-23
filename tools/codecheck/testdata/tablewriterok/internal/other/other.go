@@ -5,5 +5,5 @@ package other
 var Queries = []string{
 	"SELECT * FROM ideas",
 	"INSERT INTO ideas_old (x) VALUES (1)",
-	"update plans for the bet",
+	"update plans for the pursuit",
 }

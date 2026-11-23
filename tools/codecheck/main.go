@@ -64,7 +64,7 @@ const (
 const stateDir = "internal/state"
 
 // tablePat names the engine's tables, whole word, optionally quoted.
-const tablePat = "[\"`'\\[]?\\b(ideas|pitches|bets|plans|plan_revisions|events|intents|timers|changes|session_changes|spends|needs_you|evidence|evidence_polls)\\b[\"`'\\]]?"
+const tablePat = "[\"`'\\[]?\\b(ideas|pitches|pursuits|plans|plan_revisions|events|intents|timers|changes|session_changes|spends|needs_you|evidence|evidence_polls)\\b[\"`'\\]]?"
 
 // writePats match SQL in its write shape; group 1 of each is the table.
 var writePats = func() []*regexp.Regexp {

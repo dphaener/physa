@@ -1,5 +1,5 @@
-// Package progress reads which of a bet's planned changes have landed: merged
-// changes on the default branch carrying the bet's Change: trailers, read
+// Package progress reads which of a pursuit's planned changes have landed: merged
+// changes on the default branch carrying the pursuit's Change: trailers, read
 // through the version-control interface.
 package progress
 
@@ -13,10 +13,10 @@ import (
 )
 
 // Trailer is the key of the commit trailer that names a planned change as
-// <bet>/<change>.
+// <pursuit>/<change>.
 const Trailer = "Change"
 
-// slack widens the window a little, so a commit made just before the bet is
+// slack widens the window a little, so a commit made just before the pursuit is
 // not missed for a clock's drift.
 const slack = time.Minute
 
@@ -35,21 +35,21 @@ type Landing struct {
 	At     time.Time `json:"at"`
 }
 
-// Parse splits a Change: trailer value, <bet>/<change>, into its two slugs.
+// Parse splits a Change: trailer value, <pursuit>/<change>, into its two slugs.
 // A value that is not exactly two slugs around one "/" is not ok.
-func Parse(value string) (bet, change string, ok bool) {
-	bet, change, found := strings.Cut(strings.TrimSpace(value), "/")
-	if !found || !slug.MatchString(bet) || !slug.MatchString(change) {
+func Parse(value string) (pursuit, change string, ok bool) {
+	pursuit, change, found := strings.Cut(strings.TrimSpace(value), "/")
+	if !found || !slug.MatchString(pursuit) || !slug.MatchString(change) {
 		return "", "", false
 	}
-	return bet, change, true
+	return pursuit, change, true
 }
 
 // Landed returns, by change name, the first commit on the default branch
-// since the given time that carries a Change: trailer naming the bet. A repo
+// since the given time that carries a Change: trailer naming the pursuit. A repo
 // with no default branch gives an empty map and no error: what cannot be
 // known is not guessed, so the caller shows none landed.
-func Landed(repo Repo, bet string, since time.Time) (map[string]Landing, error) {
+func Landed(repo Repo, pursuit string, since time.Time) (map[string]Landing, error) {
 	landed := map[string]Landing{}
 	ref, err := repo.DefaultBranch()
 	if err != nil {
@@ -65,7 +65,7 @@ func Landed(repo Repo, bet string, since time.Time) (map[string]Landing, error) 
 	for _, c := range changes {
 		for _, v := range history.Trailers(c.Message, Trailer) {
 			b, name, ok := Parse(v)
-			if !ok || b != bet {
+			if !ok || b != pursuit {
 				continue
 			}
 			if old, seen := landed[name]; seen && old.At.Before(c.Time) {

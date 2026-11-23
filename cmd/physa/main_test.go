@@ -120,7 +120,7 @@ func rootHelp() string {
 
 func TestRootHelpListsTheCommands(t *testing.T) {
 	help := rootHelp()
-	for _, name := range []string{"check ", "map ", "init ", "idea ", "bet ", "engine ", "api ", "sync ", "version ", "help "} {
+	for _, name := range []string{"check ", "map ", "init ", "idea ", "pursue ", "pursuit ", "evidence ", "engine ", "api ", "sync ", "version ", "help "} {
 		if !strings.Contains(help, "\n  "+name) {
 			t.Errorf("root help lacks %q:\n%s", name, help)
 		}
@@ -133,10 +133,10 @@ func TestHelpListsEngineAndAPI(t *testing.T) {
 		t.Fatalf("code %d, stderr %q", code, stderr.String())
 	}
 	help, last := stdout.String(), -1
-	for _, name := range []string{"check", "map", "init", "idea", "bet", "engine", "api", "sync", "version", "help"} {
+	for _, name := range []string{"check", "map", "init", "idea", "pursue", "pursuit", "evidence", "engine", "api", "sync", "version", "help"} {
 		i := strings.Index(help, "\n  "+name+" ")
 		if i <= last {
-			t.Errorf("physa help lists %q out of the order check, map, init, idea, bet, engine, api, sync, version, help:\n%s", name, help)
+			t.Errorf("physa help lists %q out of the order check, map, init, idea, pursue, pursuit, evidence, engine, api, sync, version, help:\n%s", name, help)
 		}
 		last = i
 	}
@@ -161,8 +161,8 @@ func TestHelpOnGroupsAndLeaves(t *testing.T) {
 		{"map", "changes", "--help"}, {"map", "records", "--help"},
 		{"version", "--help"}, {"sync", "--help"},
 		{"engine", "--help"}, {"engine", "run", "--help"}, {"api", "--help"}, {"api", "call", "--help"},
-		{"idea", "--help"}, {"idea", "add", "--help"}, {"idea", "shape", "--help"},
-		{"bet", "--help"}, {"bet", "list", "--help"}, {"bet", "stop", "--help"},
+		{"idea", "--help"}, {"idea", "add", "--help"}, {"pursue", "--help"},
+		{"pursuit", "--help"}, {"pursuit", "list", "--help"}, {"pursuit", "stop", "--help"},
 	} {
 		var stdout, stderr bytes.Buffer
 		if code := run(args, &stdout, &stderr); code != 0 {
@@ -175,7 +175,7 @@ func TestHelpOnGroupsAndLeaves(t *testing.T) {
 }
 
 func TestNoArgsAndUnknownPrintRootHelp(t *testing.T) {
-	for _, args := range [][]string{nil, {"bogus"}} {
+	for _, args := range [][]string{nil, {"bogus"}, {"bet"}, {"bet", "list"}} {
 		var stdout, stderr bytes.Buffer
 		if code := run(args, &stdout, &stderr); code != 2 {
 			t.Errorf("run(%v) = %d, want 2", args, code)

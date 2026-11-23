@@ -138,8 +138,8 @@ func TestMigrationTwoDropsPRChecks(t *testing.T) {
 
 func TestFreshStoreMigratesToLatest(t *testing.T) {
 	s, _ := open(t)
-	if got := version(t, s); got != 13 {
-		t.Errorf("user_version = %d, want 13", got)
+	if got := version(t, s); got != 14 {
+		t.Errorf("user_version = %d, want 14", got)
 	}
 	var n int
 	if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name = 'slice_records'").Scan(&n); err != nil || n != 1 {
@@ -303,10 +303,11 @@ func TestConcurrentOpenMigrates(t *testing.T) {
 func TestEngineTables(t *testing.T) {
 	s, _ := open(t)
 	want := map[string][]string{
-		"ideas":          {"id", "slug", "text", "person", "created_at", "updated_at"},
-		"pitches":        {"id", "idea_id", "problem", "appetite_tokens", "solution", "scope", "signal", "rabbit_holes", "no_gos", "person", "created_at", "updated_at"},
-		"bets":           {"id", "slug", "idea_id", "pitch_id", "person", "appetite_tokens", "spent_tokens", "state", "stop_reason", "created_at", "started_at", "ended_at"},
-		"plans":          {"id", "bet_id", "created_at"},
+		"ideas":   {"id", "slug", "text", "person", "created_at", "updated_at"},
+		"pitches": {"id", "idea_id", "problem", "appetite_tokens", "solution", "scope", "signal", "rabbit_holes", "no_gos", "person", "created_at", "updated_at"},
+		"pursuits": {"id", "slug", "idea_id", "pitch_id", "person", "spent_tokens", "state", "stop_reason", "created_at", "started_at", "ended_at",
+			"appetite_tokens", "signal_claim", "signal_for", "signal_against", "signal_window", "signal_resolver"},
+		"plans":          {"id", "pursuit_id", "created_at"},
 		"plan_revisions": {"id", "plan_id", "n", "changes", "reason", "person", "created_at"},
 		"events":         {"id", "at", "kind", "subject", "subject_id", "person", "data"},
 		"intents":        {"id", "kind", "payload", "state", "attempts", "next_at", "last_error", "result", "created_at", "done_at"},
@@ -339,23 +340,26 @@ func TestEngineTableChecks(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, q := range map[string]string{
-		"paused bet":       `INSERT INTO bets (slug, idea_id, person, appetite_tokens, state, created_at) VALUES ('b', 1, 'p', 10, 'paused', '` + now + `')`,
-		"zero appetite":    `INSERT INTO pitches (idea_id, appetite_tokens, person, created_at, updated_at) VALUES (1, 0, 'p', '` + now + `', '` + now + `')`,
-		"bet without idea": `INSERT INTO bets (slug, idea_id, person, appetite_tokens, created_at) VALUES ('c', 99, 'p', 10, '` + now + `')`,
+		"paused pursuit":       `INSERT INTO pursuits (slug, idea_id, person, appetite_tokens, state, created_at) VALUES ('b', 1, 'p', 10, 'paused', '` + now + `')`,
+		"zero appetite":        `INSERT INTO pursuits (slug, idea_id, person, appetite_tokens, created_at) VALUES ('z', 1, 'p', 0, '` + now + `')`,
+		"pursuit without idea": `INSERT INTO pursuits (slug, idea_id, person, appetite_tokens, created_at) VALUES ('c', 99, 'p', 10, '` + now + `')`,
 	} {
 		if _, err := s.db.Exec(q); err == nil {
 			t.Errorf("%s was accepted, want refused", name)
 		}
 	}
-	if _, err := s.db.Exec(`INSERT INTO bets (slug, idea_id, person, appetite_tokens, created_at) VALUES ('ok', 1, 'p', 10, ?)`, now); err != nil {
-		t.Errorf("a valid bet was refused: %v", err)
+	if _, err := s.db.Exec(`INSERT INTO pursuits (slug, idea_id, person, appetite_tokens, created_at) VALUES ('ok', 1, 'p', 10, ?)`, now); err != nil {
+		t.Errorf("a valid pursuit was refused: %v", err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO pursuits (slug, idea_id, person, created_at) VALUES ('open', 1, 'p', ?)`, now); err != nil {
+		t.Errorf("a pursuit with no appetite was refused: %v", err)
 	}
 }
 
 func TestPlanTables(t *testing.T) {
 	s, _ := open(t)
-	if got := version(t, s); got != 13 {
-		t.Fatalf("user_version = %d, want 13", got)
+	if got := version(t, s); got != 14 {
+		t.Fatalf("user_version = %d, want 14", got)
 	}
 	for _, table := range []string{"changes", "session_changes", "spends", "needs_you"} {
 		var n int
@@ -370,22 +374,22 @@ func TestPlanTableChecks(t *testing.T) {
 	const now = "2026-11-01T12:00:00Z"
 	for _, q := range []string{
 		`INSERT INTO ideas (id, slug, text, person, created_at, updated_at) VALUES (1, 'a', 't', 'p', '` + now + `', '` + now + `')`,
-		`INSERT INTO bets (id, slug, idea_id, person, appetite_tokens, created_at) VALUES (1, 'b', 1, 'p', 10, '` + now + `')`,
+		`INSERT INTO pursuits (id, slug, idea_id, person, appetite_tokens, created_at) VALUES (1, 'b', 1, 'p', 10, '` + now + `')`,
 	} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for name, q := range map[string]string{
-		"bad change state": `INSERT INTO changes (bet_id, name, capability, state, created_at, updated_at) VALUES (1, 'x', 'c', 'merged', '` + now + `', '` + now + `')`,
+		"bad change state": `INSERT INTO changes (pursuit_id, name, capability, state, created_at, updated_at) VALUES (1, 'x', 'c', 'merged', '` + now + `', '` + now + `')`,
 		"bad kind":         `INSERT INTO needs_you (person, kind, text, created_at) VALUES ('p', 'other', 't', '` + now + `')`,
-		"negative tokens":  `INSERT INTO spends (bet_id, session, tokens, at) VALUES (1, 's', -1, '` + now + `')`,
+		"negative tokens":  `INSERT INTO spends (pursuit_id, session, tokens, at) VALUES (1, 's', -1, '` + now + `')`,
 	} {
 		if _, err := s.db.Exec(q); err == nil {
 			t.Errorf("%s was accepted, want refused", name)
 		}
 	}
-	if _, err := s.db.Exec(`INSERT INTO spends (bet_id, session, tokens, at) VALUES (1, 's', 5, ?)`, now); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO spends (pursuit_id, session, tokens, at) VALUES (1, 's', 5, ?)`, now); err != nil {
 		t.Errorf("a valid spend was refused: %v", err)
 	}
 }

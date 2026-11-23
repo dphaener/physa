@@ -1,4 +1,4 @@
-// Package plan is the engine's commands and reads on a bet's plan and its
+// Package plan is the engine's commands and reads on a pursuit's plan and its
 // progress: each revision kept with its reason, which change a session works
 // on, tokens spent added and checked against the appetite in the same
 // transaction, the circuit breaker, and the Needs you items they raise; each
@@ -35,16 +35,16 @@ func refuse(kind error, format string, args ...any) error {
 	return &work.Refusal{Kind: kind, Msg: fmt.Sprintf(format, args...)}
 }
 
-// SetIn stores Plan as the bet's next revision. Reason may be empty only for
+// SetIn stores Plan as the pursuit's next revision. Reason may be empty only for
 // the first.
 type SetIn struct {
-	Bet, Reason, Person string
-	Plan                plan.Plan
+	Pursuit, Reason, Person string
+	Plan                    plan.Plan
 }
 
-// WorkIn records that Session works on the bet's planned change.
+// WorkIn records that Session works on the pursuit's planned change.
 type WorkIn struct {
-	Session, Bet, Change string
+	Session, Pursuit, Change string
 }
 
 const stateActive = "active"
@@ -74,28 +74,28 @@ func session(s string) (string, error) {
 	return s, nil
 }
 
-// bet is a bet's row, as the commands here need it.
-type bet struct {
+// pursuit is a pursuit's row, as the commands here need it.
+type pursuit struct {
 	id                int64
 	slug, idea, state string
 	person            string
-	appetite, spent   int64
+	appetite, spent   int64 // appetite 0 is none
 }
 
-func lookupBet(tx *state.Tx, slug string) (bet, error) {
-	b := bet{slug: slug}
-	err := tx.QueryRow(`SELECT b.id, i.slug, b.state, b.person, b.appetite_tokens, b.spent_tokens
-		FROM bets b JOIN ideas i ON i.id = b.idea_id WHERE b.slug = ?`, slug).
-		Scan(&b.id, &b.idea, &b.state, &b.person, &b.appetite, &b.spent)
+func lookupPursuit(tx *state.Tx, slug string) (pursuit, error) {
+	pu := pursuit{slug: slug}
+	err := tx.QueryRow(`SELECT pu.id, i.slug, pu.state, pu.person, coalesce(pu.appetite_tokens, 0), pu.spent_tokens
+		FROM pursuits pu JOIN ideas i ON i.id = pu.idea_id WHERE pu.slug = ?`, slug).
+		Scan(&pu.id, &pu.idea, &pu.state, &pu.person, &pu.appetite, &pu.spent)
 	if errors.Is(err, sql.ErrNoRows) {
-		return b, refuse(work.ErrUnknownBet, "no bet has the slug %q", slug)
+		return pu, refuse(work.ErrUnknownPursuit, "no pursuit has the slug %q", slug)
 	}
-	return b, err
+	return pu, err
 }
 
-func active(b bet, what string) error {
-	if b.state != stateActive {
-		return refuse(work.ErrNotActive, "the bet %q is %s, not active; only an active bet %s", b.slug, b.state, what)
+func active(pu pursuit, what string) error {
+	if pu.state != stateActive {
+		return refuse(work.ErrNotActive, "the pursuit %q is %s, not active; only an active pursuit %s", pu.slug, pu.state, what)
 	}
 	return nil
 }
@@ -121,8 +121,8 @@ func checkShape(p plan.Plan) error {
 	return nil
 }
 
-// Set stores in.Plan, already checked by internal/plan, as the bet's next
-// revision with event plan.revised. Only an active bet takes a plan; a
+// Set stores in.Plan, already checked by internal/plan, as the pursuit's next
+// revision with event plan.revised. Only an active pursuit takes a plan; a
 // revision after the first needs a reason. The current plan's changes are
 // rows; one a revision drops stays, no longer planned, with its spend.
 func Set(ctx context.Context, s work.Submitter, in SetIn) (Detail, error) {
@@ -140,20 +140,20 @@ func Set(ctx context.Context, s work.Submitter, in SetIn) (Detail, error) {
 	}
 	var out Detail
 	err = s.Submit(ctx, func(tx *state.Tx) error {
-		b, err := lookupBet(tx, in.Bet)
+		pu, err := lookupPursuit(tx, in.Pursuit)
 		if err != nil {
 			return err
 		}
-		if err := active(b, "takes a plan"); err != nil {
+		if err := active(pu, "takes a plan"); err != nil {
 			return err
 		}
 		at := stamp(tx.Now())
 		var planID int64
 		var n int
 		switch err := tx.QueryRow(`SELECT p.id, coalesce((SELECT max(n) FROM plan_revisions r WHERE r.plan_id = p.id), 0)
-			FROM plans p WHERE p.bet_id = ?`, b.id).Scan(&planID, &n); {
+			FROM plans p WHERE p.pursuit_id = ?`, pu.id).Scan(&planID, &n); {
 		case errors.Is(err, sql.ErrNoRows):
-			res, err := tx.Exec(`INSERT INTO plans (bet_id, created_at) VALUES (?, ?)`, b.id, at)
+			res, err := tx.Exec(`INSERT INTO plans (pursuit_id, created_at) VALUES (?, ?)`, pu.id, at)
 			if err != nil {
 				return err
 			}
@@ -165,7 +165,7 @@ func Set(ctx context.Context, s work.Submitter, in SetIn) (Detail, error) {
 		}
 		n++
 		if n > 1 && reason == "" {
-			return refuse(ErrNoReason, "a revision of the plan needs a reason: what shaping missed")
+			return refuse(ErrNoReason, "a revision of the plan needs a reason: what the plan missed")
 		}
 		if _, err := tx.Exec(`INSERT INTO plan_revisions (plan_id, n, changes, reason, person, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
 			planID, n, string(body), reason, who, at); err != nil {
@@ -173,31 +173,31 @@ func Set(ctx context.Context, s work.Submitter, in SetIn) (Detail, error) {
 		}
 		names := plan.Names(in.Plan)
 		for _, c := range in.Plan.Changes {
-			if _, err := tx.Exec(`INSERT INTO changes (bet_id, name, capability, planned, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)
-				ON CONFLICT (bet_id, name) DO UPDATE SET capability = excluded.capability, planned = 1, updated_at = excluded.updated_at`,
-				b.id, c.Name, c.Capability, at, at); err != nil {
+			if _, err := tx.Exec(`INSERT INTO changes (pursuit_id, name, capability, planned, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)
+				ON CONFLICT (pursuit_id, name) DO UPDATE SET capability = excluded.capability, planned = 1, updated_at = excluded.updated_at`,
+				pu.id, c.Name, c.Capability, at, at); err != nil {
 				return err
 			}
 		}
 		marks := strings.TrimSuffix(strings.Repeat("?, ", len(names)), ", ")
-		args := []any{at, b.id}
+		args := []any{at, pu.id}
 		for _, name := range names {
 			args = append(args, name)
 		}
-		if _, err := tx.Exec(`UPDATE changes SET planned = 0, updated_at = ? WHERE bet_id = ? AND planned = 1 AND name NOT IN (`+marks+`)`, args...); err != nil {
+		if _, err := tx.Exec(`UPDATE changes SET planned = 0, updated_at = ? WHERE pursuit_id = ? AND planned = 1 AND name NOT IN (`+marks+`)`, args...); err != nil {
 			return err
 		}
-		if err := tx.Event("plan.revised", "plan", planID, who, map[string]any{"bet": b.slug, "n": n, "reason": reason, "changes": names}); err != nil {
+		if err := tx.Event("plan.revised", "plan", planID, who, map[string]any{"pursuit": pu.slug, "n": n, "reason": reason, "changes": names}); err != nil {
 			return err
 		}
-		out, err = detail(tx, b, false)
+		out, err = detail(tx, pu, false)
 		return err
 	})
 	return out, err
 }
 
-// Work records that in.Session works on the bet's planned change, replacing
-// the change it worked on before, with event change.in_work. The bet must be
+// Work records that in.Session works on the pursuit's planned change, replacing
+// the change it worked on before, with event change.in_work. The pursuit must be
 // active and the change planned in its current revision.
 func Work(ctx context.Context, s work.Submitter, in WorkIn) error {
 	sess, err := session(in.Session)
@@ -205,17 +205,17 @@ func Work(ctx context.Context, s work.Submitter, in WorkIn) error {
 		return err
 	}
 	return s.Submit(ctx, func(tx *state.Tx) error {
-		b, err := lookupBet(tx, in.Bet)
+		pu, err := lookupPursuit(tx, in.Pursuit)
 		if err != nil {
 			return err
 		}
-		if err := active(b, "is worked on"); err != nil {
+		if err := active(pu, "is worked on"); err != nil {
 			return err
 		}
 		var changeID int64
-		err = tx.QueryRow(`SELECT id FROM changes WHERE bet_id = ? AND name = ? AND planned = 1`, b.id, in.Change).Scan(&changeID)
+		err = tx.QueryRow(`SELECT id FROM changes WHERE pursuit_id = ? AND name = ? AND planned = 1`, pu.id, in.Change).Scan(&changeID)
 		if errors.Is(err, sql.ErrNoRows) {
-			return refuse(ErrUnknownChange, "the bet %q has no planned change %q", b.slug, in.Change)
+			return refuse(ErrUnknownChange, "the pursuit %q has no planned change %q", pu.slug, in.Change)
 		} else if err != nil {
 			return err
 		}
@@ -223,6 +223,6 @@ func Work(ctx context.Context, s work.Submitter, in WorkIn) error {
 			ON CONFLICT (session) DO UPDATE SET change_id = excluded.change_id, at = excluded.at`, sess, changeID, stamp(tx.Now())); err != nil {
 			return err
 		}
-		return tx.Event("change.in_work", "change", changeID, "", map[string]any{"bet": b.slug, "change": in.Change, "session": sess})
+		return tx.Event("change.in_work", "change", changeID, "", map[string]any{"pursuit": pu.slug, "change": in.Change, "session": sess})
 	})
 }

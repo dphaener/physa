@@ -34,11 +34,11 @@ func change(id string, hours int, msg string) vcs.Change {
 
 func TestLandedOldestKept(t *testing.T) {
 	f := &fake{changes: []vcs.Change{ // newest first
-		change("cc3333", 3, "fix: again\n\nCapability: ideas\nChange: my-bet/one\n"),
-		change("bb2222", 2, "feat: two\n\nCapability: ideas\nChange: my-bet/two\n"),
-		change("aa1111", 1, "feat: one\n\nCapability: ideas\nChange: my-bet/one\n"),
+		change("cc3333", 3, "fix: again\n\nCapability: ideas\nChange: my-pursuit/one\n"),
+		change("bb2222", 2, "feat: two\n\nCapability: ideas\nChange: my-pursuit/two\n"),
+		change("aa1111", 1, "feat: one\n\nCapability: ideas\nChange: my-pursuit/one\n"),
 	}}
-	got, err := Landed(f, "my-bet", t0)
+	got, err := Landed(f, "my-pursuit", t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,12 +53,12 @@ func TestLandedOldestKept(t *testing.T) {
 	}
 }
 
-func TestLandedIgnoresOtherBetAndOutsideBlock(t *testing.T) {
+func TestLandedIgnoresOtherPursuitAndOutsideBlock(t *testing.T) {
 	f := &fake{changes: []vcs.Change{
-		change("aa1111", 1, "feat: x\n\nChange: other-bet/one\n"),
-		change("bb2222", 2, "feat: y\n\nChange: my-bet/one\n\nBody text after.\n"),
+		change("aa1111", 1, "feat: x\n\nChange: other-pursuit/one\n"),
+		change("bb2222", 2, "feat: y\n\nChange: my-pursuit/one\n\nBody text after.\n"),
 	}}
-	got, _ := Landed(f, "my-bet", time.Time{})
+	got, _ := Landed(f, "my-pursuit", time.Time{})
 	if len(got) != 0 {
 		t.Fatalf("got %+v", got)
 	}
@@ -66,25 +66,25 @@ func TestLandedIgnoresOtherBetAndOutsideBlock(t *testing.T) {
 
 func TestLandedMalformed(t *testing.T) {
 	f := &fake{changes: []vcs.Change{
-		change("aa1111", 1, "feat: x\n\nChange: my-bet\n"),
-		change("bb2222", 2, "feat: y\n\nChange: my-bet/a/b\n"),
-		change("cc3333", 3, "feat: z\n\nChange: My-Bet/One\n"),
+		change("aa1111", 1, "feat: x\n\nChange: my-pursuit\n"),
+		change("bb2222", 2, "feat: y\n\nChange: my-pursuit/a/b\n"),
+		change("cc3333", 3, "feat: z\n\nChange: My-Pursuit/One\n"),
 	}}
-	got, err := Landed(f, "my-bet", time.Time{})
+	got, err := Landed(f, "my-pursuit", time.Time{})
 	if err != nil || len(got) != 0 {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 }
 
 func TestLandedNoDefaultBranch(t *testing.T) {
-	got, err := Landed(&fake{noRef: true}, "my-bet", t0)
+	got, err := Landed(&fake{noRef: true}, "my-pursuit", t0)
 	if err != nil || got == nil || len(got) != 0 {
 		t.Fatalf("got %v, %v", got, err)
 	}
 }
 
 func TestParse(t *testing.T) {
-	if b, c, ok := Parse("my-bet/retry-queue"); !ok || b != "my-bet" || c != "retry-queue" {
+	if b, c, ok := Parse("my-pursuit/retry-queue"); !ok || b != "my-pursuit" || c != "retry-queue" {
 		t.Fatal(b, c, ok)
 	}
 	for _, bad := range []string{"", "a", "a/", "/a", "a/b/c", "A/b", "a b/c"} {

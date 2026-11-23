@@ -25,13 +25,13 @@ import (
 const DefaultAppetite = 60000
 
 // Batch is what one session drafts from: the changes of a run that carry
-// signals, the bets that do, and the capabilities those signals bear on.
+// signals, and the capabilities those signals bear on.
 type Batch struct {
 	// Person is the name of the person running Physa (internal/person), or
 	// empty when unknown.
 	Person string
 	// Changes are the changes with signals, newest first, as triage found
-	// them, then the bets with one (see IsBet).
+	// them.
 	Changes []learn.ChangeSignals
 	// Capabilities are the capabilities the map holds that the batch's
 	// changes serve or its signals are about, each once, sorted.

@@ -1,9 +1,10 @@
 // Command physa is Physa's command line, a tree of grouped commands: check
 // checks the map and a range of changes; map reads the map, slices it, lists
 // changes and records, formats it and learns from merged changes; init
-// gathers a repo's sources and proposes its first map; idea adds, lists,
-// shows and shapes ideas; bet bets on ideas and lists, shows and stops bets;
-// evidence lists the facts observed in version control and the forge;
+// gathers a repo's sources and proposes its first map; idea adds, lists
+// and shows ideas; pursue starts a pursuit of an idea against a signal;
+// pursuit lists, shows and stops pursuits and holds their plans; evidence
+// lists the facts observed in version control and the forge;
 // engine starts, checks and stops the machine's engine; api calls the
 // engine's API by name; sync is not built yet; version prints the build's
 // version and help the commands.
@@ -15,11 +16,11 @@ import (
 	"io"
 	"os"
 
-	"github.com/dphaener/physa/internal/betcli"
 	"github.com/dphaener/physa/internal/cli"
 	"github.com/dphaener/physa/internal/enginecli"
 	"github.com/dphaener/physa/internal/evidencecli"
 	"github.com/dphaener/physa/internal/ideacli"
+	"github.com/dphaener/physa/internal/pursuitcli"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -41,7 +42,9 @@ func rootCommand() *cli.Command {
 		Summary: "Physa: product management for agents.",
 		Usage:   []string{"physa <command> [--help]"},
 	}
-	root.Subs = append([]*cli.Command{checkCommand(), mapCommand(), initCommand(), ideacli.Command(newForge), betcli.Command(newForge), evidencecli.Command(newForge)}, enginecli.Commands(version)...)
+	root.Subs = []*cli.Command{checkCommand(), mapCommand(), initCommand(), ideacli.Command(newForge)}
+	root.Subs = append(append(root.Subs, pursuitcli.Commands(newForge)...), evidencecli.Command(newForge))
+	root.Subs = append(root.Subs, enginecli.Commands(version)...)
 	root.Subs = append(root.Subs, []*cli.Command{
 		{
 			Name:    "sync",

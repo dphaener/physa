@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dphaener/physa/internal/pitch"
+	"github.com/dphaener/physa/internal/signal"
 	"github.com/dphaener/physa/internal/state"
 	"github.com/dphaener/physa/internal/store"
 )
@@ -62,7 +62,7 @@ func newEnv(t *testing.T) *env {
 func (e *env) counts() string {
 	e.t.Helper()
 	var out []string
-	for _, table := range []string{"ideas", "pitches", "bets", "events"} {
+	for _, table := range []string{"ideas", "pursuits", "events"} {
 		var n int
 		if err := e.st.DB().QueryRow(`SELECT count(*) FROM ` + table).Scan(&n); err != nil {
 			e.t.Fatal(err)
@@ -128,9 +128,20 @@ func (e *env) add(text, slug string) IdeaFacts {
 	return f
 }
 
-func full(appetite int64) pitch.Pitch {
-	return pitch.Pitch{Problem: "People wait.", Appetite: appetite, Solution: "A quiet mode.", Scope: "The CLI only.",
-		Signal: "Fewer pings.", RabbitHoles: "Terminal detection on Windows.", NoGos: "No new settings file."}
+func sig() signal.Signal {
+	return signal.Signal{Claim: "People get fewer pings.", For: "pings per person fall", Against: "pings stay the same",
+		Window: "2026-12-15", Resolver: "ana"}
+}
+
+// pursue starts a pursuit of slug with appetite, or fails the test.
+func (e *env) pursue(slug string, appetite int64) PursuitDetail {
+	e.t.Helper()
+	e.c.tick()
+	d, err := StartPursuit(bg, e.s, PursueIn{Slug: slug, Appetite: appetite, Signal: sig(), Person: "ana"})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return d
 }
 
 func data(t *testing.T, ev state.Event) map[string]any {
@@ -165,7 +176,7 @@ func TestValidSlugReserved(t *testing.T) {
 			t.Errorf("ValidSlug(%q) = %v", s, err)
 		}
 	}
-	for _, s := range []string{"", "Quiet", "quiet--mode", "-quiet", "quiet-", "quiet mode", "add", "list", "show", "shape", "stop", "plan", "work", strings.Repeat("a", 41)} {
+	for _, s := range []string{"", "Quiet", "quiet--mode", "-quiet", "quiet-", "quiet mode", "add", "list", "show", "stop", "plan", "work", strings.Repeat("a", 41)} {
 		if err := ValidSlug(s); !errors.Is(err, ErrSlugInvalid) {
 			t.Errorf("ValidSlug(%q) = %v, want ErrSlugInvalid", s, err)
 		}
@@ -192,7 +203,7 @@ func TestAddIdea(t *testing.T) {
 	if ev.Subject != "idea" || ev.Person != "ana" || data(t, ev)["slug"] != "try-a-quiet-mode" {
 		t.Errorf("event = %+v %s", ev, ev.Data)
 	}
-	if e.counts() != "ideas=1 pitches=0 bets=0 events=1" {
+	if e.counts() != "ideas=1 pursuits=0 events=1" {
 		t.Errorf("counts = %s", e.counts())
 	}
 }
@@ -247,180 +258,137 @@ func TestAddIdeaRefusesEmpty(t *testing.T) {
 	})
 }
 
-func TestShapeKeepsHistory(t *testing.T) {
+func TestStartPursuitRecordsItsSignal(t *testing.T) {
 	e := newEnv(t)
 	e.add("Quiet mode", "")
-	ev := e.oneEvent("pitch.shaped", func() error {
-		_, err := Shape(bg, e.s, ShapeIn{Slug: "quiet-mode", Pitch: full(200_000), Person: "ana"})
-		return err
-	})
-	if d := data(t, ev); ev.Subject != "pitch" || d["idea"] != "quiet-mode" || d["appetite"] != float64(200_000) {
-		t.Errorf("event = %+v %s", ev, ev.Data)
-	}
-	second := full(500_000)
-	second.Problem = "People still wait."
-	var got IdeaDetail
-	e.oneEvent("pitch.shaped", func() (err error) {
-		got, err = Shape(bg, e.s, ShapeIn{Slug: "quiet-mode", Pitch: second, Person: "bo"})
-		return err
-	})
-	if got.Pitches != 2 || got.Pitch == nil || got.Pitch.Pitch != second || got.Pitch.Person != "bo" || !got.Pitch.At.Equal(e.c.Now()) {
-		t.Errorf("detail = %+v pitch %+v", got, got.Pitch)
-	}
-	if e.counts() != "ideas=1 pitches=2 bets=0 events=3" {
-		t.Errorf("counts = %s", e.counts())
-	}
-}
-
-func TestShapeRefusals(t *testing.T) {
-	e := newEnv(t)
-	e.add("Quiet mode", "")
-	err := e.refused(ErrUnknownIdea, func() error {
-		_, err := Shape(bg, e.s, ShapeIn{Slug: "nope", Pitch: full(1), Person: "ana"})
-		return err
-	})
-	if !strings.Contains(err.Error(), `"nope"`) {
-		t.Errorf("message should name the slug: %v", err)
-	}
-	half := full(0)
-	half.NoGos = " "
-	err = e.refused(ErrPitchIncomplete, func() error {
-		_, err := Shape(bg, e.s, ShapeIn{Slug: "quiet-mode", Pitch: half, Person: "ana"})
-		return err
-	})
-	if !strings.Contains(err.Error(), "Appetite, No-gos") {
-		t.Errorf("message should name both parts: %v", err)
-	}
-	e.refused(ErrNoPerson, func() error { _, err := Shape(bg, e.s, ShapeIn{Slug: "quiet-mode", Pitch: full(1)}); return err })
-}
-
-func TestStartBetAppetiteFromPitch(t *testing.T) {
-	e := newEnv(t)
-	e.add("Quiet mode", "")
-	if _, err := Shape(bg, e.s, ShapeIn{Slug: "quiet-mode", Pitch: full(200_000), Person: "ana"}); err != nil {
-		t.Fatal(err)
-	}
-	var got BetDetail
-	ev := e.oneEvent("bet.started", func() (err error) {
-		got, err = StartBet(bg, e.s, BetIn{Slug: "quiet-mode", Person: "bo"})
+	var got PursuitDetail
+	ev := e.oneEvent("pursuit.started", func() (err error) {
+		got, err = StartPursuit(bg, e.s, PursueIn{Slug: "quiet-mode", Appetite: 200_000, Signal: sig(), Person: "bo"})
 		return err
 	})
 	now := e.c.Now()
 	if got.Slug != "quiet-mode" || got.Idea != "quiet-mode" || got.Appetite != 200_000 || got.State != "active" || got.Person != "bo" ||
-		!got.CreatedAt.Equal(now) || !got.StartedAt.Equal(now) || !got.EndedAt.IsZero() || got.Pitch == nil || got.Pitch.Pitch != full(200_000) {
-		t.Errorf("bet = %+v pitch %+v", got.BetFacts, got.Pitch)
+		!got.CreatedAt.Equal(now) || !got.StartedAt.Equal(now) || !got.EndedAt.IsZero() || got.Signal == nil || *got.Signal != sig() {
+		t.Errorf("pursuit = %+v signal %+v", got.PursuitFacts, got.Signal)
 	}
 	d := data(t, ev)
-	if ev.Subject != "bet" || d["pitch"] != true || d["appetite"] != float64(200_000) ||
-		d["rabbit_holes"] != "Terminal detection on Windows." || d["no_gos"] != "No new settings file." {
+	s, _ := d["signal"].(map[string]any)
+	if ev.Subject != "pursuit" || d["appetite"] != float64(200_000) || s["claim"] != "People get fewer pings." || s["window"] != "2026-12-15" ||
+		s["for"] != "pings per person fall" || s["against"] != "pings stay the same" || s["resolver"] != "ana" {
 		t.Errorf("event = %+v %s", ev, ev.Data)
 	}
 }
 
-func TestStartBetAppetiteGivenWinsAndNoPitch(t *testing.T) {
+func TestStartPursuitWithNoAppetite(t *testing.T) {
 	e := newEnv(t)
 	e.add("Quiet mode", "")
-	e.add("Loud mode", "")
-	if _, err := Shape(bg, e.s, ShapeIn{Slug: "quiet-mode", Pitch: full(200_000), Person: "ana"}); err != nil {
-		t.Fatal(err)
-	}
-	got, err := StartBet(bg, e.s, BetIn{Slug: "quiet-mode", Appetite: 50_000, Person: "ana"})
-	if err != nil || got.Appetite != 50_000 {
-		t.Fatalf("bet = %+v, %v", got, err)
-	}
-	var bare BetDetail
-	ev := e.oneEvent("bet.started", func() (err error) {
-		bare, err = StartBet(bg, e.s, BetIn{Slug: "loud-mode", Appetite: 10_000, Person: "ana"})
+	var got PursuitDetail
+	ev := e.oneEvent("pursuit.started", func() (err error) {
+		got, err = StartPursuit(bg, e.s, PursueIn{Slug: "quiet-mode", Signal: sig(), Person: "ana"})
 		return err
 	})
-	if bare.Pitch != nil || bare.Appetite != 10_000 || data(t, ev)["pitch"] != false {
-		t.Errorf("bet with no pitch = %+v, event %s", bare, ev.Data)
+	if got.Appetite != 0 || got.State != "active" {
+		t.Errorf("pursuit = %+v", got.PursuitFacts)
 	}
-}
-
-func TestStartBetNoAppetite(t *testing.T) {
-	e := newEnv(t)
-	e.add("Quiet mode", "")
-	e.refused(ErrNoAppetite, func() error { _, err := StartBet(bg, e.s, BetIn{Slug: "quiet-mode", Person: "ana"}); return err })
-	e.refused(ErrNoAppetite, func() error {
-		_, err := StartBet(bg, e.s, BetIn{Slug: "quiet-mode", Appetite: -5, Person: "ana"})
+	if d := data(t, ev); d["appetite"] != nil {
+		t.Errorf("event appetite = %v, want null", d["appetite"])
+	}
+	e.refused(ErrBadAppetite, func() error {
+		_, err := StartPursuit(bg, e.s, PursueIn{Slug: "quiet-mode", Appetite: -5, Signal: sig(), Person: "ana"})
 		return err
 	})
 }
 
-func TestStartBetSecondActiveRefused(t *testing.T) {
+func TestStartPursuitNeedsTheWholeSignal(t *testing.T) {
 	e := newEnv(t)
 	e.add("Quiet mode", "")
-	if _, err := StartBet(bg, e.s, BetIn{Slug: "quiet-mode", Appetite: 1000, Person: "ana"}); err != nil {
-		t.Fatal(err)
+	half := sig()
+	half.Against, half.Resolver, half.Window = " ", "", "2026-11-01"
+	err := e.refused(ErrSignal, func() error {
+		_, err := StartPursuit(bg, e.s, PursueIn{Slug: "quiet-mode", Appetite: 1000, Signal: half, Person: "ana"})
+		return err
+	})
+	for _, want := range []string{"the signal has problems: ", `empty "Against:" in Direction`, "window 2026-11-01 is before today", `empty part "Resolver"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q lacks %q", err, want)
+		}
 	}
-	err := e.refused(ErrActiveBet, func() error {
-		_, err := StartBet(bg, e.s, BetIn{Slug: "quiet-mode", Appetite: 1000, Person: "ana"})
+	if strings.Contains(err.Error(), "\n") {
+		t.Errorf("message is not one line: %q", err)
+	}
+}
+
+func TestStartPursuitSecondActiveRefused(t *testing.T) {
+	e := newEnv(t)
+	e.add("Quiet mode", "")
+	e.pursue("quiet-mode", 1000)
+	err := e.refused(ErrActivePursuit, func() error {
+		_, err := StartPursuit(bg, e.s, PursueIn{Slug: "quiet-mode", Appetite: 1000, Signal: sig(), Person: "ana"})
 		return err
 	})
 	if !strings.Contains(err.Error(), `"quiet-mode"`) {
-		t.Errorf("message should name the bet: %v", err)
+		t.Errorf("message should name the pursuit: %v", err)
 	}
-	// Once stopped, the idea can be bet on again, under a numbered slug.
-	if _, err := StopBet(bg, e.s, StopIn{Slug: "quiet-mode", Person: "ana"}); err != nil {
+	// Once stopped, the idea can be pursued again, under a numbered slug.
+	if _, err := StopPursuit(bg, e.s, StopIn{Slug: "quiet-mode", Person: "ana"}); err != nil {
 		t.Fatal(err)
 	}
-	again, err := StartBet(bg, e.s, BetIn{Slug: "quiet-mode", Appetite: 1000, Person: "ana"})
-	if err != nil || again.Slug != "quiet-mode-2" {
-		t.Fatalf("second bet = %+v, %v", again, err)
+	if again := e.pursue("quiet-mode", 1000); again.Slug != "quiet-mode-2" {
+		t.Fatalf("second pursuit = %+v", again)
 	}
 }
 
-func TestStartBetUnknownIdea(t *testing.T) {
+func TestStartPursuitUnknownIdea(t *testing.T) {
 	e := newEnv(t)
-	e.refused(ErrUnknownIdea, func() error { _, err := StartBet(bg, e.s, BetIn{Slug: "nope", Appetite: 1, Person: "ana"}); return err })
-	e.refused(ErrNoPerson, func() error { _, err := StartBet(bg, e.s, BetIn{Slug: "nope", Appetite: 1}); return err })
+	e.refused(ErrUnknownIdea, func() error {
+		_, err := StartPursuit(bg, e.s, PursueIn{Slug: "nope", Appetite: 1, Signal: sig(), Person: "ana"})
+		return err
+	})
+	e.refused(ErrNoPerson, func() error {
+		_, err := StartPursuit(bg, e.s, PursueIn{Slug: "nope", Appetite: 1, Signal: sig()})
+		return err
+	})
 }
 
-func TestStopBet(t *testing.T) {
+func TestStopPursuit(t *testing.T) {
 	e := newEnv(t)
 	e.add("Quiet mode", "")
 	e.add("Loud mode", "")
-	for _, slug := range []string{"quiet-mode", "loud-mode"} {
-		if _, err := StartBet(bg, e.s, BetIn{Slug: slug, Appetite: 1000, Person: "ana"}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	var got BetDetail
-	ev := e.oneEvent("bet.stopped", func() (err error) {
-		got, err = StopBet(bg, e.s, StopIn{Slug: "quiet-mode", Reason: " out of time ", Person: "bo"})
+	e.pursue("quiet-mode", 1000)
+	e.pursue("loud-mode", 1000)
+	var got PursuitDetail
+	ev := e.oneEvent("pursuit.stopped", func() (err error) {
+		got, err = StopPursuit(bg, e.s, StopIn{Slug: "quiet-mode", Reason: " out of time ", Person: "bo"})
 		return err
 	})
 	if got.State != "stopped" || got.StopReason != "out of time" || !got.EndedAt.Equal(e.c.Now()) {
-		t.Errorf("bet = %+v", got.BetFacts)
+		t.Errorf("pursuit = %+v", got.PursuitFacts)
 	}
-	if d := data(t, ev); ev.Subject != "bet" || ev.Person != "bo" || d["slug"] != "quiet-mode" || d["reason"] != "out of time" {
+	if d := data(t, ev); ev.Subject != "pursuit" || ev.Person != "bo" || d["slug"] != "quiet-mode" || d["reason"] != "out of time" {
 		t.Errorf("event = %+v %s", ev, ev.Data)
 	}
-	got, err := StopBet(bg, e.s, StopIn{Slug: "loud-mode", Person: "bo"})
+	got, err := StopPursuit(bg, e.s, StopIn{Slug: "loud-mode", Person: "bo"})
 	if err != nil || got.StopReason != "stopped by bo" {
 		t.Errorf("default reason = %q, %v", got.StopReason, err)
 	}
 }
 
-func TestStopBetNotActiveUnknown(t *testing.T) {
+func TestStopPursuitNotActiveUnknown(t *testing.T) {
 	e := newEnv(t)
 	e.add("Quiet mode", "")
-	if _, err := StartBet(bg, e.s, BetIn{Slug: "quiet-mode", Appetite: 1000, Person: "ana"}); err != nil {
+	e.pursue("quiet-mode", 1000)
+	if _, err := StopPursuit(bg, e.s, StopIn{Slug: "quiet-mode", Person: "ana"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := StopBet(bg, e.s, StopIn{Slug: "quiet-mode", Person: "ana"}); err != nil {
-		t.Fatal(err)
-	}
-	err := e.refused(ErrNotActive, func() error { _, err := StopBet(bg, e.s, StopIn{Slug: "quiet-mode", Person: "ana"}); return err })
+	err := e.refused(ErrNotActive, func() error { _, err := StopPursuit(bg, e.s, StopIn{Slug: "quiet-mode", Person: "ana"}); return err })
 	if !strings.Contains(err.Error(), "stopped") {
 		t.Errorf("message should say its state: %v", err)
 	}
-	err = e.refused(ErrUnknownBet, func() error { _, err := StopBet(bg, e.s, StopIn{Slug: "nope", Person: "ana"}); return err })
+	err = e.refused(ErrUnknownPursuit, func() error { _, err := StopPursuit(bg, e.s, StopIn{Slug: "nope", Person: "ana"}); return err })
 	if !strings.Contains(err.Error(), `"nope"`) {
 		t.Errorf("message should name the slug: %v", err)
 	}
-	e.refused(ErrNoPerson, func() error { _, err := StopBet(bg, e.s, StopIn{Slug: "quiet-mode"}); return err })
+	e.refused(ErrNoPerson, func() error { _, err := StopPursuit(bg, e.s, StopIn{Slug: "quiet-mode"}); return err })
 }
 
 func TestReadNewestFirst(t *testing.T) {
@@ -428,15 +396,8 @@ func TestReadNewestFirst(t *testing.T) {
 	for _, text := range []string{"First", "Second", "Third"} {
 		e.add(text, "")
 	}
-	if _, err := Shape(bg, e.s, ShapeIn{Slug: "first", Pitch: full(1000), Person: "ana"}); err != nil {
-		t.Fatal(err)
-	}
-	for _, slug := range []string{"first", "third"} {
-		e.c.tick()
-		if _, err := StartBet(bg, e.s, BetIn{Slug: slug, Appetite: 2000, Person: "ana"}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	e.pursue("first", 2000)
+	e.pursue("third", 0)
 	before := e.counts()
 	ideas, err := Ideas(bg, e.s)
 	if err != nil {
@@ -449,26 +410,38 @@ func TestReadNewestFirst(t *testing.T) {
 	if strings.Join(slugs, " ") != "third second first" {
 		t.Errorf("ideas = %v", slugs)
 	}
-	if f := ideas[2]; f.Pitches != 1 || f.Bet != "first" || f.BetState != "active" || ideas[1].Bet != "" {
+	if f := ideas[2]; f.Pursuit != "first" || f.PursuitState != "active" || ideas[1].Pursuit != "" {
 		t.Errorf("facts = %+v", ideas)
 	}
-	bets, err := Bets(bg, e.s)
-	if err != nil || len(bets) != 2 || bets[0].Slug != "third" || bets[1].Slug != "first" || bets[1].IdeaText != "First" {
-		t.Errorf("bets = %+v, %v", bets, err)
+	all, err := Pursuits(bg, e.s)
+	if err != nil || len(all) != 2 || all[0].Slug != "third" || all[0].Appetite != 0 || all[1].Slug != "first" || all[1].IdeaText != "First" {
+		t.Errorf("pursuits = %+v, %v", all, err)
 	}
 	d, err := Idea(bg, e.s, "first")
-	if err != nil || d.Pitch == nil || len(d.Bets) != 1 || d.Bets[0].Slug != "first" {
+	if err != nil || len(d.Pursuits) != 1 || d.Pursuits[0].Slug != "first" {
 		t.Errorf("idea = %+v, %v", d, err)
 	}
-	if d, err := Idea(bg, e.s, "second"); err != nil || d.Pitch != nil || len(d.Bets) != 0 {
-		t.Errorf("unshaped idea = %+v, %v", d, err)
+	if d, err := Idea(bg, e.s, "second"); err != nil || len(d.Pursuits) != 0 {
+		t.Errorf("idea never pursued = %+v, %v", d, err)
 	}
-	b, err := Bet(bg, e.s, "third")
-	if err != nil || b.Pitch != nil || b.Idea != "third" || b.Appetite != 2000 || b.Spent != 0 {
-		t.Errorf("bet = %+v, %v", b, err)
+	p, err := Pursuit(bg, e.s, "first")
+	if err != nil || p.Signal == nil || p.Idea != "first" || p.Appetite != 2000 || p.Spent != 0 {
+		t.Errorf("pursuit = %+v, %v", p, err)
 	}
 	if after := e.counts(); after != before {
 		t.Errorf("reads wrote: %s, then %s", before, after)
+	}
+}
+
+func TestPursuitFromBeforeSignalsHasNone(t *testing.T) {
+	e := newEnv(t)
+	e.add("Quiet mode", "")
+	if _, err := e.st.DB().Exec(`INSERT INTO pursuits (slug, idea_id, person, appetite_tokens, created_at) VALUES ('old', 1, 'ana', 500, '2026-11-01T10:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Pursuit(bg, e.s, "old")
+	if err != nil || p.Signal != nil || p.Appetite != 500 {
+		t.Errorf("pursuit = %+v signal %v, %v; want no signal", p.PursuitFacts, p.Signal, err)
 	}
 }
 
@@ -477,9 +450,9 @@ func TestReadEmptyAndUnknown(t *testing.T) {
 	if ideas, err := Ideas(bg, e.s); err != nil || ideas == nil || len(ideas) != 0 {
 		t.Errorf("ideas = %#v, %v", ideas, err)
 	}
-	if bets, err := Bets(bg, e.s); err != nil || bets == nil || len(bets) != 0 {
-		t.Errorf("bets = %#v, %v", bets, err)
+	if all, err := Pursuits(bg, e.s); err != nil || all == nil || len(all) != 0 {
+		t.Errorf("pursuits = %#v, %v", all, err)
 	}
 	e.refused(ErrUnknownIdea, func() error { _, err := Idea(bg, e.s, "nope"); return err })
-	e.refused(ErrUnknownBet, func() error { _, err := Bet(bg, e.s, "nope"); return err })
+	e.refused(ErrUnknownPursuit, func() error { _, err := Pursuit(bg, e.s, "nope"); return err })
 }

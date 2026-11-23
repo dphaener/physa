@@ -10,7 +10,7 @@
 - [The phone web holds one person's views](#the-phone-web-holds-one-persons-views)
 - [Needs you shows runs as they really are](#needs-you-shows-runs-as-they-really-are)
 - [A capability's page explains it](#a-capabilitys-page-explains-it)
-- [An idea's page shows its bet and its strength](#an-ideas-page-shows-its-bet-and-its-strength)
+- [An idea's page shows its pursuit and its strength](#an-ideas-page-shows-its-pursuit-and-its-strength)
 - [Watching says why a session is quiet](#watching-says-why-a-session-is-quiet)
 - [The look lives in the core](#the-look-lives-in-the-core)
 
@@ -53,22 +53,22 @@ Because: "what is growing, what is withering?" is a question about time, and it 
 
 ### The phone web holds one person's views
 `phone-web-scope` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/architecture/06-views-and-the-network.md
-The core's phone web holds Needs you, the network, a capability's page, an idea's page with its bet's progress, and watching a live session, each designed phone-first. Views that need a team's data wait for the hosted layer.
+The core's phone web holds Needs you, the network, a capability's page, an idea's page with its pursuit's progress, and watching a live session, each designed phone-first. Views that need a team's data wait for the hosted layer.
 Because: the core is everything one developer needs, and the phone is where they keep work moving.
 
 ### Needs you shows runs as they really are
 `needs-you-runs` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/architecture/06-views-and-the-network.md
 Rows are ordered most urgent first, from guardrail trips to decay reviews. A run's progress always shows its phase, what is running, time since its last activity and tokens against its appetite. Calls are checked one by one, apart from decisions. Running now sits beside Needs you and never notifies.
-Because: real bets run for up to an hour or more and end with calls a person should check; a spinner hides both, and waiting must never look like stalled.
+Because: real pursuits run for up to an hour or more and end with calls a person should check; a spinner hides both, and waiting must never look like stalled.
 
 ### A capability's page explains it
 `capability-page` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/architecture/06-views-and-the-network.md
 A capability's page leads with its promise, then what needs the person there, its Strands and ideas, its rules, decisions and questions, and its anchored history. Rejected options fold away; lessons among them carry the amber knot.
 Because: it answers "why is it like this?" in the map's own words, and never hides what is waiting.
 
-### An idea's page shows its bet and its strength
+### An idea's page shows its pursuit and its strength
 `idea-page` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/architecture/06-views-and-the-network.md
-An idea's page shows its bet's progress, changes and review rounds, its pitch, and every piece of evidence behind its strength. A withering idea's lesson is drafted there and editable before it is accepted.
+An idea's page shows its pursuit's progress, changes and review rounds, its signal, and every piece of evidence behind its strength. A withering idea's lesson is drafted there and editable before it is accepted.
 Because: strength must always be explainable, and a lesson becomes a decision the person should own the words of.
 
 ### Watching says why a session is quiet

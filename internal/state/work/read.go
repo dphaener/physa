@@ -5,40 +5,31 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/dphaener/physa/internal/pitch"
+	"github.com/dphaener/physa/internal/signal"
 	"github.com/dphaener/physa/internal/state"
 )
 
 // Reads run as commands that write nothing: one consistent view, taken
 // between two changes, with no event (a read changes no row).
 
-// IdeaFacts is an idea and the facts that say where it stands. Bet and
-// BetState are its latest bet's, empty when it has none.
+// IdeaFacts is an idea and the facts that say where it stands. Pursuit and
+// PursuitState are its latest pursuit's, empty when it has none.
 type IdeaFacts struct {
-	Slug, Text, Person string
-	CreatedAt          time.Time
-	Pitches            int
-	Bet, BetState      string
+	Slug, Text, Person    string
+	CreatedAt             time.Time
+	Pursuit, PursuitState string
 }
 
-// Shaped is a stored pitch: its parts, who shaped it and when.
-type Shaped struct {
-	pitch.Pitch
-	Person string
-	At     time.Time
-}
-
-// IdeaDetail is an idea with its latest pitch (nil when never shaped) and
-// its bets, newest first.
+// IdeaDetail is an idea with its pursuits, newest first.
 type IdeaDetail struct {
 	IdeaFacts
-	Pitch *Shaped
-	Bets  []BetFacts
+	Pursuits []PursuitFacts
 }
 
-// BetFacts is a bet: its idea, appetite and spend in tokens, state and
-// times. StopReason, StartedAt and EndedAt are empty or zero when unset.
-type BetFacts struct {
+// PursuitFacts is a pursuit: its idea, appetite and spend in tokens, state
+// and times. Appetite is 0 when the pursuit has none. StopReason, StartedAt
+// and EndedAt are empty or zero when unset.
+type PursuitFacts struct {
 	Slug, Idea, IdeaText, Person string
 	Appetite, Spent              int64
 	State, StopReason            string
@@ -46,10 +37,11 @@ type BetFacts struct {
 	EndedAt                      time.Time
 }
 
-// BetDetail is a bet with the pitch it was made on (nil when none).
-type BetDetail struct {
-	BetFacts
-	Pitch *Shaped
+// PursuitDetail is a pursuit with its signal, nil for a pursuit started
+// before signals were recorded.
+type PursuitDetail struct {
+	PursuitFacts
+	Signal *signal.Signal
 }
 
 // Ideas returns every idea, newest first.
@@ -62,8 +54,8 @@ func Ideas(ctx context.Context, s Submitter) ([]IdeaFacts, error) {
 	return out, err
 }
 
-// Idea returns one idea with its latest pitch and its bets, or refuses
-// naming an unknown slug.
+// Idea returns one idea with its pursuits, or refuses naming an unknown
+// slug.
 func Idea(ctx context.Context, s Submitter, slug string) (IdeaDetail, error) {
 	var out IdeaDetail
 	err := s.Submit(ctx, func(tx *state.Tx) (err error) {
@@ -73,21 +65,22 @@ func Idea(ctx context.Context, s Submitter, slug string) (IdeaDetail, error) {
 	return out, err
 }
 
-// Bets returns every bet, newest first.
-func Bets(ctx context.Context, s Submitter) ([]BetFacts, error) {
-	var out []BetFacts
+// Pursuits returns every pursuit, newest first.
+func Pursuits(ctx context.Context, s Submitter) ([]PursuitFacts, error) {
+	var out []PursuitFacts
 	err := s.Submit(ctx, func(tx *state.Tx) (err error) {
-		out, err = betFacts(tx, "")
+		out, err = pursuitFacts(tx, "")
 		return err
 	})
 	return out, err
 }
 
-// Bet returns one bet with its pitch, or refuses naming an unknown slug.
-func Bet(ctx context.Context, s Submitter, slug string) (BetDetail, error) {
-	var out BetDetail
+// Pursuit returns one pursuit with its signal, or refuses naming an unknown
+// slug.
+func Pursuit(ctx context.Context, s Submitter, slug string) (PursuitDetail, error) {
+	var out PursuitDetail
 	err := s.Submit(ctx, func(tx *state.Tx) (err error) {
-		out, err = betDetail(tx, slug)
+		out, err = pursuitDetail(tx, slug)
 		return err
 	})
 	return out, err
@@ -95,9 +88,8 @@ func Bet(ctx context.Context, s Submitter, slug string) (BetDetail, error) {
 
 func ideaFacts(tx *state.Tx, where string, args ...any) ([]IdeaFacts, error) {
 	rows, err := tx.Query(`SELECT i.slug, i.text, i.person, i.created_at,
-		(SELECT count(*) FROM pitches p WHERE p.idea_id = i.id),
-		coalesce((SELECT b.slug FROM bets b WHERE b.idea_id = i.id ORDER BY b.id DESC LIMIT 1), ''),
-		coalesce((SELECT b.state FROM bets b WHERE b.idea_id = i.id ORDER BY b.id DESC LIMIT 1), '')
+		coalesce((SELECT p.slug FROM pursuits p WHERE p.idea_id = i.id ORDER BY p.id DESC LIMIT 1), ''),
+		coalesce((SELECT p.state FROM pursuits p WHERE p.idea_id = i.id ORDER BY p.id DESC LIMIT 1), '')
 		FROM ideas i `+where+` ORDER BY i.id DESC`, args...)
 	if err != nil {
 		return nil, err
@@ -107,7 +99,7 @@ func ideaFacts(tx *state.Tx, where string, args ...any) ([]IdeaFacts, error) {
 	for rows.Next() {
 		var f IdeaFacts
 		var at string
-		if err := rows.Scan(&f.Slug, &f.Text, &f.Person, &at, &f.Pitches, &f.Bet, &f.BetState); err != nil {
+		if err := rows.Scan(&f.Slug, &f.Text, &f.Person, &at, &f.Pursuit, &f.PursuitState); err != nil {
 			return nil, err
 		}
 		if f.CreatedAt, err = parse(at); err != nil {
@@ -126,24 +118,21 @@ func ideaDetail(tx *state.Tx, slug string) (IdeaDetail, error) {
 		return IdeaDetail{}, refuse(ErrUnknownIdea, "no idea has the slug %q", slug)
 	}
 	d := IdeaDetail{IdeaFacts: facts[0]}
-	if d.Pitch, err = shaped(tx, `idea_id = (SELECT id FROM ideas WHERE slug = ?) ORDER BY id DESC LIMIT 1`, slug); err != nil {
-		return IdeaDetail{}, err
-	}
-	d.Bets, err = betFacts(tx, `WHERE i.slug = ?`, slug)
+	d.Pursuits, err = pursuitFacts(tx, `WHERE i.slug = ?`, slug)
 	return d, err
 }
 
-func betFacts(tx *state.Tx, where string, args ...any) ([]BetFacts, error) {
-	rows, err := tx.Query(`SELECT b.slug, i.slug, i.text, b.person, b.appetite_tokens, b.spent_tokens, b.state,
-		coalesce(b.stop_reason, ''), b.created_at, coalesce(b.started_at, ''), coalesce(b.ended_at, '')
-		FROM bets b JOIN ideas i ON i.id = b.idea_id `+where+` ORDER BY b.id DESC`, args...)
+func pursuitFacts(tx *state.Tx, where string, args ...any) ([]PursuitFacts, error) {
+	rows, err := tx.Query(`SELECT p.slug, i.slug, i.text, p.person, coalesce(p.appetite_tokens, 0), p.spent_tokens, p.state,
+		coalesce(p.stop_reason, ''), p.created_at, coalesce(p.started_at, ''), coalesce(p.ended_at, '')
+		FROM pursuits p JOIN ideas i ON i.id = p.idea_id `+where+` ORDER BY p.id DESC`, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []BetFacts{}
+	out := []PursuitFacts{}
 	for rows.Next() {
-		var f BetFacts
+		var f PursuitFacts
 		var created, started, ended string
 		if err := rows.Scan(&f.Slug, &f.Idea, &f.IdeaText, &f.Person, &f.Appetite, &f.Spent, &f.State,
 			&f.StopReason, &created, &started, &ended); err != nil {
@@ -162,34 +151,23 @@ func betFacts(tx *state.Tx, where string, args ...any) ([]BetFacts, error) {
 	return out, rows.Err()
 }
 
-func betDetail(tx *state.Tx, slug string) (BetDetail, error) {
-	facts, err := betFacts(tx, `WHERE b.slug = ?`, slug)
+func pursuitDetail(tx *state.Tx, slug string) (PursuitDetail, error) {
+	facts, err := pursuitFacts(tx, `WHERE p.slug = ?`, slug)
 	if err != nil {
-		return BetDetail{}, err
+		return PursuitDetail{}, err
 	} else if len(facts) == 0 {
-		return BetDetail{}, refuse(ErrUnknownBet, "no bet has the slug %q", slug)
+		return PursuitDetail{}, refuse(ErrUnknownPursuit, "no pursuit has the slug %q", slug)
 	}
-	d := BetDetail{BetFacts: facts[0]}
-	d.Pitch, err = shaped(tx, `id = (SELECT pitch_id FROM bets WHERE slug = ?)`, slug)
-	return d, err
-}
-
-// shaped reads the one pitch the condition picks, or nil when it picks none.
-func shaped(tx *state.Tx, cond string, args ...any) (*Shaped, error) {
-	var p Shaped
-	var at string
-	err := tx.QueryRow(`SELECT problem, appetite_tokens, solution, scope, signal, rabbit_holes, no_gos, person, created_at
-		FROM pitches WHERE `+cond, args...).Scan(&p.Problem, &p.Appetite, &p.Solution, &p.Scope, &p.Signal,
-		&p.RabbitHoles, &p.NoGos, &p.Person, &at)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	} else if err != nil {
-		return nil, err
+	d := PursuitDetail{PursuitFacts: facts[0]}
+	var claim, forText, against, window, resolver sql.NullString
+	if err := tx.QueryRow(`SELECT signal_claim, signal_for, signal_against, signal_window, signal_resolver FROM pursuits WHERE slug = ?`, slug).
+		Scan(&claim, &forText, &against, &window, &resolver); err != nil {
+		return PursuitDetail{}, err
 	}
-	if p.At, err = parse(at); err != nil {
-		return nil, err
+	if claim.Valid {
+		d.Signal = &signal.Signal{Claim: claim.String, For: forText.String, Against: against.String, Window: window.String, Resolver: resolver.String}
 	}
-	return &p, nil
+	return d, nil
 }
 
 // parse reads a stored time; an empty one is the zero time.

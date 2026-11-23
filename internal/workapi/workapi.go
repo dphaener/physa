@@ -1,4 +1,4 @@
-// Package workapi is the engine's API for ideas, pitches, bets and evidence: thirteen methods, typed once, each change one command with its event.
+// Package workapi is the engine's API for ideas, pursuits and evidence: twelve methods, typed once, each change one command with its event.
 package workapi
 
 import (
@@ -8,27 +8,28 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/api"
-	"github.com/dphaener/physa/internal/pitch"
 	"github.com/dphaener/physa/internal/repos"
+	"github.com/dphaener/physa/internal/signal"
 	"github.com/dphaener/physa/internal/state"
 	stateevidence "github.com/dphaener/physa/internal/state/evidence"
 	"github.com/dphaener/physa/internal/state/work"
+	"github.com/dphaener/physa/internal/tokens"
 )
 
 type getter func(ctx context.Context, repo string) (*state.State, error)
 
-// PersonOnly reports whether method is one only a person may call: a bet is
-// made and stopped by people (people-bet).
-func PersonOnly(method string) bool { return method == "bet.start" || method == "bet.stop" }
+// PersonOnly reports whether method is one only a person may call: a pursuit is
+// started and stopped by people (people-pursue).
+func PersonOnly(method string) bool { return method == "pursuit.start" || method == "pursuit.stop" }
 
 // Refusal is what a command says when method is called inside agent's
 // session.
 func Refusal(method, agent string) string {
-	verb := "make"
-	if method == "bet.stop" {
+	verb := "start"
+	if method == "pursuit.stop" {
 		verb = "stop"
 	}
-	return "A person must " + verb + " this bet: physa is running inside a " + agent + " session."
+	return "A person must " + verb + " this pursuit: physa is running inside a " + agent + " session."
 }
 
 // open gets the repo's state; a repo the engine cannot serve is bad_request.
@@ -53,46 +54,45 @@ func stamp(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-func pitchOut(s *work.Shaped) *PitchOut {
-	if s == nil {
+func signalOut(sig *signal.Signal) *SignalOut {
+	if sig == nil {
 		return nil
 	}
-	return &PitchOut{s.Problem, s.Appetite, s.Solution, s.Scope, s.Signal, s.RabbitHoles, s.NoGos, s.Person, stamp(s.At)}
+	return &SignalOut{sig.Claim, sig.For, sig.Against, sig.Window, sig.Resolver}
 }
 
 func ideaOut(f work.IdeaFacts) IdeaOut {
-	return IdeaOut{Slug: f.Slug, Text: f.Text, Person: f.Person, CreatedAt: stamp(f.CreatedAt), Pitches: f.Pitches, Bet: f.Bet, BetState: f.BetState}
+	return IdeaOut{Slug: f.Slug, Text: f.Text, Person: f.Person, CreatedAt: stamp(f.CreatedAt), Pursuit: f.Pursuit, PursuitState: f.PursuitState}
 }
 
-func betOut(f work.BetFacts) BetOut {
-	return BetOut{Slug: f.Slug, Idea: f.Idea, IdeaText: f.IdeaText, Person: f.Person, Appetite: f.Appetite, Spent: f.Spent, State: f.State,
+func pursuitOut(f work.PursuitFacts) PursuitOut {
+	return PursuitOut{Slug: f.Slug, Idea: f.Idea, IdeaText: f.IdeaText, Person: f.Person, Appetite: f.Appetite, Spent: f.Spent, State: f.State,
 		StopReason: f.StopReason, CreatedAt: stamp(f.CreatedAt), StartedAt: stamp(f.StartedAt), EndedAt: stamp(f.EndedAt)}
 }
 
 func ideaDetailOut(d work.IdeaDetail) IdeaOut {
 	o := ideaOut(d.IdeaFacts)
-	o.Pitch = pitchOut(d.Pitch)
-	for _, b := range d.Bets {
-		o.Bets = append(o.Bets, betOut(b))
+	for _, b := range d.Pursuits {
+		o.Pursuits = append(o.Pursuits, pursuitOut(b))
 	}
 	return o
 }
 
-func betDetailOut(d work.BetDetail) BetOut {
-	o := betOut(d.BetFacts)
-	o.Pitch = pitchOut(d.Pitch)
+func pursuitDetailOut(d work.PursuitDetail) PursuitOut {
+	o := pursuitOut(d.PursuitFacts)
+	o.Signal = signalOut(d.Signal)
 	return o
 }
 
-// Methods returns the thirteen methods, reading and changing the state get
+// Methods returns the twelve methods, reading and changing the state get
 // opens for the repo each call names.
 func Methods(get func(ctx context.Context, repo string) (*state.State, error)) []api.Method {
 	g := getter(get)
 	const (
-		repo      = `"repo":"/home/me/code/shop"`
-		ideaJSON  = `{"slug":"try-a-quiet-mode","text":"Try a quiet mode","person":"ann","created_at":"2026-11-22T10:00:00Z","pitches":0}`
-		betJSON   = `{"slug":"try-a-quiet-mode","idea":"try-a-quiet-mode","idea_text":"Try a quiet mode","person":"ann","appetite":200000,"spent":0,"state":"active","created_at":"2026-11-22T10:00:00Z","started_at":"2026-11-22T10:00:00Z"}`
-		slugNotes = "An unknown slug replies bad_request naming it."
+		repo        = `"repo":"/home/me/code/shop"`
+		ideaJSON    = `{"slug":"try-a-quiet-mode","text":"Try a quiet mode","person":"ann","created_at":"2026-11-22T10:00:00Z"}`
+		pursuitJSON = `{"slug":"try-a-quiet-mode","idea":"try-a-quiet-mode","idea_text":"Try a quiet mode","person":"ann","appetite":200000,"spent":0,"state":"active","created_at":"2026-11-22T10:00:00Z","started_at":"2026-11-22T10:00:00Z"}`
+		slugNotes   = "An unknown slug replies bad_request naming it."
 	)
 	return append(append(planMethods(g), evidenceMethods(g)...), []api.Method{
 		api.Define("idea.add", "Adds an idea, owned by the person who adds it.",
@@ -122,8 +122,8 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 				}
 				return out, refused(err)
 			}),
-		api.Define("idea.show", "Shows an idea with its latest pitch and its bets.",
-			[]string{slugNotes, "pitch is left out when the idea was never shaped."},
+		api.Define("idea.show", "Shows an idea with its pursuits.",
+			[]string{slugNotes, "pursuits is left out when the idea was never pursued."},
 			`{`+repo+`,"slug":"try-a-quiet-mode"}`, ideaJSON,
 			func(ctx context.Context, _ *api.Conn, in SlugIn) (IdeaOut, error) {
 				st, err := g.open(ctx, in.Repo)
@@ -133,84 +133,69 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 				d, err := work.Idea(ctx, st, in.Slug)
 				return ideaDetailOut(d), refused(err)
 			}),
-		api.Define("idea.shape", "Shapes an idea into a pitch of seven parts, or shapes it again.",
-			[]string{"The markdown is checked: every part must be there and filled, and the appetite must parse; a pitch with problems replies bad_request listing each one.",
-				"Shaping again adds a pitch; the earlier ones stay as events.", slugNotes},
-			`{`+repo+`,"slug":"try-a-quiet-mode","markdown":"## Problem\n...\n## Appetite\n200k\n...","person":"ann"}`, ideaJSON,
-			func(ctx context.Context, _ *api.Conn, in ShapeIn) (IdeaOut, error) {
-				p, err := pitch.Parse(in.Markdown)
-				if err != nil {
-					return IdeaOut{}, &api.Error{Code: api.CodeBadRequest, Message: err.Error()}
-				}
-				st, err := g.open(ctx, in.Repo)
-				if err != nil {
-					return IdeaOut{}, err
-				}
-				d, err := work.Shape(ctx, st, work.ShapeIn{Slug: in.Slug, Pitch: p, Person: in.Person})
-				return ideaDetailOut(d), refused(err)
-			}),
-		api.Define("bet.start", "Makes a bet on an idea, with an appetite in tokens.",
-			[]string{"The appetite is the one given or the latest pitch's; with neither the call replies bad_request.",
-				"An idea with an active bet replies bad_request. Only people bet: the CLI refuses inside an agent's session.",
-				"The pitch's rabbit holes and no-gos are recorded for learning.", slugNotes},
-			`{`+repo+`,"slug":"try-a-quiet-mode","appetite":"200k","person":"ann"}`, betJSON,
-			func(ctx context.Context, _ *api.Conn, in StartIn) (BetOut, error) {
-				var tokens int64
+		api.Define("pursuit.start", "Starts a pursuit of an idea against a signal, with an appetite in tokens or none.",
+			[]string{"The signal is required, every part of it: claim, for, against, window and resolver. A window that is not a date (YYYY-MM-DD) or is before today, or any part left empty, replies bad_request listing every problem on one line.",
+				"The appetite is optional. With none there is no circuit breaker; spend is still counted.",
+				"An idea with an active pursuit replies bad_request. Only people pursue: the CLI refuses inside an agent's session.", slugNotes},
+			`{`+repo+`,"slug":"try-a-quiet-mode","appetite":"200k","signal":{"claim":"People turn on quiet mode in their first week.","for":"most new users turn it on","against":"few find it","window":"2026-12-15","resolver":"ann"},"person":"ann"}`, pursuitJSON,
+			func(ctx context.Context, _ *api.Conn, in StartIn) (PursuitOut, error) {
+				var appetite int64
 				if in.Appetite != "" {
 					var err error
-					if tokens, err = pitch.ParseTokens(in.Appetite); err != nil {
-						return BetOut{}, &api.Error{Code: api.CodeBadRequest, Message: err.Error()}
+					if appetite, err = tokens.Parse(in.Appetite); err != nil {
+						return PursuitOut{}, &api.Error{Code: api.CodeBadRequest, Message: err.Error()}
 					}
 				}
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
-					return BetOut{}, err
+					return PursuitOut{}, err
 				}
-				d, err := work.StartBet(ctx, st, work.BetIn{Slug: in.Slug, Appetite: tokens, Person: in.Person})
+				sig := signal.Signal{Claim: in.Signal.Claim, For: in.Signal.For, Against: in.Signal.Against, Window: in.Signal.Window, Resolver: in.Signal.Resolver}
+				d, err := work.StartPursuit(ctx, st, work.PursueIn{Slug: in.Slug, Appetite: appetite, Signal: sig, Person: in.Person})
 				if err == nil {
 					if werr := stateevidence.Wake(ctx, st); werr != nil {
-						log.Printf("bet.start %s: waking the evidence poll: %v", in.Slug, werr)
+						log.Printf("pursuit.start %s: waking the evidence poll: %v", in.Slug, werr)
 					}
 				}
-				return betDetailOut(d), refused(err)
+				return pursuitDetailOut(d), refused(err)
 			}),
-		api.Define("bet.list", "Lists the repo's bets, newest first.",
+		api.Define("pursuit.list", "Lists the repo's pursuits, newest first.",
 			[]string{"The result is [] when there are none."},
-			`{`+repo+`}`, `[`+betJSON+`]`,
-			func(ctx context.Context, _ *api.Conn, in RepoIn) ([]BetOut, error) {
+			`{`+repo+`}`, `[`+pursuitJSON+`]`,
+			func(ctx context.Context, _ *api.Conn, in RepoIn) ([]PursuitOut, error) {
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
 					return nil, err
 				}
-				fs, err := work.Bets(ctx, st)
-				out := make([]BetOut, 0, len(fs))
+				fs, err := work.Pursuits(ctx, st)
+				out := make([]PursuitOut, 0, len(fs))
 				for _, f := range fs {
-					out = append(out, betOut(f))
+					out = append(out, pursuitOut(f))
 				}
 				return out, refused(err)
 			}),
-		api.Define("bet.show", "Shows a bet with the pitch it was made on, its progress and its Needs you items.",
-			[]string{slugNotes, "progress holds facts, never a percentage: planned, landed, in work, asks open, spent against the appetite, replans and spend per change.",
-				"It reads the default branch for the bet's Change: trailers and records what landed; the bet is done when every planned change has. A version-control error leaves progress as the store holds it."},
-			`{`+repo+`,"slug":"try-a-quiet-mode"}`, betJSON,
-			func(ctx context.Context, _ *api.Conn, in SlugIn) (BetOut, error) {
+		api.Define("pursuit.show", "Shows a pursuit with its signal, its progress and its Needs you items.",
+			[]string{slugNotes, "signal is left out for a pursuit started before signals were recorded.", "progress holds facts, never a percentage: planned, landed, in work, asks open, spent against the appetite, replans and spend per change.",
+				"It reads the default branch for the pursuit's Change: trailers and records what landed; the pursuit is done when every planned change has. A version-control error leaves progress as the store holds it."},
+			`{`+repo+`,"slug":"try-a-quiet-mode"}`, pursuitJSON,
+			func(ctx context.Context, _ *api.Conn, in SlugIn) (PursuitOut, error) {
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
-					return BetOut{}, err
+					return PursuitOut{}, err
 				}
-				o, err := showBet(ctx, st, in.Repo, in.Slug)
+				o, err := showPursuit(ctx, st, in.Repo, in.Slug)
 				return o, refused(err)
 			}),
-		api.Define("bet.stop", "Stops an active bet.",
-			[]string{"Only an active bet stops; any other replies bad_request.", slugNotes},
-			`{`+repo+`,"slug":"try-a-quiet-mode","reason":"not worth it","person":"ann"}`, betJSON,
-			func(ctx context.Context, _ *api.Conn, in StopIn) (BetOut, error) {
+		api.Define("pursuit.stop", "Stops an active pursuit.",
+			[]string{"Only an active pursuit stops; any other replies bad_request.", slugNotes},
+			`{`+repo+`,"slug":"try-a-quiet-mode","reason":"not worth it","person":"ann"}`, pursuitJSON,
+			func(ctx context.Context, _ *api.Conn, in StopIn) (PursuitOut, error) {
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
-					return BetOut{}, err
+					return PursuitOut{}, err
 				}
-				d, err := work.StopBet(ctx, st, work.StopIn{Slug: in.Slug, Reason: in.Reason, Person: in.Person})
-				return betDetailOut(d), refused(err)
+				d, err := work.StopPursuit(ctx, st, work.StopIn{Slug: in.Slug, Reason: in.Reason, Person: in.Person})
+				return pursuitDetailOut(d), refused(err)
 			}),
 	}...)
 }

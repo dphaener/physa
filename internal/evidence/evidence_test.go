@@ -73,8 +73,8 @@ func kinds(facts []Fact) []string {
 
 func TestLandedAndReverted(t *testing.T) {
 	r, dir := newRepo(t)
-	one := commit(t, dir, "feat: One\n\nCapability: ideas\nChange: my-bet/one\n")
-	two := commit(t, dir, "feat: Two\n\nCapability: map\nChange: my-bet/two\n")
+	one := commit(t, dir, "feat: One\n\nCapability: ideas\nChange: my-pursuit/one\n")
+	two := commit(t, dir, "feat: Two\n\nCapability: map\nChange: my-pursuit/two\n")
 	run(t, dir, "revert", "--no-edit", two)
 	revert := run(t, dir, "rev-parse", "HEAD")
 
@@ -85,11 +85,11 @@ func TestLandedAndReverted(t *testing.T) {
 	if got := strings.Join(kinds(facts), ","); got != "landed,landed,landed,reverted" {
 		t.Fatalf("kinds = %s", got)
 	}
-	if f := facts[0]; f.Commit != one || f.Capability != "ideas" || f.Bet != "my-bet" || f.Change != "one" || f.Source != SourceVCS {
+	if f := facts[0]; f.Commit != one || f.Capability != "ideas" || f.Pursuit != "my-pursuit" || f.Change != "one" || f.Source != SourceVCS {
 		t.Fatalf("first = %+v", f)
 	}
 	rv := facts[3]
-	if rv.Commit != two || rv.ByCommit != revert || rv.Capability != "map" || rv.Bet != "my-bet" || rv.Change != "two" {
+	if rv.Commit != two || rv.ByCommit != revert || rv.Capability != "map" || rv.Pursuit != "my-pursuit" || rv.Change != "two" {
 		t.Fatalf("reverted = %+v", rv)
 	}
 	if next.Commit != revert || next.Time.IsZero() {
@@ -144,7 +144,7 @@ func pr(n int, opened, merged time.Time, commit string, checks ...string) forge.
 
 func TestForgeLeadTimeAndCI(t *testing.T) {
 	r, dir := newRepo(t)
-	sha := commit(t, dir, "feat: One\n\nCapability: ideas\nChange: my-bet/one\n")
+	sha := commit(t, dir, "feat: One\n\nCapability: ideas\nChange: my-pursuit/one\n")
 	ff := &fakeForge{prs: []forge.PR{ // newest merge first
 		pr(4, now.Add(-time.Hour), now, "", "", "PENDING"),
 		pr(3, now.Add(-3*time.Hour), now.Add(-time.Hour), sha, "FAILURE", "SUCCESS"),
@@ -165,7 +165,7 @@ func TestForgeLeadTimeAndCI(t *testing.T) {
 		t.Fatalf("kinds = %s", got)
 	}
 	lead := forged[4]
-	if lead.PR != 3 || *lead.Seconds != 7200 || lead.Commit != sha || lead.Bet != "my-bet" || !lead.At.Equal(now.Add(-time.Hour)) {
+	if lead.PR != 3 || *lead.Seconds != 7200 || lead.Commit != sha || lead.Pursuit != "my-pursuit" || !lead.At.Equal(now.Add(-time.Hour)) {
 		t.Fatalf("lead = %+v", lead)
 	}
 	if !next.Forge.Equal(now) {

@@ -10,7 +10,7 @@
 - [Stalls go to Needs you](#stalls-go-to-needs-you)
 - [Appetite is tokens](#appetite-is-tokens)
 - [Rework is recorded for every change](#rework-is-recorded-for-every-change)
-- [A change names its bet's plan through a hook trailer](#a-change-names-its-bets-plan-through-a-hook-trailer)
+- [A change names its pursuit's plan through a hook trailer](#a-change-names-its-pursuits-plan-through-a-hook-trailer)
 - [The store's writers are split by table](#the-stores-writers-are-split-by-table)
 - [The local API is a WebSocket, like Rex](#the-local-api-is-a-websocket-like-rex)
 - [A person is named by their forge login](#a-person-is-named-by-their-forge-login)
@@ -55,7 +55,7 @@ Because: a fixer that never said done stalled a Rhiza run for 9 hours.
 
 ### Appetite is tokens
 `appetite-tokens` · decided by dphaener, in their words · 2026-11-19 · from docs/architecture/03-engine-and-store.md
-A bet's appetite is tokens, as reported by adapters, counted from when the bet is accepted and building starts. The person who made the bet is told at 80%; at 100% the circuit breaker stops it.
+A pursuit's appetite, when it has one, is tokens, as reported by adapters, counted from when the pursuit starts. The person who started the pursuit is told at 80%; at 100% the circuit breaker stops it.
 Because: "Time doesn't really matter as much. Agents are fast." Tokens are what is actually spent: "Call it what it is."
 Rejected:
 - Time: "time doesn't matter at all anymore".
@@ -66,10 +66,10 @@ Rejected:
 The engine credits every commit and token to the session and role that produced it, and records review rounds, fix against build tokens, and findings per check. Agents only.
 Because: much is spent after builds fixing what checks asked for, and teams need numbers to tune their harness.
 
-### A change names its bet's plan through a hook trailer
+### A change names its pursuit's plan through a hook trailer
 `change-trailer-from-hook` · decided by dphaener, choosing an option · 2026-11-22 · b124a82
-A merged change is tied to the change it fulfils in a bet's plan by a `Change:` trailer that the hook adds, alongside `Session:`.
-Because: until the engine runs the harness itself, and whenever a team runs its own harness outside the engine, a change arrives only as a merged commit, and progress on a bet depends on knowing which planned change it is.
+A merged change is tied to the change it fulfils in a pursuit's plan by a `Change:` trailer that the hook adds, alongside `Session:`.
+Because: until the engine runs the harness itself, and whenever a team runs its own harness outside the engine, a change arrives only as a merged commit, and progress on a pursuit depends on knowing which planned change it is.
 Rejected:
 - The agent writes the trailer: the hook was chosen, as it already adds `Session:` to every commit.
 - Waiting until the engine runs harnesses: leaves changes from a team's own harness unmatched.

@@ -1,4 +1,4 @@
-// Package plan reads a bet's plan: the changes a bet will land, each
+// Package plan reads a pursuit's plan: the changes a pursuit will land, each
 // anchored to one capability with its acceptance, checked before the engine
 // stores it.
 package plan
@@ -25,7 +25,7 @@ type Change struct {
 	After      []string `json:"after"`
 }
 
-// Plan is the changes a bet will land.
+// Plan is the changes a pursuit will land.
 type Plan struct {
 	Changes []Change `json:"changes"`
 }

@@ -17,7 +17,7 @@ func (e *UsageError) Error() string { return e.Msg }
 // the facts shown beside it in the picker.
 type Choice struct{ Slug, Text, Detail string }
 
-// ChooseSlug returns the slug of the kind ("idea", "bet") a command is
+// ChooseSlug returns the slug of the kind ("idea", "pursuit") a command is
 // about: the one given wins; with none given, a person at a terminal
 // chooses one from choices; anywhere else it is a UsageError listing the
 // choices, in the order given (newest first), or saying there are none.

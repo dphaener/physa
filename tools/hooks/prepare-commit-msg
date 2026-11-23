@@ -5,8 +5,8 @@
 # log (design 07 section 4.1). A person's own commit, made outside Claude
 # Code, carries none. The agent never writes the trailer; this hook does.
 #
-# It adds "Change: <bet>/<change>" after it, naming the planned change the
-# session works on, as the store says (recorded by "physa bet work", design
+# It adds "Change: <pursuit>/<change>" after it, naming the planned change the
+# session works on, as the store says (recorded by "physa pursuit work", design
 # 03). The hook adds it, never the agent. It adds nothing when physa is not on
 # PATH or names no change, and it never starts the engine.
 #
@@ -43,11 +43,11 @@ if ! sed '/^# -\{24\} >8 -\{24\}$/,$d' "$1" | grep -v -e '^#' -e '^[[:space:]]*$
 	exit 0
 fi
 
-# The change comes from "physa bet work --current", which reads the store
+# The change comes from "physa pursuit work --current", which reads the store
 # read-only. Any failure, or any output that is not <slug>/<slug>, means none.
 change=
 if command -v physa >/dev/null 2>&1; then
-	change=$(physa bet work --current 2>/dev/null </dev/null) || change=
+	change=$(physa pursuit work --current 2>/dev/null </dev/null) || change=
 	change=$(printf '%s\n' "$change" | sed -n 1p)
 	case $change in
 	*[!a-z0-9/-]* | */*/* | '' | /* | */) change= ;;

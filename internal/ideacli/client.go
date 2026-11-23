@@ -24,7 +24,7 @@ import (
 // commands. Starting the engine is bounded by enginestart itself.
 const callTimeout = 5 * time.Second
 
-// Env is what the idea and bet commands share: how they reach the engine,
+// Env is what the idea and pursuit commands share: how they reach the engine,
 // who the person is, and how they ask a person at a terminal. New fills it
 // with the real ones; tests replace fields.
 type Env struct {
@@ -40,11 +40,10 @@ type Env struct {
 	// IsInteractive says whether a person is at the terminal; nil asks
 	// output.Interactive about stdin and stdout.
 	IsInteractive func() bool
-	// Pick, Confirm and Ask ask the person at the terminal.
+	// Pick and Confirm ask the person at the terminal.
 	Pick    func(title string, items []picker.Item) (string, error)
 	Confirm func(question string) (bool, error)
-	Ask     func(title, placeholder string, validate func(string) error) (string, error)
-	// Stdin is what --from - reads.
+	// Stdin is what --from - and --signal-from - read.
 	Stdin io.Reader
 	// Stdio are the editor's standard input, output and error.
 	Stdio [3]*os.File
@@ -59,15 +58,12 @@ func New(newForge func(dir string) forge.Forge) *Env {
 		Getenv:  os.Getenv,
 		Pick:    func(t string, items []picker.Item) (string, error) { return picker.Pick(os.Stdin, os.Stdout, t, items) },
 		Confirm: func(q string) (bool, error) { return picker.Confirm(os.Stdin, os.Stdout, q) },
-		Ask: func(t, p string, v func(string) error) (string, error) {
-			return picker.Ask(os.Stdin, os.Stdout, t, p, v)
-		},
-		Stdin: os.Stdin,
-		Stdio: [3]*os.File{os.Stdin, os.Stdout, os.Stderr},
+		Stdin:   os.Stdin,
+		Stdio:   [3]*os.File{os.Stdin, os.Stdout, os.Stderr},
 	}
 }
 
-// Interactive is the one decision every idea and bet command makes between
+// Interactive is the one decision every idea and pursuit command makes between
 // a person at a terminal (pickers, styles, confirms) and a pipe, CI or an
 // agent (plain text or --json, errors instead of questions).
 func (e *Env) Interactive() bool {

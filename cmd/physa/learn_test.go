@@ -493,7 +493,7 @@ func TestLearnSignalsReadSessionsByTrailer(t *testing.T) {
 	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "feat: with a session\n\nSession: "+session+"\nCapability: a")
 	gitIn(t, dir, "update-ref", "refs/remotes/origin/main", "HEAD")
 	project := regexp.MustCompile(`[^A-Za-z0-9]`).ReplaceAllString(dir, "-")
-	copyTree(t, filepath.Join("..", "..", "internal", "adapter", "claude", "testdata", "projects", "-fixture-repo"),
+	copyTree(t, filepath.Join("..", "..", "internal", "adapter", "claude", "claudelog", "testdata", "projects", "-fixture-repo"),
 		filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", project))
 	t.Chdir(dir)
 	code, out, errOut := runLearn(t, "--signals")

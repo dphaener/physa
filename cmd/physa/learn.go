@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/adapter/claude"
+	"github.com/dphaener/physa/internal/adapter/claude/claudelog"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/learn"
 	"github.com/dphaener/physa/internal/learnbet"
@@ -86,7 +86,7 @@ func draftOnly(dir string, o learnbranch.Flags, s propose.Session, stdout io.Wri
 // sessionLogs reads the logs of the sessions that worked in dir, whoever drafts.
 func sessionLogs(dir string) learn.Sessions {
 	abs, _ := filepath.Abs(dir) // fails only with no working directory, then nothing matches
-	return learnsession.New(claude.NewLogs(abs))
+	return learnsession.New(claudelog.New(abs))
 }
 
 // sliceRecords reads the slice records of the store in dir, or says why not.

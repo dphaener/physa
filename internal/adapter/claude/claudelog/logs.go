@@ -1,4 +1,8 @@
-package claude
+// Package claudelog is the Claude Code adapter's reader of session logs: it
+// finds a session's transcript under Claude Code's config directory and
+// returns what learning needs from it and its subagents, redacted, never
+// writing anything there.
+package claudelog
 
 import (
 	"bufio"
@@ -42,9 +46,9 @@ type Logs struct {
 	projects []string
 }
 
-// NewLogs reads the logs of sessions run in dir, the repo's working
+// New reads the logs of sessions run in dir, the repo's working
 // directory. Root is $CLAUDE_CONFIG_DIR, or $HOME/.claude when that is unset.
-func NewLogs(dir string) *Logs {
+func New(dir string) *Logs {
 	if abs, err := filepath.Abs(dir); err == nil {
 		dir = abs
 	}

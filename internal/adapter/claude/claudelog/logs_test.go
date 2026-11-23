@@ -1,4 +1,4 @@
-package claude
+package claudelog
 
 import (
 	"errors"
@@ -22,7 +22,7 @@ const (
 // fixtureLogs reads the testdata transcripts, never the real ~/.claude.
 func fixtureLogs(t *testing.T) *Logs {
 	t.Helper()
-	l := NewLogs("/fixture/repo")
+	l := New("/fixture/repo")
 	l.Root = "testdata"
 	return l
 }
@@ -164,12 +164,12 @@ func TestProjectName(t *testing.T) {
 
 func TestNewLogsRoot(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", "/cfg")
-	if l := NewLogs("."); l.Root != "/cfg" || !filepath.IsAbs(l.dir) {
+	if l := New("."); l.Root != "/cfg" || !filepath.IsAbs(l.dir) {
 		t.Errorf("logs = %+v", l)
 	}
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	t.Setenv("HOME", "/home/someone")
-	if l := NewLogs("/x"); l.Root != "/home/someone/.claude" {
+	if l := New("/x"); l.Root != "/home/someone/.claude" {
 		t.Errorf("root = %q", l.Root)
 	}
 }
@@ -216,7 +216,7 @@ func TestLogsReadsOnlyTranscripts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	l := NewLogs("/fixture/repo")
+	l := New("/fixture/repo")
 	l.Root = root
 	log, err := l.ReadSession(fixtureLead)
 	if err != nil {
@@ -237,7 +237,7 @@ func TestLogsBadSubagentFileIsSkipped(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sub, "agent-abad.jsonl"), []byte(line), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	l := NewLogs("/fixture/repo")
+	l := New("/fixture/repo")
 	l.Root = root
 	log, err := l.ReadSession(fixtureLead)
 	if err != nil {
@@ -265,7 +265,7 @@ func TestLogsLongLinesAndBounds(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "s.jsonl"), []byte(lines), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	l := NewLogs("/r")
+	l := New("/r")
 	l.Root = root
 	log, err := l.ReadSession("s")
 	if err != nil {

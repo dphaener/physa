@@ -1,8 +1,8 @@
 // Package adapter is what Physa needs from an agent: start a headless session
 // with a prompt in a directory, optionally under an id assigned by whoever
-// starts it, wait for its result and the tokens it used, and read a session's
-// log for what learning needs from it (answered asks, interventions and
-// checks' reports), redacted. One package per agent implements it; nothing
+// starts it, wait for its result, the tokens it used and what it cost, and
+// read a session's log for what learning needs from it (answered asks,
+// interventions and checks' reports), redacted. One package per agent implements it; nothing
 // here is particular to one agent.
 package adapter
 
@@ -94,6 +94,40 @@ type Result struct {
 	SessionID string `json:"session_id"`
 	// Tokens is what the session used.
 	Tokens Tokens `json:"tokens"`
+	// Cost is what the session cost, per model, as the agent reported it on
+	// its result; empty when it did not say.
+	Cost Cost `json:"cost,omitempty"`
+}
+
+// Cost is what a session cost, one entry per model it used, in the order of
+// their names.
+type Cost []ModelCost
+
+// ModelCost is what one model's part of a session cost: its tokens by kind,
+// which do not overlap, and its dollars as the agent reported them, in
+// millionths of a dollar so that stored state holds no fractions.
+type ModelCost struct {
+	// Model is the model's name, as the agent names it in its prices.
+	Model string `json:"model"`
+	// Input counts the input tokens neither read from nor written to the
+	// agent's cache.
+	Input int64 `json:"input"`
+	// CacheRead counts the input tokens read from the cache.
+	CacheRead int64 `json:"cache_read"`
+	// CacheWrite5m and CacheWrite1h count the input tokens written to the
+	// cache to be kept 5 minutes and 1 hour.
+	CacheWrite5m int64 `json:"cache_write_5m"`
+	CacheWrite1h int64 `json:"cache_write_1h"`
+	// Output counts the tokens the model wrote.
+	Output int64 `json:"output"`
+	// MicroUSD is what this part cost in millionths of a dollar; zero when
+	// the agent did not say.
+	MicroUSD int64 `json:"micro_usd"`
+}
+
+// Raw is every token of c, each counted once whatever its kind.
+func (c ModelCost) Raw() int64 {
+	return c.Input + c.CacheRead + c.CacheWrite5m + c.CacheWrite1h + c.Output
 }
 
 // Tokens counts the tokens a session used.

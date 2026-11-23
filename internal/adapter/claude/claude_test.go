@@ -289,7 +289,7 @@ func TestSessionSuccess(t *testing.T) {
 		t.Fatalf("Wait: %v", err)
 	}
 	want := adapter.Result{Text: "the answer", Model: "claude-test-1", SessionID: "s", Tokens: adapter.Tokens{Input: 3210, CachedInput: 3000, Output: 45}}
-	if res != want {
+	if !reflect.DeepEqual(res, want) {
 		t.Errorf("result = %+v, want %+v", res, want)
 	}
 	if got := read(t, filepath.Join(rec, "stdin")); got != prompt {
@@ -532,5 +532,37 @@ func TestSessionUsageCancelAtLimit(t *testing.T) {
 	}
 	if d := time.Since(start); d > 10*time.Second {
 		t.Errorf("Wait took %v after cancel", d)
+	}
+}
+
+// costResult is a result line with modelUsage as Claude Code writes it: one
+// model with its cache writes split, one without the split.
+const costResult = `{"type":"result","subtype":"success","is_error":false,"result":"ok","total_cost_usd":0.123457,` +
+	`"usage":{"input_tokens":1,"output_tokens":1},"modelUsage":{` +
+	`"claude-opus-5-5[1m]":{"inputTokens":100,"outputTokens":20,"cacheReadInputTokens":3000,"cacheCreationInputTokens":500,` +
+	`"cacheCreationEphemeral5mInputTokens":200,"cacheCreationEphemeral1hInputTokens":300,"costUSD":0.1234565,"canonicalModel":"claude-opus-5-5"},` +
+	`"claude-haiku-4-5":{"inputTokens":7,"outputTokens":3,"cacheReadInputTokens":0,"cacheCreationInputTokens":40,"costUSD":0.000001}}}`
+
+func TestParseCostPerModel(t *testing.T) {
+	st, err := parse(strings.NewReader(initLine+"\n"+costResult+"\n"), nil)
+	if err != nil || st.result == nil {
+		t.Fatalf("result %+v, err %v", st.result, err)
+	}
+	want := adapter.Cost{
+		{Model: "claude-haiku-4-5", Input: 7, CacheWrite5m: 40, Output: 3, MicroUSD: 1},
+		{Model: "claude-opus-5-5", Input: 100, CacheRead: 3000, CacheWrite5m: 200, CacheWrite1h: 300, Output: 20, MicroUSD: 123457},
+	}
+	if got := st.result.cost(); !reflect.DeepEqual(got, want) {
+		t.Errorf("cost = %+v\nwant   %+v", got, want)
+	}
+	if got := want[1].Raw(); got != 3620 {
+		t.Errorf("Raw = %d, want 3620", got)
+	}
+}
+
+func TestParseNoModelUsageNoCost(t *testing.T) {
+	st, err := parse(strings.NewReader(okResult+"\n"), nil)
+	if err != nil || st.result == nil || st.result.cost() != nil {
+		t.Fatalf("cost of a result without modelUsage = %+v, err %v", st.result.cost(), err)
 	}
 }

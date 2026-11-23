@@ -2,22 +2,26 @@
 // and streamed JSON output, optionally under an id assigned by whoever starts
 // them (--session-id, so the session keeps its log) or continuing one
 // (--resume <id>, which works with -p, as claude --help shows, in the same
-// directory the session ran in), reads the result and
-// tokens from the stream, and reads sessions' logs.
+// directory the session ran in), and reads the result, the
+// tokens and what the session cost from the stream. Its sessions' logs are
+// read by claudelog.
 package claude
 
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -134,6 +138,7 @@ func (s *session) Wait() (adapter.Result, error) {
 	if st.result != nil {
 		res.Text = st.result.Result
 		res.Tokens = st.result.Usage.tokens()
+		res.Cost = st.result.cost()
 	}
 	failed := readErr != nil || st.result == nil || st.result.IsError || exitErr != nil
 	if !failed {
@@ -193,6 +198,39 @@ type resultLine struct {
 	IsError bool   `json:"is_error"`
 	Result  string `json:"result"`
 	Usage   usage  `json:"usage"`
+	// Models is what each model's part of the session used and cost, keyed by
+	// the model's name.
+	Models map[string]modelUsage `json:"modelUsage"`
+}
+
+// modelUsage is one model's entry in the result line's modelUsage. The cache
+// writes are split into 5-minute and 1-hour ones when the agent says so;
+// otherwise every write is taken to be a 5-minute one, the agent's default.
+type modelUsage struct {
+	Input     int64   `json:"inputTokens"`
+	Output    int64   `json:"outputTokens"`
+	Read      int64   `json:"cacheReadInputTokens"`
+	Write     int64   `json:"cacheCreationInputTokens"`
+	Write5m   int64   `json:"cacheCreationEphemeral5mInputTokens"`
+	Write1h   int64   `json:"cacheCreationEphemeral1hInputTokens"`
+	USD       float64 `json:"costUSD"`
+	Canonical string  `json:"canonicalModel"`
+}
+
+// cost is what the session cost per model, named canonically when the agent
+// gives a canonical name, in the order of the names.
+func (r *resultLine) cost() adapter.Cost {
+	var c adapter.Cost
+	for name, u := range r.Models {
+		w5 := u.Write5m
+		if u.Write5m+u.Write1h == 0 {
+			w5 = u.Write
+		}
+		c = append(c, adapter.ModelCost{Model: cmp.Or(u.Canonical, name), Input: u.Input, CacheRead: u.Read,
+			CacheWrite5m: w5, CacheWrite1h: u.Write1h, Output: u.Output, MicroUSD: int64(math.Round(u.USD * 1e6))})
+	}
+	slices.SortFunc(c, func(a, b adapter.ModelCost) int { return strings.Compare(a.Model, b.Model) })
+	return c
 }
 
 // usage is the result line's token counts.

@@ -77,7 +77,7 @@ func TestInitGatherJSON(t *testing.T) {
 	useRepoStore(t, dir)
 	useForge(t, mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}})
 	code, out, errOut := runInit("--gather", "--json")
-	if code != 0 || errOut != "" {
+	if code != 0 || errOut != "physa init: gather starts no agent (discovery not started: the repo has a map)\n" {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
 	var sum gather.Summary
@@ -113,7 +113,7 @@ func TestInitBareNewCodebaseReadsAnswers(t *testing.T) {
 	f := &fakeAgent{}
 	useAgent(t, "claude", f)
 	code, out, errOut := runInit("--answers", answers)
-	if code != 0 || f.starts != 0 || !strings.Contains(out, "A new codebase") ||
+	if code != 0 || f.starts != 1 || !strings.Contains(out, "A new codebase") || // discovery's session alone
 		!strings.Contains(out, "Lathe, promising: Lathe turns sketches into cut lists.") {
 		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
 	}

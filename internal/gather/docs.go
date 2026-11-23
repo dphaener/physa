@@ -1,6 +1,7 @@
 package gather
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -24,6 +25,12 @@ const (
 // MaxDocBytes is the largest doc gathered; a larger file is skipped.
 const MaxDocBytes = 2 << 20
 
+// Skip is a source left out and why. Path is relative to the repo root.
+type Skip struct {
+	Path string `json:"path"`
+	Why  string `json:"why"`
+}
+
 var ignoredDirs = map[string]bool{"vendor": true, "node_modules": true, "tmp": true, "log": true}
 
 var numbered = regexp.MustCompile(`^[0-9]+[-_]`)
@@ -32,11 +39,13 @@ var numbered = regexp.MustCompile(`^[0-9]+[-_]`)
 // (including CONTEXT.md), contributing guides, readmes, decisions with
 // decision-record folders, and the plan and overview files (PLAN, ROADMAP,
 // OVERVIEW, ARCHITECTURE, CONTEXT, any case) directly under docs/.
-// Each doc's path is relative to root with forward slashes, sorted. A file
-// over MaxDocBytes is left out and its path returned in skipped.
-func Docs(root string) (docs []store.Doc, skipped []string, err error) {
+// Each doc's path is relative to root with forward slashes, sorted, and its
+// Reason says by which rule it was found. A file over MaxDocBytes is left out
+// and returned in skipped with its size; a candidate that is missing or not a
+// regular file is a guess and is left out silently.
+func Docs(root string) (docs []store.Doc, skipped []Skip, err error) {
 	seen := map[string]bool{}
-	add := func(rel, kind string) error {
+	add := func(rel, kind, reason string) error {
 		if seen[rel] {
 			return nil
 		}
@@ -47,29 +56,40 @@ func Docs(root string) (docs []store.Doc, skipped []string, err error) {
 			return nil
 		}
 		if info.Size() > MaxDocBytes {
-			skipped = append(skipped, rel)
+			skipped = append(skipped, Skip{rel, fmt.Sprintf("over %d MB (%d bytes)", MaxDocBytes>>20, info.Size())})
 			return nil
 		}
 		b, err := os.ReadFile(full)
 		if err != nil {
 			return err
 		}
-		docs = append(docs, store.Doc{Path: rel, Kind: kind, Body: string(b)})
+		docs = append(docs, store.Doc{Path: rel, Kind: kind, Reason: reason, Body: string(b)})
 		return nil
 	}
-	fixed := []struct{ kind, name string }{
-		{KindAgent, "AGENTS.md"}, {KindAgent, "CONTEXT.md"}, {KindAgent, "CLAUDE.md"}, {KindAgent, ".claude/CLAUDE.md"}, {KindAgent, ".cursorrules"},
-		{KindContributing, "CONTRIBUTING.md"}, {KindContributing, "CONTRIBUTING"},
-		{KindContributing, "docs/CONTRIBUTING.md"}, {KindContributing, ".github/CONTRIBUTING.md"},
-		{KindReadme, "README.md"}, {KindReadme, "README"}, {KindReadme, "README.rst"}, {KindReadme, "README.txt"},
+	const (
+		agentWhy    = "an agent instructions file"
+		guideWhy    = "the contributing guide"
+		readmeWhy   = "the README"
+		decideWhy   = "a decisions file"
+		folderWhy   = "a decision-record folder"
+		overviewWhy = "a plan or overview file under docs/"
+		cursorWhy   = "Cursor rules"
+	)
+	type find struct{ kind, name, reason string }
+	fixed := []find{
+		{KindAgent, "AGENTS.md", agentWhy}, {KindAgent, "CONTEXT.md", agentWhy}, {KindAgent, "CLAUDE.md", agentWhy},
+		{KindAgent, ".claude/CLAUDE.md", agentWhy}, {KindAgent, ".cursorrules", cursorWhy},
+		{KindContributing, "CONTRIBUTING.md", guideWhy}, {KindContributing, "CONTRIBUTING", guideWhy},
+		{KindContributing, "docs/CONTRIBUTING.md", guideWhy}, {KindContributing, ".github/CONTRIBUTING.md", guideWhy},
+		{KindReadme, "README.md", readmeWhy}, {KindReadme, "README", readmeWhy}, {KindReadme, "README.rst", readmeWhy}, {KindReadme, "README.txt", readmeWhy},
 	}
 	for _, base := range []string{".", "docs", "doc"} {
 		for _, n := range []string{"decisions.md", "DECISIONS.md"} {
-			fixed = append(fixed, struct{ kind, name string }{KindDecisions, path.Join(base, n)})
+			fixed = append(fixed, find{KindDecisions, path.Join(base, n), decideWhy})
 		}
 	}
 	for _, f := range fixed {
-		if err := add(f.name, f.kind); err != nil {
+		if err := add(f.name, f.kind, f.reason); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -82,15 +102,15 @@ func Docs(root string) (docs []store.Doc, skipped []string, err error) {
 		if e.IsDir() || !strings.EqualFold(path.Ext(name), ".md") {
 			continue
 		}
-		kind := KindOverview
+		kind, why := KindOverview, overviewWhy
 		switch strings.ToUpper(strings.TrimSuffix(name, path.Ext(name))) {
 		case "CONTEXT":
-			kind = KindAgent
+			kind, why = KindAgent, agentWhy
 		case "PLAN", "ROADMAP", "OVERVIEW", "ARCHITECTURE":
 		default:
 			continue
 		}
-		if err := add(path.Join("docs", name), kind); err != nil {
+		if err := add(path.Join("docs", name), kind, why); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -104,7 +124,7 @@ func Docs(root string) (docs []store.Doc, skipped []string, err error) {
 		}
 		if d.Type().IsRegular() && (strings.HasSuffix(p, ".mdc") || strings.HasSuffix(p, ".md")) {
 			rel, _ := filepath.Rel(root, p)
-			return add(filepath.ToSlash(rel), KindAgent)
+			return add(filepath.ToSlash(rel), KindAgent, cursorWhy)
 		}
 		return nil
 	})
@@ -123,7 +143,7 @@ func Docs(root string) (docs []store.Doc, skipped []string, err error) {
 			}
 			for _, e := range entries {
 				if strings.HasSuffix(e.Name(), ".md") {
-					if err := add(path.Join(dir, e.Name()), KindDecisions); err != nil {
+					if err := add(path.Join(dir, e.Name()), KindDecisions, folderWhy); err != nil {
 						return nil, nil, err
 					}
 				}
@@ -131,7 +151,7 @@ func Docs(root string) (docs []store.Doc, skipped []string, err error) {
 		}
 	}
 	sort.Slice(docs, func(i, j int) bool { return docs[i].Path < docs[j].Path })
-	sort.Strings(skipped)
+	sort.Slice(skipped, func(i, j int) bool { return skipped[i].Path < skipped[j].Path })
 	return docs, skipped, nil
 }
 

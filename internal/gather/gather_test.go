@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/fit"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/vcs"
@@ -92,7 +93,7 @@ func gatherNow(t *testing.T) time.Time { return base.Add(60 * 24 * time.Hour) }
 
 func run(t *testing.T, r *testRepo, f forge.Forge, o Bounds) (Summary, int) {
 	t.Helper()
-	g, s, err := Run(r.dir, r.open(), f, o, gatherNow(t))
+	g, s, err := Run(r.dir, r.open(), f, o, Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +118,7 @@ func TestRunHistory(t *testing.T) {
 	r.git("revert", "--no-edit", bad)
 	r.n++
 	write(t, r.dir, "AGENTS.md", "agents")
-	g, s, err := Run(r.dir, r.open(), nil, bounds(t), gatherNow(t))
+	g, s, err := Run(r.dir, r.open(), nil, bounds(t), Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +183,7 @@ func TestRunUnavailableForgeError(t *testing.T) {
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	f := mergedForge{err: &forge.Error{Class: forge.ErrUnavailable, Reason: "gh is not installed"}}
-	g, s, err := Run(r.dir, r.open(), f, bounds(t), gatherNow(t))
+	g, s, err := Run(r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatalf("an unavailable forge failed the run: %v", err)
 	}
@@ -219,7 +220,7 @@ func TestRunMoreStartsHistoryAtOldestPR(t *testing.T) {
 	f := mergedForge{more: true, prs: []forge.PR{
 		{Number: 9, MergedAt: r.at(4)}, {Number: 8, MergedAt: r.at(3)},
 	}}
-	g, s, err := Run(r.dir, r.open(), f, bounds(t, func(b *Bounds) { b.MaxPRs = 2 }), gatherNow(t))
+	g, s, err := Run(r.dir, r.open(), f, bounds(t, func(b *Bounds) { b.MaxPRs = 2 }), Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +250,7 @@ func TestRunPRCounts(t *testing.T) {
 			}},
 		{Number: 1, Title: "one", MergedAt: r.at(0)},
 	}}
-	g, s, err := Run(r.dir, r.open(), f, bounds(t), gatherNow(t))
+	g, s, err := Run(r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +275,7 @@ func TestRunTokenEstimate(t *testing.T) {
 	r.commit("feat: x\n\nCapability: a", "f.go")
 	write(t, r.dir, "README.md", strings.Repeat("r", 100))
 	f := mergedForge{prs: []forge.PR{{Number: 1, Title: "t", Body: strings.Repeat("b", 50), MergedAt: r.at(1)}}}
-	g, s, err := Run(r.dir, r.open(), f, bounds(t), gatherNow(t))
+	g, s, err := Run(r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,13 +301,14 @@ func TestRunDocsSkippedAndHistoryFallback(t *testing.T) {
 
 func fullSummary() Summary {
 	return Summary{
-		Version: 1, Store: "/s/physa.db",
+		Version: 2, Store: "/s/physa.db",
 		Bound: BoundSummary{Since: "2025-11-21", MaxPRs: 1000},
-		Docs: DocsSummary{Count: 4, Bytes: 40, Skipped: []string{"BIG.md"}, Files: []DocFile{
-			{"AGENTS.md", KindAgent}, {"docs/records/0001-a.md", KindDecisions}, {"docs/records/0002-b.md", KindDecisions}, {"decisions.md", KindDecisions},
+		Docs: DocsSummary{Count: 4, Bytes: 40, Skipped: []Skip{{"BIG.md", "over 2 MB (2097153 bytes)"}}, Files: []DocFile{
+			{"AGENTS.md", KindAgent, "an agent instructions file"}, {"docs/records/0001-a.md", KindDecisions, "a decision-record folder"}, {"docs/records/0002-b.md", KindDecisions, "a decision-record folder"}, {"decisions.md", KindDecisions, "a decisions file"},
 		}},
 		History:         HistorySummary{Changes: 10, WithTrailers: 4, Reverts: 1, WithAltered: 9, DistinctFiles: 30, Bytes: 80},
 		PRs:             PRsSummary{Available: true, Count: 3, ReviewComments: 5, RequestingChanges: 2, LinkedIssues: 1, Bytes: 20},
+		Discovery:       Discovery{Started: true, Named: 12, Added: 9, Model: "m", Tokens: adapter.Tokens{Input: 30000, Output: 1204}, Cap: 40000},
 		EstimatedTokens: 35,
 	}
 }
@@ -322,10 +324,11 @@ func TestWriteText(t *testing.T) {
 		"Gathered into /s/physa.db, replacing the previous gather.\n",
 		"Bound: since 2025-11-21 (the last 12 months), at most 1000 PRs.\n",
 		"Docs: 4 files\n",
-		"  AGENTS.md (agent)\n",
-		"  decisions.md (decisions)\n",
+		"  AGENTS.md (agent): an agent instructions file\n",
+		"  decisions.md (decisions): a decisions file\n",
 		"  docs/records/ (2 files)\n",
-		"  skipped BIG.md",
+		"  skipped BIG.md: over 2 MB (2097153 bytes)\n",
+		"Discovery: 12 named, 9 added, 31204 tokens of 40000 (m)\n",
 		"History: 10 changes, 4 with trailers, 1 revert, 9 with altered files, 30 distinct files.\n",
 		"PRs: 3, 5 review comments (2 requesting changes), 1 linked issue.\n",
 		"About 35 tokens to read it all (an estimate: bytes / 2.3).\n",
@@ -355,18 +358,18 @@ func TestWriteJSON(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &m); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"version", "store", "bound", "docs", "history", "prs", "estimated_tokens"} {
+	for _, k := range []string{"version", "store", "bound", "docs", "history", "prs", "estimated_tokens", "discovery"} {
 		if _, ok := m[k]; !ok {
 			t.Errorf("missing %s", k)
 		}
 	}
-	if m["version"].(float64) != 1 || m["estimated_tokens"].(float64) != 35 {
+	if m["version"].(float64) != 2 || m["estimated_tokens"].(float64) != 35 {
 		t.Errorf("%v", m)
 	}
 	if b := m["bound"].(map[string]any); b["max_prs"].(float64) != 1000 || b["since"] != "2025-11-21" {
 		t.Errorf("%v", b)
 	}
-	if d := m["docs"].(map[string]any); d["skipped"].([]any)[0] != "BIG.md" || d["files"].([]any)[0].(map[string]any)["kind"] != "agent" {
+	if d := m["docs"].(map[string]any); d["skipped"].([]any)[0].(map[string]any)["path"] != "BIG.md" || d["skipped"].([]any)[0].(map[string]any)["why"] == "" || d["files"].([]any)[0].(map[string]any)["reason"] != "an agent instructions file" || d["files"].([]any)[0].(map[string]any)["kind"] != "agent" {
 		t.Errorf("%v", d)
 	}
 }
@@ -374,7 +377,7 @@ func TestWriteJSON(t *testing.T) {
 func TestWriteTextSingular(t *testing.T) {
 	one := Summary{
 		Store: "/s/physa.db", Bound: BoundSummary{Since: "2025-11-21", MaxPRs: 1000},
-		Docs:            DocsSummary{Count: 1, Files: []DocFile{{"AGENTS.md", KindAgent}}},
+		Docs:            DocsSummary{Count: 1, Files: []DocFile{{"AGENTS.md", KindAgent, "x"}}},
 		History:         HistorySummary{Changes: 1, WithTrailers: 1, Reverts: 1, WithAltered: 1, DistinctFiles: 1},
 		PRs:             PRsSummary{Available: true, Count: 1, ReviewComments: 1, RequestingChanges: 1, LinkedIssues: 1},
 		EstimatedTokens: 1,
@@ -395,9 +398,40 @@ func TestWriteTextSingular(t *testing.T) {
 	}
 	buf.Reset()
 	two := fullSummary()
-	two.Docs.Files = append(two.Docs.Files[:1:1], DocFile{"docs/records/0001-a.md", KindDecisions}, DocFile{"docs/records/0002-b.md", KindDecisions})
+	two.Docs.Files = append(two.Docs.Files[:1:1], DocFile{"docs/records/0001-a.md", KindDecisions, "r"}, DocFile{"docs/records/0002-b.md", KindDecisions, "r"})
 	two.Docs.Count = 3
 	if err := WriteText(&buf, two); err != nil || !strings.Contains(buf.String(), "Docs: 3 files\n") || !strings.Contains(buf.String(), "(2 files)") {
 		t.Errorf("%v %s", err, buf.String())
+	}
+}
+
+func TestWriteTextDiscoveryNotStarted(t *testing.T) {
+	for _, tc := range []struct {
+		d    Discovery
+		want string
+	}{
+		{Discovery{Why: "discovery not started: the repo has a map"}, "Discovery: not started: the repo has a map\n"},
+		{Discovery{}, "Discovery: not asked\n"},
+		{Discovery{Started: true, Why: "the reply had no sources", Cap: 9}, "0 named, 0 added, 0 tokens of 9; the reply had no sources\n"},
+	} {
+		var buf bytes.Buffer
+		s := fullSummary()
+		s.Discovery = tc.d
+		if err := WriteText(&buf, s); err != nil || !strings.Contains(buf.String(), tc.want) {
+			t.Errorf("%v\n%s", err, buf.String())
+		}
+	}
+}
+
+func TestRunSummaryVersionAndEmptyDiscovery(t *testing.T) {
+	r := newTestRepo(t)
+	r.commit("feat: x", "a")
+	s, _ := run(t, r, nil, bounds(t))
+	var buf bytes.Buffer
+	if err := WriteJSON(&buf, s); err != nil {
+		t.Fatal(err)
+	}
+	if s.Version != 2 || !strings.Contains(buf.String(), `"skipped": []`) || !strings.Contains(buf.String(), `"discovery"`) {
+		t.Errorf("%d %s", s.Version, buf.String())
 	}
 }

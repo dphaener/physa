@@ -202,6 +202,26 @@ func (r *repo) Files(id, dir string) ([]string, error) {
 	return files, nil
 }
 
+// Listed lists the working tree's files git tracks or does not ignore, as
+// slash paths from the root. The pathspec ":/" keeps the list whole when the
+// repo is read from a subdirectory.
+func (r *repo) Listed() ([]string, error) {
+	out, stderr, err := r.git("ls-files", "-z", "--cached", "--others", "--exclude-standard", "--full-name", "--", ":/")
+	if err != nil {
+		return nil, gitError(err, stderr)
+	}
+	seen := map[string]bool{}
+	files := []string{}
+	for _, p := range strings.Split(out, "\x00") {
+		if p != "" && !seen[p] {
+			seen[p] = true
+			files = append(files, p)
+		}
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
 // Resolve returns the full id of the commit ref names.
 func (r *repo) Resolve(ref string) (string, bool) {
 	if ref == "" {

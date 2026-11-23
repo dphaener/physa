@@ -93,6 +93,26 @@ func TestArgs(t *testing.T) {
 	}
 }
 
+func TestArgsReadOnly(t *testing.T) {
+	base := []string{"-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence"}
+	readOnly := append(append([]string{}, base...), "--tools", "Read,Glob,Grep", "--strict-mcp-config")
+	promptOnly := append(append([]string{}, base...), "--tools", "", "--strict-mcp-config")
+	cases := []struct {
+		name string
+		spec adapter.Spec
+		want []string
+	}{
+		{"read-only", adapter.Spec{ReadOnly: true}, readOnly},
+		{"read-only and prompt-only", adapter.Spec{ReadOnly: true, PromptOnly: true}, promptOnly},
+		{"prompt-only", adapter.Spec{PromptOnly: true}, promptOnly},
+	}
+	for _, c := range cases {
+		if got := args(c.spec); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: args = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
 const testSessionID = "0f8e7d6c-5b4a-4392-8170-a1b2c3d4e5f6"
 
 func TestArgsWithSessionID(t *testing.T) {

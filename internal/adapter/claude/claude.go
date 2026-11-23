@@ -66,8 +66,9 @@ func args(s adapter.Spec) []string {
 	} else {
 		argv = append(argv, "--no-session-persistence")
 	}
-	if s.PromptOnly {
-		argv = append(argv, "--tools", "", "--strict-mcp-config")
+	if s.PromptOnly || s.ReadOnly {
+		tools := map[bool]string{true: "", false: "Read,Glob,Grep"}[s.PromptOnly]
+		argv = append(argv, "--tools", tools, "--strict-mcp-config")
 	}
 	return argv
 }

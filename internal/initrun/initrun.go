@@ -6,10 +6,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/cli"
+	"github.com/dphaener/physa/internal/discovery"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/initbranch"
@@ -54,10 +56,11 @@ func Run(args []string, stdout, stderr io.Writer, env Env) int {
 	if err != nil {
 		return failed(stderr, err)
 	}
-	if !o.Gather { // --gather alone spends no tokens and writes only the store
-		if err := refuseMapped(env); err != nil {
-			return failed(stderr, err)
-		}
+	off := ""
+	if o.Gather { // --gather alone runs on a mapped repo too, but starts no agent there
+		off = discoveryOff(env)
+	} else if err := refuseMapped(env); err != nil {
+		return failed(stderr, err)
 	}
 	st, err := env.Store(".")
 	if err != nil {
@@ -73,8 +76,17 @@ func Run(args []string, stdout, stderr io.Writer, env Env) int {
 	case o.Full():
 		code = full(o, st, root, p, stderr, env)
 	default:
+		limit := int64(discovery.DefaultAppetite)
+		if o.Appetite != 0 {
+			limit = min(limit, o.Appetite)
+		}
+		if off == "" {
+			fmt.Fprintf(stderr, "physa init: gather up to %d tokens (the discovery agent)\n", limit)
+		} else {
+			fmt.Fprintf(stderr, "physa init: gather starts no agent (%s)\n", off)
+		}
 		var sum gather.Summary
-		if _, sum, err = gatherInto(st, o, env); err != nil {
+		if _, sum, err = gatherInto(st, o, env, discover(o, env, limit, off, stderr)); err != nil {
 			return failed(stderr, err)
 		}
 		p.gather(sum)
@@ -103,9 +115,36 @@ func refuseMapped(env Env) error {
 	return nil
 }
 
-// gatherInto gathers the repo's sources under o's bounds and stores them in
-// st, replacing the earlier gather, and says what it gathered.
-func gatherInto(st *store.Store, o Flags, env Env) (store.Gather, gather.Summary, error) {
+// discoveryOff is why --gather alone starts no discovery agent, or empty to
+// start one: the repo has a map, by the early refusal's check, or whether it
+// has one could not be told.
+func discoveryOff(env Env) string {
+	switch err := refuseMapped(env); {
+	case err == nil:
+		return ""
+	case strings.Contains(err.Error(), "already has a map"):
+		return "discovery not started: the repo has a map"
+	default:
+		return "discovery not started: could not tell whether the repo has a map: " + err.Error()
+	}
+}
+
+// discover is gather's discovery agent, capped at limit tokens, or none,
+// reported with why off says, when off is set.
+func discover(o Flags, env Env, limit int64, off string, stderr io.Writer) gather.Discover {
+	if off != "" {
+		return gather.Discover{Off: off}
+	}
+	return gather.Discover{Session: discovery.Session{
+		Agent:    func() (adapter.Adapter, error) { return env.Agent(o.Agent) },
+		Appetite: limit, Progress: stderr,
+	}}
+}
+
+// gatherInto gathers the repo's sources under o's bounds, with d's discovery,
+// and stores them in st, replacing the earlier gather, and says what it
+// gathered.
+func gatherInto(st *store.Store, o Flags, env Env, d gather.Discover) (store.Gather, gather.Summary, error) {
 	repo, err := env.Repo(".")
 	if err != nil {
 		return store.Gather{}, gather.Summary{}, err
@@ -115,7 +154,7 @@ func gatherInto(st *store.Store, o Flags, env Env) (store.Gather, gather.Summary
 		return store.Gather{}, gather.Summary{}, err
 	}
 	bounds := gather.Bounds{Since: o.Since, SinceSet: o.SinceSet, MaxPRs: o.MaxPRs}
-	g, sum, err := gather.Run(".", repo, env.Forge("."), bounds, env.Now())
+	g, sum, err := gather.Run(".", repo, env.Forge("."), bounds, d, env.Now())
 	if err != nil {
 		return g, sum, err
 	}

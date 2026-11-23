@@ -16,6 +16,7 @@ import (
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/cli"
 	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
@@ -68,17 +69,25 @@ const (
 		"Because: #3 asked for it.\n````\n\n```glossary\n**Search**: Finding what was kept.\n```\n"
 )
 
-// routedAgent answers proposing with twoReply and each capability's
-// recovering with its reply, joining a resumed session to its capability.
-// It records each capability whose session it started, and calls first,
+// discoveryMarker is a line of the discovery skill, which only a discovery
+// session's prompt holds.
+const discoveryMarker = "You find the sources a product's map is built from"
+
+// routedAgent answers discovery with discover (naming nothing when empty),
+// proposing with twoReply and each capability's recovering with its reply,
+// joining a resumed session to its capability. It records each session it
+// started, by "discover", "propose" or the capability, and calls first,
 // when set, before its first start.
 type routedAgent struct {
-	mu       sync.Mutex
-	replies  map[string]string
-	sessions map[string]string // session id → capability
-	started  []string          // "propose" or the capability
-	first    func()
-	propose  int64 // the input tokens proposing uses; zero means 10,000
+	mu        sync.Mutex
+	replies   map[string]string
+	sessions  map[string]string // session id → capability
+	started   []string          // "discover", "propose" or the capability
+	first     func()
+	propose   int64          // the input tokens proposing uses; zero means 10,000
+	discover  string         // discovery's reply
+	discovers adapter.Tokens // the tokens discovery uses; zero means 1,000 in, 10 out
+	readOnly  bool           // every discovery session was read-only
 }
 
 func newRoutedAgent() *routedAgent {
@@ -101,15 +110,27 @@ func (a *routedAgent) Start(_ context.Context, s adapter.Spec) (adapter.Session,
 				name = c
 			}
 		}
+		if strings.Contains(s.Prompt, discoveryMarker) {
+			name = "discover"
+			a.readOnly = (len(a.started) == 0 || a.readOnly) && s.ReadOnly && !s.PromptOnly
+		}
 		a.sessions[s.SessionID] = name
 		a.started = append(a.started, name)
 	}
 	text := twoReply
-	if name != "propose" {
-		text = a.replies[name]
-	}
 	t := adapter.Tokens{Input: 10_000, CachedInput: 5, Output: 20}
-	if name == "propose" && a.propose != 0 {
+	switch {
+	case name == "discover":
+		text, t = "```json\n{\"sources\":[]}\n```\n", adapter.Tokens{Input: 1_000, Output: 10}
+		if a.discover != "" {
+			text = a.discover
+		}
+		if a.discovers != (adapter.Tokens{}) {
+			t = a.discovers
+		}
+	case name != "propose":
+		text = a.replies[name]
+	case a.propose != 0:
 		t.Input = a.propose
 	}
 	return fakeSession{f: &fakeAgent{reports: []adapter.Tokens{t}, result: adapter.Result{Text: text, Tokens: t, SessionID: s.SessionID}}, usage: s.Usage}, nil
@@ -228,9 +249,16 @@ func TestFullPlanLineComesFirst(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d, stderr %s", code, stderr.String())
 	}
-	if !strings.Contains(seen, "physa init: appetite 100000 tokens: gather 0 (no agent); propose up to 50000 (its prompt about ") ||
-		!strings.Contains(seen, "; recover the rest, about ") || !strings.Contains(seen, "check and write 0.") {
+	want := "physa init: appetite 100000 tokens: gather up to 25000 (the discovery agent); propose up to 50000; recover the rest, about 25000, shared by its sessions; check and write 0.\n"
+	if !strings.HasPrefix(seen, want) {
 		t.Errorf("before the first session, stderr was %q", seen)
+	}
+	if len(a.started) == 0 || a.started[0] != "discover" || !a.readOnly {
+		t.Errorf("sessions %v (discovery read-only: %v); want discovery first, read-only", a.started, a.readOnly)
+	}
+	if after := strings.TrimPrefix(stderr.String(), seen); !strings.Contains(after, "physa init: propose's prompt is about ") ||
+		!strings.Contains(after, " tokens plus 16000 for the reply.") {
+		t.Errorf("after gathering, stderr was %q", after)
 	}
 	if out := gitIn(t, ".", "branch", "--list", "physa/init"); out != "" {
 		t.Errorf("without --write a branch was made: %q", out)
@@ -241,8 +269,16 @@ func TestFullJSONIsOneDocument(t *testing.T) {
 	remoteRepo(t)
 	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--json")
 	var doc struct {
-		Gather, Proposal, Recovery json.RawMessage
-		Write                      struct {
+		Gather struct {
+			Version   int
+			Discovery struct {
+				Started bool
+				Tokens  adapter.Tokens
+				Cap     int64
+			}
+		}
+		Proposal, Recovery json.RawMessage
+		Write              struct {
 			Branch string
 			Commit struct{ Subject string }
 			Pushed bool
@@ -252,7 +288,10 @@ func TestFullJSONIsOneDocument(t *testing.T) {
 	if code != 0 || json.Unmarshal([]byte(out), &doc) != nil {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
-	if len(doc.Gather) == 0 || len(doc.Proposal) == 0 || len(doc.Recovery) == 0 || doc.Write.Branch != "physa/init" ||
+	if d := doc.Gather.Discovery; doc.Gather.Version != 2 || !d.Started || d.Tokens.Input != 1_000 || d.Cap != 75_000 {
+		t.Errorf("gather %+v", doc.Gather)
+	}
+	if len(doc.Proposal) == 0 || len(doc.Recovery) == 0 || doc.Write.Branch != "physa/init" ||
 		doc.Write.Commit.Subject == "" || doc.Write.Pushed || doc.Write.PR.State != "not asked" {
 		t.Errorf("document %s", out)
 	}
@@ -283,9 +322,10 @@ func TestFullSmallAppetiteThenRecoverWrite(t *testing.T) {
 	a := newRoutedAgent()
 	a.propose = 25_600
 	env := fullEnv(t, onePR(), a)
-	// Proposing uses 25,620 of 51,400; recovering's 25,780 holds one
-	// capability's reserve (its prompt and 12,000 for the reply) and no more.
-	code, out, errOut := runInit(env, "--write", "--appetite", "51400")
+	// Discovery uses 1,010 and proposing 25,620 of 52,410; recovering's
+	// 25,780 holds one capability's reserve (its prompt and 12,000 for the
+	// reply) and no more.
+	code, out, errOut := runInit(env, "--write", "--appetite", "52410")
 	if code != 1 || !strings.Contains(out, "Not yet recovered") {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -356,6 +396,14 @@ func newCodebaseRepo(t *testing.T) string {
 	return dir
 }
 
+// onlyDiscovered fails the test unless a started discovery's session alone.
+func onlyDiscovered(t *testing.T, a *routedAgent) {
+	t.Helper()
+	if !slices.Equal(a.started, []string{"discover"}) {
+		t.Errorf("sessions %v, want discovery's alone", a.started)
+	}
+}
+
 // noAgent fails the test when an agent is resolved.
 func noAgent(t *testing.T) func(string) (adapter.Adapter, error) {
 	return func(string) (adapter.Adapter, error) {
@@ -368,8 +416,8 @@ func TestNewCodebaseAnswersWrite(t *testing.T) {
 	dir := newCodebaseRepo(t)
 	answers := filepath.Join(t.TempDir(), "answers.txt")
 	write(t, filepath.Dir(answers), "answers.txt", "# mine\n1: Lathe\n2: Lathe turns sketches into cut lists.\n3: Cut list: The parts to cut, with their sizes\n")
-	env := fullEnv(t, nil, nil)
-	env.Agent = noAgent(t)
+	a := newRoutedAgent()
+	env := fullEnv(t, nil, a)
 	code, out, errOut := runInit(env, "--write", "--answers", answers)
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
@@ -388,12 +436,13 @@ func TestNewCodebaseAnswersWrite(t *testing.T) {
 	if !strings.Contains(out, "A new codebase") || !strings.Contains(out, "- .physa/product/index.md: Lathe") || !strings.Contains(out, "Wrote physa/init at ") {
 		t.Errorf("stdout %s", out)
 	}
+	onlyDiscovered(t, a)
 }
 
 func TestNewCodebaseAsksOnATerminal(t *testing.T) {
 	newCodebaseRepo(t)
-	env := fullEnv(t, nil, nil)
-	env.Agent = noAgent(t)
+	a := newRoutedAgent()
+	env := fullEnv(t, nil, a)
 	env.IsTerminal = func() bool { return true }
 	env.Stdin = strings.NewReader("\nLathe turns sketches into cut lists.\n\n")
 	code, out, errOut := runInit(env)
@@ -401,17 +450,19 @@ func TestNewCodebaseAsksOnATerminal(t *testing.T) {
 		!strings.Contains(out, "Lathe turns sketches into cut lists.") || !strings.Contains(out, "Nothing is written without --write.") {
 		t.Errorf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
+	onlyDiscovered(t, a)
 }
 
 func TestNewCodebaseWithoutAnswers(t *testing.T) {
 	newCodebaseRepo(t)
-	env := fullEnv(t, nil, nil)
-	env.Agent = noAgent(t)
+	a := newRoutedAgent()
+	env := fullEnv(t, nil, a)
 	code, _, errOut := runInit(env, "--write")
 	if code != 2 || !strings.Contains(errOut, "physa init: this looks like a new codebase (") ||
 		!strings.Contains(errOut, "answer its questions on a terminal or with --answers FILE") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
+	onlyDiscovered(t, a)
 }
 
 func TestFullHooksKeepsOtherHooks(t *testing.T) {
@@ -508,9 +559,20 @@ func TestMappedRepoIsRefusedBeforeAnythingIsSpent(t *testing.T) {
 
 func TestMappedRepoStillGathers(t *testing.T) {
 	mappedRepo(t, ".physa/product/index.md")
-	env := fullEnv(t, onePR(), newRoutedAgent())
-	if code, out, errOut := runInit(env, "--gather"); code != 0 || !strings.Contains(out, "Gathered into") {
+	env := fullEnv(t, onePR(), nil)
+	env.Agent = noAgent(t)
+	if code, out, errOut := runInit(env, "--gather"); code != 0 || !strings.Contains(out, "Gathered into") ||
+		!strings.Contains(out, "Discovery: not started: the repo has a map") ||
+		errOut != "physa init: gather starts no agent (discovery not started: the repo has a map)\n" {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	code, out, _ := runInit(env, "--gather", "--json", "--agent", "x", "--appetite", "1000")
+	var sum gather.Summary
+	if code != 0 || json.Unmarshal([]byte(out), &sum) != nil {
+		t.Fatalf("code %d, stdout %q", code, out)
+	}
+	if d := sum.Discovery; d.Started || d.Why != "discovery not started: the repo has a map" || d.Tokens != (adapter.Tokens{}) || sum.Docs.Count != 1 {
+		t.Errorf("summary %+v", sum)
 	}
 	storedGather(t, env)
 }
@@ -547,5 +609,112 @@ func TestNoDefaultBranchRefusesAMapInTheWorkingTree(t *testing.T) {
 		if len(a.started) != 0 {
 			t.Errorf("%s: %d agent sessions ran", p, len(a.started))
 		}
+	}
+}
+
+// fullDoc is the parts of a full run's --json document the spend tests read.
+type fullDoc struct {
+	Gather struct {
+		Docs struct {
+			Files []struct{ Path, Kind, Reason string }
+		}
+		Discovery struct {
+			Started bool
+			Why     string
+			Added   int
+			Tokens  adapter.Tokens
+			Cap     int64
+		}
+	}
+	Recovery struct {
+		Appetite int64
+		Used     adapter.Tokens
+	}
+}
+
+func TestFullDiscoverySpendComesOffRecovery(t *testing.T) {
+	remoteRepo(t)
+	a := newRoutedAgent()
+	a.discover = "Found one.\n```json\n" + `{"sources":[{"path":"scratch.txt","kind":"overview","reason":"the person's notes"}]}` + "\n```\n"
+	a.discovers = adapter.Tokens{Input: 2_000, Output: 30}
+	code, out, errOut := runInit(fullEnv(t, onePR(), a), "--json", "--appetite", "200000")
+	var doc fullDoc
+	if code != 0 || json.Unmarshal([]byte(out), &doc) != nil {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	d := doc.Gather.Discovery
+	if !d.Started || d.Added != 1 || d.Tokens.Input != 2_000 || d.Tokens.Output != 30 || d.Cap != 50_000 {
+		t.Errorf("discovery %+v", d)
+	}
+	if !slices.ContainsFunc(doc.Gather.Docs.Files, func(f struct{ Path, Kind, Reason string }) bool {
+		return f.Path == "scratch.txt" && f.Kind == "overview" && f.Reason == "the person's notes"
+	}) {
+		t.Errorf("gathered docs %+v", doc.Gather.Docs.Files)
+	}
+	// Proposing uses 10,020; recovering gets what discovery and proposing left.
+	if want := int64(200_000 - 2_030 - 10_020); doc.Recovery.Appetite != want {
+		t.Errorf("recovery's appetite %d, want %d", doc.Recovery.Appetite, want)
+	}
+}
+
+func TestFullStoppedDiscoveryStillStopsAtTheAppetite(t *testing.T) {
+	remoteRepo(t)
+	a := newRoutedAgent()
+	a.discovers = adapter.Tokens{Input: 27_000, Output: 20} // over its cap of 25,000
+	code, out, errOut := runInit(fullEnv(t, onePR(), a), "--json", "--appetite", "100000")
+	var doc fullDoc
+	if code != 0 || json.Unmarshal([]byte(out), &doc) != nil {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	d := doc.Gather.Discovery
+	if !d.Started || d.Added != 0 || d.Why != "stopped at the token cap" || d.Cap != 25_000 {
+		t.Errorf("discovery %+v", d)
+	}
+	discovered := d.Tokens.Input + d.Tokens.Output
+	if want := 100_000 - discovered - 10_020; doc.Recovery.Appetite != want {
+		t.Errorf("recovery's appetite %d, want %d", doc.Recovery.Appetite, want)
+	}
+	if total := discovered + 10_020 + doc.Recovery.Used.Input + doc.Recovery.Used.Output; total > 100_000 {
+		t.Errorf("init spent %d of an appetite of 100000", total)
+	}
+}
+
+func TestGatherCapsAndChoosesTheDiscoveryAgent(t *testing.T) {
+	dir := newRepo(t)
+	write(t, dir, "docs/notes/why.md", "# Why\n")
+	a := newRoutedAgent()
+	a.discover = "```json\n" + `{"sources":[{"path":"docs/notes/why.md","kind":"overview","reason":"why the product exists"}]}` + "\n```\n"
+	a.discovers = adapter.Tokens{Input: 500, Output: 10}
+	env := testEnv(t, onePR(), a)
+	var names []string
+	env.Agent = func(name string) (adapter.Adapter, error) { names = append(names, name); return a, nil }
+	code, out, errOut := runInit(env, "--gather", "--agent", "x", "--appetite", "25000", "--json")
+	var sum gather.Summary
+	if code != 0 || json.Unmarshal([]byte(out), &sum) != nil {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	if !strings.HasPrefix(errOut, "physa init: gather up to 25000 tokens (the discovery agent)\n") || !slices.Equal(names, []string{"x"}) ||
+		!slices.Equal(a.started, []string{"discover"}) || !a.readOnly {
+		t.Errorf("stderr %q, agents %v, sessions %v", errOut, names, a.started)
+	}
+	if d := sum.Discovery; !d.Started || d.Added != 1 || d.Cap != 25000 || d.Tokens.Input != 500 {
+		t.Errorf("discovery %+v", d)
+	}
+	if g := storedGather(t, env); !slices.ContainsFunc(g.Docs, func(d store.Doc) bool { return d.Path == "docs/notes/why.md" && d.Reason == "why the product exists" }) {
+		t.Errorf("stored docs %+v", g.Docs)
+	}
+}
+
+func TestGatherCapBelowTheFloorStartsNoAgent(t *testing.T) {
+	newRepo(t)
+	env := testEnv(t, onePR(), nil)
+	env.Agent = noAgent(t)
+	code, out, errOut := runInit(env, "--gather", "--json", "--appetite", "1000")
+	var sum gather.Summary
+	if code != 0 || json.Unmarshal([]byte(out), &sum) != nil {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	if d := sum.Discovery; d.Started || d.Why != "the cap of 1000 tokens is too small to start discovery" {
+		t.Errorf("discovery %+v", d)
 	}
 }

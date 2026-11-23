@@ -16,6 +16,9 @@
 // Writer never touches the person's own working copy, index or checked-out
 // branch.
 //
+// Listed lists the working tree's files for discovery, through the optional
+// Lister, when an adapter offers it.
+//
 // A repo's hooks path can be read and set through Hooks (in hooks.go).
 //
 // A revert is a change whose message says which change it reverts. Each
@@ -106,6 +109,17 @@ type Repo interface {
 	// IsAncestor reports whether change a is change b or part of b's history.
 	// It is false when either does not exist.
 	IsAncestor(a, b string) bool
+}
+
+// Lister is an optional part of a Repo, for an adapter that can list the
+// working tree's files. Callers ask for it with a type assertion; it is not in
+// Repo, so fakes that stand in for a Repo need no change.
+type Lister interface {
+	// Listed returns the working tree's files that the repo tracks or does not
+	// ignore, tracked and untracked alike, as slash paths relative to the root.
+	// The list is sorted and has no duplicates. It never holds the .git
+	// directory or the files git ignores.
+	Listed() ([]string, error)
 }
 
 // Writer is a history Physa can read and write, for learning's branch. It

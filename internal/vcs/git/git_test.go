@@ -186,6 +186,53 @@ func TestFiles(t *testing.T) {
 	}
 }
 
+func TestListed(t *testing.T) {
+	r, dir := newRepo(t)
+	write := func(p, body string) {
+		t.Helper()
+		full := filepath.Join(dir, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".gitignore", "ignored.log\n")
+	write("tracked.md", "t")
+	run(t, dir, "add", ".")
+	commit(t, dir, "tracked")
+	write("untracked.md", "u")
+	write("sub/deep.md", "d")
+	write("ignored.log", "i")
+	lister, ok := r.(vcs.Lister)
+	if !ok {
+		t.Fatal("git repo should implement vcs.Lister")
+	}
+	got, err := lister.Listed()
+	want := []string{".gitignore", "sub/deep.md", "tracked.md", "untracked.md"}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("Listed = %v, %v; want %v", got, err, want)
+	}
+	for _, p := range got {
+		if p == "ignored.log" || strings.HasPrefix(p, ".git/") {
+			t.Errorf("Listed holds %q, which must be absent", p)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ignored.log")); err != nil {
+		t.Errorf("the ignored file should exist on disk: %v", err)
+	}
+	sub := filepath.Join(dir, "sub")
+	fromSub, err := Open(sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotSub, err := fromSub.(vcs.Lister).Listed()
+	if err != nil || !reflect.DeepEqual(gotSub, want) {
+		t.Errorf("Listed from a subdirectory = %v, %v; want the root's %v", gotSub, err, want)
+	}
+}
+
 func TestChangeTime(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "one")

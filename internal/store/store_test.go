@@ -136,10 +136,10 @@ func TestMigrationTwoDropsPRChecks(t *testing.T) {
 	}
 }
 
-func TestFreshStoreMigratesToTen(t *testing.T) {
+func TestFreshStoreMigratesToLatest(t *testing.T) {
 	s, _ := open(t)
-	if got := version(t, s); got != 10 {
-		t.Errorf("user_version = %d, want 10", got)
+	if got := version(t, s); got != 11 {
+		t.Errorf("user_version = %d, want 11", got)
 	}
 	var n int
 	if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name = 'slice_records'").Scan(&n); err != nil || n != 1 {
@@ -354,8 +354,8 @@ func TestEngineTableChecks(t *testing.T) {
 
 func TestPlanTables(t *testing.T) {
 	s, _ := open(t)
-	if got := version(t, s); got != 10 {
-		t.Fatalf("user_version = %d, want 10", got)
+	if got := version(t, s); got != 11 {
+		t.Fatalf("user_version = %d, want 11", got)
 	}
 	for _, table := range []string{"changes", "session_changes", "spends", "needs_you"} {
 		var n int

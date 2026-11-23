@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/fit"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/store"
@@ -20,7 +21,7 @@ import (
 )
 
 // Version is the summary's JSON version.
-const Version = 1
+const Version = 2
 
 // Summary says what a gather found.
 type Summary struct {
@@ -30,7 +31,21 @@ type Summary struct {
 	Docs            DocsSummary    `json:"docs"`
 	History         HistorySummary `json:"history"`
 	PRs             PRsSummary     `json:"prs"`
+	Discovery       Discovery      `json:"discovery"`
 	EstimatedTokens int            `json:"estimated_tokens"`
+}
+
+// Discovery says what the agent's search for more sources did. Why says why
+// it was not started or added nothing, and is empty when it added sources.
+// Cap is the most tokens it may use.
+type Discovery struct {
+	Started bool           `json:"started"`
+	Why     string         `json:"why,omitempty"`
+	Named   int            `json:"named"`
+	Added   int            `json:"added"`
+	Model   string         `json:"model,omitempty"`
+	Tokens  adapter.Tokens `json:"tokens"`
+	Cap     int64          `json:"cap"`
 }
 
 // BoundSummary is the bound used. Since is a date; FromFlag is false when it
@@ -47,8 +62,9 @@ type BoundSummary struct {
 
 // DocFile is one doc found.
 type DocFile struct {
-	Path string `json:"path"`
-	Kind string `json:"kind"`
+	Path   string `json:"path"`
+	Kind   string `json:"kind"`
+	Reason string `json:"reason"`
 }
 
 // DocsSummary counts the docs.
@@ -56,7 +72,7 @@ type DocsSummary struct {
 	Count   int       `json:"count"`
 	Bytes   int       `json:"bytes"`
 	Files   []DocFile `json:"files"`
-	Skipped []string  `json:"skipped"`
+	Skipped []Skip    `json:"skipped"`
 }
 
 // HistorySummary counts the changes.
@@ -95,33 +111,38 @@ type Bounds struct {
 // Run gathers the docs under root, the history of repo and, through f, the
 // merged PRs, within the bound o sets, as of now. It returns the gather for
 // the caller to store and its summary, whose Store is left for the caller to
-// set. f may be nil.
-func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, now time.Time) (store.Gather, Summary, error) {
+// set. f may be nil. d asks for the agent's search for more sources, whose
+// finds join the docs; it never makes Run fail.
+func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now time.Time) (store.Gather, Summary, error) {
 	docs, skipped, err := Docs(root)
 	if err != nil {
 		return store.Gather{}, Summary{}, fmt.Errorf("cannot read the docs: %w", err)
 	}
+	added, more, info := discover(root, repo, d, docs)
+	docs = append(docs, added...)
+	skipped = append(skipped, more...)
 	g := store.Gather{Docs: docs, Run: store.GatherRun{At: now, Since: o.Since, MaxPRs: o.MaxPRs}}
 	s := Summary{Version: Version, Bound: BoundSummary{
 		Since: o.Since.UTC().Format(time.DateOnly), FromFlag: o.SinceSet, MaxPRs: o.MaxPRs,
 	}}
+	s.Discovery = info
 	s.Docs = DocsSummary{Count: len(docs), Files: []DocFile{}, Skipped: skipped}
 	if skipped == nil {
-		s.Docs.Skipped = []string{}
+		s.Docs.Skipped = []Skip{}
 	}
 	for _, d := range docs {
 		s.Docs.Bytes += len(d.Body)
-		s.Docs.Files = append(s.Docs.Files, DocFile{Path: d.Path, Kind: d.Kind})
+		s.Docs.Files = append(s.Docs.Files, DocFile{Path: d.Path, Kind: d.Kind, Reason: d.Reason})
 	}
 
-	prs, more, reason := readPRs(f, o)
+	prs, limited, reason := readPRs(f, o)
 	if f != nil {
 		g.Run.Forge = f.Name()
 	}
 	g.Run.ForgeReason = reason
 	g.PRs = prs
 	histSince := o.Since
-	if more && len(prs) > 0 {
+	if limited && len(prs) > 0 {
 		oldest := prs[0].MergedAt
 		for _, p := range prs {
 			if p.MergedAt.Before(oldest) {

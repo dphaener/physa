@@ -50,6 +50,10 @@ type Spec struct {
 	// PromptOnly makes the session answer from its prompt alone: no tools of
 	// any kind.
 	PromptOnly bool
+	// ReadOnly makes the session read the files under Dir and search them, and
+	// nothing else: it has no tool that writes, runs commands or reaches the
+	// network. PromptOnly wins when both are set.
+	ReadOnly bool
 	// SessionID is the id assigned to the session by whoever starts it; empty
 	// means none, and the agent picks its own. An adapter whose agent cannot
 	// take an assigned id ignores it. One that can may refuse an id not in the

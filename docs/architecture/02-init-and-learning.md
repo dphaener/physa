@@ -22,25 +22,42 @@ From the vision and 01:
 
 ```
 gather ──▶ propose capabilities ──▶ recover knowledge ──▶ check ──▶ review as a PR
-(no agent)    (agent)                 (agent, per capability)  (no agent)   (a person)
+(rules, then agent)  (agent)                 (agent, per capability)  (no agent)   (a person)
 ```
 
-### 2.2 Gather (deterministic, no agent)
+### 2.2 Gather (fixed rules, then one read-only agent)
 
-Physa collects sources into the local store. Nothing is written to the repo yet.
+Physa collects sources into the local store. Nothing is written to the repo yet. Gather has two parts: the deterministic finds, which are always kept, and discovery, one agent session that names more sources beside them.
 
 | Source | What is kept | How |
 |---|---|---|
-| Existing agent and contributor docs | AGENTS.md, CLAUDE.md, CONTEXT.md, Cursor rules, CONTRIBUTING, README, any decision-record folders, and plan and overview files (PLAN, ROADMAP, OVERVIEW, ARCHITECTURE, CONTEXT, any case) directly under `docs/` | files in the repo |
+| Existing agent and contributor docs | AGENTS.md, CLAUDE.md, CONTEXT.md, Cursor rules, CONTRIBUTING, README, any decision-record folders, and plan and overview files (PLAN, ROADMAP, OVERVIEW, ARCHITECTURE, CONTEXT, any case) directly under `docs/` | files in the repo, found by fixed rules |
+| Named by discovery | the other docs the agent names, each with its kind and a one-line reason | one read-only agent session (below) |
 | Git history | commit messages, trailers, reverts, which files change together | the version-control interface (07 §6) |
 | PRs | titles, bodies, review comments (especially requested changes), linked issues | the forge interface (GitHub through `gh` first) (Q1) |
 
+- **Deterministic finds are always kept.** The fixed rules run first and find the docs in the first row, each with a fixed reason. Discovery adds to them and never removes them.
+- **Discovery is one agent session, read-only.** It runs in the repo with the Read, Glob and Grep tools only, so it can read and search but never write, run a command or reach the network. It gets the repo's file tree (up to 4,000 paths), the deterministic finds and the bodies of the agent docs. It names more sources, each as a path, one of the five existing kinds (`agent`, `contributing`, `readme`, `decisions` or `overview`) and a one-line reason.
+- **Guardrails.** Gather reads a named file only if it passes these checks, in order. A named file that fails one is listed under skipped with its reason, and is not read; only the text check reads a file before it refuses it:
+  - `outside the repo`: the path leaves the repo, or its folder resolves through a symlink to outside it;
+  - `under .git` or `under an ignored folder`: the path is under `.git`, under a folder the repo ignores, or a file git ignores;
+  - `missing`: the file is not there;
+  - `not a regular file`: a symlink, a folder or another special file;
+  - `over 2 MB`: a file larger than 2 MB;
+  - `unknown kind`: a kind that is not one of the five;
+  - `a duplicate`: a file that a deterministic find or an earlier named source already holds;
+  - `over the limit of 200 named sources`: a 201st source that would be accepted;
+  - `not text`: a NUL byte or invalid UTF-8 in its first 8 KB.
+- **Cap.** The session may spend up to 100,000 tokens, input and output together; cached input counts, as it does in every other phase. In a full run the cap is a quarter of the appetite when that is less, and the budget line names it before any agent starts. With `--gather` alone it is `--appetite` when that is less. The circuit breaker stops the session before the turn that would reach the cap, judging by the largest increase a report of its tokens has brought so far; a session it stops names nothing. A cap under 20,000 tokens, too small for a session to reach its first reply, starts no session: gather keeps the deterministic finds and says discovery did not start, because the cap of N tokens is too small to start discovery. A single report that jumps past the cap is shown as it is. Discovery's spend comes off the appetite (§2.7).
+- **Fallback.** When the agent is not installed, its session fails, or the session is stopped at its cap, gather keeps the deterministic finds and gives the reason in its summary. Init does not fail.
+- **Mapped repos.** `physa init --gather` on a repo that already has a map runs only the deterministic finds and starts no agent. The summary says discovery was not started because the repo has a map (§2.7).
+- **Flags.** `physa init --gather` accepts `--agent`, which names the agent that runs discovery, and `--appetite`, which caps it as above.
 - **History is bounded** by default: the last 12 months or 1,000 PRs, whichever is smaller (the shorter window). Teams can widen it with `--since YYYY-MM-DD` (the date bound) and `--max-prs N` (the PR bound).
 - **When the PR limit is reached first**, history starts at the merge time of the oldest gathered PR, so both sources cover the same window.
 - **Without a forge**, only the date applies, and PRs are reported unavailable. That is not a failure.
 - **Decision-record folders** are found by name or by shape (numbered markdown files). Files over 2 MB are skipped and listed in the summary; fitting the sources to an agent is the next phase's job (§2.3).
 - **Files that change together** are used only as hints for proposing capabilities during init. File paths never enter the map.
-- **`physa init --gather`** runs this phase alone. It writes only the store, replacing the previous gather in one transaction, and prints a summary as text or `--json`: counts by source, the bound used, and an estimated token count (bytes / 2.3, an estimate).
+- **`physa init --gather`** runs this phase alone. It writes only the store, replacing the previous gather in one transaction, and prints a summary as text or `--json`: each source with its kind and reason, each skipped file with its why, counts by source, the bound used, discovery's outcome (sources named and added, tokens spent of the cap, or why discovery did not run), and an estimated token count of the sources (bytes / 2.3, an estimate).
 
 ### 2.3 Propose capabilities (agent)
 
@@ -122,10 +139,10 @@ Settled as built with `physa init --recover`:
 - The default appetite is 300,000 tokens, shared by all of a run's sessions. Input and output both count.
 - Before its first turn a session reserves its prompt plus 12,000 tokens for the reply. Before each retry it reserves what it has used so far, plus the retry's message and another 12,000. A reservation that cannot fit beside what is already spent is refused. One that waits only on other sessions' reservations waits for them to settle.
 - A session that reports more tokens than its reservation is stopped by the circuit breaker.
-- Bare `physa init`, `--propose` and `--recover` refuse a repo whose default branch already holds a map before gathering or running any agent, saying `physa map learn` keeps it current. When no default branch can be found they check the working tree for `.physa/product.md` instead, and `--write` reports the missing default branch as before; `--gather` alone still runs, since it spends no tokens and writes only the store.
+- Bare `physa init`, `--propose` and `--recover` refuse a repo whose default branch already holds a map before gathering or running any agent, saying `physa map learn` keeps it current. When no default branch can be found they check the working tree for `.physa/product.md` instead, and `--write` reports the missing default branch as before; `--gather` alone still runs: its only spend is discovery's, which a mapped repo never starts, and it writes only the store.
 - When the appetite ends a session, a capability with a checked answer keeps it, with its entries settled by dropping. A capability with no checked answer is "not yet recovered", as are those not started. A capability whose retries run out with no readable answer fails, with the read problem.
 
-Settled as built with a bare `physa init` (decided by Claude as arbiter for the owner to review): the whole run spends one appetite, given by `--appetite` or the default of 300,000 tokens. Before any token is spent, the run prints its plan as one line, for example `physa init: appetite 300000 tokens: gather 0 (no agent); propose up to 150000 (its prompt about P plus R for the reply); recover the rest, about X, shared by its sessions; check and write 0.` The figures are estimates: the propose prompt is fitted as §2.3 describes, and the reply reserve is propose's own.
+Settled as built with a bare `physa init` (decided by Claude as arbiter for the owner to review): the whole run spends one appetite, given by `--appetite` or the default of 300,000 tokens. Before any token is spent, the run prints its plan as one line, for example `physa init: appetite 300000 tokens: gather up to 75000 (the discovery agent); propose up to 150000; recover the rest, about 75000, shared by its sessions; check and write 0.` Once gather has run, and before propose starts, the run prints the propose prompt's figures as one line, `physa init: propose's prompt is about P tokens plus R for the reply.` The figures are estimates: the propose prompt is fitted as §2.3 describes, and the reply reserve is propose's own. Recovery gets the appetite less what discovery and proposing spent.
 
 ### 2.8 A new codebase
 

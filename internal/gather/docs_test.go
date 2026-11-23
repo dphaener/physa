@@ -77,7 +77,7 @@ func TestDocs(t *testing.T) {
 	if !sortedStrings(paths) {
 		t.Errorf("not sorted: %v", paths)
 	}
-	if !reflect.DeepEqual(skipped, []string{"CONTRIBUTING"}) {
+	if len(skipped) != 1 || skipped[0].Path != "CONTRIBUTING" || !strings.HasPrefix(skipped[0].Why, "over 2 MB (2097153 bytes)") {
 		t.Errorf("skipped %v", skipped)
 	}
 }
@@ -128,7 +128,49 @@ func TestDocsOverviewOverCapSkipped(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "docs/PLAN.md", strings.Repeat("a", MaxDocBytes+1))
 	docs, skipped, err := Docs(root)
-	if err != nil || len(docs) != 0 || !reflect.DeepEqual(skipped, []string{"docs/PLAN.md"}) {
+	if err != nil || len(docs) != 0 || len(skipped) != 1 || skipped[0].Path != "docs/PLAN.md" {
+		t.Fatalf("%v %v %v", docs, skipped, err)
+	}
+}
+
+func TestDocsReasons(t *testing.T) {
+	root := t.TempDir()
+	want := map[string]string{
+		"AGENTS.md":           "an agent instructions file",
+		"CONTEXT.md":          "an agent instructions file",
+		".cursorrules":        "Cursor rules",
+		".cursor/rules/a.mdc": "Cursor rules",
+		"CONTRIBUTING.md":     "the contributing guide",
+		"README.md":           "the README",
+		"decisions.md":        "a decisions file",
+		"docs/adr/0001-a.md":  "a decision-record folder",
+		"docs/adr/0002-b.md":  "a decision-record folder",
+		"docs/PLAN.md":        "a plan or overview file under docs/",
+		"docs/context.md":     "an agent instructions file",
+	}
+	for rel := range want {
+		write(t, root, rel, "x")
+	}
+	docs, _, err := Docs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, d := range docs {
+		got[d.Path] = d.Reason
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v\nwant %v", got, want)
+	}
+}
+
+func TestDocsMissingOrIrregularIsSilent(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "README.md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	docs, skipped, err := Docs(root)
+	if err != nil || len(docs) != 0 || len(skipped) != 0 {
 		t.Fatalf("%v %v %v", docs, skipped, err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"path"
 	"sort"
+	"strings"
 
 	"github.com/dphaener/physa/internal/fit"
 )
@@ -44,7 +45,7 @@ func WriteText(w io.Writer, s Summary) error {
 			groups[d+"/"]++
 			continue
 		}
-		p("  %s (%s)", f.Path, f.Kind)
+		p("  %s (%s): %s", f.Path, f.Kind, f.Reason)
 	}
 	dirs := make([]string, 0, len(groups))
 	for d := range groups {
@@ -55,8 +56,9 @@ func WriteText(w io.Writer, s Summary) error {
 		p("  %s (%s)", d, plural(groups[d], "file", "files"))
 	}
 	for _, f := range s.Docs.Skipped {
-		p("  skipped %s (over %d KB)", f, MaxDocBytes/1024)
+		p("  skipped %s: %s", f.Path, f.Why)
 	}
+	writeDiscovery(p, s.Discovery)
 	h := s.History
 	p("History: %s, %d with trailers, %s, %d with altered files, %s.",
 		plural(h.Changes, "change", "changes"), h.WithTrailers, plural(h.Reverts, "revert", "reverts"),
@@ -78,4 +80,25 @@ func plural(n int, one, many string) string {
 		return "1 " + one
 	}
 	return fmt.Sprintf("%d %s", n, many)
+}
+
+// writeDiscovery writes the Discovery line through p.
+func writeDiscovery(p func(string, ...any), d Discovery) {
+	if !d.Started {
+		why := d.Why
+		if why == "" {
+			why = "discovery not asked"
+		}
+		p("Discovery: %s", strings.TrimPrefix(why, "discovery ")) // the label already says it
+		return
+	}
+	model := ""
+	if d.Model != "" {
+		model = " (" + d.Model + ")"
+	}
+	line := fmt.Sprintf("Discovery: %d named, %d added, %d tokens of %d%s", d.Named, d.Added, d.Tokens.Input+d.Tokens.Output, d.Cap, model)
+	if d.Why != "" {
+		line += "; " + d.Why
+	}
+	p("%s", line)
 }

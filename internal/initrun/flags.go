@@ -18,7 +18,7 @@ import (
 // Usage is the command's synopsis lines.
 var Usage = []string{
 	"physa init [--write [--push [--pr]] [--hooks]] [--appetite N] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]",
-	"physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--json]",
+	"physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--appetite N] [--agent NAME] [--json]",
 	"physa init --propose [--appetite N] [--agent NAME] [--json]",
 	"physa init --recover [--only CAPABILITY]... [--appetite N] [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]",
 }
@@ -61,9 +61,10 @@ var switches = map[string]func(*Flags){
 // values --since (YYYY-MM-DD), --max-prs and --appetite (at least 1),
 // --agent, --answers and --only (repeatable or comma-separated), each also
 // as --name=value. At most one phase is named. --since and --max-prs go with
-// --gather or the full run; --appetite and --agent with any but --gather;
-// --only with --recover; --answers with the full run; --write with
-// --recover or the full run. --push needs --write, --pr --push and --hooks
+// --gather or the full run; --appetite and --agent with any phase or the
+// full run (with --gather they cap and choose its discovery agent); --only
+// with --recover; --answers with the full run; --write with --recover or
+// the full run. --push needs --write, --pr --push and --hooks
 // --write. It reports false for anything else.
 func ParseFlags(args []string, now time.Time) (Flags, bool) {
 	o := Flags{Since: now.AddDate(-1, 0, 0), MaxPRs: gather.DefaultMaxPRs}
@@ -129,7 +130,6 @@ func (o Flags) valid(gatherOnly bool) bool {
 	switch {
 	case o.Gather && o.Propose, o.Gather && o.Recover, o.Propose && o.Recover,
 		gatherOnly && (o.Propose || o.Recover),
-		o.Gather && (o.Appetite != 0 || o.Agent != ""),
 		len(o.Only) > 0 && !o.Recover,
 		o.Answers != "" && !o.Full(),
 		o.Write && (o.Gather || o.Propose),

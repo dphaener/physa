@@ -18,11 +18,13 @@ type GatherRun struct {
 	ForgeReason string
 }
 
-// Doc is one gathered document.
+// Doc is one gathered document. Reason is why gather picked this source,
+// shown to the person; it is empty for a gather stored before it was kept.
 type Doc struct {
-	Path string
-	Kind string
-	Body string
+	Path   string
+	Kind   string
+	Body   string
+	Reason string
 }
 
 // Trailer is one key and value from a change's message.
@@ -100,7 +102,7 @@ func (s *Store) PutGather(g Gather) error {
 		return err
 	}
 	for _, d := range g.Docs {
-		if _, err := tx.Exec(`INSERT INTO gather_docs (path, kind, body) VALUES (?, ?, ?)`, d.Path, d.Kind, d.Body); err != nil {
+		if _, err := tx.Exec(`INSERT INTO gather_docs (path, kind, body, reason) VALUES (?, ?, ?, ?)`, d.Path, d.Kind, d.Body, d.Reason); err != nil {
 			return err
 		}
 	}
@@ -189,7 +191,7 @@ func (s *Store) Gathered() (Gather, bool, error) {
 }
 
 func (s *Store) gatheredDocs() ([]Doc, error) {
-	rows, err := s.db.Query(`SELECT path, kind, body FROM gather_docs ORDER BY path`)
+	rows, err := s.db.Query(`SELECT path, kind, body, reason FROM gather_docs ORDER BY path`)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +199,7 @@ func (s *Store) gatheredDocs() ([]Doc, error) {
 	var out []Doc
 	for rows.Next() {
 		var d Doc
-		if err := rows.Scan(&d.Path, &d.Kind, &d.Body); err != nil {
+		if err := rows.Scan(&d.Path, &d.Kind, &d.Body, &d.Reason); err != nil {
 			return nil, err
 		}
 		out = append(out, d)

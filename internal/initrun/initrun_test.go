@@ -99,15 +99,20 @@ func newRepo(t *testing.T) string {
 }
 
 // testEnv is an Env on the repo in the working directory, with its own store,
-// the given forge and agent, and the real clock.
+// the given forge and agent (none installed when nil), and the real clock.
 func testEnv(t *testing.T, f forge.Forge, a adapter.Adapter) Env {
 	t.Helper()
 	sd := t.TempDir()
 	return Env{
-		Store:  func(string) (*store.Store, error) { return store.Open(sd) },
-		Repo:   func(dir string) (vcs.Repo, error) { return git.Open(dir) },
-		Forge:  func(string) forge.Forge { return f },
-		Agent:  func(string) (adapter.Adapter, error) { return a, nil },
+		Store: func(string) (*store.Store, error) { return store.Open(sd) },
+		Repo:  func(dir string) (vcs.Repo, error) { return git.Open(dir) },
+		Forge: func(string) forge.Forge { return f },
+		Agent: func(string) (adapter.Adapter, error) {
+			if a == nil {
+				return nil, adapter.ErrNotInstalled
+			}
+			return a, nil
+		},
 		Now:    time.Now,
 		Writer: git.OpenWriter,
 	}
@@ -149,7 +154,7 @@ func TestGatherJSON(t *testing.T) {
 	write(t, dir, "README.md", "hello\n")
 	env := testEnv(t, onePR(), nil)
 	code, out, errOut := runInit(env, "--gather", "--json")
-	if code != 0 || errOut != "" {
+	if code != 0 || errOut != "physa init: gather up to 100000 tokens (the discovery agent)\n" {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
 	var sum gather.Summary
@@ -158,6 +163,9 @@ func TestGatherJSON(t *testing.T) {
 	}
 	if sum.Docs.Count < 2 || sum.History.Changes < 4 || sum.PRs.Count != 1 || !sum.PRs.Available {
 		t.Errorf("summary %+v", sum)
+	}
+	if d := sum.Discovery; d.Started || !strings.HasPrefix(d.Why, "no agent: ") || d.Cap != 100_000 {
+		t.Errorf("with no agent installed, discovery %+v", d)
 	}
 	g := storedGather(t, env)
 	if len(g.Docs) != sum.Docs.Count || len(g.Changes) != sum.History.Changes || len(g.PRs) != 1 {
@@ -208,15 +216,16 @@ const proposeReply = "Thinking.\n```json\n" +
 	`"capabilities":[{"name":"delivery","promise":"Changes reach users in order.","shown_by":["#3"],"questions":[]}],` +
 	`"questions":[]}` + "\n```\n"
 
-// gatheredEnv is an Env on a repo with a gather in its store, ready to
-// propose from with agent a.
+// gatheredEnv is an Env on a repo with a gather in its store, gathered with
+// no agent installed, ready to propose from with agent a.
 func gatheredEnv(t *testing.T, a adapter.Adapter) Env {
 	t.Helper()
 	newRepo(t)
-	env := testEnv(t, onePR(), a)
+	env := testEnv(t, onePR(), nil)
 	if code, _, errOut := runInit(env, "--gather"); code != 0 {
 		t.Fatalf("gather: %d %q", code, errOut)
 	}
+	env.Agent = func(string) (adapter.Adapter, error) { return a, nil }
 	return env
 }
 

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/discovery"
 	"github.com/dphaener/physa/internal/fit"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/newcodebase"
@@ -14,14 +15,28 @@ import (
 	"github.com/dphaener/physa/internal/store"
 )
 
-// full is bare physa init (design 02 section 2.1): it gathers, and for a new
-// codebase takes the person's answers instead; otherwise it prints the
-// appetite's plan before any token is spent, proposes with half the
-// appetite (at most propose's default), recovers with what proposing left,
-// and with --write writes physa/init. Every run starts fresh: a new gather
-// and proposal replace the stored ones and their recoveries.
+// full is bare physa init (design 02 section 2.1): it prints the
+// appetite's plan before any token is spent, then gathers, with a discovery
+// agent capped at a quarter of the appetite (at most discovery's default), and
+// for a new codebase takes the person's answers instead; otherwise it
+// proposes with half the appetite (at most propose's default), recovers with
+// what discovery and proposing left, and with --write writes physa/init.
+// Every run starts fresh: a new gather and proposal replace the stored ones
+// and their recoveries.
 func full(o Flags, st *store.Store, root string, p *printer, stderr io.Writer, env Env) int {
-	g, sum, err := gatherInto(st, o, env)
+	appetite := o.Appetite
+	if appetite == 0 {
+		appetite = recovery.DefaultAppetite
+	}
+	limit := min(discovery.DefaultAppetite, appetite/4)
+	share := min(appetite/2, mapping.DefaultAppetite) // recovering gets the rest, less what discovery and proposing used
+	budget, err := fit.Budget(share, mapping.Overhead())
+	if err != nil {
+		return failed(stderr, err)
+	}
+	fmt.Fprintf(stderr, "physa init: appetite %s: gather up to %d (the discovery agent); propose up to %d; recover the rest, about %d, shared by its sessions; check and write 0.\n",
+		plural(int(appetite), "token", "tokens"), limit, share, appetite-limit-share)
+	g, sum, err := gatherInto(st, o, env, discover(o, env, limit, "", stderr))
 	if err != nil {
 		return failed(stderr, err)
 	}
@@ -29,16 +44,8 @@ func full(o Flags, st *store.Store, root string, p *printer, stderr io.Writer, e
 	if newcodebase.New(g) {
 		return newCodebase(g, root, o, env, p, stderr)
 	}
-	appetite := o.Appetite
-	if appetite == 0 {
-		appetite = recovery.DefaultAppetite
-	}
-	share := min(appetite/2, mapping.DefaultAppetite) // recovering gets the rest, less what proposing used
-	line, err := planLine(g, appetite, share)
-	if err != nil {
-		return failed(stderr, err)
-	}
-	fmt.Fprintln(stderr, line)
+	fmt.Fprintf(stderr, "physa init: propose's prompt is about %d tokens plus %d for the reply.\n",
+		fit.Tokens(mapping.Prompt(fit.Fit(g, budget))), fit.Propose.ReplyReserve)
 	res, err := mapping.Propose(context.Background(), st, mapping.Session{
 		Agent:    func() (adapter.Adapter, error) { return env.Agent(o.Agent) },
 		Appetite: share, Progress: stderr, Now: env.Now,
@@ -51,8 +58,8 @@ func full(o Flags, st *store.Store, root string, p *printer, stderr io.Writer, e
 		return 1
 	}
 	p.proposal(res)
-	rest := appetite - res.Tokens.Input - res.Tokens.Output
-	rest = max(rest, 1) // zero would mean recovery's default; one reaches no capability
+	spent := sum.Discovery.Tokens.Input + sum.Discovery.Tokens.Output + res.Tokens.Input + res.Tokens.Output
+	rest := max(appetite-spent, 1) // zero would mean recovery's default; one reaches no capability
 	rep, err := recovery.Run(context.Background(), st, recoverySession(o, rest, nil, root, env, stderr))
 	if err != nil {
 		return failed(stderr, err)
@@ -63,21 +70,6 @@ func full(o Flags, st *store.Store, root string, p *printer, stderr io.Writer, e
 		code = max(code, writeStored(st, root, o, env, p, stderr))
 	}
 	return code
-}
-
-// planLine is the appetite's plan. The propose prompt is estimated by
-// fitting the gather as proposing will. It errors, before any agent is
-// resolved, when the share is too small to propose with.
-func planLine(g store.Gather, appetite, share int64) (string, error) {
-	budget, err := fit.Budget(share, mapping.Overhead())
-	if err != nil {
-		return "", err
-	}
-	prompt := int64(fit.Tokens(mapping.Prompt(fit.Fit(g, budget))))
-	reply := int64(fit.Propose.ReplyReserve)
-	rest := max(appetite-prompt-reply, 0)
-	return fmt.Sprintf("physa init: appetite %s: gather 0 (no agent); propose up to %d (its prompt about %d plus %d for the reply); recover the rest, about %d, shared by its sessions; check and write 0.",
-		plural(int(appetite), "token", "tokens"), share, prompt, reply, rest), nil
 }
 
 // recoverySession is how recovering runs under appetite: on the

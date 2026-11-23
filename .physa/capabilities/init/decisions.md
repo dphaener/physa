@@ -6,6 +6,7 @@
 - [Changes before the map are exempt from the Capability trailer](#changes-before-the-map-are-exempt-from-the-capability-trailer)
 - [The Session hook stays local](#the-session-hook-stays-local)
 - [Teams can't replace Physa's skills](#teams-cant-replace-physas-skills)
+- [Discovery is led by an agent, beside fixed rules](#discovery-is-led-by-an-agent-beside-fixed-rules)
 
 ## Entries
 
@@ -36,3 +37,10 @@ Physa's skills (mapping, recovering, learning, slice) ship embedded in the binar
 Because: "That steps on our core functionality that we own and could end up with loss of trust in the product due to users making bad decisions."
 Rejected:
 - A flag naming a replacement skill file, or a replacement kept in the map's folder: either hands the core of the product to the team.
+
+### Discovery is led by an agent, beside fixed rules
+`discovery-led-by-agent` · decided by dphaener, in their words · 2026-11-22 · fefed32
+Gather keeps its fixed rules and adds one read-only agent session that names more sources beside them, each with a kind and a reason. Every named file passes guardrails before it is read, and the session has its own token cap.
+Because: From the pitch of bet llm-init-discovery, made at fefed32: "Because every codebase can vary greatly and docs and prior knowledge can literally live anywhere, this is too limited to give the agent a fighting chance for creating a well defined map."
+Rejected:
+- Rules only: the fixed rules keep missing the reference, architecture and design docs a repo points to.

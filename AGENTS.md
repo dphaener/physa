@@ -15,8 +15,9 @@ Run `go run ./cmd/physa map hooks` once per clone so your commits carry `Session
 1. `.physa/glossary.md`: the only words we use for Physa's concepts.
 2. `.physa/product/`, then the folders in `.physa/capabilities/` the index shows your task touches: Physa's own map, with the rules and decisions that apply.
 3. `docs/vision.md`: what Physa is and why.
-4. `docs/architecture/`: settled designs, numbered in order.
-5. `docs/research/`: background. Read when a design refers to it.
+4. `docs/architecture/`: settled designs, numbered in order. `docs/archive/` holds designs set aside at the reset of 2026-11-23 (vision §5): reference, not settled.
+5. `docs/plan.md`: what is built and what comes next.
+6. `docs/research/`: background. Read when a design refers to it.
 
 Anchor commits with `Capability: <capability>` (its folder name in .physa/capabilities).
 

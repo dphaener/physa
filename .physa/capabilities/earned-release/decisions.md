@@ -11,14 +11,14 @@
 ## Entries
 
 ### Earned release, not flags
-`earned-release` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/05-earned-release-and-strength.md
+`earned-release` · decided by dphaener, in their words · 2026-11-20 · from docs/archive/architecture/05-earned-release-and-strength.md
 The mechanism is named for what it is for: agent-written code reaching people only as far as trust allows. Flags are the switch it uses.
 Because: "We're using flags as a means to an end. It's a bigger idea than that." "It's the single mechanism that allows anyone to ship code with agents with trust."
 Rejected:
 - Flags, Trial, Release, Rollout as its name: each says too little.
 
 ### Earned release is opt-in
-`flags-opt-in` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/05-earned-release-and-strength.md
+`flags-opt-in` · decided by dphaener, in their words · 2026-11-20 · from docs/archive/architecture/05-earned-release-and-strength.md
 Earned release as a whole (physa release serve, the provider, flags, experiments, guardrails, automatic rollback, and the product signals that need them) is one opt-in switch, off by default.
 Because: "If I as a solo developer just want to YOLO everything, I don't care about going through all of that ceremony."
 Rejected:
@@ -37,6 +37,6 @@ The open-source core includes a small flag service as the default OpenFeature pr
 Because: instant rollback must work for a solo developer with no vendor and no hosted layer.
 
 ### One server next to production, no SDK of our own
-`physa-serve` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/architecture/05-earned-release-and-strength.md
+`physa-serve` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/archive/architecture/05-earned-release-and-strength.md
 `physa release serve` (the same binary, one SQLite file) evaluates flags and takes signal events. Apps use OpenFeature SDKs with a thin Physa provider: OFREP to evaluate, OpenFeature's tracking API for events. One flag per idea, keyed by its slug.
 Because: a production app cannot ask a laptop whether a flag is on, and teams should not adopt a new SDK to try Physa.

@@ -2,6 +2,8 @@
 
 Draft 0.1, 2026-11-21. Uses `.physa/glossary.md` terms only. Builds on 01, 02 and 07; replaces 02 §3.3 and §3.5. Items marked (Q) are open questions for the owner.
 
+> **Reset, 2026-11-23** (vision §5, decision `core-and-line`): bets are now **pursuits**, which need only a signal (claim, direction, window, resolver) and take an optional appetite; pitches and shaping are gone. Where this design says bet, pitch or shaping, it records what was built or settled before the reset.
+
 Learning is how the map keeps its promise: "The map gets better with every PR, without anyone curating it." This design says what learning learns from, when an agent is involved, where it runs, and how proposals reach the map.
 
 It follows 07: Physa does not review code (`no-code-review`). Learning never reads a diff looking for lessons; it spends tokens only where something shows a lesson was learned.
@@ -54,7 +56,7 @@ An answered ask whose answer starts "Answered on behalf of <person> by the arbit
 
 Drift, a change quietly undoing a decision, is caught only when a signal points at it. That is the price of not reviewing code.
 
-A bet on a pitch with rabbit holes or no-gos is the one signal read from the store, not from a session or the forge (built in step 5F; the bets themselves are in 03 §19). Its kind is `bet-pitch` and its rule `rabbit-holes-and-no-gos`; its id is `bet/<slug>`, and the learning commit records it as `Learned: bet/<slug>`, so a bet is drafted once. A bet on an idea's text alone, with no pitch, gives no signal. Calls made while building it, for the owner to check:
+(Removed with pitches at the reset of 2026-11-23.) A bet on a pitch with rabbit holes or no-gos was the one signal read from the store, not from a session or the forge (built in step 5F; the bets themselves are in 03 §19). Its kind is `bet-pitch` and its rule `rabbit-holes-and-no-gos`; its id is `bet/<slug>`, and the learning commit records it as `Learned: bet/<slug>`, so a bet is drafted once. A bet on an idea's text alone, with no pitch, gives no signal. Calls made while building it, for the owner to check:
 
 - **The entry is anchored to where the default branch stood when the bet was made**: the newest default-branch change made no later than the bet. That change did not make the lesson real; it is there because the map needs a real change, and the entry says so: its `Because:` line begins `From the pitch of bet <slug>, made at <change>:`. dphaener chose this wording on 2026-11-22. The map has no anchor form for a bet, and propose and the map check keep an entry only when it cites a real change. Rejected: no anchor, which would drop every proposal from a bet while recording it as learned; and a new anchor form for bets, which changes the map's format.
 - **The `Learned: bet/<slug>` record is read from all history since the bet**, not only from the changes a run collects, so a bet is not drafted again once the learn PR is squash-merged and the watermark has moved past it.

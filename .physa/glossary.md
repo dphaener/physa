@@ -31,16 +31,10 @@ _Avoid_: context pack, context dump
 
 ## Work
 
-**Idea**: A person's intent to try something with the product: a PM's feature, a designer's layout, a developer's architecture. It is the thinnest tube in the network from the moment it exists, and it belongs to that person. It thickens as attention and then evidence flow into it, and withers when nothing does. An idea has no named states: its strength and a few facts (shaped, built, flagged to whom) say where it stands. When it withers, its code and flag are removed and its lesson stays in the map as a decision with the idea as a rejected option.
+**Idea**: A person's intent to try something with the product: a PM's feature, a designer's layout, a developer's architecture. It is the thinnest tube in the network from the moment it exists, and it belongs to that person. It thickens as attention and then evidence flow into it, and withers when nothing does. An idea has no named states: its strength and a few facts (pursued, built, flagged to whom) say where it stands. When it withers, its code and flag are removed and its lesson stays in the map as a decision with the idea as a rejected option.
 _Avoid_: ticket, backlog item, story, probe
 
-**Shaping**: Turning an idea into a pitch: working out the problem, the appetite, the solution, the scope, the signal and the no-gos. It can include spikes. Optional: an idea can be bet on with only its text and an appetite.
-_Avoid_: grooming, refinement
-
-**Pitch**: A shaped idea: the problem, the appetite, the solution, its scope, the signal it expects, its rabbit holes and no-gos.
-_Avoid_: RFC, spec, PRD
-
-**Signal**: What an idea expects to see in real use if it is right: user behaviour for product ideas, task success for design ideas, engineering evidence (reverts, rework, defects, lead time, performance) for architecture ideas. Named during shaping, before code. Physa measures only what signals name; their events belong to the idea and decay with it.
+**Signal**: What an idea expects to see if it is right, named by the person who pursues it, in four parts: its claim (what should change, in the team's own words), its direction (what counts as for, and what counts as against), its window (when it is read) and its resolver (who or what reports the result). User behaviour for product ideas, task success for design ideas, engineering evidence (reverts, rework, defects, lead time, performance) for architecture ideas. What the claim is and how it is read are the team's; that it has all four parts is Physa's. Physa measures only what signals name; their events belong to the idea and decay with it.
 _Avoid_: KPI, success metric
 
 **Evidence**: Anything that adds to or takes from strength: measured signal results, engineering evidence, rollbacks, and judgment. Judgment is a named person's assessment, weighted below measurement and always shown as judgment.
@@ -68,18 +62,16 @@ _Avoid_: LGTM, rubber stamp
 **Steward**: A person a team names to look after a capability: guardrail trips and decay reviews go to them. With no steward named, whoever recently anchored changes to the capability is asked.
 _Avoid_: capability owner, maintainer, DRI
 
-**Needs you**: Everything waiting on one person: sign-offs their stakes require, questions and asks addressed to them, their ideas that need shaping or are withering, their bets that hit a circuit breaker or stalled, calls their runs made, guardrail trips and decay reviews on capabilities they steward, and map proposals on their PRs. The home screen, and the only thing that notifies.
+**Needs you**: Everything waiting on one person: sign-offs their stakes require, questions and asks addressed to them, their ideas that are withering, their pursuits that hit a circuit breaker or stalled, calls their runs made, guardrail trips and decay reviews on capabilities they steward, and map proposals on their PRs. The home screen, and the only thing that notifies.
 _Avoid_: inbox, activity feed
 
 **Rollback**: Undoing something, cheapest first: turn its flag off, when earned release is on; revert its changes; reverse its decision and list what relied on it. Every rollback is recorded with who and why, and weakens the strength of what was rolled back.
 
-**Appetite**: How many tokens a team is willing to spend on a pitch, counted from when the bet is made and building starts. A budget, never an estimate. Time plays no part.
+**Appetite**: How many tokens a person is willing to spend on a pursuit, counted from when it starts. A budget, never an estimate. Time plays no part. Optional: a pursuit with no appetite has no circuit breaker, and its spend is still counted and shown.
 _Avoid_: estimate, points, story points, time box
 
-**Bet**: A person's decision to build an idea within an appetite, shaped into a pitch or not.
-_Avoid_: sprint, commitment
-
-**Scope**: The breadth of a pitch: what it covers. Its no-gos mark the edge. Set during shaping; widening it after the bet goes back to shaping. A pitch too broad for one bet becomes more than one idea.
+**Pursuit**: A person's decision to build an idea, with their name on its signal. Only people pursue; agents can draft a signal. An appetite is optional. How the team got from idea to pursuit is its own workflow, not Physa's.
+_Avoid_: bet, sprint, commitment
 
 **Change**: One small, atomic change to the product, usually a single commit in its own PR, anchored to exactly one capability. A change that touches two capabilities should have been split.
 _Avoid_: change set, ticket, leaf, work item
@@ -87,15 +79,10 @@ _Avoid_: change set, ticket, leaf, work item
 **Acceptance**: The runnable checks a planned change must pass, with a failure case, written before the code. It is the contract every role judges against, and the engine re-runs it itself.
 _Avoid_: acceptance criteria, definition of done, DoD
 
-**Spike**: Optional. A run during shaping that builds working or partial code to learn something for a pitch. Its branch stays with the idea, and a bet can start from it; it never lands on its own. Its runs count as attention to the idea. It has its own very small appetite.
+**Spike**: Optional. A run before a pursuit that builds working or partial code to learn something about an idea. Its branch stays with the idea, and a pursuit can start from it; it never lands on its own. Its runs count as attention to the idea. It has its own very small appetite.
 _Avoid_: prototype, POC
 
-**Rabbit hole**: A known risk in a pitch that could swallow the appetite. Once found, it is kept in the map as a rule or a rejected option on a decision.
-
-**No-go**: Something a pitch deliberately leaves out. Kept in the map the same way as a rabbit hole.
-_Avoid_: non-goal
-
-**Circuit breaker**: When a bet runs out of appetite, its work stops and goes back to shaping. It is never extended automatically.
+**Circuit breaker**: When a pursuit runs out of its appetite, its work stops and goes back to its person. It is never extended automatically.
 _Avoid_: extension
 
 ## Engine
@@ -127,5 +114,5 @@ _Avoid_: job
 **Strength**: How much real flow an idea or capability carries: attention before code, then usage, earned release, signal results, stability and citations. Measured, never set by hand. Not a judgment of quality: an idea nobody has tried yet is weak however good it is. Always on, and shown as experimental until calibration has data. How strict the process is and how much agents may do follow from it, by the team's own policy.
 _Avoid_: mode, maturity, confidence score
 
-**Decay**: How knowledge and work that are not used, reaffirmed or bet on lose standing until reviewed or removed.
+**Decay**: How knowledge and work that are not used, reaffirmed or pursued lose standing until reviewed or removed.
 _Avoid_: expiry, garbage collection

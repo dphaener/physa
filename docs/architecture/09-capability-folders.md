@@ -2,6 +2,8 @@
 
 Draft 0.2, 2026-11-21; Q1–Q10 settled. Uses `.physa/glossary.md` terms only. Builds on 01 and 08; would replace 01 §2, §3 and §8.2 where they differ. Items marked (Q) are open questions for the owner.
 
+> **Reset, 2026-11-23** (vision §5, decision `core-and-line`): bets are now **pursuits**, which need only a signal (claim, direction, window, resolver) and take an optional appetite; pitches and shaping are gone. Where this design says bet, pitch or shaping, it records what was built or settled before the reset.
+
 Learning makes capabilities grow. One run over five changes added about 30 lines to `init`, and the hard limit of 150 lines a file would fail the first busy capability's learn PR within weeks. This design turns each capability into a folder with an index, so that people and agents read a short overview and follow links to exactly what they need, instead of a slice cutting by size without judgement.
 
 ## 1. Settled with the owner (2026-11-21)

@@ -1,8 +1,8 @@
-# Vision (draft 0.1)
+# Vision (draft 0.2)
 
-2026-11-19. Product name: Physa, after Physarum, the slime mold whose networks inspired the model. Every concept is defined in `.physa/glossary.md`, and this document uses no other words for them.
+2026-11-19; reset 2026-11-23 around the core in §5. Product name: Physa, after Physarum, the slime mold whose networks inspired the model. Every concept is defined in `.physa/glossary.md`, and this document uses no other words for them.
 
-Sections marked **(open)** are not yet settled with the owner.
+Sections marked **(open)** are not yet settled with the owner. Everything here beyond the map, init and learning is a direction, not a design: the designs written for it before the reset are kept in `docs/archive/` as reference, and are being designed again with the people now joining.
 
 ---
 
@@ -26,7 +26,7 @@ A slime mold (Physarum) builds efficient networks with no plan. It sends out man
 Physa treats a product the same way.
 
 - **An idea is a thin tube.** It begins the moment a person wants to try something: a PM's feature, a designer's layout, a developer's architecture. It belongs to that person.
-- **Flow thickens it.** Before code, the flow is attention: people weighing in and shaping it. After code, the flow is evidence: real use measured against the idea's signal.
+- **Flow thickens it.** Before code, the flow is attention: people weighing in and working it out. After code, the flow is evidence: real use measured against the idea's signal.
 - **Strength is the thickness.** It is measured, never set by hand. It replaces any notion of mode, maturity or priority label.
 - **Established ideas become capabilities.** An idea that keeps carrying flow becomes part of a capability, the product's established network, and keeps its history.
 - **Decay is the default.** Ideas, capabilities, rules, flags and signal events that stop carrying flow lose strength until they are reviewed or removed. There is no backlog, because nothing is kept just because it was once written down.
@@ -49,13 +49,13 @@ There are no role dashboards. Everyone sees the same views, filtered by what inv
 | Question | View |
 |---|---|
 | Does anything need me? | **Needs you**, the home screen |
-| What is changing right now? | Progress of current bets (how it is shown is still open); recent changes by capability |
+| What is changing right now? | Progress of current pursuits (how it is shown is still open); recent changes by capability |
 | What is the product? | **The network**: capabilities and ideas drawn thicker the stronger they are |
 | Why is it like this? | A capability's page: promise, rules, decisions, history, ideas growing from it |
 | What is growing, what is withering? | Ideas and capabilities by strength trend; decay candidates |
 | Is our process working? | Policy calibration, rollbacks, "needed a person" |
 
-**Needs you** lists only what waits on that person: sign-offs their stakes require, questions addressed to them, their ideas that need shaping or are withering, their bets that hit a circuit breaker, guardrail trips and decay reviews on capabilities they steward, and map proposals on their PRs. Empty is the goal state, and it says so.
+**Needs you** lists only what waits on that person: sign-offs their stakes require, questions addressed to them, their ideas that are withering, their pursuits that hit a circuit breaker, guardrail trips and decay reviews on capabilities they steward, and map proposals on their PRs. Empty is the goal state, and it says so.
 
 **The network view** is the signature: established capabilities as thick lines, growing ideas as thin branches, fading parts dimmed. Nobody else can draw it, because nobody else measures strength.
 
@@ -98,7 +98,7 @@ Anchoring to changes gives:
 - The repo's own AGENTS.md stays the team's. Physa adds a two or three line pointer and nothing else.
 - The map has an **index**: every capability with its one-line promise. An agent reads it and chooses what it needs.
 - The CLI assembles a **slice** for those capabilities: their promises, rules, decisions, questions and terms, within a size budget, with sources. It does no matching and no ranking; choosing is the agent's job, assembling is Physa's.
-- In planned work the harness chooses the capabilities when the work is shaped, and the builder receives the slice for its change, as the owner's current workflow already does.
+- In planned work the harness chooses the capabilities when the work is planned, and the builder receives the slice for its change, as the owner's current workflow already does.
 - Agents without the CLI still get the AGENTS.md pointer and can read the map's markdown directly.
 
 Glossary terms travel in every slice, so agents use the team's words from the first line they write.
@@ -122,17 +122,24 @@ The day-one map will be thinner than the code, because much of the "why" behind 
 
 Agents and people confuse each other when the same thing has three names. The glossary is part of the map: each term with a short definition and the words that would be confused with it. It exists so agents speak to people in concrete terms that mean something: every slice carries it, so agents are armed with it when they talk, write commits and PR descriptions, and write the map. It guides agents and never polices people, and it changes only when the team means to change it.
 
-## 5. From idea to established
+## 5. The core, and the line around it
 
-1. **Idea.** A person's intent to try something. Free to start; no signal required yet.
-2. **Shaping** (optional; a solo developer can bet on an idea's text and an appetite). The idea becomes a pitch: the problem, the appetite (in tokens), the solution, its scope, the signal it expects, its rabbit holes and its no-gos. How much shaping an idea needs depends on its appetite.
-3. **Bet.** A person decides to build the idea, shaped or not, within its appetite. Agents can draft pitches; only people bet. Who may bet on what is the team's policy, not Physa's.
-4. **Changes.** A pitch's scope, its breadth, is set during shaping, often helped by spikes: agent-built working or partial code that teaches the pitch something. A bet is delivered as the small changes its pitch plans, built by a harness. A pitch too broad for one bet becomes more than one idea.
-5. **Progress.** Shape Up's hill does not fit: the figuring out now happens in shaping. How a bet's progress is described and shown is still open.
-6. **Circuit breaker.** When a bet runs out of appetite, its work stops and goes back to shaping. Appetites are never extended automatically.
-7. **Flow decides.** With earned release on, built ideas land dark, earn their reach and are measured against their signal; without them, engineering evidence and reverts are the measure. Either way, they thicken into a capability or wither.
+Physa has a core it defends, and a line around that core it guards. Beyond the line, teams bring their own workflow: how an idea becomes something to build, how much to spend on it and what happens when it runs out, how progress is shown, who signs off, and which agents build it and how. Physa does not prescribe a process.
 
-Rabbit holes and no-gos found during shaping are kept in the map as rules or rejected options, so they outlive the pitch.
+The core, what must hold whatever workflow a team uses:
+
+1. **Strength is tracked.** Every idea and capability has a strength, measured from evidence, never set by hand. What stops carrying flow decays. Without it, none of the rest works.
+2. **The map holds why, never what** (§4.1).
+3. **The map is anchored to changes** (§4.2).
+4. **Every claim cites a source.**
+5. **One word for one thing**, through the glossary (§4.6).
+6. **People decide; agents propose.** Nothing changes silently.
+7. **The engine enforces and never judges.** It owns gates, identity and records, so a workflow can never grade its own work.
+8. **Every change can be undone**, cheapest way first (§7).
+9. **Spend is always counted**, whether or not an appetite limits it.
+10. **A person pursues an idea by naming its signal.** A pursuit is the explicit moment a person puts their name on building an idea, distinct from having it. Its signal has four parts: a claim, its direction (what counts as for and against), a window and a resolver. What the claim is and how it is read are the team's.
+
+An appetite, a circuit breaker, spikes and any write-up before a pursuit are workflow a team may add, not the core.
 
 ## 6. Evidence and signals
 
@@ -167,7 +174,7 @@ Confidence costs most where mistakes cost most.
 
 ## 8. The engine and harnesses
 
-- **The engine is dumb but durable.** It moves work through its lifecycle, enforces appetites, circuit breakers and gates, supervises runs, and keeps the record. It never makes judgments.
+- **The engine is dumb but durable.** It moves work through its lifecycle, enforces the gates and limits a team sets (an appetite and its circuit breaker among them), supervises runs, and keeps the record. It never makes judgments.
 - **The engine owns gates, identity and records**, so a harness can never grade its own work.
 - **Harnesses are pluggable.** A harness is a workflow of agent roles that builds and checks changes. Teams bring their own skills, workflows and agents.
 - **The first harness is the owner's**, descended from forge and shipit through afk: a conductor, builders and independent verifiers per change, isolated checks, a critic that can only remove or downgrade findings, and fixers. It builds Physa from day one and is the proof that harnesses are pluggable.
@@ -229,7 +236,7 @@ Pricing is postponed until the product exists.
 8. Every change can be undone, cheapest first.
 9. One word for one thing, enforced by the glossary.
 10. Grow the surface only when real use asks for it.
-11. Ceremony is opt-in. The map and the engine are the core; a solo developer's path is idea, bet, changes, landed, and a team switches on earned release, shaping and sign-offs as it needs them. Engineering evidence, strength and appetite are always on.
+11. Bring your own workflow. Physa guards the core (§5) and prescribes nothing beyond it; a solo developer's path is idea, pursuit, changes, landed. Engineering evidence, strength and the count of spend are always on.
 
 ## 12. Lessons carried from v1 (Rhiza)
 

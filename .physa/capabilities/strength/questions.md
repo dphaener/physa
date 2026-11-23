@@ -8,4 +8,4 @@
 
 ### How is strength computed?
 `strength-formula` · raised by dphaener · 2026-11-19
-A first model is in docs/architecture/05-earned-release-and-strength.md. Whether its weights and decay are right can only be learned from real use.
+A first model is in docs/archive/architecture/05-earned-release-and-strength.md. Whether its weights and decay are right can only be learned from real use.

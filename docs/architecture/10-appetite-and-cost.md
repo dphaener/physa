@@ -2,6 +2,8 @@
 
 Draft 0.3, 2026-11-23; Q1–Q11 settled. Uses `.physa/glossary.md` terms only. Builds on 03 §10 and §10a, 02 §2.7 and 08 §7, and would replace them where they differ. Items marked (Q) are open questions for the owner.
 
+> **Reset, 2026-11-23** (vision §5, decision `core-and-line`): an appetite is now optional workflow, not core; what stays core is that **spend is always counted**. The weighing of spend (§1 Q1, Q4, Q5, Q7, Q9) and init's estimate (Q6, Q10, Q10a) are built and stand. The appetite as a bet's budget and breaker (Q2, Q3, Q8, Q11) is open again, to be designed with the group; bets are now pursuits.
+
 An appetite is how much a team is willing to spend on a pitch. Today it is a count of tokens, and Physa counts them in several places that do not agree with each other or with what the spend costs. Two bets on 2026-11-22 and 2026-11-23 showed this:
 
 - **The count isn't the cost.** The build of `llm-init-discovery` used 24.1M tokens counting cached input, or 1.6M without it. Cache reads are billed, but at a small share of the input price (5% on Claude Opus 5.5), writing to the cache costs more than plain input, output costs several times more, and the build used four models at different prices. Neither figure is what it cost.

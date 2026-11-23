@@ -2,6 +2,8 @@
 
 Draft 0.1, 2026-11-19. Uses `.physa/glossary.md` terms only. Items marked (Q) are open questions for the owner. Capabilities and the product became folders in 09; §2, §3, §5, §6 and §9 say so and point there, and the entry formats in §3 are unchanged.
 
+> **Reset, 2026-11-23** (vision §5, decision `core-and-line`): bets are now **pursuits**, which need only a signal (claim, direction, window, resolver) and take an optional appetite; pitches and shaping are gone. Where this design says bet, pitch or shaping, it records what was built or settled before the reset.
+
 ## 1. Constraints this design must meet
 
 From the vision:
@@ -145,7 +147,7 @@ Settled with the owner on 2026-11-20 (`grouped-cli`): "Rather than having 100 co
 3. A bare group does its most common job.
 4. One way to do each thing, with no aliases.
 
-The full planned tree. `check`, `map`, `physa init`, with its gather, propose and recover phases, `physa engine`, `physa api`, `physa idea` and `physa bet` are built today; everything else is planned.
+The full planned tree. `check`, `map`, `physa init`, with its gather, propose and recover phases, `physa engine`, `physa api`, `physa idea`, `physa pursue` and `physa pursuit` are built today; everything else is planned.
 
 - `physa init` (02), built: a bare run gathers, proposes, recovers and checks under one appetite; `--write` commits the map to `physa/init`, `--push` pushes it, `--pr` opens or refreshes its PR, `--hooks` installs the hook, and `--answers` gives a new codebase's answers. Phases alone: `--gather`, `--propose`, `--recover`. A map may have no `capabilities/` directory yet, as a new codebase's map has none (02 §2.8).
 - `physa check [map | changes [range]]` (07 §5), built. Bare `check` runs the map check and, when a range is given or `origin/main..HEAD` resolves, the change check on it.
@@ -155,9 +157,9 @@ The full planned tree. `check`, `map`, `physa init`, with its gather, propose an
 - `physa sync` (07 §7), planned, after the engine.
 - `physa engine [run | start | status | stop]` (03 §12, §17), built. Bare `engine` is `status`. `status` starts the engine when none runs; `start` starts it detached; `run` serves in the foreground; `stop` never starts one. `--idle <duration>` sets when an idle engine exits (default 30m).
 - `physa api [list | describe | call]` (03 §12), built: `list` names the methods, `describe <method>` prints its schema and an example, `call <method> [<json> | -]` calls it. Like `engine status`, each starts the engine when none runs.
-- `physa idea [add | list | show | shape]` (03 §19), built: a bare `idea` lists the ideas. `add "<text>"` makes an idea owned by the person who adds it, with `--slug` to choose its slug; `shape [<slug>]` writes its pitch in `$VISUAL` or `$EDITOR` on a terminal, or from `--from <file>` (`-` for stdin). There is no delete: ideas wither.
-- `physa bet <slug> | list | show | stop | plan | work` (03 §19, §20), built: `physa bet <slug> --appetite <tokens>` makes a bet, with the pitch's appetite when none is given; `stop <slug> --reason` stops an active bet. Only people bet: inside an agent session `physa bet` and `physa bet stop` refuse with exit 2. `plan set [<bet>] [--reason <text>] [--from <file>|-]` stores a bet's plan as its next revision, and `plan show [<bet>] [--history]` shows it; `work <bet>/<change>` records the session's planned change, and `work --current` prints it for the commit hook. Agents may use these.
-- `physa run <bet>` and `physa watch` (03 §7.5), planned, top-level like `check`.
+- `physa idea [add | list | show]` (03 §19), built: a bare `idea` lists the ideas. `add "<text>"` makes an idea owned by the person who adds it, with `--slug` to choose its slug; `show` gives its text, who added it and its pursuits. Shaping and pitches were removed at the reset (2026-11-23).
+- `physa pursue [<idea>] [--appetite <tokens>] [--signal-from <file>|-]` and `physa pursuit [list | show | stop | plan | work]` (03 §19, §20), built at the reset in place of `physa bet`: a person pursues an idea by naming its signal (claim, direction, window, resolver), in `$VISUAL` or `$EDITOR` on a terminal or from a file; an appetite is optional. Only people pursue or stop a pursuit: inside an agent's session both are refused.
+- `physa run <pursuit>` and `physa watch` (03 §7.5), planned, top-level like `check`.
 - `physa ask ...` (03 §9), planned.
 - `physa harness install|show|settings` (04 §2), planned.
 - `physa strength` and `physa strength preview` (05 §6.5), planned.

@@ -2,6 +2,8 @@
 
 Draft 0.8, 2026-11-22. Uses `.physa/glossary.md` terms only. Builds on 01, 02, 07 and 08; §16 records the step 5 round and §17 what step 5D built. Items marked (Q) are open questions for the owner.
 
+> **Reset, 2026-11-23** (vision §5, decision `core-and-line`): bets are now **pursuits**, which need only a signal (claim, direction, window, resolver) and take an optional appetite; pitches and shaping are gone. Where this design says bet, pitch or shaping, it records what was built or settled before the reset.
+
 The engine is where Rhiza failed: "no orchestrator" was its goal six times and never happened, the owner wrote watch, stall and cleanup scripts around it, and its orchestration became a 55,000-line package with about 85% of all fixes. This design starts from those failures.
 
 ## 1. Constraints

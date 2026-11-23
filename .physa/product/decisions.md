@@ -6,7 +6,7 @@
 - [Go core, Rails hosted layer](#go-core-rails-hosted-layer)
 - [Named Physa](#named-physa)
 - [Strength replaces mode](#strength-replaces-mode)
-- [Ceremony is opt-in](#ceremony-is-opt-in)
+- [A core it defends, workflow beyond it](#a-core-it-defends-workflow-beyond-it)
 - [Grouped commands](#grouped-commands)
 
 ## Entries
@@ -44,11 +44,12 @@ Rejected:
 - Explore and stable modes: set by hand, and mixed four ideas into one switch.
 - Named states for ideas: the same problem again.
 
-### Ceremony is opt-in
-`ceremony-opt-in` · decided by dphaener, choosing an option · 2026-11-20 · from docs/architecture/05-earned-release-and-strength.md
-The map and the engine are the core. Earned release (with the product signals it needs) and sign-offs are opt-in and off for a solo developer, whose path is idea, pursuit, changes, landed. Appetite when a pursuit names one, its circuit breaker, engineering evidence and strength stay on.
-Because: a solo developer "just want[s] to YOLO everything" (the owner); a team grows into ceremony instead of opting out of it.
+### A core it defends, workflow beyond it
+`core-and-line` · decided by dphaener, in their words · 2026-11-23 · from docs/vision.md
+Physa defends a core and guards the line around it: strength tracked, the map holding why and anchored to changes, sources cited, one word for one thing, people deciding, an engine that enforces and never judges, every change undoable, spend always counted, and a pursuit that names its signal. Beyond the line, teams bring their own workflow; Physa prescribes no process, and the Shape Up flow of shaping, pitches and bets is gone.
+Because: "we have core things about how the product works that we MUST defend, and we HAVE to guard that line, and beyond that we want users to be able to bring their own workflows." Forcing everyone down a Shape Up path was too prescriptive.
 Rejected:
+- Ceremony is opt-in (`ceremony-opt-in`, 2026-11-20): one built-in Shape Up flow (idea, bet, changes, landed) with shaping, sign-offs and earned release switched on as a team grows, and appetite always on. It still prescribed the path.
 - The full process by default, with exemptions.
 
 ### Grouped commands

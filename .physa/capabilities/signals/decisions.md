@@ -10,7 +10,7 @@
 ## Entries
 
 ### Engineering evidence is always on
-`engineering-always-on` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/05-earned-release-and-strength.md
+`engineering-always-on` · decided by dphaener, in their words · 2026-11-20 · from docs/archive/architecture/05-earned-release-and-strength.md
 Reverts, rework, defects and lead time from git, PRs and CI are recorded whatever else is switched on or off.
 Because: "it should be always on no matter what" (the owner); it needs nothing in the app.
 
@@ -28,7 +28,7 @@ Rejected:
 - Integrating only with existing analytics: leaves solo developers with nothing.
 
 ### Teams set when a result is clear
-`clear-threshold` · decided by dphaener, in their words · 2026-11-20 · from docs/architecture/05-earned-release-and-strength.md
+`clear-threshold` · decided by dphaener, in their words · 2026-11-20 · from docs/archive/architecture/05-earned-release-and-strength.md
 Results come from a Bayesian comparison; a result is clear past a probability each team or developer sets, 95% by default.
 Because: "that is for individuals/teams to decide".
 Rejected:

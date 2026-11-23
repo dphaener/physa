@@ -301,7 +301,7 @@ func TestOwnMap(t *testing.T) {
 	if len(m.Capabilities) != len(dirs) || entries != headings {
 		t.Errorf("got %d capabilities, %d entries; want %d, %d", len(m.Capabilities), entries, len(dirs), headings)
 	}
-	if len(m.Glossary) < 40 {
+	if len(m.Glossary) < 30 {
 		t.Errorf("got %d terms", len(m.Glossary))
 	}
 }

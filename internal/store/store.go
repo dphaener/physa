@@ -115,16 +115,41 @@ func migrations() ([]migration, error) {
 	if err != nil {
 		return nil, err
 	}
-	var ms []migration
+	names := make([]string, 0, len(entries))
 	for _, e := range entries {
-		num, _, ok := strings.Cut(e.Name(), "_")
+		names = append(names, e.Name())
+	}
+	return orderMigrations(names)
+}
+
+// orderMigrations parses migration file names and orders them by number. The
+// numbers must run 1, 2, 3… with none shared and none missing: a second file
+// with a number already applied would be skipped without a word, and a gap
+// means a file went missing.
+func orderMigrations(names []string) ([]migration, error) {
+	var ms []migration
+	for _, name := range names {
+		num, _, ok := strings.Cut(name, "_")
 		n, err := strconv.Atoi(num)
 		if !ok || err != nil {
-			return nil, fmt.Errorf("migration %q is not named <number>_<name>.sql", e.Name())
+			return nil, fmt.Errorf("migration %q is not named <number>_<name>.sql", name)
 		}
-		ms = append(ms, migration{n, e.Name()})
+		ms = append(ms, migration{n, name})
 	}
-	sort.Slice(ms, func(i, j int) bool { return ms[i].n < ms[j].n })
+	sort.Slice(ms, func(i, j int) bool {
+		if ms[i].n != ms[j].n {
+			return ms[i].n < ms[j].n
+		}
+		return ms[i].name < ms[j].name
+	})
+	for i, m := range ms {
+		if i > 0 && m.n == ms[i-1].n {
+			return nil, fmt.Errorf("migrations %q and %q share number %d", ms[i-1].name, m.name, m.n)
+		}
+		if m.n != i+1 {
+			return nil, fmt.Errorf("migration number %d is missing (next is %q)", i+1, m.name)
+		}
+	}
 	return ms, nil
 }
 

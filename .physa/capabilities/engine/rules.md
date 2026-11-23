@@ -7,6 +7,7 @@
 - [The engine supervises its own sessions](#the-engine-supervises-its-own-sessions)
 - [Count "needed a person"](#count-needed-a-person)
 - [Run records never enter the map](#run-records-never-enter-the-map)
+- [Migrations are numbered once, with no gaps](#migrations-are-numbered-once-with-no-gaps)
 
 ## Entries
 
@@ -34,3 +35,8 @@ Because: "no orchestrator" was Rhiza's goal six times and was never measured unt
 `no-run-records` · from docs/research/rhiza-v1-model-audit.md
 Runs, sessions and their evidence live in the engine's store and expire.
 Because: 76% of Rhiza's model was agent activity.
+
+### Migrations are numbered once, with no gaps
+`migrations-numbered-once` · from docs/architecture/03-engine-and-store.md
+The store's schema changes are numbered migrations, applied in order when it opens. Their numbers run 1, 2, 3 with none shared and none missing; otherwise opening the store fails and names the files.
+Because: a second file with a number already applied would be skipped without a word, leaving the schema behind the code.

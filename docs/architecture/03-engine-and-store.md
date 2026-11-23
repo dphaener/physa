@@ -66,7 +66,7 @@ The engine is where Rhiza failed: "no orchestrator" was its goal six times and n
 - **State tables are the truth** (Q3): the current state of every idea, pitch, bet, change, run and session, read directly.
 - **Every state change appends an event in the same transaction.** Events are an audit trail and the input to strength. They are never replayed to answer a read.
 - **Retention**: agent output and logs expire after 30 days; events after 90 days; the aggregates strength needs are kept, small.
-- **Schema changes** are numbered migrations applied by the engine at start.
+- **Schema changes** are numbered migrations applied by the engine at start. The numbers run 1, 2, 3 with none shared and none missing, and the store refuses to open otherwise, because a second file with a number already applied would be skipped silently.
 
 ### 4.3 What it holds
 

@@ -54,7 +54,7 @@ Each step: what lands, what the owner can do with it, and when it is done. Comma
 
 ### 4. Init, and the first public release
 
-- **Status:** in progress (2026-11-21): gather (4a, `physa init --gather`), propose (4b, `physa init --propose`) and recover with check (4c, `physa init --recover`) landed; the PR on `physa/init` (4d, `physa init --write`) is done, and the trials on nebari and woodshop follow.
+- **Status:** in progress. Gather, propose, recover with check, and the PR on `physa/init` landed (2026-11-21). On nebari (2026-11-22 and 23) the first map was thin, so init was rebuilt from experiments judged on nebari: discovery finds its own sources (#59), no source is cut (#60), each capability reads its own docs (#61), and choices an agent wrote are credited to whoever accepted them (#62). Nebari's init PR (nebari #127) holds that map: 18 capabilities, 433 entries, about 6.8M tokens. Next: bringing init's appetite in line with architecture 10 (unbounded, an estimate after gathering, a yes before the large spend), the owner's read of nebari #127, and the trial on woodshop. Rhiza's removal from nebari is on hold at the owner's word; #127 was recovered with it still there.
 - **Lands:** `physa init` (02 §2): gather, propose capabilities, recover per capability, check, the PR on `physa/init`, with its token appetite.
 - **Tried on:** nebari (brownfield), after a first change in nebari removes everything Rhiza put there (its 15 MB `.rhiza/`, and Rhiza's traces in README, CLAUDE.md, `bin/gate` and its specs, to be listed exactly before removing); then woodshop (greenfield).
 - **The owner can:** put a living map on any repo in one command.

@@ -1,15 +1,13 @@
 // Package recovery is init's recover and check phases: one prompt-only
-// session per capability, at most Concurrency at once, all under init's one
-// appetite; each capability's text, split into its folder, goes through the
-// map check and back to the same session with the problems, up to
-// MaxRetries times, before failing entries are dropped. Sessions read their
-// sources whole, and none starts unless every first turn fits the appetite;
-// retries the appetite cannot hold leave answers unchecked. It writes the
-// store, never the repo.
+// session per capability, at most Concurrency at once; each capability's
+// text, split into its folder, goes through the map check and back to the
+// same session with the problems, up to MaxRetries times, before failing
+// entries are dropped. Sessions read their sources whole, with no appetite
+// and no circuit breaker: init is never bounded (design 10 Q6). It writes
+// the store, never the repo.
 package recovery
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -35,26 +33,7 @@ const (
 	// MaxRetries is how many times a capability's text with problems goes back
 	// to its session before the failing entries are dropped.
 	MaxRetries = 2
-	// DefaultAppetite is how many tokens all of a run's sessions may use
-	// together when the run names no appetite.
-	DefaultAppetite = 300_000
-	// ReplyReserve is what a session's first turn, and each retry, keeps of
-	// the appetite for its reply.
-	ReplyReserve = 12_000
 )
-
-// TooSmall is returned by Run when its Appetite cannot hold the whole prompt
-// plus ReplyReserve of each of its Capabilities: Need, an estimate. Nothing
-// is cut to make them fit, and no session started.
-type TooSmall struct {
-	Capabilities int
-	Need         int64
-	Appetite     int64
-}
-
-func (e *TooSmall) Error() string {
-	return fmt.Sprintf("recovering %s needs an appetite of about %s tokens (each prompt plus %s for its reply) and has %s; no session started, and nothing was spent on recovering", plural(e.Capabilities, "capability", "capabilities"), reading.Thousands(e.Need), reading.Thousands(ReplyReserve), reading.Thousands(e.Appetite))
-}
 
 // The values of Outcome.Status, as the store keeps them.
 const (
@@ -79,9 +58,6 @@ type Session struct {
 	// Agent resolves the agent to recover with, once, and only when nothing
 	// refuses the run first.
 	Agent func() (adapter.Adapter, error)
-	// Appetite is the most tokens all sessions may use together; zero means
-	// DefaultAppetite.
-	Appetite int64
 	// Only names the capabilities to recover, in the order to run them;
 	// empty means every proposed capability, in the proposal's order.
 	Only []string
@@ -101,10 +77,9 @@ type Session struct {
 	Now func() time.Time
 }
 
-// Report is how one run ended: the appetite the sessions shared, what they
-// used together, and one outcome per capability, in run order.
+// Report is how one run ended: what its sessions used together, and one
+// outcome per capability, in run order.
 type Report struct {
-	Appetite     int64          `json:"appetite"`
 	Used         adapter.Tokens `json:"used"`
 	Capabilities []Outcome      `json:"capabilities"`
 }
@@ -136,12 +111,10 @@ type Outcome struct {
 	Error     string               `json:"error,omitempty"`
 }
 
-// job is one capability ready to run: its proposal, its prompt and what its
-// first attempt reserves of the appetite.
+// job is one capability ready to run: its proposal and its prompt.
 type job struct {
 	capability mapping.Capability
 	prompt     string
-	reserve    int64
 }
 
 // Run is init's recover and check phases end to end. For each capability
@@ -150,13 +123,11 @@ type job struct {
 // text it writes, sends problems back up to MaxRetries times, then drops
 // what is still at fault; its row replaces the capability's earlier one.
 //
-// No proposal (ErrNoProposal), a name in s.Only the proposal lacks, and an
-// appetite that cannot hold every first turn (*TooSmall) are errors that
-// resolve no agent and store nothing. A capability that fails, or that the
-// appetite does not reach, is not an error: the Report says so.
+// No proposal (ErrNoProposal) and a name in s.Only the proposal lacks are
+// errors that resolve no agent and store nothing. A capability that fails,
+// or that a cancelled run never reaches, is not an error: the Report says so.
 func Run(ctx context.Context, st Store, s Session) (Report, error) {
-	appetite := cmp.Or(s.Appetite, DefaultAppetite)
-	rep := Report{Appetite: appetite}
+	var rep Report
 	p, ok, err := st.Proposed()
 	if err != nil {
 		return rep, err
@@ -186,16 +157,11 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	date := now().UTC()
 
 	jobs := make([]job, len(chosen))
-	var need int64
 	for i, c := range chosen {
 		prompt := recovering.Prompt(recovering.Input{
 			Product: stored.Proposal.Product.Promise, Name: c.Name, Promise: c.Promise,
 			Questions: c.Questions, Date: date, Sources: reading.Of(sources(g, c), recovering.Reads)})
-		jobs[i] = job{capability: c, prompt: prompt, reserve: int64(reading.Tokens(prompt) + ReplyReserve)}
-		need += jobs[i].reserve
-	}
-	if need > appetite {
-		return rep, &TooSmall{Capabilities: len(jobs), Need: need, Appetite: appetite}
+		jobs[i] = job{capability: c, prompt: prompt}
 	}
 	if s.Agent == nil {
 		return rep, errors.New("no agent to recover with")
@@ -205,11 +171,11 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 		return rep, err
 	}
 	r := &runner{
-		agent: a, ledger: newLedger(appetite, need), progress: s.Progress,
+		agent: a, progress: s.Progress,
 		check: checker{product: stored.Proposal.Product.Promise, root: s.Root, prExists: resolver(g, s.PRExists), openRepo: s.OpenRepo},
 	}
 	if s.Progress != nil {
-		fmt.Fprintf(s.Progress, "physa init: recovering %s, at most %d at once; appetite %s\n", plural(len(jobs), "capability", "capabilities"), Concurrency, plural(int(appetite), "token", "tokens"))
+		fmt.Fprintf(s.Progress, "physa init: recovering %s, at most %d at once\n", plural(len(jobs), "capability", "capabilities"), Concurrency)
 	}
 	rep.Capabilities = r.all(ctx, jobs)
 	if err := dedupe(r.check, rep.Capabilities); err != nil {
@@ -233,7 +199,7 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 		}
 		rows[i] = store.Recovered{
 			Capability: o.Name, ProposalAt: p.At, At: now().UTC(), Status: o.Status, File: o.File, Terms: o.Terms, KeepEarlier: o.Status != StatusRecovered,
-			Details: details, SessionID: o.SessionID, Model: o.Model, Attempts: o.Attempts, Appetite: appetite,
+			Details: details, SessionID: o.SessionID, Model: o.Model, Attempts: o.Attempts,
 			Input: o.Tokens.Input, CachedInput: o.Tokens.CachedInput, Output: o.Tokens.Output,
 		}
 	}

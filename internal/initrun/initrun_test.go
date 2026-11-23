@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -51,7 +50,9 @@ type fakeSession struct {
 
 func (s fakeSession) Wait() (adapter.Result, error) {
 	for _, t := range s.f.reports {
-		s.usage(t)
+		if s.usage != nil {
+			s.usage(t)
+		}
 	}
 	return s.f.result, nil
 }
@@ -116,6 +117,7 @@ func testEnv(t *testing.T, f forge.Forge, a adapter.Adapter) Env {
 		},
 		Now:    time.Now,
 		Writer: git.OpenWriter,
+		Spend:  filepath.Join(sd, "spend.json"),
 	}
 }
 
@@ -155,7 +157,7 @@ func TestGatherJSON(t *testing.T) {
 	write(t, dir, "README.md", "hello\n")
 	env := testEnv(t, onePR(), nil)
 	code, out, errOut := runInit(env, "--gather", "--json")
-	if code != 0 || errOut != "physa init: gather up to 100000 tokens (the discovery agent)\n" {
+	if code != 0 || errOut != "physa init: gather, with the discovery agent; init is never bounded, so it has no appetite and no circuit breaker\n" {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
 	var sum gather.Summary
@@ -165,7 +167,7 @@ func TestGatherJSON(t *testing.T) {
 	if sum.Docs.Count < 2 || sum.History.Changes < 4 || sum.PRs.Count != 1 || !sum.PRs.Available {
 		t.Errorf("summary %+v", sum)
 	}
-	if d := sum.Discovery; d.Started || !strings.HasPrefix(d.Why, "no agent: ") || d.Cap != 100_000 {
+	if d := sum.Discovery; d.Started || !strings.HasPrefix(d.Why, "no agent: ") {
 		t.Errorf("with no agent installed, discovery %+v", d)
 	}
 	g := storedGather(t, env)
@@ -243,8 +245,8 @@ func TestProposeNoGather(t *testing.T) {
 func TestProposeStoresAndPrintsMarkdown(t *testing.T) {
 	f := oneAgent()
 	env := gatheredEnv(t, f)
-	code, out, errOut := runInit(env, "--propose", "--appetite", "100000")
-	if code != 0 || f.starts != 1 || !strings.Contains(out, "delivery") || !strings.Contains(errOut, "appetite 100000 tokens") {
+	code, out, errOut := runInit(env, "--propose")
+	if code != 0 || f.starts != 1 || !strings.Contains(out, "delivery") || !strings.Contains(errOut, "propose reads its sources whole") {
 		t.Fatalf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
 	}
 	if strings.HasPrefix(strings.TrimSpace(out), "{") {
@@ -270,14 +272,24 @@ func TestProposeJSON(t *testing.T) {
 	}
 }
 
-func TestProposeBreakerStops(t *testing.T) {
+// TestProposeHasNoCircuitBreaker checks that --propose alone is unbounded:
+// a session far over any old appetite still proposes.
+func TestProposeHasNoCircuitBreaker(t *testing.T) {
 	env := gatheredEnv(t, &fakeAgent{
 		reports: []adapter.Tokens{{Input: 900_000, Output: 20}},
 		result:  adapter.Result{Text: proposeReply, Tokens: adapter.Tokens{Input: 900_000, Output: 20}},
 	})
-	code, _, errOut := runInit(env, "--propose", "--appetite", "100000")
-	if code != 1 || !strings.Contains(errOut, "physa init: the circuit breaker stopped the session at 100000 tokens; nothing was proposed") {
-		t.Errorf("code %d, stderr %q", code, errOut)
+	if code, out, errOut := runInit(env, "--propose"); code != 0 || !strings.Contains(out, "delivery") {
+		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+}
+
+func TestAppetiteIsBadUsage(t *testing.T) {
+	newRepo(t)
+	for _, args := range [][]string{{"--appetite", "1000"}, {"--gather", "--appetite", "1000"}, {"--propose", "--appetite=1000"}, {"--recover", "--appetite", "1000"}} {
+		if code, _, _ := runInit(testEnv(t, nil, nil), args...); code != cli.BadUsage {
+			t.Errorf("%v: code %d", args, code)
+		}
 	}
 }
 
@@ -349,12 +361,12 @@ func TestRecoverBadCombinationsAreBadUsage(t *testing.T) {
 func TestRecoverText(t *testing.T) {
 	f := recoverAgent(100)
 	env := proposedEnv(t, f)
-	code, out, errOut := runInit(env, "--recover", "--only", "delivery", "--appetite", "100000")
+	code, out, errOut := runInit(env, "--recover", "--only", "delivery")
 	if code != 0 || f.starts != 1 {
 		t.Fatalf("code %d, starts %d, stderr %q", code, f.starts, errOut)
 	}
 	for _, want := range []string{
-		"Recovered 1, not yet recovered 0, failed 0; used 120 of 100000 tokens.",
+		"Recovered 1, not yet recovered 0, failed 0; used 120 tokens.",
 		"## delivery: recovered", "Kept 1 rule, 0 decisions, 0 questions, 1 term.", "Attempts: 1; session ",
 	} {
 		if !strings.Contains(out, want) {
@@ -379,28 +391,25 @@ func TestRecoverJSON(t *testing.T) {
 	env := proposedEnv(t, recoverAgent(100))
 	code, out, errOut := runInit(env, "--recover", "--only=delivery", "--json")
 	var rep struct {
-		Appetite     int64
 		Capabilities []struct{ Name, Status, File, Terms string }
 	}
 	if code != 0 || json.Unmarshal([]byte(out), &rep) != nil || len(rep.Capabilities) != 1 {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
 	c := rep.Capabilities[0]
-	if rep.Appetite != 300000 || c.Status != "recovered" || !strings.Contains(c.File, "ship-in-order") || !strings.Contains(c.Terms, "Delivery") {
+	if c.Status != "recovered" || !strings.Contains(c.File, "ship-in-order") || !strings.Contains(c.Terms, "Delivery") {
 		t.Errorf("report %+v", rep)
 	}
 }
 
-func TestRecoverSmallAppetiteRefusesBeforeAnySession(t *testing.T) {
-	env := proposedEnv(t, recoverAgent(10_000))
-	code, out, errOut := runInit(env, "--recover", "--appetite", "25000")
-	if code != 1 || out != "" || !strings.Contains(errOut, "physa init: stopped before recovering: recovering 2 capabilities needs an appetite of about ") ||
-		!strings.Contains(errOut, " and has 25,000; no session started, and nothing was spent on recovering. The proposal is stored: physa init --recover --appetite ") {
-		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
-	}
-	code, out, errOut = runInit(env, "--recover", "--only", "search,delivery", "--agent", "fake", "--appetite", "1000", "--write")
-	if code != 1 || out != "" || !regexp.MustCompile(`The proposal is stored: physa init --recover --only search,delivery --appetite \d+ --agent fake --write continues\.\n$`).MatchString(errOut) {
-		t.Errorf("with --only: code %d, stdout %q, stderr %q", code, out, errOut)
+// TestRecoverHasNoAppetite checks that --recover alone starts every session
+// however large the prompts, with no refusal.
+func TestRecoverHasNoAppetite(t *testing.T) {
+	f := recoverAgent(9_000_000)
+	env := proposedEnv(t, f)
+	code, out, errOut := runInit(env, "--recover", "--only", "delivery")
+	if code != 0 || f.starts != 1 || !strings.Contains(out, "## delivery: recovered") || strings.Contains(errOut, "appetite") {
+		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
 	}
 }
 

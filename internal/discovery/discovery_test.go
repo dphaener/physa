@@ -36,7 +36,9 @@ func (f *fake) Start(ctx context.Context, s adapter.Spec) (adapter.Session, erro
 func (f *fake) Wait() (adapter.Result, error) {
 	spec := f.specs[len(f.specs)-1]
 	for _, t := range f.reports {
-		spec.Usage(t)
+		if spec.Usage != nil {
+			spec.Usage(t)
+		}
 		f.sent++
 		if f.ctx.Err() != nil && !f.deaf {
 			return adapter.Result{Model: "fake-1"}, fmt.Errorf("%w: %w", adapter.ErrFailed, f.ctx.Err())
@@ -45,8 +47,8 @@ func (f *fake) Wait() (adapter.Result, error) {
 	return adapter.Result{Text: f.text, Model: "fake-1", Tokens: f.tokens}, f.err
 }
 
-func session(f *fake, appetite int64, progress *bytes.Buffer) Session {
-	s := Session{Agent: func() (adapter.Adapter, error) { return f, nil }, Appetite: appetite, Root: "/repo"}
+func session(f *fake, progress *bytes.Buffer) Session {
+	s := Session{Agent: func() (adapter.Adapter, error) { return f, nil }, Root: "/repo"}
 	if progress != nil {
 		s.Progress = progress
 	}
@@ -59,7 +61,7 @@ const reply = "I looked around.\n\n```json\n" +
 
 func TestRunParsesSources(t *testing.T) {
 	f := &fake{text: reply, tokens: adapter.Tokens{Input: 900, Output: 100}}
-	res, err := Run(context.Background(), session(f, 40000, nil))
+	res, err := Run(context.Background(), session(f, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +72,7 @@ func TestRunParsesSources(t *testing.T) {
 	if len(res.Sources) != 2 || res.Sources[0] != want[0] || res.Sources[1] != want[1] {
 		t.Fatalf("sources = %+v", res.Sources)
 	}
-	if res.Model != "fake-1" || res.Tokens.Input != 900 || res.Stopped || res.Malformed != 0 {
+	if res.Model != "fake-1" || res.Tokens.Input != 900 || res.Malformed != 0 {
 		t.Fatalf("result = %+v", res)
 	}
 }
@@ -78,81 +80,29 @@ func TestRunParsesSources(t *testing.T) {
 func TestRunIsReadOnlyInTheRoot(t *testing.T) {
 	f := &fake{text: reply}
 	var progress bytes.Buffer
-	if _, err := Run(context.Background(), session(f, 40000, &progress)); err != nil {
+	if _, err := Run(context.Background(), session(f, &progress)); err != nil {
 		t.Fatal(err)
 	}
 	s := f.specs[0]
 	if !s.ReadOnly || s.PromptOnly || s.Dir != "/repo" || s.SessionID == "" {
 		t.Fatalf("spec = %+v", s)
 	}
-	if strings.Count(progress.String(), "\n") != 1 || !strings.Contains(progress.String(), "40000") {
+	if strings.Count(progress.String(), "\n") != 1 || strings.Contains(progress.String(), "up to") {
 		t.Fatalf("progress = %q", progress.String())
 	}
 }
 
 func in(n int64) adapter.Tokens { return adapter.Tokens{Input: n, CachedInput: n / 2} }
 
-func TestBreakerStopsAtTheAppetite(t *testing.T) {
-	f := &fake{text: reply, tokens: adapter.Tokens{Input: 1000, CachedInput: 900}}
-	res, err := Run(context.Background(), session(f, 1000, nil))
+// TestNoCircuitBreaker checks that discovery is never stopped, however much
+// it spends: init is never bounded (design 10 Q6).
+func TestNoCircuitBreaker(t *testing.T) {
+	f := &fake{text: reply, reports: []adapter.Tokens{in(300_000), in(900_000), in(5_000_000)}, tokens: in(5_000_000)}
+	res, err := Run(context.Background(), session(f, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Stopped || len(res.Sources) != 0 || res.Tokens.Input != 1000 {
-		t.Fatalf("result = %+v", res)
-	}
-}
-
-// The breaker stops the session before the turn that would reach the cap:
-// each turn here costs 300, repeated reports of one turn bring no increase,
-// and the fourth turn would end at 1,200 of 1,000.
-func TestBreakerStopsBeforeOvershooting(t *testing.T) {
-	f := &fake{text: reply, reports: []adapter.Tokens{in(300), in(300), in(600), in(600), in(900), in(1200), in(1500)}}
-	res, err := Run(context.Background(), session(f, 1000, nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !res.Stopped || len(res.Sources) != 0 || f.sent != 5 {
-		t.Fatalf("after %d reports, result = %+v", f.sent, res)
-	}
-	if got := res.Tokens.Input + res.Tokens.Output; got != 900 || got > 1000 {
-		t.Fatalf("spent %d of a cap of 1000", got)
-	}
-}
-
-func TestBreakerLetsASessionUnderTheCapEnd(t *testing.T) {
-	f := &fake{text: reply, reports: []adapter.Tokens{in(300), in(600)}, tokens: in(600)}
-	res, err := Run(context.Background(), session(f, 1000, nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Stopped || len(res.Sources) != 2 || res.Tokens.Input != 600 {
-		t.Fatalf("result = %+v", res)
-	}
-}
-
-// One report that jumps past the cap cannot be stopped in time; what it
-// spent is reported as it is, never cut to the cap.
-func TestBreakerReportsAnOvershootAsItIs(t *testing.T) {
-	f := &fake{text: reply, reports: []adapter.Tokens{in(100), in(1300), in(2500)}}
-	res, err := Run(context.Background(), session(f, 1000, nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !res.Stopped || len(res.Sources) != 0 || res.Tokens.Input != 1300 || f.sent != 2 {
-		t.Fatalf("after %d reports, result = %+v", f.sent, res)
-	}
-}
-
-// A session whose reply was already out when the breaker stopped it keeps
-// the reply: it ended under the cap.
-func TestBreakerKeepsAReplyThatBeatTheStop(t *testing.T) {
-	f := &fake{text: reply, reports: []adapter.Tokens{in(600)}, tokens: in(600), deaf: true}
-	res, err := Run(context.Background(), session(f, 1000, nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Stopped || len(res.Sources) != 2 || res.Tokens.Input != 600 {
+	if len(res.Sources) != 2 || res.Tokens.Input != 5_000_000 || f.specs[0].Usage != nil {
 		t.Fatalf("result = %+v", res)
 	}
 }
@@ -164,7 +114,7 @@ func TestMalformedReplyNamesNothing(t *testing.T) {
 		"bad entries": "```json\n{\"sources\":[{\"path\":\"\",\"reason\":\"x\"},{\"path\":\"a.md\",\"kind\":\"overview\",\"reason\":\"\"}]}\n```",
 	} {
 		t.Run(name, func(t *testing.T) {
-			res, err := Run(context.Background(), session(&fake{text: text}, 40000, nil))
+			res, err := Run(context.Background(), session(&fake{text: text}, nil))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -185,7 +135,7 @@ func TestParseDropsOnlyMalformedEntries(t *testing.T) {
 
 func TestAgentErrorIsReturned(t *testing.T) {
 	boom := adapter.ErrNotInstalled
-	s := Session{Agent: func() (adapter.Adapter, error) { return nil, boom }, Appetite: 1}
+	s := Session{Agent: func() (adapter.Adapter, error) { return nil, boom }}
 	if _, err := Run(context.Background(), s); !errors.Is(err, boom) {
 		t.Fatalf("err = %v", err)
 	}
@@ -193,7 +143,7 @@ func TestAgentErrorIsReturned(t *testing.T) {
 
 func TestSessionErrorIsReturned(t *testing.T) {
 	f := &fake{err: adapter.ErrFailed, tokens: adapter.Tokens{Input: 5}}
-	res, err := Run(context.Background(), session(f, 40000, nil))
+	res, err := Run(context.Background(), session(f, nil))
 	if !errors.Is(err, adapter.ErrFailed) || res.Tokens.Input != 5 {
 		t.Fatalf("res %+v err %v", res, err)
 	}

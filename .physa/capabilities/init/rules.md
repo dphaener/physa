@@ -4,7 +4,7 @@
 
 - [Uncertain knowledge becomes a question](#uncertain-knowledge-becomes-a-question)
 - [The first map arrives as a PR](#the-first-map-arrives-as-a-pr)
-- [Init shows its budget first and stops at it](#init-shows-its-budget-first-and-stops-at-it)
+- [Init is up front about its cost and never bounded](#init-is-up-front-about-its-cost-and-never-bounded)
 - [Init adds only the map and a few marked lines](#init-adds-only-the-map-and-a-few-marked-lines)
 - [Init refuses a mapped repo before spending](#init-refuses-a-mapped-repo-before-spending)
 - [Installing a hook never disables the repo's own](#installing-a-hook-never-disables-the-repos-own)
@@ -21,10 +21,10 @@ Because: one confident wrong rule costs more trust than ten honest questions.
 Init commits to `physa/init` and opens a PR listing what it added, with sources, questions raised, entries dropped and tokens spent.
 Because: the person reviews the map like any change before it is trusted.
 
-### Init shows its budget first and stops at it
-`init-appetite` · from docs/architecture/02-init-and-learning.md
-Init shows its token budget before it starts and stops at it, keeping what it finished.
-Because: it spends the customer's tokens.
+### Init is up front about its cost and never bounded
+`init-appetite` · from docs/architecture/10-appetite-and-cost.md
+Init has no appetite and no circuit breaker. Once it has gathered, it shows what the rest of the run should spend, in weighted tokens with the cost estimate beside them, and goes on only with a yes, or `--yes` off a terminal; a run that passes the top of its estimate says so and goes on.
+Because: the owner, 2026-11-23: "I think init is a special case. We should be up front about it but I don't think it should be bounded at all or we won't get good results."
 
 ### Init adds only the map and a few marked lines
 `init-footprint` · from docs/architecture/02-init-and-learning.md

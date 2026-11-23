@@ -1,6 +1,6 @@
 // Package mapping proposes a product's promise and capabilities from the
-// gathered sources, read whole, in one prompt-only session under an
-// appetite, and checks the reply against the gather. Every capability it
+// gathered sources, read whole, in one prompt-only session with no appetite,
+// and checks the reply against the gather. Every capability it
 // proposes is a promise the product makes to its users, with the PRs or
 // changes that best show it and the docs that hold it, and what the sources leave uncertain comes back
 // as a question, never a guess. It writes nothing to the repo: the proposal

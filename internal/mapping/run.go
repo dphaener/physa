@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
@@ -14,35 +15,12 @@ import (
 	"github.com/dphaener/physa/internal/store"
 )
 
-// DefaultAppetite is how many tokens the session may use when the run names
-// no appetite. It is a first guess, to be tuned from real runs
-// (measure-before-budget).
-const DefaultAppetite = 150_000
-
-// ReplyReserve is the part of the appetite kept for propose's reply. It is
-// a first guess, to be tuned from real runs (measure-before-budget).
+// ReplyReserve is what init's estimate counts for propose's reply. It is a
+// first guess, to be tuned from real runs (measure-before-budget).
 const ReplyReserve = 16_000
 
 // ErrNoGather is returned by Propose when the store holds no gather.
 var ErrNoGather = errors.New("nothing gathered yet; run physa init --gather first")
-
-// TooSmall is returned by Propose when its prompt plus ReplyReserve does not
-// fit in the appetite. Nothing is cut to make it fit, and nothing was spent:
-// the session never started.
-type TooSmall struct {
-	// Prompt is the prompt's estimated tokens, Reply the reply's reserve.
-	Prompt, Reply int
-	// Appetite is the appetite propose had.
-	Appetite int64
-}
-
-// Need is the appetite propose needs, an estimate.
-func (e *TooSmall) Need() int64 { return int64(e.Prompt + e.Reply) }
-
-func (e *TooSmall) Error() string {
-	return fmt.Sprintf("propose needs an appetite of about %s tokens (its prompt about %s, its reply %s) and has %s; it did not start, and nothing was spent on it",
-		reading.Thousands(e.Need()), reading.Thousands(int64(e.Prompt)), reading.Thousands(int64(e.Reply)), reading.Thousands(e.Appetite))
-}
 
 // Read is all of g as propose reads it, whole.
 func Read(g store.Gather) reading.Input { return reading.Of(g, reading.Propose) }
@@ -53,11 +31,8 @@ func Estimate(g store.Gather) int { return reading.Tokens(Prompt(Read(g))) }
 // Session says how Propose runs its session.
 type Session struct {
 	// Agent resolves the agent to propose with. Propose calls it only when
-	// there is a gather and the appetite leaves room for it.
+	// there is a gather.
 	Agent func() (adapter.Adapter, error)
-	// Appetite is the most tokens the session may use; zero means
-	// DefaultAppetite.
-	Appetite int64
 	// Progress receives one line before the session starts; nil drops it.
 	Progress io.Writer
 	// Now is the clock the stored proposal is dated by; nil means time.Now.
@@ -73,7 +48,7 @@ type Store interface {
 
 // Result is how one run of Propose ended.
 type Result struct {
-	// Proposal is the checked proposal; empty when Stopped.
+	// Proposal is the checked proposal.
 	Proposal Proposal
 	// Dropped is what Check took out of the reply, and why.
 	Dropped Dropped
@@ -89,11 +64,6 @@ type Result struct {
 	Model string
 	// Tokens is what the session used.
 	Tokens adapter.Tokens
-	// Appetite is the appetite the session ran under.
-	Appetite int64
-	// Stopped says the circuit breaker stopped the session at the appetite:
-	// nothing was proposed and nothing stored.
-	Stopped bool
 }
 
 // Stored is the JSON form of store.Proposal's Body: the checked proposal
@@ -106,23 +76,16 @@ type Stored struct {
 }
 
 // Propose is init's second phase end to end. It reads the stored gather,
-// all of it whole, runs one prompt-only session with the mapping skill under
-// the appetite, checks the reply against the gather and stores the proposal,
-// replacing any earlier one. It writes nothing to the repo.
+// all of it whole, runs one prompt-only session with the mapping skill,
+// checks the reply against the gather and stores the proposal, replacing any
+// earlier one. It writes nothing to the repo. The session has no appetite and
+// no circuit breaker: init is never bounded (design 10 Q6).
 //
-// With no gather it returns ErrNoGather, and with an appetite that cannot
-// hold the prompt plus ReplyReserve a *TooSmall naming the appetite needed;
-// neither resolves an agent, and nothing is cut to fit. The circuit
-// breaker stopping the session is not an error: the Result is Stopped, and
-// nothing is stored. An agent that fails, or a reply that cannot be read
+// With no gather it returns ErrNoGather and resolves no agent. An agent that fails, or a reply that cannot be read
 // (the error starts "the session's output: "), stores nothing either; the
 // Result then still says what the session used.
 func Propose(ctx context.Context, st Store, s Session) (Result, error) {
-	appetite := s.Appetite
-	if appetite == 0 {
-		appetite = DefaultAppetite
-	}
-	res := Result{Appetite: appetite}
+	var res Result
 	g, ok, err := st.Gathered()
 	if err != nil {
 		return res, err
@@ -133,9 +96,6 @@ func Propose(ctx context.Context, st Store, s Session) (Result, error) {
 	in := Read(g)
 	prompt := Prompt(in)
 	res.Read, res.PromptTokens = in.Report, reading.Tokens(prompt)
-	if int64(res.PromptTokens+ReplyReserve) > appetite {
-		return res, &TooSmall{Prompt: res.PromptTokens, Reply: ReplyReserve, Appetite: appetite}
-	}
 	if s.Agent == nil {
 		return res, errors.New("no agent to propose with")
 	}
@@ -145,17 +105,13 @@ func Propose(ctx context.Context, st Store, s Session) (Result, error) {
 	}
 	sessionID := draft.NewSessionID()
 	if s.Progress != nil {
-		fmt.Fprintf(s.Progress, "physa init: appetite %s; propose reads its sources whole, ~%s, in a prompt of ~%s plus %d for the reply; session %s\n",
-			plural(int(appetite), "token", "tokens"), plural(in.Report.Tokens, "token", "tokens"), plural(res.PromptTokens, "token", "tokens"), ReplyReserve, sessionID)
+		fmt.Fprintf(s.Progress, "physa init: propose reads its sources whole, ~%s, in a prompt of ~%s; session %s\n",
+			plural(in.Report.Tokens, "token", "tokens"), plural(res.PromptTokens, "token", "tokens"), sessionID)
 	}
-	out, err := draft.Run(ctx, a, prompt, appetite, sessionID)
+	out, err := draft.Run(ctx, a, prompt, math.MaxInt64, sessionID) // no circuit breaker: init is never bounded
 	res.SessionID, res.Model, res.Tokens = out.SessionID, out.Model, out.Tokens
 	if err != nil {
 		return res, err
-	}
-	if out.Stopped {
-		res.Stopped = true
-		return res, nil
 	}
 	reply, malformed, err := Parse(out.Text)
 	if err != nil {
@@ -174,7 +130,7 @@ func Propose(ctx context.Context, st Store, s Session) (Result, error) {
 	}
 	err = st.PutProposal(store.Proposal{
 		GatherAt: g.Run.At, At: now().UTC(),
-		SessionID: res.SessionID, Model: res.Model, Appetite: appetite,
+		SessionID: res.SessionID, Model: res.Model,
 		Input: res.Tokens.Input, CachedInput: res.Tokens.CachedInput, Output: res.Tokens.Output,
 		Body: body,
 	})

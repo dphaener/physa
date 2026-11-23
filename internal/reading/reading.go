@@ -5,8 +5,8 @@
 // nothing should get cut."). Options choose what a session reads, never how
 // much of it: propose reads change subjects and clusters of files that
 // change together, as hints; recovery reads change messages and no clusters.
-// The appetite, not this package, decides whether a session starts. Tokens
-// are estimated at one measured figure, BytesPerTokenTenths. Reading does no
+// Its estimates inform, never stop, a session: init is never bounded, and
+// its estimate is shown before it asks to go on. Tokens are estimated at one measured figure, BytesPerTokenTenths. Reading does no
 // I/O and calls no agent.
 package reading
 

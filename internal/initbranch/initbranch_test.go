@@ -3,6 +3,7 @@ package initbranch
 import (
 	"errors"
 	"fmt"
+	"github.com/dphaener/physa/internal/spend"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -197,15 +198,16 @@ func sample(f *fixture) Map {
 		Capabilities: []Capability{
 			{Name: "delivery", Promise: "Webhooks reach customers at least once.", File: "---\npromise: Webhooks reach customers at least once.\n---\n\n" + deliveryFile, Status: "recovered",
 				Dropped: []Drop{{What: "decision", Value: "Six attempts", Reason: "a decision needs a date"}}},
-			{Name: "billing", Promise: "Customers pay for what they use.", Status: "not yet recovered", Reason: "the appetite ran out"},
+			{Name: "billing", Promise: "Customers pay for what they use.", Status: "not yet recovered", Reason: "the run stopped before reaching it"},
 		},
 		Terms:    "**Cut**: One pass of the saw.",
 		Sessions: []string{"s-propose", "s-delivery", "", "s-propose"},
 		Date:     time.Date(2026, 11, 21, 0, 0, 0, 0, time.UTC),
 		Summary: Summary{
 			Dropped: []Drop{{What: "capability", Value: "misc", Reason: "the name is not lowercase words joined by single hyphens"}},
-			Tokens:  []Tokens{{Phase: "propose", Input: 1000, CachedInput: 200, Output: 300}, {Phase: "recover", Input: 4000, CachedInput: 0, Output: 700}},
-			Hook:    Hook{State: HookInstalled, Detail: ".git/hooks/prepare-commit-msg"},
+			Tokens: []Tokens{{Phase: "propose", Input: 1000, CachedInput: 200, Output: 300, Weighted: spend.Spend{Tokens: 2310, MicroUSD: 9240}},
+				{Phase: "recover", Input: 4000, CachedInput: 0, Output: 700, Weighted: spend.Spend{Tokens: 4700, Unpriced: true}}},
+			Hook: Hook{State: HookInstalled, Detail: ".git/hooks/prepare-commit-msg"},
 		},
 	}
 }
@@ -516,11 +518,11 @@ func TestBodySummarisesTheRun(t *testing.T) {
 	for _, want := range []string{
 		"- `delivery`: Webhooks reach customers at least once.\n- `billing`: Customers pay for what they use.\n",
 		"### delivery\n\n- rule: Sends are queued (from docs/vision.md)\n",
-		"### billing\n\nNot yet recovered: the appetite ran out. Its folder holds its promise only",
+		"### billing\n\nNot yet recovered: the run stopped before reaching it. Its folder holds its promise only",
 		"- product: Should ordering be per customer? (" + f.first[:7] + " #3)\n- delivery: Should ordering be per customer?\n",
 		"- proposal: capability \"misc\": the name is not lowercase words joined by single hyphens\n",
 		"- delivery: decision \"Six attempts\": a decision needs a date\n",
-		"| propose | 1000 | 200 | 300 |\n| recover | 4000 | 0 | 700 |\n| total | 5000 | 200 | 1000 |\n",
+		"| propose | 1000 | 200 | 300 | 2.3k | about $0.01 |\n| recover | 4000 | 0 | 700 | 4.7k | none: no price yet |\n| total | 5000 | 200 | 1000 | 7k | none: no price yet |\n",
 		"Installed at .git/hooks/prepare-commit-msg",
 	} {
 		if !strings.Contains(body, want) {

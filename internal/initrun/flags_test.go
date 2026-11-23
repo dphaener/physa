@@ -31,18 +31,19 @@ func TestParseFlagsValues(t *testing.T) {
 	}
 }
 
-func TestParseFlagsGatherAgentAndAppetite(t *testing.T) {
+func TestParseFlagsGatherAgent(t *testing.T) {
 	for _, args := range [][]string{
-		{"--gather", "--agent", "x", "--appetite", "1000"},
-		{"--appetite=1000", "--agent=x", "--gather", "--json"},
+		{"--gather", "--agent", "x"},
+		{"--agent=x", "--gather", "--json"},
 	} {
 		f, ok := ParseFlags(args, now)
-		if !ok || !f.Gather || f.Agent != "x" || f.Appetite != 1000 {
+		if !ok || !f.Gather || f.Agent != "x" {
 			t.Errorf("%v: got %+v %v", args, f, ok)
 		}
 	}
 	for _, args := range [][]string{
-		{"--gather", "--appetite", "0"},
+		{"--gather", "--appetite", "1000"},
+		{"--gather", "--yes"},
 		{"--gather", "--agent="},
 		{"--gather", "--write"},
 		{"--gather", "--write", "--push"},
@@ -75,12 +76,12 @@ func TestParseFlagsRejections(t *testing.T) {
 }
 
 func TestParseFlagsPropose(t *testing.T) {
-	f, ok := ParseFlags([]string{"--propose", "--appetite", "5000", "--agent=claude", "--json"}, now)
-	if !ok || !f.Propose || f.Gather || f.Appetite != 5000 || f.Agent != "claude" || !f.JSON {
+	f, ok := ParseFlags([]string{"--propose", "--agent=claude", "--json"}, now)
+	if !ok || !f.Propose || f.Gather || f.Agent != "claude" || !f.JSON {
 		t.Fatalf("got %+v %v", f, ok)
 	}
 	f, ok = ParseFlags([]string{"--propose"}, now)
-	if !ok || f.Appetite != 0 || f.Agent != "" {
+	if !ok || f.Agent != "" {
 		t.Errorf("bare propose: %+v %v", f, ok)
 	}
 }
@@ -91,10 +92,9 @@ func TestParseFlagsProposeRejections(t *testing.T) {
 		{"--gather", "--propose"},
 		{"--propose", "--since", "2026-01-02"},
 		{"--propose", "--max-prs", "5"},
-		{"--propose", "--appetite", "0"},
-		{"--propose", "--appetite=-1"},
-		{"--propose", "--appetite", "x"},
+		{"--propose", "--appetite", "5000"},
 		{"--propose", "--appetite"},
+		{"--propose", "--yes"},
 		{"--propose", "--agent"},
 		{"--propose", "--agent="},
 		{"--propose=1"},
@@ -108,7 +108,7 @@ func TestParseFlagsProposeRejections(t *testing.T) {
 func TestParseFlagsRecover(t *testing.T) {
 	for _, args := range [][]string{
 		{"--recover"},
-		{"--recover", "--only", "a", "--only=b,c", "--appetite", "5000", "--agent", "x", "--json"},
+		{"--recover", "--only", "a", "--only=b,c", "--agent", "x", "--json"},
 		{"--only", "a", "--recover"},
 	} {
 		f, ok := ParseFlags(args, now)
@@ -128,6 +128,8 @@ func TestParseFlagsRecoverRejections(t *testing.T) {
 		{"--recover", "--propose"},
 		{"--recover", "--since", "2026-01-02"},
 		{"--recover", "--max-prs", "5"},
+		{"--recover", "--appetite", "5000"},
+		{"--recover", "--yes"},
 		{"--only", "a"},
 		{"--propose", "--only", "a"},
 		{"--recover", "--only"},
@@ -142,12 +144,12 @@ func TestParseFlagsRecoverRejections(t *testing.T) {
 
 func TestParseFlagsFull(t *testing.T) {
 	f, ok := ParseFlags(nil, now)
-	if !ok || !f.Full() || f.Write || f.Appetite != 0 {
+	if !ok || !f.Full() || f.Write || f.Yes {
 		t.Fatalf("bare: %+v %v", f, ok)
 	}
-	f, ok = ParseFlags([]string{"--write", "--push", "--pr", "--hooks", "--appetite", "5000", "--agent=x",
+	f, ok = ParseFlags([]string{"--write", "--push", "--pr", "--hooks", "--yes", "--agent=x",
 		"--answers", "a.txt", "--since", "2026-01-02", "--max-prs=5", "--json"}, now)
-	if !ok || !f.Full() || !f.Write || !f.Push || !f.PR || !f.Hooks || f.Appetite != 5000 || f.Agent != "x" ||
+	if !ok || !f.Full() || !f.Write || !f.Push || !f.PR || !f.Hooks || !f.Yes || f.Agent != "x" ||
 		f.Answers != "a.txt" || !f.SinceSet || f.MaxPRs != 5 || !f.JSON {
 		t.Errorf("every flag: %+v %v", f, ok)
 	}
@@ -170,6 +172,8 @@ func TestParseFlagsFullRejections(t *testing.T) {
 		{"--answers"},
 		{"--answers="},
 		{"--write=1"},
+		{"--appetite", "300000"},
+		{"--yes=1"},
 		{"--recover", "--push"},
 		{"--recover", "--hooks"},
 	} {

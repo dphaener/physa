@@ -138,7 +138,7 @@ func TestLearnNewestWins(t *testing.T) {
 		t.Errorf("an older price replaced a newer one: %+v", p)
 	}
 	c.Learn("claude-code", cheap, day.Add(time.Hour))
-	if p, _ := c.Reference("claude-code"); p.PerMillion != 2_000_000 {
+	if m, p, _ := c.Reference("claude-code"); m != opus || p.PerMillion != 2_000_000 {
 		t.Errorf("the newer price did not win: %+v", p)
 	}
 }
@@ -194,13 +194,18 @@ func TestFormatting(t *testing.T) {
 			t.Errorf("Tokens(%d) = %q, want %q", n, got, want)
 		}
 	}
-	for micro, want := range map[int64]string{0: "$0", 4_000: "under $0.01", 5_000: "$0.01", 4_200_000: "$4.20", 27_600_000: "$28", 9_995_000: "$10"} {
+	for micro, want := range map[int64]string{0: "$0.00", 4_000: "$0.00", 5_000: "$0.01", 4_200_000: "$4.20", 27_600_000: "$28", 9_995_000: "$10"} {
 		if got := Dollars(micro); got != want {
 			t.Errorf("Dollars(%d) = %q, want %q", micro, got, want)
 		}
 	}
 	if got := (Spend{Tokens: 2_100_000, MicroUSD: 28_000_000}).String(); got != "2.1M tokens (about $28)" {
 		t.Errorf("String = %q", got)
+	}
+	for s, want := range map[Spend]string{{Tokens: 1, MicroUSD: 4_000}: "under $0.01", {Tokens: 1, MicroUSD: 5_000}: "about $0.01", {Tokens: 1, Unpriced: true}: "none: no price yet"} {
+		if got := s.Cost(); got != want {
+			t.Errorf("Cost of %+v = %q, want %q", s, got, want)
+		}
 	}
 	if got := (Spend{Tokens: 1, MicroUSD: 2}).Add(Spend{Tokens: 3, Unpriced: true}); got != (Spend{Tokens: 4, MicroUSD: 2, Unpriced: true}) {
 		t.Errorf("Add = %+v", got)

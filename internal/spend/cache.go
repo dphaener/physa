@@ -40,13 +40,17 @@ type Default struct {
 }
 
 // Cache is what the machine knows of prices: each model's input price and
-// each adapter's default model, each the newest learned. It is safe for
-// concurrent use.
+// each adapter's default model, each the newest learned, and what init runs
+// measured. It is safe for concurrent use.
 type Cache struct {
 	mu       sync.Mutex
 	path     string
 	Models   map[string]Price   `json:"models"`
 	Defaults map[string]Default `json:"defaults"`
+	// Ratios are what finished init runs measured in weighted tokens
+	// (RatioRange). The older "init_ratios", measured in raw tokens, is
+	// ignored and dropped on save.
+	Ratios []Ratio `json:"init_weighted_ratios,omitempty"`
 }
 
 // Open reads the cache kept at path; an empty path keeps one in memory only.
@@ -127,13 +131,15 @@ func (c *Cache) Price(model string) (Price, bool) {
 	return p, ok
 }
 
-// Reference is the input price one weighted token of the adapter named agent
-// is worth: its default model's, if any is cached.
-func (c *Cache) Reference(agent string) (Price, bool) {
+// Reference is the model one weighted token of the adapter named agent is
+// an input token of, its default model, and that model's input price, if
+// any is cached.
+func (c *Cache) Reference(agent string) (string, Price, bool) {
 	c.mu.Lock()
 	d := c.Defaults[agent]
 	c.mu.Unlock()
-	return c.Price(d.Model)
+	p, ok := c.Price(d.Model)
+	return d.Model, p, ok
 }
 
 // Save writes the cache to its file, merged with what the file holds now so
@@ -156,6 +162,7 @@ func (c *Cache) Save() error {
 			c.Defaults[k] = v
 		}
 	}
+	c.Ratios = mergeRatios(disk.Ratios, c.Ratios)
 	b, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err

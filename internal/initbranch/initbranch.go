@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/initcost"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfile"
 	"github.com/dphaener/physa/internal/mapfolder"
@@ -95,11 +96,8 @@ type Summary struct {
 	Hook Hook
 }
 
-// Tokens are one phase's tokens.
-type Tokens struct {
-	Phase                      string
-	Input, CachedInput, Output int64
-}
+// Tokens are one phase's tokens, raw and weighted.
+type Tokens = initcost.Row
 
 // The values of Hook.State.
 const (

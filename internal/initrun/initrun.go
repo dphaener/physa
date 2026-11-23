@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
@@ -18,6 +19,7 @@ import (
 	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/recovery"
+	"github.com/dphaener/physa/internal/spend"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
 )
@@ -25,8 +27,10 @@ import (
 // Env is what init reaches outside itself through, each a seam the caller
 // owns: the store, repo, forge, writer and hooks of the repo at a directory,
 // the agent a name selects (empty for the default), the clock, and the
-// person's input, where a new codebase's answers are asked when IsTerminal.
-// PRExists resolves #N anchors; nil checks them for form only.
+// person's input, where a new codebase's answers are asked, and Confirm asks
+// whether to go on past the estimate, when IsTerminal. PRExists resolves #N
+// anchors; nil checks them for form only. Spend is the file of the
+// machine's spend cache (spend.Path); empty keeps prices for the run only.
 type Env struct {
 	Store      func(dir string) (*store.Store, error)
 	Repo       func(dir string) (vcs.Repo, error)
@@ -38,16 +42,19 @@ type Env struct {
 	Hooks      func(dir string) (vcs.Hooks, error)
 	Stdin      io.Reader
 	IsTerminal func() bool
+	Confirm    func(question string) (bool, error)
+	Spend      string
 }
 
 // Run runs physa init on the repo in the current directory: the phase named,
-// or every phase in order under one appetite; --write then writes the map to
-// physa/init. It returns 0 when all asked was done, 1 when the appetite
-// stopped it (a phase's whole prompt did not fit, or the circuit breaker
-// stopped proposing) or some capabilities are not yet recovered (still
-// written with --write), 2 when it could not (a capability failed, the map
-// failed its check, the hook was refused), and cli.BadUsage for arguments
-// not understood.
+// or every phase in order; --write then writes the map to physa/init. No
+// phase has an appetite or a circuit breaker (design 10 Q6). Every session
+// is weighed through a spend.Meter, and the prices it learns are saved to
+// the machine's spend cache. It returns 0 when all asked was done, 1 when
+// the full run stopped before proposing for want of a yes, or some
+// capabilities are not yet recovered (still written with --write), 2 when it
+// could not (a capability failed, the map failed its check, the hook was
+// refused), and cli.BadUsage for arguments not understood.
 func Run(args []string, stdout, stderr io.Writer, env Env) int {
 	o, ok := ParseFlags(args, env.Now())
 	if !ok {
@@ -68,31 +75,76 @@ func Run(args []string, stdout, stderr io.Writer, env Env) int {
 		return failed(stderr, err)
 	}
 	defer st.Close()
-	p, code := newPrinter(o, stdout), 0
+	cache := spend.Open(env.Spend)
+	defer func() {
+		if err := cache.Save(); err != nil {
+			fmt.Fprintf(stderr, "physa init: the spend cache was not saved: %v\n", err)
+		}
+	}()
+	r := &run{o: o, env: env, st: st, root: root, args: args, stderr: stderr, cache: cache, p: newPrinter(o, stdout), counts: map[string]spend.Count{}}
+	code := 0
 	switch {
 	case o.Propose:
-		code = propose(o, st, p, stderr, env)
+		code = r.propose()
 	case o.Recover:
-		code = recoverPhase(o, st, root, p, stderr, env)
+		code = r.recoverPhase(r.o.Only, nil)
 	case o.Full():
-		code = full(o, st, root, p, stderr, env)
+		code = r.full()
 	default:
-		limit := int64(discovery.DefaultAppetite)
-		if o.Appetite != 0 {
-			limit = min(limit, o.Appetite)
-		}
 		if off == "" {
-			fmt.Fprintf(stderr, "physa init: gather up to %d tokens (the discovery agent)\n", limit)
+			fmt.Fprintln(stderr, "physa init: gather, with the discovery agent; init is never bounded, so it has no appetite and no circuit breaker")
 		} else {
 			fmt.Fprintf(stderr, "physa init: gather starts no agent (%s)\n", off)
 		}
 		var sum gather.Summary
-		if _, sum, err = gatherInto(st, o, env, discover(o, env, limit, off, stderr)); err != nil {
+		if _, sum, err = r.gatherInto(off); err != nil {
 			return failed(stderr, err)
 		}
-		p.gather(sum)
+		r.p.gather(sum)
 	}
-	return p.done(code, stderr)
+	return r.p.done(code, stderr)
+}
+
+// run is one physa init: its flags, seams, store, root, arguments, output
+// and spend cache, and the agent once resolved, weighed through a meter.
+type run struct {
+	o      Flags
+	env    Env
+	st     *store.Store
+	root   string
+	args   []string
+	stderr io.Writer
+	cache  *spend.Cache
+	p      *printer
+
+	once   sync.Once
+	meter  *spend.Meter
+	err    error
+	counts map[string]spend.Count // what each phase spent in this run
+}
+
+// agent resolves o's agent once, weighed through a meter on the cache.
+func (r *run) agent() (adapter.Adapter, error) {
+	r.once.Do(func() {
+		a, err := r.env.Agent(r.o.Agent)
+		r.meter, r.err = &spend.Meter{Adapter: a, Cache: r.cache, Now: r.env.Now}, err
+	})
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.meter, nil
+}
+
+// spent stores what the meter counted since from as phase's spend, so the
+// PR body shows what each phase really spent; nothing spent stores nothing,
+// and a failure to store it is said and does not stop the run.
+func (r *run) spent(phase string, from spend.Count) {
+	if c := r.meter.Count().Since(from); c != (spend.Count{}) {
+		r.counts[phase] = c
+		if err := r.st.AddSpent(store.Spent{Phase: phase, Count: c}); err != nil {
+			fmt.Fprintf(r.stderr, "physa init: what %s spent was not stored: %v\n", phase, err)
+		}
+	}
 }
 
 // refuseMapped is the early refusal: it errors, before anything is spent,
@@ -130,23 +182,15 @@ func discoveryOff(env Env) string {
 	}
 }
 
-// discover is gather's discovery agent, capped at limit tokens, or none,
-// reported with why off says, when off is set.
-func discover(o Flags, env Env, limit int64, off string, stderr io.Writer) gather.Discover {
-	if off != "" {
-		return gather.Discover{Off: off}
+// gatherInto gathers the repo's sources under o's bounds, with the
+// discovery agent unless off says why not, and stores them, replacing the
+// earlier gather, and says what it gathered.
+func (r *run) gatherInto(off string) (store.Gather, gather.Summary, error) {
+	from, d := r.meter.Count(), gather.Discover{Off: off}
+	if off == "" {
+		d.Session = discovery.Session{Agent: r.agent, Progress: r.stderr}
 	}
-	return gather.Discover{Session: discovery.Session{
-		Agent:    func() (adapter.Adapter, error) { return env.Agent(o.Agent) },
-		Appetite: limit, Progress: stderr,
-	}}
-}
-
-// gatherInto gathers the repo's sources under o's bounds, with d's discovery,
-// and stores them in st, replacing the earlier gather, and says what it
-// gathered.
-func gatherInto(st *store.Store, o Flags, env Env, d gather.Discover) (store.Gather, gather.Summary, error) {
-	repo, err := env.Repo(".")
+	repo, err := r.env.Repo(".")
 	if err != nil {
 		return store.Gather{}, gather.Summary{}, err
 	}
@@ -154,45 +198,49 @@ func gatherInto(st *store.Store, o Flags, env Env, d gather.Discover) (store.Gat
 	if err != nil {
 		return store.Gather{}, gather.Summary{}, err
 	}
-	bounds := gather.Bounds{Since: o.Since, SinceSet: o.SinceSet, MaxPRs: o.MaxPRs}
-	g, sum, err := gather.Run(".", repo, env.Forge("."), bounds, d, env.Now())
+	bounds := gather.Bounds{Since: r.o.Since, SinceSet: r.o.SinceSet, MaxPRs: r.o.MaxPRs}
+	g, sum, err := gather.Run(".", repo, r.env.Forge("."), bounds, d, r.env.Now())
 	if err != nil {
 		return g, sum, err
 	}
 	sum.Store = dir
-	return g, sum, st.PutGather(g)
+	if err := r.st.PutGather(g); err != nil {
+		return g, sum, err
+	}
+	r.spent("discover", from)
+	return g, sum, nil
 }
 
 // propose proposes a map from the stored gather and prints it.
-func propose(o Flags, st *store.Store, p *printer, stderr io.Writer, env Env) int {
-	res, err := mapping.Propose(context.Background(), st, mapping.Session{
-		Agent:    func() (adapter.Adapter, error) { return env.Agent(o.Agent) },
-		Appetite: o.Appetite, Progress: stderr,
-	})
+func (r *run) propose() int {
+	from := r.meter.Count()
+	res, err := mapping.Propose(context.Background(), r.st, mapping.Session{Agent: r.agent, Progress: r.stderr, Now: r.env.Now})
+	r.spent("propose", from)
 	if err != nil {
-		return ended(err, o, nil, stderr)
+		return failed(r.stderr, err)
 	}
-	if res.Stopped {
-		fmt.Fprintf(stderr, "physa init: the circuit breaker stopped the session at %s; nothing was proposed\n", plural(int(res.Appetite), "token", "tokens"))
-		return 1
-	}
-	p.proposal(res)
+	r.p.proposal(res)
 	return 0
 }
 
 // recoverPhase recovers the proposed capabilities into the store and prints
 // how each fared. Without --write it writes nothing to the repo; with it,
 // it then writes everything stored to physa/init, keeping what an
-// earlier run recovered.
-func recoverPhase(o Flags, st *store.Store, root string, p *printer, stderr io.Writer, env Env) int {
-	rep, err := recovery.Run(context.Background(), st, recoverySession(o, o.Appetite, o.Only, root, env, stderr))
+// earlier run recovered. done, when set, is called with the report first.
+func (r *run) recoverPhase(only []string, done func(recovery.Report)) int {
+	from := r.meter.Count()
+	rep, err := recovery.Run(context.Background(), r.st, r.recoverySession(only))
+	r.spent("recover", from)
 	if err != nil {
-		return ended(err, o, o.Only, stderr)
+		return failed(r.stderr, err)
 	}
-	p.recovery(rep)
+	if done != nil {
+		done(rep)
+	}
+	r.p.recovery(rep)
 	code := exitCode(rep)
-	if o.Write {
-		code = max(code, writeStored(st, root, o, env, p, stderr))
+	if r.o.Write {
+		code = max(code, r.writeStored())
 	}
 	return code
 }

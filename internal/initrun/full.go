@@ -1,145 +1,96 @@
 package initrun
 
 import (
-	"cmp"
-	"context"
-	"errors"
 	"fmt"
-	"io"
 	"path/filepath"
-	"strconv"
 	"strings"
 
-	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/initcost"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/newcodebase"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/store"
 )
 
-// full is bare physa init (design 02 section 2.1): it prints the
-// appetite's plan before any token is spent, then gathers, with a discovery
-// agent capped at a quarter of the appetite, and for a new codebase takes
-// the person's answers instead; otherwise it proposes with what discovery
-// left, recovers with what both left, and with --write writes physa/init.
-// A phase whose whole prompt does not fit what is left never starts (ended).
+// full is bare physa init (design 02 section 2.1). Init is never bounded
+// (design 10 Q6): it says so before any token is spent, then gathers, with
+// the discovery agent, and for a new codebase takes the person's answers
+// instead. Otherwise it estimates the rest of the run and asks to go on
+// (initcost); with a yes it proposes, recovers, saying once if the spend
+// passes the top of the estimate, records what proposing and recovering
+// spent, weighed, against their prompt and sources for the next estimate, and with --write writes physa/init.
 // Every run starts fresh: it replaces the stored gather, proposal and recoveries.
-func full(o Flags, st *store.Store, root string, p *printer, stderr io.Writer, env Env) int {
-	appetite := cmp.Or(o.Appetite, recovery.DefaultAppetite)
-	limit := appetite / 4 // a share of the appetite, never a fixed cap (10 Q3)
-	fmt.Fprintf(stderr, "physa init: appetite %s: gather up to %d (the discovery agent); propose with what gather leaves; recover with what is left after both, shared by its sessions; check and write 0. No source is cut: a phase that does not fit what is left is not started.\n", plural(int(appetite), "token", "tokens"), limit)
-	g, sum, err := gatherInto(st, o, env, discover(o, env, limit, "", stderr))
+func (r *run) full() int {
+	r.agent() // resolved here so the first line can say what a token is worth; gather reports a failure
+	fmt.Fprintf(r.stderr, "physa init: no appetite and no circuit breaker: init is never bounded, and is up front about its cost instead: once it has gathered it estimates the rest of the run and asks before going on. %s\n", initcost.Unit(r.cache, r.meter.Name()))
+	g, sum, err := r.gatherInto("")
 	if err != nil {
-		return failed(stderr, err)
+		return failed(r.stderr, err)
 	}
-	p.gather(sum)
+	r.p.gather(sum)
 	if newcodebase.New(g) {
-		return newCodebase(g, root, o, env, p, stderr)
+		return r.newCodebase(g)
 	}
-	left := max(appetite-sum.Discovery.Tokens.Input-sum.Discovery.Tokens.Output, 1) // zero would mean propose's default
-	fmt.Fprintf(stderr, "physa init: propose's prompt is about %d tokens plus %d for the reply; %d of the appetite is left.\n", mapping.Estimate(g), mapping.ReplyReserve, left)
-	res, err := mapping.Propose(context.Background(), st, mapping.Session{
-		Agent:    func() (adapter.Adapter, error) { return env.Agent(o.Agent) },
-		Appetite: left, Progress: stderr, Now: env.Now,
-	})
-	if err != nil {
-		return ended(err, o, nil, stderr)
+	if _, err := r.agent(); err != nil {
+		return failed(r.stderr, err)
 	}
-	if res.Stopped {
-		fmt.Fprintf(stderr, "physa init: the circuit breaker stopped proposing at %s; nothing was proposed or written\n", plural(int(res.Appetite), "token", "tokens"))
+	est := initcost.New(r.cache, r.meter.Name(), r.meter.Spent(), mapping.Estimate(g), mapping.ReplyReserve, sum.EstimatedTokens)
+	fmt.Fprintf(r.stderr, "physa init: %s\n", est.Line())
+	ask := initcost.Ask{Yes: r.o.Yes, Rerun: strings.Join(append([]string{"physa init"}, append(r.args, "--yes")...), " ")}
+	if r.env.IsTerminal != nil && r.env.IsTerminal() {
+		ask.Confirm = r.env.Confirm
+	}
+	if !initcost.Proceed(r.stderr, est, ask) {
 		return 1
 	}
-	p.proposal(res)
-	rest := max(left-res.Tokens.Input-res.Tokens.Output, 1) // zero would mean recovery's default; one reaches no capability
-	rep, err := recovery.Run(context.Background(), st, recoverySession(o, rest, nil, root, env, stderr))
-	if err != nil {
-		return ended(err, o, nil, stderr)
+	initcost.WarnPast(r.stderr, r.meter, est.Hi)
+	if code := r.propose(); code != 0 {
+		return code
 	}
-	p.recovery(rep)
-	code := exitCode(rep)
-	if o.Write {
-		code = max(code, writeStored(st, root, o, env, p, stderr))
-	}
-	return code
-}
-
-// ended reports err and returns the run's code: 1 for an appetite too small
-// for a phase's whole prompt, saying what is stored and the command that
-// continues under the appetite needed; 2 for any other err.
-func ended(err error, o Flags, only []string, stderr io.Writer) int {
-	var p *mapping.TooSmall
-	var r *recovery.TooSmall
-	switch {
-	case errors.As(err, &p) && o.Full():
-		fmt.Fprintf(stderr, "physa init: stopped before proposing: %v. The gather is stored: %s continues, then %s.\n", err, continuing("--propose", nil, p.Need(), o), continuing("--recover", nil, 0, o))
-	case errors.As(err, &p):
-		fmt.Fprintf(stderr, "physa init: stopped before proposing: %v. %s continues.\n", err, continuing("--propose", nil, p.Need(), o))
-	case errors.As(err, &r):
-		fmt.Fprintf(stderr, "physa init: stopped before recovering: %v. The proposal is stored: %s continues.\n", err, continuing("--recover", only, r.Need, o))
-	default:
-		return failed(stderr, err)
-	}
-	return 1
-}
-
-// continuing is the command that runs phase under need (none when zero), with
-// o's agent, the capabilities of only and, for --recover, o's writing.
-func continuing(phase string, only []string, need int64, o Flags) string {
-	cmd := []string{"physa init", phase}
-	if len(only) > 0 {
-		cmd = append(cmd, "--only", strings.Join(only, ","))
-	}
-	if need > 0 {
-		cmd = append(cmd, "--appetite", strconv.FormatInt(need, 10))
-	}
-	if o.Agent != "" {
-		cmd = append(cmd, "--agent", o.Agent)
-	}
-	for i, on := range []bool{o.Write, o.Push, o.PR, o.Hooks} {
-		if on && phase == "--recover" {
-			cmd = append(cmd, [...]string{"--write", "--push", "--pr", "--hooks"}[i])
+	return r.recoverPhase(nil, func(recovery.Report) {
+		if p, rc := r.counts["propose"], r.counts["recover"]; !p.Spend.Unpriced && !rc.Spend.Unpriced { // raw tokens would mix units
+			r.cache.RecordRatio(rc.Spend.Tokens, int64(sum.EstimatedTokens), p.Spend.Tokens, p.Raw.Input+p.Raw.Output, r.env.Now())
 		}
-	}
-	return strings.Join(cmd, " ")
+		fmt.Fprintf(r.stderr, "physa init: this run spent %s.\n", r.meter.Spent())
+	})
 }
 
-// recoverySession is how recovering runs under appetite: on the
-// capabilities of only (none means all), from the repo at root.
-func recoverySession(o Flags, appetite int64, only []string, root string, env Env, stderr io.Writer) recovery.Session {
+// recoverySession is how recovering runs: on the capabilities of only (none
+// means all), from the repo at root.
+func (r *run) recoverySession(only []string) recovery.Session {
 	s := recovery.Session{
-		Agent:    func() (adapter.Adapter, error) { return env.Agent(o.Agent) },
-		Appetite: appetite, Only: only, Root: root,
-		OpenRepo: env.Repo, Progress: stderr, Now: env.Now,
+		Agent: r.agent, Only: only, Root: r.root,
+		OpenRepo: r.env.Repo, Progress: r.stderr, Now: r.env.Now,
 	}
-	if env.PRExists != nil {
-		s.PRExists = env.PRExists(".")
+	if r.env.PRExists != nil {
+		s.PRExists = r.env.PRExists(".")
 	}
 	return s
 }
 
 // newCodebase starts a new codebase's map from the person's answers, read
 // from --answers or asked on a terminal; with neither it fails, saying how
-// to answer. It resolves no agent. --write writes the promise and terms.
-func newCodebase(g store.Gather, root string, o Flags, env Env, p *printer, stderr io.Writer) int {
-	qs := newcodebase.Questions(g, filepath.Base(root))
+// to answer. It starts no session. --write writes the promise and terms.
+func (r *run) newCodebase(g store.Gather) int {
+	qs := newcodebase.Questions(g, filepath.Base(r.root))
 	var a newcodebase.Answers
 	var err error
 	switch {
-	case o.Answers != "":
-		a, err = newcodebase.ReadAnswers(o.Answers, qs...)
-	case env.IsTerminal != nil && env.IsTerminal() && env.Stdin != nil:
-		a, err = newcodebase.Ask(env.Stdin, stderr, qs)
+	case r.o.Answers != "":
+		a, err = newcodebase.ReadAnswers(r.o.Answers, qs...)
+	case r.env.IsTerminal != nil && r.env.IsTerminal() && r.env.Stdin != nil:
+		a, err = newcodebase.Ask(r.env.Stdin, r.stderr, qs)
 	default:
-		fmt.Fprintf(stderr, "physa init: this looks like a new codebase (no agent docs, contributing guide, decisions or PRs, and %s); answer its questions on a terminal or with --answers FILE\n",
+		fmt.Fprintf(r.stderr, "physa init: this looks like a new codebase (no agent docs, contributing guide, decisions or PRs, and %s); answer its questions on a terminal or with --answers FILE\n",
 			plural(len(g.Changes), "change", "changes"))
 		return 2
 	}
 	if err != nil {
-		return failed(stderr, err)
+		return failed(r.stderr, err)
 	}
-	p.newCodebase(a, o.Write)
-	if !o.Write {
+	r.p.newCodebase(a, r.o.Write)
+	if !r.o.Write {
 		return 0
 	}
-	return writeMap(newMap(a, env), o, env, p, stderr)
+	return writeMap(newMap(a, r.env), r.o, r.env, r.p, r.stderr)
 }

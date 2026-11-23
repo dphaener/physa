@@ -2,6 +2,8 @@ package store
 
 import (
 	"database/sql"
+	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/spend"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -120,5 +122,38 @@ func TestMigrationFiveUpgradesVersionFourStore(t *testing.T) {
 	}
 	if _, ok, err := s.Proposed(); ok || err != nil {
 		t.Errorf("Proposed = %v, %v; want false, nil", ok, err)
+	}
+}
+
+func TestSpentAddsPerPhaseAndIsCleared(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	sp := func(phase string, in, cached, out, w, usd int64, unpriced bool) Spent {
+		return Spent{Phase: phase, Count: spend.Count{Raw: adapter.Tokens{Input: in, CachedInput: cached, Output: out}, Spend: spend.Spend{Tokens: w, MicroUSD: usd, Unpriced: unpriced}}}
+	}
+	for _, p := range []Spent{sp("recover", 10, 0, 0, 20, 80, false), sp("discover", 1, 0, 0, 1, 0, true), sp("propose", 5, 1, 2, 15, 60, false), sp("recover", 3, 0, 1, 9, 36, false)} {
+		if err := s.AddSpent(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.Spending()
+	want := []Spent{sp("discover", 1, 0, 0, 1, 0, true), sp("propose", 5, 1, 2, 15, 60, false), sp("recover", 13, 0, 1, 29, 116, false)}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("Spending = %+v, %v\nwant %+v", got, err, want)
+	}
+	if err := s.PutProposal(Proposal{Body: []byte("{}")}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Spending(); len(got) != 1 || got[0].Phase != "discover" {
+		t.Errorf("after a new proposal: %+v", got)
+	}
+	if err := s.PutGather(Gather{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Spending(); len(got) != 0 {
+		t.Errorf("after a new gather: %+v", got)
 	}
 }

@@ -35,6 +35,15 @@ func Confirm(in, out *os.File, question string) (bool, error) {
 	return confirm(config{in: in, out: out}, question)
 }
 
+// ConfirmOrNo asks as Confirm does, with an aborted question answering no.
+func ConfirmOrNo(in, out *os.File, question string) (bool, error) {
+	yes, err := Confirm(in, out, question)
+	if errors.Is(err, ErrAborted) {
+		return false, nil
+	}
+	return yes, err
+}
+
 func confirm(c config, question string) (bool, error) {
 	var yes bool
 	if err := c.run(huh.NewConfirm().Title(question).Value(&yes)); err != nil {

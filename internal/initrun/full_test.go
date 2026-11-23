@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/mapcheck"
+	"github.com/dphaener/physa/internal/spend"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
@@ -88,7 +90,10 @@ type routedAgent struct {
 	propose   int64          // the input tokens proposing uses; zero means 10,000
 	discover  string         // discovery's reply
 	discovers adapter.Tokens // the tokens discovery uses; zero means 1,000 in, 10 out
+	recovers  int64          // the input tokens each recovering session uses; zero means 10,000
 	readOnly  bool           // every discovery session was read-only
+	priced    bool           // each result carries its cost, at $4 a million input
+	writes1h  bool           // with priced, uncached input is written to a 1-hour cache, at 2× input
 }
 
 func newRoutedAgent() *routedAgent {
@@ -131,10 +136,24 @@ func (a *routedAgent) Start(_ context.Context, s adapter.Spec) (adapter.Session,
 		}
 	case name != "propose":
 		text = a.replies[name]
+		if a.recovers != 0 {
+			t.Input = a.recovers
+		}
 	case a.propose != 0:
 		t.Input = a.propose
 	}
-	return fakeSession{f: &fakeAgent{reports: []adapter.Tokens{t}, result: adapter.Result{Text: text, Tokens: t, SessionID: s.SessionID}}, usage: s.Usage}, nil
+	res := adapter.Result{Text: text, Tokens: t, SessionID: s.SessionID}
+	if a.priced {
+		res.Model = "claude-opus-5-5"
+		c := adapter.ModelCost{Model: res.Model, Input: t.Input - t.CachedInput, CacheRead: t.CachedInput, Output: t.Output}
+		c.MicroUSD = 4*c.Input + c.CacheRead/5 + 20*c.Output // $4, $0.20 and $20 a million
+		if a.writes1h {
+			c.CacheWrite1h, c.Input = c.Input, 0
+			c.MicroUSD += 4 * c.CacheWrite1h // $8 a million: twice input
+		}
+		res.Cost = adapter.Cost{c}
+	}
+	return fakeSession{f: &fakeAgent{reports: []adapter.Tokens{t}, result: res}, usage: s.Usage}, nil
 }
 
 // remoteRepo is the person's clone of a local bare remote, with AGENTS.md,
@@ -206,7 +225,7 @@ func TestFullWritePushPR(t *testing.T) {
 	before := personState(t, dir)
 	f := &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}
 	a := newRoutedAgent()
-	code, out, errOut := runInit(fullEnv(t, f, a), "--write", "--push", "--pr")
+	code, out, errOut := runInit(fullEnv(t, f, a), "--write", "--push", "--pr", "--yes")
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -223,7 +242,8 @@ func TestFullWritePushPR(t *testing.T) {
 		t.Fatalf("PRs created %v, edits %d", f.created, f.edits)
 	}
 	for _, s := range []string{"`delivery`: Changes reach users in order.", "`search`: People find what they kept.",
-		"delivery: rule \"Changes ship fast (ship-fast)\"", "| propose | 10000 | 5 | 20 |", "| recover |", "| total |",
+		"delivery: rule \"Changes ship fast (ship-fast)\"", "| propose | 10000 | 5 | 20 | 10k | none: no price yet |", "| recover |", "| total |",
+		"| Weighted | Cost estimate |",
 		"## The Session: hook\n\nNot asked for."} {
 		if !strings.Contains(f.bodies[0], s) {
 			t.Errorf("PR body lacks %q:\n%s", s, f.bodies[0])
@@ -240,42 +260,268 @@ func TestFullWritePushPR(t *testing.T) {
 	}
 }
 
+// noPricesLine is the full run's first line on a machine that knows no
+// prices yet.
+const noPricesLine = "physa init: no appetite and no circuit breaker: init is never bounded, and is up front about its cost instead: once it has gathered it estimates the rest of the run and asks before going on. Spend is shown in tokens; no prices are known yet, so they count raw and no cost is shown.\n"
+
 func TestFullPlanLineComesFirst(t *testing.T) {
 	remoteRepo(t)
 	var stderr bytes.Buffer
 	a := newRoutedAgent()
 	var seen string
 	a.first = func() { seen = stderr.String() }
-	code := Run([]string{"--appetite", "100000"}, &bytes.Buffer{}, &stderr, fullEnv(t, onePR(), a))
+	code := Run([]string{"--yes"}, &bytes.Buffer{}, &stderr, fullEnv(t, onePR(), a))
 	if code != 0 {
 		t.Fatalf("code %d, stderr %s", code, stderr.String())
 	}
-	want := "physa init: appetite 100000 tokens: gather up to 25000 (the discovery agent); propose with what gather leaves; recover with what is left after both, shared by its sessions; check and write 0. No source is cut: a phase that does not fit what is left is not started.\n"
-	if !strings.HasPrefix(seen, want) {
+	if !strings.HasPrefix(seen, noPricesLine) {
 		t.Errorf("before the first session, stderr was %q", seen)
 	}
 	if len(a.started) == 0 || a.started[0] != "discover" || !a.readOnly {
 		t.Errorf("sessions %v (discovery read-only: %v); want discovery first, read-only", a.started, a.readOnly)
 	}
-	if after := strings.TrimPrefix(stderr.String(), seen); !strings.Contains(after, "physa init: propose's prompt is about ") ||
-		!strings.Contains(after, " tokens plus 16000 for the reply; 98990 of the appetite is left.\n") {
-		t.Errorf("after gathering, stderr was %q", after)
+	after := strings.TrimPrefix(stderr.String(), seen)
+	for _, want := range []string{"physa init: discovery spent 1k tokens. The rest of the run should spend about ",
+		" tokens: propose's prompt of about ", " tokens plus 16k for its reply, at 2.05 times as weighed, and recovering at 6.25 to 18.75 times the sources' ",
+		" tokens (nebari's measured ratio of 12.5, until two runs are recorded on this machine). An estimate, not a limit.\n",
+		"physa init: this run spent "} {
+		if !strings.Contains(after, want) {
+			t.Errorf("after gathering, stderr lacks %q:\n%s", want, after)
+		}
+	}
+	if strings.Contains(stderr.String(), "$") || strings.Contains(stderr.String(), "appetite of") {
+		t.Errorf("with no prices a cost was shown, or an appetite named:\n%s", stderr.String())
 	}
 	if out := gitIn(t, ".", "branch", "--list", "physa/init"); out != "" {
 		t.Errorf("without --write a branch was made: %q", out)
 	}
 }
 
+// asking records the questions Confirm was asked and the sessions started
+// by then, and answers each with yes.
+type asking struct {
+	a         *routedAgent
+	yes       bool
+	questions []string
+	before    []string
+}
+
+func (k *asking) confirm(q string) (bool, error) {
+	k.questions = append(k.questions, q)
+	k.before = slices.Clone(k.a.started)
+	return k.yes, nil
+}
+
+// TestFullEstimateWaitsForAYesOnATerminal checks that on a terminal the run
+// shows its estimate after gathering and waits for a yes before proposing.
+func TestFullEstimateWaitsForAYesOnATerminal(t *testing.T) {
+	remoteRepo(t)
+	a := newRoutedAgent()
+	a.priced = true
+	k := &asking{a: a, yes: true}
+	env := fullEnv(t, onePR(), a)
+	env.IsTerminal = func() bool { return true }
+	env.Confirm = k.confirm
+	code, out, errOut := runInit(env)
+	if code != 0 || !strings.Contains(out, "## delivery: recovered") {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	if len(k.questions) != 1 || !slices.Equal(k.before, []string{"discover"}) {
+		t.Fatalf("asked %q with sessions %v started", k.questions, k.before)
+	}
+	if q := k.questions[0]; !regexp.MustCompile(`^Go on to propose and recover, about [0-9.]+k to [0-9.]+k tokens \(about \$0\.[0-9]{2} to \$0\.[0-9]{2}\)\?$`).MatchString(q) {
+		t.Errorf("question %q", q)
+	}
+	if !strings.HasPrefix(errOut, noPricesLine) || !strings.Contains(errOut, "physa init: discovery spent 1.1k tokens (under $0.01).") {
+		t.Errorf("stderr names no priced discovery:\n%s", errOut)
+	}
+
+	// Declining stops before proposing, with nothing spent on it.
+	a2 := newRoutedAgent()
+	k2 := &asking{a: a2}
+	env.Agent = func(string) (adapter.Adapter, error) { return a2, nil }
+	env.Confirm = k2.confirm
+	code, out, errOut = runInit(env, "--write")
+	if code != 1 || !slices.Equal(a2.started, []string{"discover"}) || strings.Contains(out, "# Proposed map") ||
+		!strings.Contains(errOut, "physa init: stopped before proposing, as asked; nothing was spent on proposing or recovering. The gather is stored: physa init --propose continues, then physa init --recover.\n") {
+		t.Errorf("declined: code %d, sessions %v\nstdout %s\nstderr %s", code, a2.started, out, errOut)
+	}
+	// The first run's prices are kept for the next one, whose first line
+	// names what a token is worth.
+	if !strings.Contains(errOut, "Spend is shown in tokens weighted by price, each worth an input token of claude-opus-5-5 ($4.00 a million), with the cost estimate beside it.\n") {
+		t.Errorf("the second run's first line names no unit:\n%s", errOut)
+	}
+}
+
+// TestFullOffATerminalNeedsYes checks that with no terminal and no --yes
+// the run stops before proposing, naming the estimate and the command that
+// goes on, and that --yes then runs through without asking.
+func TestFullOffATerminalNeedsYes(t *testing.T) {
+	remoteRepo(t)
+	a := newRoutedAgent()
+	env := fullEnv(t, onePR(), a)
+	env.Confirm = func(string) (bool, error) { t.Error("asked off a terminal"); return false, nil }
+	code, out, errOut := runInit(env, "--write", "--agent", "fake")
+	if code != 1 || !slices.Equal(a.started, []string{"discover"}) || strings.Contains(out, "# Proposed map") {
+		t.Fatalf("code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
+	}
+	want := regexp.MustCompile(`physa init: stopped before proposing: the rest of the run is estimated at about [0-9.]+k to [0-9.]+k tokens, and with no terminal to ask on, init goes on only when told to\. The gather is stored; rerun with --yes to go on without asking: physa init --write --agent fake --yes\n$`)
+	if !want.MatchString(errOut) {
+		t.Errorf("stderr:\n%s", errOut)
+	}
+	if gitIn(t, ".", "branch", "--list", "physa/init") != "" {
+		t.Error("a branch was written")
+	}
+	code, out, errOut = runInit(env, "--write", "--agent", "fake", "--yes")
+	if code != 0 || !strings.Contains(out, "Wrote physa/init at ") || strings.Contains(errOut, "stopped before proposing") {
+		t.Errorf("--yes: code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+}
+
+// TestFullOverrunWarnsOnceAndGoesOn checks that a run whose spend passes the
+// top of its estimate says so once and still recovers and writes.
+func TestFullOverrunWarnsOnceAndGoesOn(t *testing.T) {
+	remoteRepo(t)
+	a := newRoutedAgent()
+	a.recovers = 5_000_000
+	code, out, errOut := runInit(fullEnv(t, onePR(), a), "--write", "--yes")
+	if code != 0 || !strings.Contains(out, "Recovered 2, not yet recovered 0") || !strings.Contains(out, "Wrote physa/init at ") {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	warn := regexp.MustCompile(`physa init: past the estimate: proposing and recovering have spent [0-9.]+M tokens, more than its top of [0-9.]+k tokens; init is never bounded, so it goes on\.\n`)
+	if n := len(warn.FindAllString(errOut, -1)); n != 1 {
+		t.Errorf("%d warnings, want 1:\n%s", n, errOut)
+	}
+}
+
+// TestFullRecordsTheRatioForTheNextRun checks that a finished run records
+// its ratio of recovered input to sources in the machine's spend cache, and
+// that once two are recorded the next estimate uses their range.
+func TestFullRecordsTheRatioForTheNextRun(t *testing.T) {
+	remoteRepo(t)
+	a := newRoutedAgent()
+	a.priced, a.writes1h = true, true
+	env := fullEnv(t, onePR(), a)
+	// An unpriced run records nothing: its raw tokens would mix units.
+	b := newRoutedAgent()
+	env.Agent = func(string) (adapter.Adapter, error) { return b, nil }
+	if code, _, errOut := runInit(env, "--yes"); code != 0 || len(spend.Open(env.Spend).Ratios) != 0 {
+		t.Fatalf("unpriced run: code %d, ratios %+v\n%s", code, spend.Open(env.Spend).Ratios, errOut)
+	}
+	env.Agent = func(string) (adapter.Adapter, error) { return a, nil }
+	want := []spend.Ratio{}
+	for i, recovers := range []int64{10_000, 30_000} {
+		a.recovers = recovers
+		code, out, errOut := runInit(env, "--yes", "--json")
+		var doc struct{ Gather gather.Summary }
+		if code != 0 || json.Unmarshal([]byte(out), &doc) != nil {
+			t.Fatalf("run %d: code %d\nstderr %s", i, code, errOut)
+		}
+		st, err := env.Store(".")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, err := st.Spending()
+		st.Close()
+		if err != nil || len(rows) != 3 {
+			t.Fatalf("run %d spent %+v, %v", i, rows, err)
+		}
+		prop, rec := rows[1], rows[2]
+		want = append(want, spend.Ratio{Recover: rec.Spend.Tokens * 1000 / int64(doc.Gather.EstimatedTokens),
+			Propose: prop.Spend.Tokens * 1000 / (prop.Raw.Input + prop.Raw.Output)})
+		got := spend.Open(env.Spend).Ratios
+		if len(got) != i+1 || got[i].Recover != want[i].Recover || got[i].Propose != want[i].Propose {
+			t.Fatalf("after run %d, ratios %+v, want %+v", i, got, want)
+		}
+	}
+	// 1-hour writes at twice input: propose weighs about twice its raw tokens.
+	if p := want[0].Propose; p < 1900 || p > 2100 {
+		t.Errorf("propose's factor %d, want about 2000", p)
+	}
+	r := spend.Open(env.Spend).RatioRange()
+	if r.Measured != 2 || r.RecoverLo != want[0].Recover || r.RecoverHi != want[1].Recover {
+		t.Fatalf("range %+v from %+v", r, want)
+	}
+	_, _, errOut := runInit(env, "--yes")
+	times := func(m int64) string {
+		return strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%.2f", float64(m)/1000), "0"), ".")
+	}
+	if want := fmt.Sprintf("and recovering at %s to %s times the sources' ", times(r.RecoverLo), times(r.RecoverHi)); !strings.Contains(errOut, want) ||
+		!strings.Contains(errOut, "(the smallest and largest of 2 runs recorded on this machine)") {
+		t.Errorf("third run's estimate lacks %q:\n%s", want, errOut)
+	}
+}
+
+// TestFullTableAgreesWithTheRunAt1HourWrites checks that the PR body's
+// table shows what the meter counted from the adapter's dollars: with one-turn
+// sessions whose input is all 1-hour cache writes, at twice input, its
+// weighted total is about twice the raw input and matches the end-of-run line.
+func TestFullTableAgreesWithTheRunAt1HourWrites(t *testing.T) {
+	remoteRepo(t)
+	a := newRoutedAgent()
+	a.priced, a.writes1h = true, true
+	env := fullEnv(t, onePR(), a)
+	code, out, errOut := runInit(env, "--write", "--yes")
+	if code != 0 {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	m := regexp.MustCompile(`physa init: this run spent ([0-9.]+[kM]?) tokens \((about \$[0-9.]+)\)\.`).FindStringSubmatch(errOut)
+	if m == nil {
+		t.Fatalf("no end-of-run line:\n%s", errOut)
+	}
+	if total := regexp.MustCompile(`\| total \| \d+ \| \d+ \| \d+ \| ([^ ]+) \| ([^|]+) \|`).FindStringSubmatch(out); total == nil || total[1] != m[1] || strings.TrimSpace(total[2]) != m[2] {
+		t.Errorf("the table's total %q does not match the run's %q:\n%s", total, m[1:], out)
+	}
+	for _, phase := range []string{"| discover |", "| propose |", "| recover |"} {
+		if !strings.Contains(out, phase) {
+			t.Errorf("the table has no %s row:\n%s", phase, out)
+		}
+	}
+	st, err := env.Store(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	rows, err := st.Spending()
+	var w, in int64
+	for _, p := range rows {
+		w, in = w+p.Spend.Tokens, in+p.Raw.Input
+	}
+	if err != nil || in == 0 || float64(w)/float64(in) < 1.95 || float64(w)/float64(in) > 2.1 {
+		t.Errorf("weighted %d for %d raw input (%v); want about twice", w, in, err)
+	}
+}
+
+// TestFullWithPricesShowsCost checks the PR body's weighted tokens and cost
+// estimate once the agent reports what its sessions cost.
+func TestFullWithPricesShowsCost(t *testing.T) {
+	remoteRepo(t)
+	a := newRoutedAgent()
+	a.priced = true
+	code, out, errOut := runInit(fullEnv(t, onePR(), a), "--write", "--yes")
+	if code != 0 {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	// Proposing: 9,995 uncached in, 5 cached, 20 out at $4/M input: $0.04.
+	for _, want := range []string{"| propose | 10000 | 5 | 20 | 10k | about $0.04 |", "| total |", "physa init: this run spent "} {
+		if !strings.Contains(out+errOut, want) {
+			t.Errorf("output lacks %q:\n%s\n%s", want, out, errOut)
+		}
+	}
+	if !regexp.MustCompile(`physa init: this run spent [0-9.]+k tokens \(about \$0\.[0-9]{2}\)\.`).MatchString(errOut) {
+		t.Errorf("stderr:\n%s", errOut)
+	}
+}
+
 func TestFullJSONIsOneDocument(t *testing.T) {
 	remoteRepo(t)
-	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--json")
+	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--json", "--yes")
 	var doc struct {
 		Gather struct {
 			Version   int
 			Discovery struct {
 				Started bool
 				Tokens  adapter.Tokens
-				Cap     int64
 			}
 		}
 		Proposal, Recovery json.RawMessage
@@ -289,7 +535,7 @@ func TestFullJSONIsOneDocument(t *testing.T) {
 	if code != 0 || json.Unmarshal([]byte(out), &doc) != nil {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
-	if d := doc.Gather.Discovery; doc.Gather.Version != 2 || !d.Started || d.Tokens.Input != 1_000 || d.Cap != 75_000 {
+	if d := doc.Gather.Discovery; doc.Gather.Version != 3 || !d.Started || d.Tokens.Input != 1_000 {
 		t.Errorf("gather %+v", doc.Gather)
 	}
 	if len(doc.Proposal) == 0 || len(doc.Recovery) == 0 || doc.Write.Branch != "physa/init" ||
@@ -316,120 +562,6 @@ func storedRow(t *testing.T, env Env, c string) store.Recovered {
 		}
 	}
 	return store.Recovered{}
-}
-
-// appetiteIn returns the appetite N of the command "physa init <phase>
-// --appetite N" that errOut says continues.
-func appetiteIn(t *testing.T, errOut, phase string) string {
-	t.Helper()
-	m := regexp.MustCompile(`physa init ` + phase + ` --appetite (\d+)`).FindStringSubmatch(errOut)
-	if m == nil {
-		t.Fatalf("stderr names no physa init %s --appetite N: %s", phase, errOut)
-	}
-	return m[1]
-}
-
-// TestFullRefusesBeforeProposing checks that a full run whose appetite,
-// after gathering, cannot hold propose's whole prompt and its reply reserve
-// never starts propose, says the appetite needed, and continues from the
-// stored gather with --propose at that appetite.
-func TestFullRefusesBeforeProposing(t *testing.T) {
-	remoteRepo(t)
-	a := newRoutedAgent()
-	env := fullEnv(t, onePR(), a)
-	// A quarter of 19,000 is too small to start discovery, and propose's
-	// prompt plus 16,000 for its reply is more than 19,000.
-	code, out, errOut := runInit(env, "--write", "--appetite", "19000")
-	if code != 1 || len(a.started) != 0 {
-		t.Fatalf("code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
-	}
-	for _, want := range []string{"physa init: propose's prompt is about ", "; 19000 of the appetite is left.\n",
-		"physa init: stopped before proposing: propose needs an appetite of about ", " and has 19,000; it did not start, and nothing was spent on it. The gather is stored: physa init --propose --appetite ",
-		" continues, then physa init --recover --write.\n"} {
-		if !strings.Contains(errOut, want) {
-			t.Errorf("stderr lacks %q:\n%s", want, errOut)
-		}
-	}
-	if strings.Contains(out, "# Proposed map") || gitIn(t, ".", "branch", "--list", "physa/init") != "" {
-		t.Errorf("something was proposed or written:\n%s", out)
-	}
-	n := appetiteIn(t, errOut, "--propose")
-
-	// --propose alone refuses the same way, naming its own continuation.
-	code, _, errOut = runInit(env, "--propose", "--appetite", "100")
-	if code != 1 || len(a.started) != 0 || !strings.Contains(errOut, "and has 100; it did not start, and nothing was spent on it. physa init --propose --appetite "+n+" continues.\n") {
-		t.Fatalf("--propose under 100: code %d, sessions %v, stderr %s", code, a.started, errOut)
-	}
-	code, out, errOut = runInit(env, "--propose", "--appetite", n)
-	if code != 0 || !slices.Equal(a.started, []string{"propose"}) || !strings.Contains(out, "## Read\n\nEvery source whole") {
-		t.Fatalf("--propose under %s: code %d, sessions %v\nstdout %s\nstderr %s", n, code, a.started, out, errOut)
-	}
-}
-
-// TestFullStopsBeforeRecoveringThenRecoverWrite checks that a full run whose
-// appetite, after proposing, cannot hold every capability's whole prompt and
-// reply reserve starts no recovery session, keeps the proposal, writes
-// nothing, and names the --recover command and appetite that continue; that
-// command then recovers and writes.
-func TestFullStopsBeforeRecoveringThenRecoverWrite(t *testing.T) {
-	dir, _ := remoteRepo(t)
-	a := newRoutedAgent()
-	a.propose = 25_600
-	env := fullEnv(t, onePR(), a)
-	// A quarter of 52,410 is too small to start discovery; proposing uses
-	// 25,620, and the 26,790 left holds one capability's prompt and reply
-	// reserve, not two.
-	code, out, errOut := runInit(env, "--write", "--appetite", "52410")
-	if code != 1 || !slices.Equal(a.started, []string{"propose"}) {
-		t.Fatalf("code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
-	}
-	for _, want := range []string{"physa init: stopped before recovering: recovering 2 capabilities needs an appetite of about ",
-		" and has 26,790; no session started, and nothing was spent on recovering. The proposal is stored: physa init --recover --appetite ",
-		" --write continues.\n"} {
-		if !strings.Contains(errOut, want) {
-			t.Errorf("stderr lacks %q:\n%s", want, errOut)
-		}
-	}
-	if !strings.Contains(out, "# Proposed map") || gitIn(t, dir, "branch", "--list", "physa/init") != "" {
-		t.Errorf("the proposal was not shown, or a branch was written:\n%s", out)
-	}
-	st, err := env.Store(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, kept, err := st.Proposed()
-	rows, rerr := st.Recovered()
-	st.Close()
-	if err != nil || rerr != nil || !kept || len(rows) != 0 {
-		t.Fatalf("proposal kept %v (%v), %d recovered rows (%v)", kept, err, len(rows), rerr)
-	}
-
-	n := appetiteIn(t, errOut, "--recover")
-	code, out, errOut = runInit(env, "--recover", "--appetite", n, "--write")
-	if code != 0 || !slices.Equal(a.started, []string{"propose", "delivery", "search"}) && !slices.Equal(a.started, []string{"propose", "search", "delivery"}) {
-		t.Fatalf("recover --write: code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
-	}
-	for _, c := range []string{"delivery", "search"} {
-		if f := gitIn(t, dir, "show", "physa/init:.physa/capabilities/"+c+"/rules.md"); !strings.Contains(f, "\n### ") {
-			t.Errorf("%s holds no rules:\n%s", c, f)
-		}
-	}
-	if !strings.Contains(out, "Recovered 2, not yet recovered 0") || !strings.Contains(out, "Wrote physa/init at ") {
-		t.Errorf("stdout %s", out)
-	}
-}
-
-func TestFullBreakerWritesNothing(t *testing.T) {
-	remoteRepo(t)
-	a := newRoutedAgent()
-	a.propose = 900_000
-	code, _, errOut := runInit(fullEnv(t, onePR(), a), "--write")
-	if code != 1 || !strings.Contains(errOut, "the circuit breaker stopped proposing") {
-		t.Errorf("code %d, stderr %q", code, errOut)
-	}
-	if out := gitIn(t, ".", "branch", "--list", "physa/init"); out != "" {
-		t.Errorf("a branch was made: %q", out)
-	}
 }
 
 // newCodebaseRepo is a repo of two changes and a README only, with a local
@@ -523,7 +655,7 @@ func TestFullHooksKeepsOtherHooks(t *testing.T) {
 	if err := os.WriteFile(pre, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--hooks")
+	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--hooks", "--yes")
 	if code != 0 || !strings.Contains(out, "Hook: installed: ") {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -544,7 +676,7 @@ func TestFullHooksKeepsOtherHooks(t *testing.T) {
 func TestFullHooksRefusedKeepsBranch(t *testing.T) {
 	dir, _ := remoteRepo(t)
 	gitIn(t, dir, "config", "core.hooksPath", "elsewhere")
-	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--hooks")
+	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--hooks", "--yes")
 	if code != 2 || !strings.Contains(errOut, "physa init: the branch was written, but the hook was not installed: core.hooksPath is already") {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -558,7 +690,7 @@ func TestFullHooksRefusedKeepsBranch(t *testing.T) {
 
 func TestFullBadCombinationsAreBadUsage(t *testing.T) {
 	newRepo(t)
-	for _, args := range [][]string{{"--push"}, {"--write", "--propose"}, {"--answers", "a.txt", "--recover"}, {"--hooks"}} {
+	for _, args := range [][]string{{"--push"}, {"--write", "--propose"}, {"--answers", "a.txt", "--recover"}, {"--hooks"}, {"--yes", "--gather"}, {"--appetite", "300000"}} {
 		if code, _, _ := runInit(testEnv(t, nil, nil), args...); code != cli.BadUsage {
 			t.Errorf("%v: code %d", args, code)
 		}
@@ -618,7 +750,7 @@ func TestMappedRepoStillGathers(t *testing.T) {
 		errOut != "physa init: gather starts no agent (discovery not started: the repo has a map)\n" {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
-	code, out, _ := runInit(env, "--gather", "--json", "--agent", "x", "--appetite", "1000")
+	code, out, _ := runInit(env, "--gather", "--json", "--agent", "x")
 	var sum gather.Summary
 	if code != 0 || json.Unmarshal([]byte(out), &sum) != nil {
 		t.Fatalf("code %d, stdout %q", code, out)
@@ -664,74 +796,7 @@ func TestNoDefaultBranchRefusesAMapInTheWorkingTree(t *testing.T) {
 	}
 }
 
-// fullDoc is the parts of a full run's --json document the spend tests read.
-type fullDoc struct {
-	Gather struct {
-		Docs struct {
-			Files []struct{ Path, Kind, Reason string }
-		}
-		Discovery struct {
-			Started bool
-			Why     string
-			Added   int
-			Tokens  adapter.Tokens
-			Cap     int64
-		}
-	}
-	Recovery struct {
-		Appetite int64
-		Used     adapter.Tokens
-	}
-}
-
-func TestFullDiscoverySpendComesOffRecovery(t *testing.T) {
-	remoteRepo(t)
-	a := newRoutedAgent()
-	a.discover = "Found one.\n```json\n" + `{"sources":[{"path":"scratch.txt","kind":"overview","reason":"the person's notes"}]}` + "\n```\n"
-	a.discovers = adapter.Tokens{Input: 2_000, Output: 30}
-	code, out, errOut := runInit(fullEnv(t, onePR(), a), "--json", "--appetite", "200000")
-	var doc fullDoc
-	if code != 0 || json.Unmarshal([]byte(out), &doc) != nil {
-		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
-	}
-	d := doc.Gather.Discovery
-	if !d.Started || d.Added != 1 || d.Tokens.Input != 2_000 || d.Tokens.Output != 30 || d.Cap != 50_000 {
-		t.Errorf("discovery %+v", d)
-	}
-	if !slices.ContainsFunc(doc.Gather.Docs.Files, func(f struct{ Path, Kind, Reason string }) bool {
-		return f.Path == "scratch.txt" && f.Kind == "overview" && f.Reason == "the person's notes"
-	}) {
-		t.Errorf("gathered docs %+v", doc.Gather.Docs.Files)
-	}
-	// Proposing uses 10,020; recovering gets what discovery and proposing left.
-	if want := int64(200_000 - 2_030 - 10_020); doc.Recovery.Appetite != want {
-		t.Errorf("recovery's appetite %d, want %d", doc.Recovery.Appetite, want)
-	}
-}
-
-func TestFullStoppedDiscoveryStillStopsAtTheAppetite(t *testing.T) {
-	remoteRepo(t)
-	a := newRoutedAgent()
-	a.discovers = adapter.Tokens{Input: 27_000, Output: 20} // over its cap of 25,000
-	code, out, errOut := runInit(fullEnv(t, onePR(), a), "--json", "--appetite", "100000")
-	var doc fullDoc
-	if code != 0 || json.Unmarshal([]byte(out), &doc) != nil {
-		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
-	}
-	d := doc.Gather.Discovery
-	if !d.Started || d.Added != 0 || d.Why != "stopped at the token cap" || d.Cap != 25_000 {
-		t.Errorf("discovery %+v", d)
-	}
-	discovered := d.Tokens.Input + d.Tokens.Output
-	if want := 100_000 - discovered - 10_020; doc.Recovery.Appetite != want {
-		t.Errorf("recovery's appetite %d, want %d", doc.Recovery.Appetite, want)
-	}
-	if total := discovered + 10_020 + doc.Recovery.Used.Input + doc.Recovery.Used.Output; total > 100_000 {
-		t.Errorf("init spent %d of an appetite of 100000", total)
-	}
-}
-
-func TestGatherCapsAndChoosesTheDiscoveryAgent(t *testing.T) {
+func TestGatherChoosesTheDiscoveryAgent(t *testing.T) {
 	dir := newRepo(t)
 	write(t, dir, "docs/notes/why.md", "# Why\n")
 	a := newRoutedAgent()
@@ -740,33 +805,19 @@ func TestGatherCapsAndChoosesTheDiscoveryAgent(t *testing.T) {
 	env := testEnv(t, onePR(), a)
 	var names []string
 	env.Agent = func(name string) (adapter.Adapter, error) { names = append(names, name); return a, nil }
-	code, out, errOut := runInit(env, "--gather", "--agent", "x", "--appetite", "25000", "--json")
+	code, out, errOut := runInit(env, "--gather", "--agent", "x", "--json")
 	var sum gather.Summary
 	if code != 0 || json.Unmarshal([]byte(out), &sum) != nil {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
-	if !strings.HasPrefix(errOut, "physa init: gather up to 25000 tokens (the discovery agent)\n") || !slices.Equal(names, []string{"x"}) ||
+	if !strings.HasPrefix(errOut, "physa init: gather, with the discovery agent; init is never bounded, so it has no appetite and no circuit breaker\n") || !slices.Equal(names, []string{"x"}) ||
 		!slices.Equal(a.started, []string{"discover"}) || !a.readOnly {
 		t.Errorf("stderr %q, agents %v, sessions %v", errOut, names, a.started)
 	}
-	if d := sum.Discovery; !d.Started || d.Added != 1 || d.Cap != 25000 || d.Tokens.Input != 500 {
+	if d := sum.Discovery; !d.Started || d.Added != 1 || d.Tokens.Input != 500 {
 		t.Errorf("discovery %+v", d)
 	}
 	if g := storedGather(t, env); !slices.ContainsFunc(g.Docs, func(d store.Doc) bool { return d.Path == "docs/notes/why.md" && d.Reason == "why the product exists" }) {
 		t.Errorf("stored docs %+v", g.Docs)
-	}
-}
-
-func TestGatherCapBelowTheFloorStartsNoAgent(t *testing.T) {
-	newRepo(t)
-	env := testEnv(t, onePR(), nil)
-	env.Agent = noAgent(t)
-	code, out, errOut := runInit(env, "--gather", "--json", "--appetite", "1000")
-	var sum gather.Summary
-	if code != 0 || json.Unmarshal([]byte(out), &sum) != nil {
-		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
-	}
-	if d := sum.Discovery; d.Started || d.Why != "the cap of 1000 tokens is too small to start discovery" {
-		t.Errorf("discovery %+v", d)
 	}
 }

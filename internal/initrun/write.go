@@ -18,24 +18,25 @@ import (
 	"github.com/dphaener/physa/internal/vcs"
 )
 
-// notReached is why a capability the appetite never reached has no
-// recovered text.
-const notReached = "the appetite ran out before recovering reached it"
+// notReached is why a capability recovering never reached has no recovered
+// text.
+const notReached = "recovering has not reached it yet"
 
 // writeStored writes what the store holds to physa/init; see storedMap.
-func writeStored(st *store.Store, root string, o Flags, env Env, p *printer, stderr io.Writer) int {
-	m, err := storedMap(st, root, env)
+func (r *run) writeStored() int {
+	m, err := storedMap(r.st, r.root, r.env)
 	if err != nil {
-		return failed(stderr, err)
+		return failed(r.stderr, err)
 	}
-	return writeMap(m, o, env, p, stderr)
+	return writeMap(m, r.o, r.env, r.p, r.stderr)
 }
 
 // storedMap builds init's map from the store: the proposal's promise,
 // questions and capabilities in its order, each with its stored recovery
 // (promise only when it has no recovered text), the recovered terms in capability
-// order, the sessions Physa started, and what the PR body summarises. The
-// product is named after root.
+// order, the sessions Physa started, and what the PR body summarises, with
+// what each phase spent as the meter counted it. The product is named after
+// root.
 func storedMap(st *store.Store, root string, env Env) (initbranch.Map, error) {
 	prop, ok, err := st.Proposed()
 	if err == nil && !ok {
@@ -46,7 +47,8 @@ func storedMap(st *store.Store, root string, env Env) (initbranch.Map, error) {
 		err = json.Unmarshal(prop.Body, &s)
 	}
 	rows, rerr := st.Recovered()
-	if err = errors.Join(err, rerr); err != nil {
+	spent, serr := st.Spending()
+	if err = errors.Join(err, rerr, serr); err != nil {
 		return initbranch.Map{}, err
 	}
 	m := initbranch.Map{ProductName: newcodebase.TitleCase(filepath.Base(root)), ProductPromise: s.Proposal.Product.Promise,
@@ -65,7 +67,6 @@ func storedMap(st *store.Store, root string, env Env) (initbranch.Map, error) {
 	for _, r := range rows {
 		byName[r.Capability] = r
 	}
-	rec := initbranch.Tokens{Phase: "recover"}
 	var terms []string
 	for _, c := range s.Proposal.Capabilities {
 		ic := initbranch.Capability{Name: c.Name, Promise: c.Promise, Status: recovery.StatusNotYet, Reason: notReached}
@@ -77,12 +78,13 @@ func storedMap(st *store.Store, root string, env Env) (initbranch.Map, error) {
 				terms = append(terms, strings.TrimSpace(r.Terms))
 			}
 			m.Sessions = append(m.Sessions, r.SessionID)
-			rec.Input, rec.CachedInput, rec.Output = rec.Input+r.Input, rec.CachedInput+r.CachedInput, rec.Output+r.Output
 		}
 		m.Capabilities = append(m.Capabilities, ic)
 	}
 	m.Terms = strings.Join(terms, "\n\n")
-	m.Summary.Tokens = []initbranch.Tokens{{Phase: "propose", Input: prop.Input, CachedInput: prop.CachedInput, Output: prop.Output}, rec}
+	for _, p := range spent {
+		m.Summary.Tokens = append(m.Summary.Tokens, initbranch.Tokens{Phase: p.Phase, Input: p.Raw.Input, CachedInput: p.Raw.CachedInput, Output: p.Raw.Output, Weighted: p.Spend})
+	}
 	return m, nil
 }
 

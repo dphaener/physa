@@ -22,13 +22,13 @@ func WriteJSON(w io.Writer, r recovery.Report) error {
 }
 
 // WriteText writes the report as text: a first line with the counts and the
-// tokens used of the appetite, then one block per capability that ran, then
+// tokens used, then one block per capability that ran, then
 // the capabilities not yet recovered.
 func WriteText(w io.Writer, r recovery.Report) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Recovered %d, not yet recovered %d, failed %d; used %d of %s.\n",
+	fmt.Fprintf(&b, "Recovered %d, not yet recovered %d, failed %d; used %s.\n",
 		count(r, recovery.StatusRecovered), count(r, recovery.StatusNotYet), count(r, recovery.StatusFailed),
-		r.Used.Input+r.Used.Output, plural(r.Appetite, "token", "tokens"))
+		plural(r.Used.Input+r.Used.Output, "token", "tokens"))
 	var notYet []string
 	for _, o := range r.Capabilities {
 		if o.Status == recovery.StatusNotYet {
@@ -51,7 +51,7 @@ func WriteText(w io.Writer, r recovery.Report) error {
 		fmt.Fprintf(&b, "Attempts: %d; session %s; tokens: %s.\n", o.Attempts, orNone(o.SessionID), o.Tokens)
 	}
 	if len(notYet) > 0 {
-		fmt.Fprintf(&b, "\nNot yet recovered (the appetite ran out; run again with --only %s):\n", strings.Join(notYet, ","))
+		fmt.Fprintf(&b, "\nNot yet recovered (the run stopped before reaching them; run again with --only %s):\n", strings.Join(notYet, ","))
 		for _, n := range notYet {
 			fmt.Fprintf(&b, "- %s\n", n)
 		}

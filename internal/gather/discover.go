@@ -21,20 +21,16 @@ type Discover struct {
 // discover runs the agent's search over the repo under root, given the
 // deterministic finds, and returns the docs it added, what it skipped and
 // what it did. It never fails: an agent that is missing, a session that
-// fails or is stopped, and a reply that names nothing leave the finds as they
-// are and say why.
+// fails, and a reply that names nothing leave the finds as they are and say
+// why.
 func discover(root string, repo vcs.Repo, d Discover, found []store.Doc) ([]store.Doc, []Skip, Discovery) {
-	info := Discovery{Cap: d.Session.Appetite}
+	var info Discovery
 	if d.Off != "" {
 		info.Why = d.Off
 		return nil, nil, info
 	}
 	if d.Session.Agent == nil {
 		info.Why = "discovery not asked"
-		return nil, nil, info
-	}
-	if why := discovery.TooSmall(d.Session.Appetite); why != "" {
-		info.Why = why
 		return nil, nil, info
 	}
 	listed := listedFiles(repo)
@@ -63,10 +59,6 @@ func discover(root string, repo vcs.Repo, d Discover, found []store.Doc) ([]stor
 		return nil, nil, info
 	}
 	info.Started = true
-	if res.Stopped {
-		info.Why = "stopped at the token cap"
-		return nil, nil, info
-	}
 	info.Named = len(res.Sources)
 	if len(res.Sources) == 0 {
 		info.Why = "the agent named no sources"

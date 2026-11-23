@@ -5,7 +5,9 @@
 // price out of it with the published ratios between token kinds, keeping it
 // machine-wide, newest wins. A model with no price yet counts at raw tokens,
 // with no cost shown. Spend reads in weighted tokens first, with the cost
-// estimate beside it: "2.1M tokens (about $28)".
+// estimate beside it: "2.1M tokens (about $28)". A Meter weighs an
+// adapter's sessions as they end, and the cache also keeps the ratio init
+// estimates recovery with, measured from its finished runs.
 package spend
 
 import (
@@ -85,7 +87,19 @@ func (s Spend) String() string {
 	if s.Unpriced {
 		return Tokens(s.Tokens) + " tokens"
 	}
-	return fmt.Sprintf("%s tokens (about %s)", Tokens(s.Tokens), Dollars(s.MicroUSD))
+	return fmt.Sprintf("%s tokens (%s)", Tokens(s.Tokens), s.Cost())
+}
+
+// Cost is the cost estimate: "about $28", "under $0.01", or "none: no price
+// yet" when Unpriced.
+func (s Spend) Cost() string {
+	switch {
+	case s.Unpriced:
+		return "none: no price yet"
+	case s.MicroUSD > 0 && s.MicroUSD < 5_000:
+		return "under $0.01"
+	}
+	return "about " + Dollars(s.MicroUSD)
 }
 
 // Tokens is n shortened: "980", "7.4k", "74k", "2.1M".
@@ -103,17 +117,12 @@ func Tokens(n int64) string {
 }
 
 // Dollars is micro, in millionths of a dollar, shown as an estimate: whole
-// dollars from $10, cents below, and "under $0.01" for less.
+// dollars from $10, cents below.
 func Dollars(micro int64) string {
-	switch {
-	case micro >= 9_995_000:
+	if micro >= 9_995_000 {
 		return fmt.Sprintf("$%.0f", float64(micro)/1e6)
-	case micro >= 5_000:
-		return fmt.Sprintf("$%.2f", float64(micro)/1e6)
-	case micro <= 0:
-		return "$0"
 	}
-	return "under $0.01"
+	return fmt.Sprintf("$%.2f", float64(micro)/1e6)
 }
 
 // trim drops a ".0" ending.

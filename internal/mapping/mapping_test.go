@@ -179,6 +179,17 @@ func TestPromptHoldsLongSourcesWhole(t *testing.T) {
 	}
 }
 
+// TestPromptLinksDecisionLogsWidely checks that propose is told to link a
+// doc of kind decisions to every capability whose choices it records: on
+// nebari, a product-wide log linked to none cut recovered decisions from 72
+// to 28.
+func TestPromptLinksDecisionLogsWidely(t *testing.T) {
+	p := Prompt(Read(testGather()))
+	if !strings.Contains(p, "A doc of kind `decisions` holds choices across the product: put it under every capability whose choices it records, which for a product-wide decision log is usually every capability") {
+		t.Errorf("the prompt does not say how to link a decision log:\n%s", p)
+	}
+}
+
 func TestSkillSaysWhatItMust(t *testing.T) {
 	for _, want := range []string{
 		"A capability is a promise the product makes to its users, stated as intended behaviour.",
@@ -347,9 +358,8 @@ func TestCheckDropsAProductPromiseOfManyLines(t *testing.T) {
 
 func session(a *fakeAdapter, progress *bytes.Buffer) Session {
 	s := Session{
-		Agent:    func() (adapter.Adapter, error) { return a, nil },
-		Appetite: 60_000,
-		Now:      func() time.Time { return nowAt },
+		Agent: func() (adapter.Adapter, error) { return a, nil },
+		Now:   func() time.Time { return nowAt },
 	}
 	if progress != nil {
 		s.Progress = progress
@@ -375,29 +385,6 @@ func TestProposeNoGatherStartsNoAgent(t *testing.T) {
 	}
 }
 
-func TestProposeTooSmallAnAppetiteStartsNoAgent(t *testing.T) {
-	a := &fakeAdapter{}
-	s := session(a, &bytes.Buffer{})
-	resolved := 0
-	s.Agent = func() (adapter.Adapter, error) { resolved++; return a, nil }
-	need := int64(Estimate(testGather()) + ReplyReserve)
-	s.Appetite = need - 1
-	st := &fakeStore{gather: testGather(), has: true}
-	_, err := Propose(context.Background(), st, s)
-	var small *TooSmall
-	if !errors.As(err, &small) || small.Need() != need || small.Appetite != need-1 {
-		t.Fatalf("got %v", err)
-	}
-	want := fmt.Sprintf("propose needs an appetite of about %s tokens (its prompt about %s, its reply 16,000) and has %s; it did not start, and nothing was spent on it",
-		reading.Thousands(need), reading.Thousands(int64(Estimate(testGather()))), reading.Thousands(need-1))
-	if err.Error() != want {
-		t.Errorf("message = %q\nwant      %q", err, want)
-	}
-	if resolved != 0 || a.starts != 0 || len(st.put) != 0 {
-		t.Errorf("started %d, stored %d; want none", a.starts, len(st.put))
-	}
-}
-
 func TestProposeHappyPathStoresTheProposal(t *testing.T) {
 	var progress bytes.Buffer
 	a := &fakeAdapter{result: adapter.Result{
@@ -414,18 +401,18 @@ func TestProposeHappyPathStoresTheProposal(t *testing.T) {
 	if a.starts != 1 || !a.spec.PromptOnly || a.spec.Prompt != Prompt(Read(testGather())) {
 		t.Errorf("the session was not one prompt-only session with the whole prompt (starts %d, prompt-only %v)", a.starts, a.spec.PromptOnly)
 	}
-	wantLine := "physa init: appetite 60000 tokens; propose reads its sources whole, ~"
-	if !strings.HasPrefix(atStart, wantLine) || !strings.HasSuffix(atStart, " plus 16000 for the reply; session "+a.spec.SessionID+"\n") ||
+	wantLine := "physa init: propose reads its sources whole, ~"
+	if !strings.HasPrefix(atStart, wantLine) || !strings.HasSuffix(atStart, " tokens; session "+a.spec.SessionID+"\n") ||
 		!strings.Contains(atStart, fmt.Sprintf(" tokens, in a prompt of ~%d tokens", Estimate(testGather()))) || strings.Count(atStart, "\n") != 1 {
 		t.Errorf("progress when the agent started = %q", atStart)
 	}
 	if progress.String() != atStart {
 		t.Errorf("more was printed after the start: %q", progress.String())
 	}
-	if res.Stopped || len(res.Proposal.Capabilities) != 2 || len(res.Dropped) != 0 || len(res.Malformed) != 0 {
+	if len(res.Proposal.Capabilities) != 2 || len(res.Dropped) != 0 || len(res.Malformed) != 0 {
 		t.Errorf("result = %+v", res)
 	}
-	if res.Model != "test-model" || res.SessionID != "11111111-2222-4333-8444-555555555555" || res.Appetite != 60_000 ||
+	if res.Model != "test-model" || res.SessionID != "11111111-2222-4333-8444-555555555555" ||
 		res.Tokens != (adapter.Tokens{Input: 4000, CachedInput: 1000, Output: 500}) || res.PromptTokens != Estimate(testGather()) {
 		t.Errorf("result = %+v", res)
 	}
@@ -434,7 +421,7 @@ func TestProposeHappyPathStoresTheProposal(t *testing.T) {
 	}
 	p := st.put[0]
 	if !p.GatherAt.Equal(gatherAt) || !p.At.Equal(nowAt) || p.SessionID != res.SessionID || p.Model != "test-model" ||
-		p.Appetite != 60_000 || p.Input != 4000 || p.CachedInput != 1000 || p.Output != 500 {
+		p.Appetite != 0 || p.Input != 4000 || p.CachedInput != 1000 || p.Output != 500 {
 		t.Errorf("stored = %+v", p)
 	}
 	var body Stored
@@ -453,25 +440,15 @@ func TestProposeHappyPathStoresTheProposal(t *testing.T) {
 	}
 }
 
-func TestProposeBreakerStoresNothing(t *testing.T) {
-	a := &fakeAdapter{
-		reports: []adapter.Tokens{{Input: 59_000, Output: 1_000}},
-		result:  adapter.Result{Text: goodReply, Tokens: adapter.Tokens{Input: 59_000, Output: 1_000}},
-	}
+// TestProposeHasNoCircuitBreaker checks that a session spending far more
+// than any appetite still proposes and stores: init is never bounded.
+func TestProposeHasNoCircuitBreaker(t *testing.T) {
+	big := adapter.Tokens{Input: 9_000_000, Output: 100_000}
+	a := &fakeAdapter{reports: []adapter.Tokens{big}, result: adapter.Result{Text: goodReply, Tokens: big}}
 	st := &fakeStore{gather: testGather(), has: true}
 	res, err := Propose(context.Background(), st, session(a, nil))
-	if err != nil {
-		t.Fatalf("a stopped session is not an error: %v", err)
-	}
-	if !res.Stopped || len(st.put) != 0 || len(res.Proposal.Capabilities) != 0 {
-		t.Errorf("stopped %v, stored %d, result %+v", res.Stopped, len(st.put), res)
-	}
-	if res.Tokens.Input != 59_000 || res.Appetite != 60_000 {
-		t.Errorf("a stopped result should say what was spent: %+v", res)
-	}
-	var b bytes.Buffer
-	if err := WriteText(&b, res); err != nil || !strings.Contains(b.String(), "Stopped at the appetite (60000 tokens)") || strings.Contains(b.String(), "## Capabilities") {
-		t.Errorf("text for a stopped session: %v\n%s", err, b.String())
+	if err != nil || len(st.put) != 1 || len(res.Proposal.Capabilities) != 2 || res.Tokens != big {
+		t.Errorf("err %v, stored %d, result %+v", err, len(st.put), res)
 	}
 }
 
@@ -542,7 +519,7 @@ func smallResult() Result {
 		}},
 		PromptTokens: 1200,
 		SessionID:    "11111111-2222-4333-8444-555555555555", Model: "test-model",
-		Tokens: adapter.Tokens{Input: 4000, CachedInput: 1000, Output: 500}, Appetite: 60_000,
+		Tokens: adapter.Tokens{Input: 4000, CachedInput: 1000, Output: 500},
 	}
 }
 
@@ -589,12 +566,10 @@ Every source whole, about 800 tokens, in a prompt of about 1200 tokens.
 - id: 11111111-2222-4333-8444-555555555555
 - model: test-model
 - tokens: 4000 in (1000 cached), 500 out
-- appetite: 60000
 `
 
 const wantJSON = `{
-  "version": 2,
-  "stopped": false,
+  "version": 3,
   "product": {
     "promise": "People keep their notes and find them again."
   },
@@ -679,8 +654,7 @@ const wantJSON = `{
       "input": 4000,
       "cached_input": 1000,
       "output": 500
-    },
-    "appetite": 60000
+    }
   }
 }
 `
@@ -738,20 +712,20 @@ func TestPluralTokensSingularAndPlural(t *testing.T) {
 
 func TestWriteTextCountsOneTokenInTheSingular(t *testing.T) {
 	var one, many bytes.Buffer
-	r := Result{Stopped: true, Appetite: 1, Read: reading.Report{Tokens: 1}, PromptTokens: 1}
+	r := Result{Read: reading.Report{Tokens: 1}, PromptTokens: 1}
 	if err := WriteText(&one, r); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Stopped at the appetite (1 token) after", "Every source whole, about 1 token, in a prompt of about 1 token.\n"} {
+	for _, want := range []string{"Every source whole, about 1 token, in a prompt of about 1 token.\n"} {
 		if !strings.Contains(one.String(), want) {
 			t.Errorf("text lacks %q:\n%s", want, one.String())
 		}
 	}
-	r = Result{Stopped: true, Appetite: 60_000, Read: reading.Report{Tokens: 700}, PromptTokens: 1000}
+	r = Result{Read: reading.Report{Tokens: 700}, PromptTokens: 1000}
 	if err := WriteText(&many, r); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Stopped at the appetite (60000 tokens) after", "Every source whole, about 700 tokens, in a prompt of about 1000 tokens.\n"} {
+	for _, want := range []string{"Every source whole, about 700 tokens, in a prompt of about 1000 tokens.\n"} {
 		if !strings.Contains(many.String(), want) {
 			t.Errorf("text lacks %q:\n%s", want, many.String())
 		}

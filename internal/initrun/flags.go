@@ -1,7 +1,9 @@
 // Package initrun is physa init as a command: it reads init's flags, runs the
-// phases asked for against the repo's store, and prints what it did. Bare, it
-// runs every phase in order under one appetite, shown before any token is
-// spent, and with --write it writes the map to physa/init through
+// phases asked for against the repo's store, and prints what it did. Init is
+// never bounded: it has no appetite and no circuit breaker, and is up front
+// about its cost instead. Bare, it runs every phase in order, estimating the
+// rest of the run in weighted tokens once it has gathered and asking before
+// it goes on, and with --write it writes the map to physa/init through
 // initbranch, then pushes it, opens its PR and installs the Session: hook
 // when asked. The phases' own work is in gather, mapping, recovery,
 // newcodebase and initbranch.
@@ -17,22 +19,23 @@ import (
 
 // Usage is the command's synopsis lines.
 var Usage = []string{
-	"physa init [--write [--push [--pr]] [--hooks]] [--appetite N] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]",
-	"physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--appetite N] [--agent NAME] [--json]",
-	"physa init --propose [--appetite N] [--agent NAME] [--json]",
-	"physa init --recover [--only CAPABILITY]... [--appetite N] [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]",
+	"physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]",
+	"physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--json]",
+	"physa init --propose [--agent NAME] [--json]",
+	"physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]",
 }
 
 // Flags is a parsed physa init command line. Since is the bound's start:
 // the date given (SinceSet), or twelve months before now. Gather, Propose
-// and Recover select one phase; none selects the full run. Appetite and
-// Agent are zero when not given; Only empty means every capability. Write,
-// Push, PR and Hooks write physa/init, push it, open its PR and install the
-// Session: hook; Answers is a new codebase's answers file.
+// and Recover select one phase; none selects the full run. Agent is empty
+// when not given; Only empty means every capability. Yes goes on past the
+// full run's estimate without asking. Write, Push, PR and Hooks write
+// physa/init, push it, open its PR and install the Session: hook; Answers is
+// a new codebase's answers file.
 type Flags struct {
 	Gather, Propose, Recover bool
 	Only                     []string
-	Appetite                 int64
+	Yes                      bool
 	Agent                    string
 	Since                    time.Time
 	SinceSet                 bool
@@ -55,16 +58,16 @@ var switches = map[string]func(*Flags){
 	"--push":    func(o *Flags) { o.Push = true },
 	"--pr":      func(o *Flags) { o.PR = true },
 	"--hooks":   func(o *Flags) { o.Hooks = true },
+	"--yes":     func(o *Flags) { o.Yes = true },
 }
 
 // ParseFlags reads the arguments after "init": the switches above, and the
-// values --since (YYYY-MM-DD), --max-prs and --appetite (at least 1),
-// --agent, --answers and --only (repeatable or comma-separated), each also
-// as --name=value. At most one phase is named. --since and --max-prs go with
-// --gather or the full run; --appetite and --agent with any phase or the
-// full run (with --gather they cap and choose its discovery agent); --only
-// with --recover; --answers with the full run; --write with --recover or
-// the full run. --push needs --write, --pr --push and --hooks
+// values --since (YYYY-MM-DD), --max-prs (at least 1), --agent, --answers
+// and --only (repeatable or comma-separated), each also as --name=value. At
+// most one phase is named. --since and --max-prs go with --gather or the
+// full run; --agent with any phase or the full run (with --gather it chooses
+// its discovery agent); --only with --recover; --answers and --yes with the
+// full run; --write with --recover or the full run. --push needs --write, --pr --push and --hooks
 // --write. It reports false for anything else.
 func ParseFlags(args []string, now time.Time) (Flags, bool) {
 	o := Flags{Since: now.AddDate(-1, 0, 0), MaxPRs: gather.DefaultMaxPRs}
@@ -76,7 +79,7 @@ func ParseFlags(args []string, now time.Time) (Flags, bool) {
 			continue
 		}
 		switch name {
-		case "--since", "--max-prs", "--appetite", "--agent", "--only", "--answers":
+		case "--since", "--max-prs", "--agent", "--only", "--answers":
 		default:
 			return o, false
 		}
@@ -101,12 +104,6 @@ func ParseFlags(args []string, now time.Time) (Flags, bool) {
 			} else {
 				o.Answers = val
 			}
-		case "--appetite":
-			n, err := strconv.ParseInt(val, 10, 64)
-			if err != nil || n < 1 {
-				return o, false
-			}
-			o.Appetite = n
 		case "--since":
 			t, err := time.Parse("2006-01-02", val)
 			if err != nil {
@@ -131,7 +128,7 @@ func (o Flags) valid(gatherOnly bool) bool {
 	case o.Gather && o.Propose, o.Gather && o.Recover, o.Propose && o.Recover,
 		gatherOnly && (o.Propose || o.Recover),
 		len(o.Only) > 0 && !o.Recover,
-		o.Answers != "" && !o.Full(),
+		(o.Answers != "" || o.Yes) && !o.Full(),
 		o.Write && (o.Gather || o.Propose),
 		o.Push && !o.Write,
 		o.PR && !o.Push,

@@ -21,7 +21,7 @@ import (
 )
 
 // Version is the summary's JSON version.
-const Version = 2
+const Version = 3
 
 // Summary says what a gather found.
 type Summary struct {
@@ -37,7 +37,6 @@ type Summary struct {
 
 // Discovery says what the agent's search for more sources did. Why says why
 // it was not started or added nothing, and is empty when it added sources.
-// Cap is the most tokens it may use.
 type Discovery struct {
 	Started bool           `json:"started"`
 	Why     string         `json:"why,omitempty"`
@@ -45,7 +44,6 @@ type Discovery struct {
 	Added   int            `json:"added"`
 	Model   string         `json:"model,omitempty"`
 	Tokens  adapter.Tokens `json:"tokens"`
-	Cap     int64          `json:"cap"`
 }
 
 // BoundSummary is the bound used. Since is a date; FromFlag is false when it

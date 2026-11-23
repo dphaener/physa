@@ -117,6 +117,10 @@ func TestInitBareNewCodebaseReadsAnswers(t *testing.T) {
 		!strings.Contains(out, "Lathe, promising: Lathe turns sketches into cut lists.") {
 		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
 	}
+	// The spend cache is kept machine-wide, in the settings directory.
+	if _, err := os.Stat(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "physa", "spend.json")); err != nil {
+		t.Errorf("no spend cache in the settings directory: %v", err)
+	}
 }
 
 func TestInitPushWithoutWriteIsBadUsage(t *testing.T) {
@@ -137,7 +141,7 @@ func TestInitBadSinceIsBadUsage(t *testing.T) {
 
 func TestInitHelp(t *testing.T) {
 	code, out, errOut := runInit("--help")
-	if code != 0 || errOut != "" || !strings.HasPrefix(out, "usage: physa init [--write") || !strings.Contains(out, "physa init --gather") {
+	if code != 0 || errOut != "" || !strings.HasPrefix(out, "usage: physa init [--yes] [--write") || strings.Contains(out, "--appetite") || !strings.Contains(out, "physa init --gather") {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }

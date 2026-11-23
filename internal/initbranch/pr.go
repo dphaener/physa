@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/dphaener/physa/internal/initcost"
 	"github.com/dphaener/physa/internal/mapfile"
 )
 
@@ -91,7 +92,7 @@ func body(m Map, read *mapfile.Map) string {
 	b.WriteString("\n## Entries dropped\n\n")
 	dropped(&b, m)
 	b.WriteString("\n## Tokens spent\n\n")
-	tokens(&b, m.Summary.Tokens)
+	b.WriteString(initcost.Table(m.Summary.Tokens))
 	b.WriteString("\n## The Session: hook\n\n" + hookLine(m.Summary.Hook) + "\n")
 	return b.String()
 }
@@ -198,19 +199,6 @@ func anchors(as []mapfile.Anchor) string {
 		}
 	}
 	return " (" + strings.Join(parts, " ") + ")"
-}
-
-// tokens writes a table of the tokens spent per phase and in total.
-func tokens(b *strings.Builder, rows []Tokens) {
-	b.WriteString("| Phase | Input | Cached input | Output |\n|---|---:|---:|---:|\n")
-	var total Tokens
-	for _, t := range rows {
-		fmt.Fprintf(b, "| %s | %d | %d | %d |\n", t.Phase, t.Input, t.CachedInput, t.Output)
-		total.Input += t.Input
-		total.CachedInput += t.CachedInput
-		total.Output += t.Output
-	}
-	fmt.Fprintf(b, "| total | %d | %d | %d |\n", total.Input, total.CachedInput, total.Output)
 }
 
 // hookLine says what happened to the Session: hook. It is local config,

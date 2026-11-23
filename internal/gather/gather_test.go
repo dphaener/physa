@@ -309,7 +309,7 @@ func fullSummary() Summary {
 		}},
 		History:         HistorySummary{Changes: 10, WithTrailers: 4, Reverts: 1, WithAltered: 9, DistinctFiles: 30, Bytes: 80},
 		PRs:             PRsSummary{Available: true, Count: 3, ReviewComments: 5, RequestingChanges: 2, LinkedIssues: 1, Bytes: 20},
-		Discovery:       Discovery{Started: true, Named: 12, Added: 9, Model: "m", Tokens: adapter.Tokens{Input: 30000, Output: 1204}, Cap: 40000},
+		Discovery:       Discovery{Started: true, Named: 12, Added: 9, Model: "m", Tokens: adapter.Tokens{Input: 30000, Output: 1204}},
 		EstimatedTokens: 35,
 	}
 }
@@ -329,7 +329,7 @@ func TestWriteText(t *testing.T) {
 		"  decisions.md (decisions): a decisions file\n",
 		"  docs/records/ (2 files)\n",
 		"  skipped BIG.md: over 2 MB (2097153 bytes)\n",
-		"Discovery: 12 named, 9 added, 31204 tokens of 40000 (m)\n",
+		"Discovery: 12 named, 9 added, 31204 tokens (m)\n",
 		"History: 10 changes, 4 with trailers, 1 revert, 9 with altered files, 30 distinct files.\n",
 		"PRs: 3, 5 review comments (2 requesting changes), 1 linked issue.\n",
 		"About 35 tokens to read it all (an estimate: bytes / 2.3).\n",
@@ -413,7 +413,7 @@ func TestWriteTextDiscoveryNotStarted(t *testing.T) {
 	}{
 		{Discovery{Why: "discovery not started: the repo has a map"}, "Discovery: not started: the repo has a map\n"},
 		{Discovery{}, "Discovery: not asked\n"},
-		{Discovery{Started: true, Why: "the reply had no sources", Cap: 9}, "0 named, 0 added, 0 tokens of 9; the reply had no sources\n"},
+		{Discovery{Started: true, Why: "the reply had no sources"}, "0 named, 0 added, 0 tokens; the reply had no sources\n"},
 	} {
 		var buf bytes.Buffer
 		s := fullSummary()
@@ -432,7 +432,7 @@ func TestRunSummaryVersionAndEmptyDiscovery(t *testing.T) {
 	if err := WriteJSON(&buf, s); err != nil {
 		t.Fatal(err)
 	}
-	if s.Version != 2 || !strings.Contains(buf.String(), `"skipped": []`) || !strings.Contains(buf.String(), `"discovery"`) {
+	if s.Version != 3 || !strings.Contains(buf.String(), `"skipped": []`) || !strings.Contains(buf.String(), `"discovery"`) {
 		t.Errorf("%d %s", s.Version, buf.String())
 	}
 }

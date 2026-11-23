@@ -96,7 +96,7 @@ func writeDiscovery(p func(string, ...any), d Discovery) {
 	if d.Model != "" {
 		model = " (" + d.Model + ")"
 	}
-	line := fmt.Sprintf("Discovery: %d named, %d added, %d tokens of %d%s", d.Named, d.Added, d.Tokens.Input+d.Tokens.Output, d.Cap, model)
+	line := fmt.Sprintf("Discovery: %d named, %d added, %d tokens%s", d.Named, d.Added, d.Tokens.Input+d.Tokens.Output, model)
 	if d.Why != "" {
 		line += "; " + d.Why
 	}

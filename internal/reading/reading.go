@@ -54,6 +54,7 @@ type PR struct {
 	Number   int
 	Title    string
 	Author   string
+	MergedBy string
 	MergedAt time.Time
 	Issues   []string
 	Body     string
@@ -126,7 +127,7 @@ func Of(g store.Gather, o Options) Input {
 		return ps[i].Number > ps[j].Number
 	})
 	for _, p := range ps {
-		pr := PR{Number: p.Number, Title: p.Title, Author: p.Author, MergedAt: p.MergedAt, Issues: append([]string{}, p.Issues...), Body: p.Body}
+		pr := PR{Number: p.Number, Title: p.Title, Author: p.Author, MergedBy: p.MergedBy, MergedAt: p.MergedAt, Issues: append([]string{}, p.Issues...), Body: p.Body}
 		n := len(p.Title) + len(p.Author) + len(p.Body)
 		for _, is := range p.Issues {
 			n += len(is)

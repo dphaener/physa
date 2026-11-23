@@ -43,6 +43,14 @@ type PRs interface {
 	EditPR(n int, body string) error
 }
 
+// Logins resolves changes' authors to forge logins. It is separate from
+// Forge because an adapter may not offer it.
+type Logins interface {
+	// ChangeLogins returns the login of each change's author it can find,
+	// keyed by the change's full id; a change it cannot resolve is left out.
+	ChangeLogins(ids []string) (map[string]string, error)
+}
+
 // Merged lists merged PRs. It is separate from Forge because an adapter may
 // not offer it.
 type Merged interface {
@@ -73,6 +81,9 @@ type PR struct {
 	// MergeCommit is the id of the commit the merge made on the base branch;
 	// empty when the forge names none. MergedPRs fills it.
 	MergeCommit string `json:"merge_commit,omitempty"`
+	// MergedBy is the login of who merged the PR; empty when the forge does
+	// not say.
+	MergedBy string `json:"merged_by,omitempty"`
 	// Issues are the issues the PR closes, as the forge links them.
 	Issues []Issue `json:"issues,omitempty"`
 }

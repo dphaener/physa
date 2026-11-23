@@ -269,3 +269,35 @@ func TestRepoViewBad(t *testing.T) {
 		}
 	}
 }
+
+func TestChangeLogins(t *testing.T) {
+	f := &fake{out: `{"data":{"repository":{"c0":{"author":{"user":{"login":"dana"}}},"c1":{"author":{"user":null}},"c2":null}}}`}
+	c := NewWithRunner(".", f.run)
+	c.owner, c.name = "o", "n"
+	got, err := c.ChangeLogins([]string{"aaa", "bbb", "ccc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, map[string]string{"aaa": "dana"}) {
+		t.Errorf("logins = %v", got)
+	}
+	if len(f.calls) != 1 || !strings.Contains(strings.Join(f.calls[0], " "), `c2:object(oid:"ccc")`) {
+		t.Errorf("calls = %v", f.calls)
+	}
+}
+
+func TestChangeLoginsAsksAHundredAtATime(t *testing.T) {
+	f := &fake{out: `{"data":{"repository":{}}}`}
+	c := NewWithRunner(".", f.run)
+	c.owner, c.name = "o", "n"
+	ids := make([]string, 250)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("%040d", i)
+	}
+	if _, err := c.ChangeLogins(ids); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.calls) != 3 {
+		t.Errorf("queries = %d, want 3", len(f.calls))
+	}
+}

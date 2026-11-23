@@ -611,3 +611,24 @@ func TestDescribeQuotesTheRightFile(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestAgentWrittenSourcesAreMarked(t *testing.T) {
+	var w strings.Builder
+	writePR(&w, reading.PR{Number: 3, Title: "t", Author: "dana", MergedBy: "lee", Body: "Adds x.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"})
+	writePR(&w, reading.PR{Number: 4, Title: "u", Author: "dana", Body: "I chose x over y."})
+	writeChange(&w, reading.Commit{Short: "abc1234", Subject: "feat: x", Author: "dana", Message: "body\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"})
+	writeChange(&w, reading.Commit{Short: "def5678", Subject: "fix: y", Author: "dana", Message: "by hand"})
+	out := w.String()
+	if got := strings.Count(out, "written by: an agent"); got != 2 {
+		t.Errorf("marked %d sources, want 2:\n%s", got, out)
+	}
+	if !strings.Contains(out, "merged by: lee") {
+		t.Errorf("merger missing:\n%s", out)
+	}
+	for _, s := range []string{"#4, merged", "def5678 fix: y"} {
+		i := strings.Index(out, s)
+		if i < 0 || strings.Contains(out[i:min(len(out), i+120)], "written by") {
+			t.Errorf("%q is marked as agent-written", s)
+		}
+	}
+}

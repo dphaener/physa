@@ -14,6 +14,7 @@ import (
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/reading"
+	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
 )
@@ -433,5 +434,26 @@ func TestRunSummaryVersionAndEmptyDiscovery(t *testing.T) {
 	}
 	if s.Version != 2 || !strings.Contains(buf.String(), `"skipped": []`) || !strings.Contains(buf.String(), `"discovery"`) {
 		t.Errorf("%d %s", s.Version, buf.String())
+	}
+}
+
+type loginForge struct {
+	plainForge
+	logins map[string]string
+	err    error
+}
+
+func (f loginForge) ChangeLogins(ids []string) (map[string]string, error) { return f.logins, f.err }
+
+func TestUseLoginsNamesChangesByLogin(t *testing.T) {
+	changes := []store.GatheredChange{{ID: "aaa", Author: "Dana Lee"}, {ID: "bbb", Author: "Sam"}}
+	useLogins(loginForge{logins: map[string]string{"aaa": "dana"}}, changes)
+	if changes[0].Author != "dana" || changes[1].Author != "Sam" {
+		t.Errorf("authors = %q, %q", changes[0].Author, changes[1].Author)
+	}
+	useLogins(loginForge{err: errors.New("down")}, changes)
+	useLogins(plainForge{}, changes)
+	if changes[0].Author != "dana" {
+		t.Errorf("a failing or plain forge changed the authors")
 	}
 }

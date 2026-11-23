@@ -160,6 +160,7 @@ func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now ti
 	if err != nil {
 		return store.Gather{}, Summary{}, err
 	}
+	useLogins(f, g.Changes)
 	s.History = summariseHistory(g.Changes)
 	s.EstimatedTokens = reading.BytesTokens(s.Docs.Bytes + s.History.Bytes + s.PRs.Bytes)
 	return g, s, nil
@@ -180,7 +181,7 @@ func readPRs(f forge.Forge, o Bounds) (prs []store.GatheredPR, more bool, reason
 		return nil, false, forge.Reason(err)
 	}
 	for _, p := range listed {
-		g := store.GatheredPR{Number: p.Number, Title: p.Title, Body: p.Body, Author: p.Author, MergedAt: p.MergedAt, Issues: []string{}}
+		g := store.GatheredPR{Number: p.Number, Title: p.Title, Body: p.Body, Author: p.Author, MergedBy: p.MergedBy, MergedAt: p.MergedAt, Issues: []string{}}
 		for _, is := range p.Issues {
 			text := fmt.Sprintf("#%d %s", is.Number, is.Title)
 			if is.Body != "" {
@@ -238,4 +239,24 @@ func summariseHistory(changes []store.GatheredChange) HistorySummary {
 	}
 	s.DistinctFiles = len(files)
 	return s
+}
+
+// useLogins names each change's author by forge login where the forge can
+// say, as PRs are named; otherwise the version-control names stay.
+func useLogins(f forge.Forge, changes []store.GatheredChange) {
+	l, ok := f.(forge.Logins)
+	if !ok || len(changes) == 0 {
+		return
+	}
+	ids := make([]string, len(changes))
+	for i, c := range changes {
+		ids[i] = c.ID
+	}
+	if logins, err := l.ChangeLogins(ids); err == nil {
+		for i, c := range changes {
+			if login := logins[c.ID]; login != "" {
+				changes[i].Author = login
+			}
+		}
+	}
 }

@@ -58,10 +58,12 @@ type GatheredComment struct {
 
 // GatheredPR is one merged PR with its review comments and linked issues.
 type GatheredPR struct {
-	Number   int
-	Title    string
-	Body     string
-	Author   string
+	Number int
+	Title  string
+	Body   string
+	Author string
+	// MergedBy is who merged the PR, when the forge said.
+	MergedBy string
 	MergedAt time.Time
 	Issues   []string
 	Comments []GatheredComment
@@ -137,8 +139,8 @@ func (s *Store) PutGather(g Gather) error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT INTO gather_prs (number, title, body, author, merged_at, issues, seq) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			p.Number, p.Title, p.Body, p.Author, ts(p.MergedAt), ij, i); err != nil {
+		if _, err := tx.Exec(`INSERT INTO gather_prs (number, title, body, author, merged_by, merged_at, issues, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			p.Number, p.Title, p.Body, p.Author, p.MergedBy, ts(p.MergedAt), ij, i); err != nil {
 			return err
 		}
 		for j, c := range p.Comments {
@@ -235,7 +237,7 @@ func (s *Store) gatheredChanges() ([]GatheredChange, error) {
 }
 
 func (s *Store) gatheredPRs() ([]GatheredPR, error) {
-	rows, err := s.db.Query(`SELECT number, title, body, author, merged_at, issues FROM gather_prs ORDER BY seq`)
+	rows, err := s.db.Query(`SELECT number, title, body, author, merged_by, merged_at, issues FROM gather_prs ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +245,7 @@ func (s *Store) gatheredPRs() ([]GatheredPR, error) {
 	for rows.Next() {
 		var p GatheredPR
 		var at, ij string
-		if err := rows.Scan(&p.Number, &p.Title, &p.Body, &p.Author, &at, &ij); err != nil {
+		if err := rows.Scan(&p.Number, &p.Title, &p.Body, &p.Author, &p.MergedBy, &at, &ij); err != nil {
 			rows.Close()
 			return nil, err
 		}

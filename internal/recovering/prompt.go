@@ -85,6 +85,24 @@ func Prompt(in Input) string {
 	return w.String()
 }
 
+// agentMarks are what an agent leaves in a PR body or a change message: its
+// "Generated with" footer, or a co-author trailer naming it. Lower case.
+var agentMarks = []string{
+	"generated with [claude code]", "co-authored-by: claude", "noreply@anthropic.com",
+	"co-authored-by: codex", "co-authored-by: cursor", "co-authored-by: copilot",
+}
+
+// agentWrote says whether text carries an agent's mark.
+func agentWrote(text string) bool {
+	t := strings.ToLower(text)
+	for _, m := range agentMarks {
+		if strings.Contains(t, m) {
+			return true
+		}
+	}
+	return false
+}
+
 // writePR writes one PR and its review comments.
 func writePR(w *strings.Builder, p reading.PR) {
 	fmt.Fprintf(w, "#%d, merged %s:\n\n", p.Number, p.MergedAt.UTC().Format(time.DateOnly))
@@ -92,6 +110,12 @@ func writePR(w *strings.Builder, p reading.PR) {
 	t.WriteString("title: " + draft.OneLine(p.Title))
 	if p.Author != "" {
 		t.WriteString("\nauthor: " + draft.OneLine(p.Author))
+	}
+	if p.MergedBy != "" {
+		t.WriteString("\nmerged by: " + draft.OneLine(p.MergedBy))
+	}
+	if agentWrote(p.Body) {
+		t.WriteString("\nwritten by: an agent")
 	}
 	if len(p.Issues) > 0 {
 		t.WriteString("\nissues:")
@@ -124,6 +148,9 @@ func writeChange(w *strings.Builder, c reading.Commit) {
 	t.WriteString(draft.OneLine(c.Short) + " " + draft.OneLine(c.Subject))
 	if c.Author != "" {
 		t.WriteString("\nauthor: " + draft.OneLine(c.Author))
+	}
+	if agentWrote(c.Message) {
+		t.WriteString("\nwritten by: an agent")
 	}
 	if !c.At.IsZero() {
 		t.WriteString("\nat: " + c.At.UTC().Format(time.RFC3339))

@@ -83,6 +83,8 @@ For each capability, a fresh agent session receives that capability's promise an
 
 Sessions are independent, so they can run in parallel.
 
+**Who decided, when an agent wrote the words.** Most PRs and changes in a repo built with agents are written by an agent and merged or committed by a person, so their author is not who wrote their words. A PR whose body, or a change whose message, carries an agent's mark (a "Generated with" footer, or a co-author trailer naming Claude, Codex, Cursor or Copilot) is marked `written by: an agent` in the session's sources. A decision drawn from it is `accepting a proposal` by whoever accepted it: the PR's merger, its author when the forge names no merger, or the change's author. `in their words` is kept for words the person wrote themselves (the owner, 2026-11-23, choosing "Merger, accepting a proposal"). Gather records each PR's merger and names each change's author by forge login where the forge can say, so a person is named the same way in every entry.
+
 **Uncertain knowledge becomes a question, never a guess.** If the sources suggest a rule but do not establish it, the agent writes a question ("Is it true that retries must never run in-process? Suggested by #1290.") instead of a rule. There are no confidence scores in the map.
 
 Settled as built with `physa init --recover` (decided by Claude as arbiter for the owner to review):

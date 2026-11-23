@@ -20,7 +20,7 @@ func sampleGather() Gather {
 				Trailers: []Trailer{}, Reverts: "aaa111", Files: []string{}},
 		},
 		PRs: []GatheredPR{
-			{Number: 7, Title: "t", Body: "b", Author: "a", MergedAt: t0, Issues: []string{"#3"},
+			{Number: 7, Title: "t", Body: "b", Author: "a", MergedBy: "m", MergedAt: t0, Issues: []string{"#3"},
 				Comments: []GatheredComment{
 					{Author: "r", At: t0, Kind: "review", RequestsChanges: true, Body: "fix"},
 					{Author: "r", At: t0.Add(time.Minute), Kind: "inline", Body: "ok"},

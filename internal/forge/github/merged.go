@@ -28,6 +28,7 @@ const mergedQuery = `query($owner: String!, $name: String!, $cursor: String) {
         mergeCommit { oid }
         updatedAt
         author { login }
+        mergedBy { login }
         comments(first: 100) { nodes { author { login __typename } createdAt body } }
         reviews(first: 100) {
           nodes {
@@ -67,6 +68,7 @@ type mergedNode struct {
 		} `json:"nodes"`
 	} `json:"commits"`
 	Author   *author `json:"author"`
+	MergedBy *author `json:"mergedBy"`
 	Comments struct {
 		Nodes []comment `json:"nodes"`
 	} `json:"comments"`
@@ -167,6 +169,9 @@ func (n mergedNode) pr() forge.PR {
 	}
 	if n.Merge != nil {
 		pr.MergeCommit = n.Merge.OID
+	}
+	if n.MergedBy != nil {
+		pr.MergedBy = n.MergedBy.Login
 	}
 	for _, cn := range n.Commits.Nodes {
 		c := forge.Commit{ID: cn.Commit.OID, At: cn.Commit.CommittedDate}

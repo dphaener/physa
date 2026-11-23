@@ -17,12 +17,16 @@ var (
 
 // gathered answers whether a ref names something in the gather.
 type gathered struct {
-	prs map[int]bool
-	ids []string // the gathered changes' full ids, lower case
+	docs map[string]bool
+	prs  map[int]bool
+	ids  []string // the gathered changes' full ids, lower case
 }
 
 func newGathered(g store.Gather) gathered {
-	s := gathered{prs: map[int]bool{}}
+	s := gathered{prs: map[int]bool{}, docs: map[string]bool{}}
+	for _, d := range g.Docs {
+		s.docs[d.Path] = true
+	}
 	for _, p := range g.PRs {
 		s.prs[p.Number] = true
 	}
@@ -145,8 +149,16 @@ func Check(r Reply, g store.Gather) (Proposal, Dropped) {
 		}
 		names[c.Name] = true
 		shown := s.refs(c.ShownBy, c.Name, &d)
+		var docs []string
+		for _, path := range c.Docs {
+			if path = strings.TrimSpace(path); s.docs[path] {
+				docs = append(docs, path)
+			} else {
+				d = append(d, Drop{What: WhatRef, Capability: c.Name, Value: path, Reason: "no such doc was gathered"})
+			}
+		}
 		p.Capabilities = append(p.Capabilities, Capability{
-			Name: c.Name, Promise: text, ShownBy: shown,
+			Name: c.Name, Promise: text, ShownBy: shown, Docs: docs,
 			Questions: s.questions(c.Questions, c.Name, &d),
 			Unshown:   len(shown) == 0,
 		})

@@ -925,3 +925,20 @@ func TestOverviewOverItsLimitIsReplacedByThePromise(t *testing.T) {
 		t.Errorf("the retry lacks the overview's problem:\n%s", retry)
 	}
 }
+
+func TestSourcesHoldOnlyTheCapabilitysDocs(t *testing.T) {
+	g := testGather()
+	g.Docs = []store.Doc{
+		{Path: "AGENTS.md", Kind: "agent"}, {Path: "README.md", Kind: "readme"}, {Path: "CONTRIBUTING.md", Kind: "contributing"},
+		{Path: "docs/export.md", Kind: "overview"}, {Path: "docs/search.md", Kind: "overview"}, {Path: "docs/decisions.md", Kind: "decisions"},
+	}
+	sub := sources(g, mapping.Capability{Name: "export", Docs: []string{"docs/export.md", "docs/decisions.md"}})
+	var got []string
+	for _, d := range sub.Docs {
+		got = append(got, d.Path)
+	}
+	want := []string{"AGENTS.md", "README.md", "CONTRIBUTING.md", "docs/export.md", "docs/decisions.md"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("docs = %v, want %v", got, want)
+	}
+}

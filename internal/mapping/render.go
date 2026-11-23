@@ -74,6 +74,9 @@ func WriteText(w io.Writer, r Result) error {
 			} else {
 				b.WriteString("Shown by: " + strings.Join(c.ShownBy, ", ") + "\n\n")
 			}
+			if len(c.Docs) > 0 {
+				b.WriteString("Docs: " + strings.Join(c.Docs, ", ") + "\n\n")
+			}
 			if len(c.Questions) > 0 {
 				b.WriteString("Questions:\n")
 				for _, q := range c.Questions {
@@ -166,6 +169,7 @@ func WriteJSON(w io.Writer, r Result) error {
 	}
 	for _, c := range r.Proposal.Capabilities {
 		c.ShownBy = orEmpty(c.ShownBy)
+		c.Docs = orEmpty(c.Docs)
 		qs := []Question{}
 		for _, q := range c.Questions {
 			qs = append(qs, question(q))

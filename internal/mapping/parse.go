@@ -48,13 +48,14 @@ func Parse(text string) (Reply, []Malformed, error) {
 			Name      string     `json:"name"`
 			Promise   string     `json:"promise"`
 			ShownBy   []string   `json:"shown_by"`
+			Docs      []string   `json:"docs"`
 			Questions []Question `json:"questions"`
 		}
 		if err := item(raw, &c, "a capability"); err != nil {
 			malformed = append(malformed, Malformed{Raw: string(raw), Reason: err.Error()})
 			continue
 		}
-		r.Capabilities = append(r.Capabilities, Capability{Name: c.Name, Promise: c.Promise, ShownBy: c.ShownBy, Questions: c.Questions})
+		r.Capabilities = append(r.Capabilities, Capability{Name: c.Name, Promise: c.Promise, ShownBy: c.ShownBy, Docs: c.Docs, Questions: c.Questions})
 	}
 	for _, raw := range w.Questions {
 		var q Question

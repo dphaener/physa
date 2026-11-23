@@ -11,6 +11,7 @@
 package reading
 
 import (
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -177,4 +178,15 @@ func Of(g store.Gather, o Options) Input {
 		in.Report.Tokens += s.Tokens
 	}
 	return in
+}
+
+// Linked is the docs a capability's session reads: the agent docs, readme
+// and contributing guide always, the others only when linked names them.
+func Linked(docs []store.Doc, linked []string) (read []store.Doc) {
+	for _, d := range docs {
+		if d.Kind == "agent" || d.Kind == "readme" || d.Kind == "contributing" || slices.Contains(linked, d.Path) {
+			read = append(read, d)
+		}
+	}
+	return read
 }

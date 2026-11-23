@@ -67,6 +67,7 @@ The block holds one JSON object with exactly these keys, and no others:
   - `name`: the capability's name, in kebab-case;
   - `promise`: its promise, one sentence on one line;
   - `shown_by`: a list of the PRs (`"#12"`) and changes (`"a1b2c3d"`) that best show it;
+  - `docs`: a list of the paths of the docs, as given above, that hold this capability's rules, decisions and terms. The agent that recovers the capability reads only these, the agent instructions, the README and the contributing guide, so name every doc it needs, a doc shared by several capabilities under each of them, and `[]` when none does;
   - `questions`: a list of the questions about this capability, `[]` when there are none.
 - `questions`: a list of the product-wide questions, `[]` when there are none.
 
@@ -85,6 +86,7 @@ Here is the shape, with made-up names; yours come from the sources:
       "name": "delivery",
       "promise": "Webhooks reach customers at least once, in order per endpoint.",
       "shown_by": ["#12", "a1b2c3d"],
+      "docs": ["docs/delivery.md"],
       "questions": [
         {"question": "Is ordering promised per endpoint or per customer?", "suggested_by": ["#3"]}
       ]

@@ -64,7 +64,7 @@ Physa collects sources into the local store. Nothing is written to the repo yet.
 The customer's agent receives the gathered sources, whole, Physa's mapping skill, and the budgets from 01. It proposes:
 
 - the product's promise for `product/index.md`;
-- as many capabilities as the product really has (no fixed count, `measure-before-budget`), each a promise, each with the PRs or changes that best show it.
+- as many capabilities as the product really has (no fixed count, `measure-before-budget`), each a promise, each with the PRs or changes that best show it and the docs that hold its rules, decisions and terms. Physa keeps only docs it gathered, and drops any other path with its reason.
 
 This is one agent session. It is the step that most shapes the map, so it is the step a person reviews most closely.
 
@@ -74,7 +74,7 @@ Before the session starts, its prompt plus 16,000 tokens for the reply must fit 
 
 ### 2.4 Recover knowledge (agent, one session per capability)
 
-For each capability, a fresh agent session receives that capability's promise and the sources linked to it, and writes one text for `capabilities/<name>/` (09 §7): front matter, title, optional overview, then its Rules, Decisions and Questions sections. Physa splits it into the folder's files:
+For each capability, a fresh agent session receives that capability's promise and the sources linked to it: the PRs and changes propose named for it, the changes those revert or are reverted by, the docs propose linked to it, and the repo's agent instructions, readme and contributing guide, never the other docs. On nebari, giving every session every doc meant each read about 570,000 tokens; linking them brought recovery from 10.9M tokens to 6.1M with a map at least as rich (2026-11-23). The session writes one text for `capabilities/<name>/` (09 §7): front matter, title, optional overview, then its Rules, Decisions and Questions sections. Physa splits it into the folder's files:
 
 - **rules** from review corrections, docs and reverts, each with `Because:` and an anchor;
 - **decisions** from PR discussions, with who, when and the options rejected;

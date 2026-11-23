@@ -6,12 +6,12 @@ import (
 	"sync"
 
 	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
 )
 
-// sources returns the part of g linked to c: every doc, the PRs and changes
-// that show c or suggested one of its questions, and the changes that revert
-// one of those or that one of those reverts. PRs and changes keep g's order.
+// sources is the part of g linked to c, in g's order: the docs it reads, the PRs and changes
+// that show it or suggested its questions, and the changes those revert or are reverted by.
 func sources(g store.Gather, c mapping.Capability) store.Gather {
 	refs := map[string]bool{}
 	for _, r := range c.ShownBy {
@@ -23,7 +23,7 @@ func sources(g store.Gather, c mapping.Capability) store.Gather {
 		}
 	}
 	delete(refs, "")
-	sub := store.Gather{Run: g.Run, Docs: g.Docs}
+	sub := store.Gather{Run: g.Run, Docs: reading.Linked(g.Docs, c.Docs)}
 	for _, p := range g.PRs {
 		if refs["#"+strconv.Itoa(p.Number)] {
 			sub.PRs = append(sub.PRs, p)

@@ -606,6 +606,7 @@ const wantJSON = `{
         "#12",
         "a1b2c3d"
       ],
+      "docs": [],
       "questions": [
         {
           "question": "Do exports hold deleted notes?",
@@ -620,6 +621,7 @@ const wantJSON = `{
       "name": "search",
       "promise": "People find a note by what it says.",
       "shown_by": [],
+      "docs": [],
       "questions": [],
       "unshown": true
     }
@@ -753,5 +755,25 @@ func TestWriteTextCountsOneTokenInTheSingular(t *testing.T) {
 		if !strings.Contains(many.String(), want) {
 			t.Errorf("text lacks %q:\n%s", want, many.String())
 		}
+	}
+}
+
+func TestCheckKeepsOnlyGatheredDocs(t *testing.T) {
+	g := testGather()
+	g.Docs = append(g.Docs, store.Doc{Path: "docs/export.md", Kind: "overview", Body: "x"})
+	r := Reply{Capabilities: []Capability{{Name: "export", Promise: "Notes leave the product.", ShownBy: []string{"#12"},
+		Docs: []string{" docs/export.md ", "docs/missing.md"}}}}
+	p, d := Check(r, g)
+	if got := p.Capabilities[0].Docs; !reflect.DeepEqual(got, []string{"docs/export.md"}) {
+		t.Errorf("docs = %v", got)
+	}
+	found := false
+	for _, x := range d {
+		if x.Value == "docs/missing.md" && x.Reason == "no such doc was gathered" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the missing doc was not dropped with its reason: %+v", d)
 	}
 }

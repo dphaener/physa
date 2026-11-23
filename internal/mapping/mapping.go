@@ -2,7 +2,7 @@
 // gathered sources, read whole, in one prompt-only session under an
 // appetite, and checks the reply against the gather. Every capability it
 // proposes is a promise the product makes to its users, with the PRs or
-// changes that best show it, and what the sources leave uncertain comes back
+// changes that best show it and the docs that hold it, and what the sources leave uncertain comes back
 // as a question, never a guess. It writes nothing to the repo: the proposal
 // goes to the store for init's next phase.
 package mapping
@@ -32,6 +32,8 @@ type Capability struct {
 	// ShownBy names the PRs ("#12") and changes (short ids) that best show
 	// the promise.
 	ShownBy []string `json:"shown_by"`
+	// Docs are the paths of the gathered docs that hold its entries.
+	Docs []string `json:"docs"`
 	// Questions are the questions about this capability.
 	Questions []Question `json:"questions"`
 	// Unshown says nothing gathered shows the capability: the session named

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -390,12 +391,16 @@ func TestRecoverJSON(t *testing.T) {
 	}
 }
 
-func TestRecoverSmallAppetiteExitsOne(t *testing.T) {
+func TestRecoverSmallAppetiteRefusesBeforeAnySession(t *testing.T) {
 	env := proposedEnv(t, recoverAgent(10_000))
 	code, out, errOut := runInit(env, "--recover", "--appetite", "25000")
-	if code != 1 || !strings.Contains(out, "Not yet recovered") || !strings.Contains(out, "- search") ||
-		!strings.Contains(out, "## delivery: recovered") {
+	if code != 1 || out != "" || !strings.Contains(errOut, "physa init: stopped before recovering: recovering 2 capabilities needs an appetite of about ") ||
+		!strings.Contains(errOut, " and has 25,000; no session started, and nothing was spent on recovering. The proposal is stored: physa init --recover --appetite ") {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	code, out, errOut = runInit(env, "--recover", "--only", "search,delivery", "--agent", "fake", "--appetite", "1000", "--write")
+	if code != 1 || out != "" || !regexp.MustCompile(`The proposal is stored: physa init --recover --only search,delivery --appetite \d+ --agent fake --write continues\.\n$`).MatchString(errOut) {
+		t.Errorf("with --only: code %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }
 

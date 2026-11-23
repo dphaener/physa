@@ -7,6 +7,7 @@
 - [The Session hook stays local](#the-session-hook-stays-local)
 - [Teams can't replace Physa's skills](#teams-cant-replace-physas-skills)
 - [Discovery is led by an agent, beside fixed rules](#discovery-is-led-by-an-agent-beside-fixed-rules)
+- [Init never cuts its sources](#init-never-cuts-its-sources)
 
 ## Entries
 
@@ -44,3 +45,10 @@ Gather keeps its fixed rules and adds one read-only agent session that names mor
 Because: From the pitch of bet llm-init-discovery, made at fefed32: "Because every codebase can vary greatly and docs and prior knowledge can literally live anywhere, this is too limited to give the agent a fighting chance for creating a well defined map."
 Rejected:
 - Rules only: the fixed rules keep missing the reference, architecture and design docs a repo points to.
+
+### Init never cuts its sources
+`init-no-cut` · decided by dphaener, in their words · 2026-11-23 · from docs/architecture/02-init-and-learning.md
+Every doc, PR title, PR body, review comment and change an init session reads reaches it whole. A session whose whole prompt and reply reserve don't fit in what is left of the appetite isn't started, and init names the appetite it would need.
+Because: "This process is important, nothing should get cut. People might have to just bite the bullet on appetite."
+Rejected:
+- Fitting sources to a fixed input budget, cutting docs by section and capping PR bodies and comments: on nebari it left out 94% of the docs.

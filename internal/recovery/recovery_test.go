@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,10 +15,10 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/fit"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/recovering"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
@@ -37,12 +38,16 @@ const (
 
 // step is one scripted attempt of a session: what it answers, what it
 // reports having used, and how it ends. Zero tokens mean the prompt's
-// estimate in and 500 out.
+// estimate in and 500 out; near uses one token less than the attempt's
+// reservation of its prompt plus ReplyReserve. An attempt waits for wait to
+// close, when set.
 type step struct {
 	text    string
 	tokens  adapter.Tokens
 	reports []adapter.Tokens
 	err     error
+	near    bool
+	wait    chan struct{}
 }
 
 // fakeAdapter plays a script per capability and attempt. It knows a first
@@ -58,6 +63,7 @@ type fakeAdapter struct {
 	most    int
 	started chan struct{} // receives once per attempt started, when set
 	gate    chan struct{} // attempts wait for it to close, when set
+	onStart func(name string, attempt int)
 }
 
 func newFake(scripts map[string][]step) *fakeAdapter {
@@ -89,6 +95,9 @@ func (f *fakeAdapter) Start(_ context.Context, s adapter.Spec) (adapter.Session,
 	}
 	f.running++
 	f.most = max(f.most, f.running)
+	if f.onStart != nil {
+		f.onStart(name, n+1)
+	}
 	return &fakeSession{f: f, spec: s, step: f.scripts[name][n]}, nil
 }
 
@@ -111,6 +120,9 @@ func (s *fakeSession) Wait() (adapter.Result, error) {
 	if s.f.gate != nil {
 		<-s.f.gate
 	}
+	if s.step.wait != nil {
+		<-s.step.wait
+	}
 	defer func() {
 		s.f.mu.Lock()
 		s.f.running--
@@ -120,8 +132,10 @@ func (s *fakeSession) Wait() (adapter.Result, error) {
 		s.spec.Usage(t)
 	}
 	t := s.step.tokens
-	if t == (adapter.Tokens{}) && len(s.step.reports) == 0 {
-		t = adapter.Tokens{Input: int64(fit.Tokens(s.spec.Prompt)), Output: 500}
+	if s.step.near {
+		t = adapter.Tokens{Input: int64(reading.Tokens(s.spec.Prompt) + ReplyReserve - 1)}
+	} else if t == (adapter.Tokens{}) && len(s.step.reports) == 0 {
+		t = adapter.Tokens{Input: int64(reading.Tokens(s.spec.Prompt)), Output: 500}
 	}
 	return adapter.Result{Text: s.step.text, Model: "fake-1", SessionID: s.spec.SessionID, Tokens: t}, s.step.err
 }
@@ -355,7 +369,7 @@ func TestRetryFixesTheFileOnTheSameSession(t *testing.T) {
 	if strings.Contains(second.Prompt, "## Sources") {
 		t.Error("the retry sent the sources again")
 	}
-	if used(o.Tokens) != used(adapter.Tokens{Input: int64(fit.Tokens(first.Prompt) + fit.Tokens(second.Prompt)), Output: 1000}) {
+	if used(o.Tokens) != used(adapter.Tokens{Input: int64(reading.Tokens(first.Prompt) + reading.Tokens(second.Prompt)), Output: 1000}) {
 		t.Errorf("tokens %v should add both attempts", o.Tokens)
 	}
 }
@@ -430,34 +444,88 @@ func TestAnswerThatCannotBeReadIsRetriedThenFails(t *testing.T) {
 	}
 }
 
-func TestSmallAppetiteRecoversTheFirstAndListsTheRest(t *testing.T) {
+// need is the appetite h's run needs for every chosen capability's first
+// turn, as Run's refusal names it; finding it starts no agent.
+func need(t *testing.T, h *harness) int64 {
+	t.Helper()
+	s := h.session
+	s.Appetite = 1
+	_, err := Run(context.Background(), h.store, s)
+	var small *TooSmall
+	if !errors.As(err, &small) {
+		t.Fatalf("an appetite of 1: %v", err)
+	}
+	return small.Need
+}
+
+// TestAppetiteTooSmallForEveryPromptStartsNone checks that recovery never
+// cuts a capability's sources to fit: when the appetite cannot hold every
+// capability's whole prompt plus its reply reserve, no session starts,
+// nothing is stored, and the refusal names the appetite needed.
+func TestAppetiteTooSmallForEveryPromptStartsNone(t *testing.T) {
 	scripts := map[string][]step{}
 	for _, n := range names {
-		scripts[n] = []step{{text: reply(good(n+"-rule"), ""), tokens: adapter.Tokens{Input: 4_800, Output: 3_000}}}
+		scripts[n] = []step{{text: reply(good(n+"-rule"), "")}}
 	}
 	h := newHarness(t, scripts)
-	// The smallest appetite that runs one session: it holds the first
-	// capability's reservation and, after its real use, not a second.
-	h.session.Appetite = int64(Limits.MinBudget + Limits.ReplyReserve + recovering.Overhead())
-	rep := h.run(t)
+	n := need(t, h)
+	if n <= int64(len(names)*ReplyReserve) {
+		t.Fatalf("need %d holds no prompts", n)
+	}
+	h.session.Appetite = n - 1
+	_, err := Run(context.Background(), h.store, h.session)
+	var small *TooSmall
+	if !errors.As(err, &small) || small.Capabilities != len(names) || small.Need != n || small.Appetite != n-1 {
+		t.Fatalf("error %v", err)
+	}
+	want := fmt.Sprintf("recovering 5 capabilities needs an appetite of about %s tokens (each prompt plus 12,000 for its reply) and has %s; no session started, and nothing was spent on recovering",
+		reading.Thousands(n), reading.Thousands(n-1))
+	if err.Error() != want {
+		t.Errorf("error %q\nwant  %q", err, want)
+	}
+	if h.resolved != 0 || h.agent.starts() != 0 || len(h.store.puts) != 0 || h.progress.Len() != 0 {
+		t.Errorf("resolved %d, started %d, puts %d, progress %q", h.resolved, h.agent.starts(), len(h.store.puts), h.progress)
+	}
 
-	want := []string{"export: recovered", "search: not yet recovered", "sharing: not yet recovered", "sync: not yet recovered", "tags: not yet recovered"}
-	if got := statuses(rep); !reflect.DeepEqual(got, want) {
+	h.session.Appetite = n
+	rep := h.run(t)
+	for _, o := range rep.Capabilities {
+		if o.Status != StatusRecovered {
+			t.Errorf("at the appetite needed, %s: %s", o.Name, o.Status)
+		}
+	}
+}
+
+// TestRetryNeverTakesAFirstTurnsShare checks that at the appetite Run names
+// as needed every capability gets its first turn: export's retry may not
+// spend the share of sync, whose first turn waits for a free session; it
+// may run once sync has started. search and sharing hold their sessions
+// until sync or export's retry starts, or, when neither can, a moment passes.
+func TestRetryNeverTakesAFirstTurnsShare(t *testing.T) {
+	bad := reply("# Notes\n\n## Rules\n\n"+rule("export-deleted")+"\n"+bare("export-signed"), "")
+	release := make(chan struct{})
+	h := newHarness(t, map[string][]step{
+		"export":  {{text: bad}, {text: reply(good("export-rule"), ""), near: true}},
+		"search":  {{text: reply(good("search-rule"), ""), near: true, wait: release}},
+		"sharing": {{text: reply(good("sharing-rule"), ""), near: true, wait: release}},
+		"sync":    {{text: reply(good("sync-rule"), "")}},
+	})
+	var once sync.Once
+	free := func() { once.Do(func() { close(release) }) }
+	h.agent.onStart = func(name string, attempt int) {
+		if name == "sync" || name == "export" && attempt == 2 {
+			free()
+		}
+	}
+	time.AfterFunc(200*time.Millisecond, free)
+	h.session.Only = []string{"export", "search", "sharing", "sync"}
+	h.session.Appetite = need(t, h)
+	rep := h.run(t)
+	if got := statuses(rep); !reflect.DeepEqual(got, []string{"export: recovered", "search: recovered", "sharing: recovered", "sync: recovered"}) {
 		t.Fatalf("statuses %v", got)
 	}
-	if used(rep.Used) == 0 || used(rep.Used) > rep.Appetite {
-		t.Errorf("used %d of an appetite of %d", used(rep.Used), rep.Appetite)
-	}
-	t.Logf("used %d of an appetite of %d; %v", used(rep.Used), rep.Appetite, statuses(rep))
-	if h.agent.starts() != 1 {
-		t.Errorf("%d sessions started", h.agent.starts())
-	}
-	rows := h.store.puts[0]
-	if len(rows) != 5 || rows[1].Status != StatusNotYet || rows[1].File != "" || rows[1].SessionID != "" || rows[1].Attempts != 0 {
-		t.Errorf("rows %+v", rows)
-	}
-	if !strings.Contains(h.progress.String(), "physa init: search: not yet recovered\n") {
-		t.Errorf("progress:\n%s", h.progress)
+	if used(rep.Used) > rep.Appetite {
+		t.Errorf("used %d of %d", used(rep.Used), rep.Appetite)
 	}
 }
 
@@ -465,7 +533,7 @@ func TestRetryTheAppetiteCannotHoldKeepsTheLastCheckedAnswer(t *testing.T) {
 	bad := reply("# Notes\n\n## Rules\n\n"+rule("export-deleted")+"\n"+bare("export-signed"), "")
 	h := newHarness(t, map[string][]step{"export": {{text: bad, tokens: adapter.Tokens{Input: 4_800, Output: 3_000}}, {text: bad}}})
 	h.session.Only = []string{"export"}
-	h.session.Appetite = int64(Limits.MinBudget + Limits.ReplyReserve + recovering.Overhead())
+	h.session.Appetite = need(t, h) // its first turn, and no room for a retry
 	rep := h.run(t)
 	o := rep.Capabilities[0]
 	if o.Status != StatusRecovered || o.Attempts != 1 || o.Counts.Rules != 1 || len(o.Dropped) != 1 || o.Dropped[0].Slug != "export-signed" {
@@ -553,30 +621,7 @@ func TestRefusalsStartNoAgent(t *testing.T) {
 			t.Errorf("resolved %d, started %d", h.resolved, h.agent.starts())
 		}
 	})
-	t.Run("appetite too small for one session", func(t *testing.T) {
-		h := newHarness(t, nil)
-		least := Limits.MinBudget + Limits.ReplyReserve + recovering.Overhead()
-		h.session.Appetite = int64(least - 1)
-		_, err := Run(context.Background(), h.store, h.session)
-		if err == nil || !strings.Contains(err.Error(), "too small") || !strings.Contains(err.Error(), thousands(least)) {
-			t.Errorf("error %v", err)
-		}
-		if h.resolved != 0 || h.agent.starts() != 0 {
-			t.Errorf("resolved %d, started %d", h.resolved, h.agent.starts())
-		}
-	})
 }
-
-// thousands writes n with commas, as fit's error does.
-func thousands(n int) string {
-	s := ""
-	for ; n >= 1000; n /= 1000 {
-		s = "," + strings.Repeat("0", 3-len(itoa(n%1000))) + itoa(n%1000) + s
-	}
-	return itoa(n) + s
-}
-
-func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
 
 func TestBreakerStopKeepsNothing(t *testing.T) {
 	h := newHarness(t, map[string][]step{
@@ -687,7 +732,7 @@ func TestSourcesAreTheCapabilitysOwn(t *testing.T) {
 }
 
 func TestLedgerNeverLendsPastTheAppetite(t *testing.T) {
-	l := newLedger(100)
+	l := newLedger(100, 0)
 	if !l.reserve(60) || l.reserve(101) {
 		t.Fatal("60 fits an appetite of 100; 101 never does")
 	}

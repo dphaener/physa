@@ -10,7 +10,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/draft"
-	"github.com/dphaener/physa/internal/fit"
+	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
 )
 
@@ -19,8 +19,36 @@ import (
 // (measure-before-budget).
 const DefaultAppetite = 150_000
 
+// ReplyReserve is the part of the appetite kept for propose's reply. It is
+// a first guess, to be tuned from real runs (measure-before-budget).
+const ReplyReserve = 16_000
+
 // ErrNoGather is returned by Propose when the store holds no gather.
 var ErrNoGather = errors.New("nothing gathered yet; run physa init --gather first")
+
+// TooSmall is returned by Propose when its prompt plus ReplyReserve does not
+// fit in the appetite. Nothing is cut to make it fit, and nothing was spent:
+// the session never started.
+type TooSmall struct {
+	// Prompt is the prompt's estimated tokens, Reply the reply's reserve.
+	Prompt, Reply int
+	// Appetite is the appetite propose had.
+	Appetite int64
+}
+
+// Need is the appetite propose needs, an estimate.
+func (e *TooSmall) Need() int64 { return int64(e.Prompt + e.Reply) }
+
+func (e *TooSmall) Error() string {
+	return fmt.Sprintf("propose needs an appetite of about %s tokens (its prompt about %s, its reply %s) and has %s; it did not start, and nothing was spent on it",
+		reading.Thousands(e.Need()), reading.Thousands(int64(e.Prompt)), reading.Thousands(int64(e.Reply)), reading.Thousands(e.Appetite))
+}
+
+// Read is all of g as propose reads it, whole.
+func Read(g store.Gather) reading.Input { return reading.Of(g, reading.Propose) }
+
+// Estimate is the estimated tokens of propose's prompt for g.
+func Estimate(g store.Gather) int { return reading.Tokens(Prompt(Read(g))) }
 
 // Session says how Propose runs its session.
 type Session struct {
@@ -51,8 +79,10 @@ type Result struct {
 	Dropped Dropped
 	// Malformed are the items of the reply that were not what they should be.
 	Malformed []Malformed
-	// Fit says what fitting kept and cut of the gather.
-	Fit fit.Report
+	// Read says what the session read of the gather, all of it whole.
+	Read reading.Report
+	// PromptTokens is the prompt's estimated tokens.
+	PromptTokens int
 	// SessionID is the id the session ran under, as the agent reported it.
 	SessionID string
 	// Model is the name the agent reported for what it ran on.
@@ -67,22 +97,22 @@ type Result struct {
 }
 
 // Stored is the JSON form of store.Proposal's Body: the checked proposal
-// with what was dropped, what was malformed and what fitting cut.
+// with what was dropped, what was malformed and what the session read.
 type Stored struct {
 	Proposal  Proposal    `json:"proposal"`
 	Dropped   Dropped     `json:"dropped"`
 	Malformed []Malformed `json:"malformed"`
-	Fit       Fitting     `json:"fit"`
+	Read      Reading     `json:"read"`
 }
 
 // Propose is init's second phase end to end. It reads the stored gather,
-// fits it to the input budget the appetite leaves, runs one prompt-only
-// session with the mapping skill, checks the reply against the gather and
-// stores the proposal, replacing any earlier one. It writes nothing to the
-// repo.
+// all of it whole, runs one prompt-only session with the mapping skill under
+// the appetite, checks the reply against the gather and stores the proposal,
+// replacing any earlier one. It writes nothing to the repo.
 //
-// With no gather it returns ErrNoGather, and with an appetite too small for
-// any input fit.Budget's error; neither resolves an agent. The circuit
+// With no gather it returns ErrNoGather, and with an appetite that cannot
+// hold the prompt plus ReplyReserve a *TooSmall naming the appetite needed;
+// neither resolves an agent, and nothing is cut to fit. The circuit
 // breaker stopping the session is not an error: the Result is Stopped, and
 // nothing is stored. An agent that fails, or a reply that cannot be read
 // (the error starts "the session's output: "), stores nothing either; the
@@ -100,12 +130,12 @@ func Propose(ctx context.Context, st Store, s Session) (Result, error) {
 	if !ok {
 		return res, ErrNoGather
 	}
-	budget, err := fit.Budget(appetite, Overhead())
-	if err != nil {
-		return res, err
+	in := Read(g)
+	prompt := Prompt(in)
+	res.Read, res.PromptTokens = in.Report, reading.Tokens(prompt)
+	if int64(res.PromptTokens+ReplyReserve) > appetite {
+		return res, &TooSmall{Prompt: res.PromptTokens, Reply: ReplyReserve, Appetite: appetite}
 	}
-	in := fit.Fit(g, budget)
-	res.Fit = in.Report
 	if s.Agent == nil {
 		return res, errors.New("no agent to propose with")
 	}
@@ -115,14 +145,10 @@ func Propose(ctx context.Context, st Store, s Session) (Result, error) {
 	}
 	sessionID := draft.NewSessionID()
 	if s.Progress != nil {
-		sources := 0
-		for _, src := range in.Report.Sources {
-			sources += src.Tokens
-		}
-		fmt.Fprintf(s.Progress, "physa init: appetite %s; sources ~%s fitted to ~%d of a %d-token budget; session %s\n",
-			plural(int(appetite), "token", "tokens"), plural(sources, "token", "tokens"), in.Report.Used, in.Report.Budget, sessionID)
+		fmt.Fprintf(s.Progress, "physa init: appetite %s; propose reads its sources whole, ~%s, in a prompt of ~%s plus %d for the reply; session %s\n",
+			plural(int(appetite), "token", "tokens"), plural(in.Report.Tokens, "token", "tokens"), plural(res.PromptTokens, "token", "tokens"), ReplyReserve, sessionID)
 	}
-	out, err := draft.Run(ctx, a, Prompt(in), appetite, sessionID)
+	out, err := draft.Run(ctx, a, prompt, appetite, sessionID)
 	res.SessionID, res.Model, res.Tokens = out.SessionID, out.Model, out.Tokens
 	if err != nil {
 		return res, err
@@ -138,7 +164,7 @@ func Propose(ctx context.Context, st Store, s Session) (Result, error) {
 	res.Proposal, res.Dropped = Check(reply, g)
 	res.Malformed = malformed
 
-	body, err := json.Marshal(Stored{Proposal: res.Proposal, Dropped: res.Dropped, Malformed: orEmpty(malformed), Fit: fitting(res.Fit)})
+	body, err := json.Marshal(Stored{Proposal: res.Proposal, Dropped: res.Dropped, Malformed: orEmpty(malformed), Read: read(res)})
 	if err != nil {
 		return res, err
 	}

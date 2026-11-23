@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/fit"
 	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
 )
@@ -284,7 +284,7 @@ func TestRunTokenEstimate(t *testing.T) {
 	if s.Docs.Bytes != 100 || s.History.Bytes != hist || s.PRs.Bytes != 51 {
 		t.Errorf("bytes %+v", s)
 	}
-	if s.EstimatedTokens != fit.BytesTokens(total) || s.EstimatedTokens == 0 {
+	if s.EstimatedTokens != reading.BytesTokens(total) || s.EstimatedTokens == 0 {
 		t.Errorf("tokens %d, bytes %d", s.EstimatedTokens, total)
 	}
 }

@@ -8,9 +8,13 @@ package recovering
 import (
 	"time"
 
-	"github.com/dphaener/physa/internal/fit"
 	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/reading"
 )
+
+// Reads is what a session reads of a capability's linked sources, all of it
+// whole: change messages, and no clusters, which Prompt never writes.
+var Reads = reading.Options{Messages: true}
 
 // Input is everything one session recovers a capability from.
 type Input struct {
@@ -22,8 +26,8 @@ type Input struct {
 	Questions []mapping.Question
 	// Date is the day of recovery: the date its questions are raised on.
 	Date time.Time
-	// Sources are the capability's linked sources, fitted.
-	Sources fit.Input
+	// Sources are the capability's linked sources, whole.
+	Sources reading.Input
 }
 
 // Reply is what the session wrote, in shape only: the capability's single

@@ -42,11 +42,12 @@ type Env struct {
 
 // Run runs physa init on the repo in the current directory: the phase named,
 // or every phase in order under one appetite; --write then writes the map to
-// physa/init. It returns 0 when all asked was done, 1 when the circuit
-// breaker stopped proposing or some capabilities are not yet recovered
-// (still written with --write), 2 when it could not (a capability failed,
-// the map failed its check, the hook was refused), and cli.BadUsage for
-// arguments not understood.
+// physa/init. It returns 0 when all asked was done, 1 when the appetite
+// stopped it (a phase's whole prompt did not fit, or the circuit breaker
+// stopped proposing) or some capabilities are not yet recovered (still
+// written with --write), 2 when it could not (a capability failed, the map
+// failed its check, the hook was refused), and cli.BadUsage for arguments
+// not understood.
 func Run(args []string, stdout, stderr io.Writer, env Env) int {
 	o, ok := ParseFlags(args, env.Now())
 	if !ok {
@@ -166,11 +167,10 @@ func gatherInto(st *store.Store, o Flags, env Env, d gather.Discover) (store.Gat
 func propose(o Flags, st *store.Store, p *printer, stderr io.Writer, env Env) int {
 	res, err := mapping.Propose(context.Background(), st, mapping.Session{
 		Agent:    func() (adapter.Adapter, error) { return env.Agent(o.Agent) },
-		Appetite: o.Appetite,
-		Progress: stderr,
+		Appetite: o.Appetite, Progress: stderr,
 	})
 	if err != nil {
-		return failed(stderr, err)
+		return ended(err, o, nil, stderr)
 	}
 	if res.Stopped {
 		fmt.Fprintf(stderr, "physa init: the circuit breaker stopped the session at %s; nothing was proposed\n", plural(int(res.Appetite), "token", "tokens"))
@@ -187,7 +187,7 @@ func propose(o Flags, st *store.Store, p *printer, stderr io.Writer, env Env) in
 func recoverPhase(o Flags, st *store.Store, root string, p *printer, stderr io.Writer, env Env) int {
 	rep, err := recovery.Run(context.Background(), st, recoverySession(o, o.Appetite, o.Only, root, env, stderr))
 	if err != nil {
-		return failed(stderr, err)
+		return ended(err, o, o.Only, stderr)
 	}
 	p.recovery(rep)
 	code := exitCode(rep)

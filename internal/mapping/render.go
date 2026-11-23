@@ -8,39 +8,36 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/draft"
-	"github.com/dphaener/physa/internal/fit"
 )
 
 // ResultVersion is the version of a Result's JSON form. It changes only when
 // a field changes meaning or goes away.
-const ResultVersion = 1
+const ResultVersion = 2
 
 // rawRunes is the most characters WriteText shows of one malformed item.
 const rawRunes = 200
 
-// Fitting is fit.Report in its JSON form.
-type Fitting struct {
-	Budget  int         `json:"budget"`
-	Used    int         `json:"used"`
-	Sources []FitSource `json:"sources"`
-	// Lines says per source what was cut, as fit.Report.Lines does.
+// Reading is what the session read, in its JSON form: the prompt's
+// estimated tokens, the sources' together, and each source.
+type Reading struct {
+	PromptTokens int          `json:"prompt_tokens"`
+	SourceTokens int          `json:"source_tokens"`
+	Sources      []ReadSource `json:"sources"`
+	// Lines says per source what was read, as reading.Report.Lines does.
 	Lines []string `json:"lines"`
 }
 
-// FitSource is fit.SourceReport in its JSON form.
-type FitSource struct {
-	Name       string `json:"name"`
-	Items      int    `json:"items"`
-	Kept       int    `json:"kept"`
-	Partial    int    `json:"partial"`
-	Tokens     int    `json:"tokens"`
-	KeptTokens int    `json:"kept_tokens"`
+// ReadSource is reading.SourceReport in its JSON form.
+type ReadSource struct {
+	Name   string `json:"name"`
+	Items  int    `json:"items"`
+	Tokens int    `json:"tokens"`
 }
 
-func fitting(r fit.Report) Fitting {
-	f := Fitting{Budget: r.Budget, Used: r.Used, Sources: []FitSource{}, Lines: orEmpty(r.Lines())}
-	for _, s := range r.Sources {
-		f.Sources = append(f.Sources, FitSource{Name: s.Name, Items: s.Items, Kept: s.Kept, Partial: s.Partial, Tokens: s.Tokens, KeptTokens: s.KeptTokens})
+func read(r Result) Reading {
+	f := Reading{PromptTokens: r.PromptTokens, SourceTokens: r.Read.Tokens, Sources: []ReadSource{}, Lines: orEmpty(r.Read.Lines())}
+	for _, s := range r.Read.Sources {
+		f.Sources = append(f.Sources, ReadSource{Name: s.Name, Items: s.Items, Tokens: s.Tokens})
 	}
 	return f
 }
@@ -55,8 +52,8 @@ func suggested(q Question) string {
 
 // WriteText writes r for people, as markdown: the product's promise, each
 // capability with its promise, what shows it and its questions, the
-// product-wide questions, what was dropped and why, what fitting cut, and
-// what the session cost. A stopped session says so in place of a proposal.
+// product-wide questions, what was dropped and why, what the session read,
+// and what it cost. A stopped session says so in place of a proposal.
 func WriteText(w io.Writer, r Result) error {
 	var b strings.Builder
 	b.WriteString("# Proposed map\n\n")
@@ -108,8 +105,8 @@ func WriteText(w io.Writer, r Result) error {
 			b.WriteString("\n")
 		}
 	}
-	fmt.Fprintf(&b, "## Fitting\n\nSources fitted to about %d of a budget of %s.\n\n", r.Fit.Used, plural(r.Fit.Budget, "token", "tokens"))
-	for _, l := range r.Fit.Lines() {
+	fmt.Fprintf(&b, "## Read\n\nEvery source whole, about %s, in a prompt of about %s.\n\n", plural(r.Read.Tokens, "token", "tokens"), plural(r.PromptTokens, "token", "tokens"))
+	for _, l := range r.Read.Lines() {
 		b.WriteString("- " + l + "\n")
 	}
 	b.WriteString("\n## Session\n\n")
@@ -144,7 +141,7 @@ type resultJSON struct {
 	Questions    []Question   `json:"questions"`
 	Dropped      Dropped      `json:"dropped"`
 	Malformed    []Malformed  `json:"malformed"`
-	Fitting      Fitting      `json:"fitting"`
+	Read         Reading      `json:"read"`
 	Session      sessionJSON  `json:"session"`
 }
 
@@ -161,7 +158,7 @@ func WriteJSON(w io.Writer, r Result) error {
 	out := resultJSON{
 		Version: ResultVersion, Stopped: r.Stopped,
 		Product: r.Proposal.Product, Capabilities: []Capability{}, Questions: []Question{},
-		Dropped: orEmpty(r.Dropped), Malformed: orEmpty(r.Malformed), Fitting: fitting(r.Fit),
+		Dropped: orEmpty(r.Dropped), Malformed: orEmpty(r.Malformed), Read: read(r),
 		Session: sessionJSON{ID: r.SessionID, Model: r.Model, Tokens: r.Tokens, Appetite: r.Appetite},
 	}
 	question := func(q Question) Question {

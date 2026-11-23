@@ -2,12 +2,14 @@
 // session per capability, at most Concurrency at once, all under init's one
 // appetite; each capability's text, split into its folder, goes through the
 // map check and back to the same session with the problems, up to
-// MaxRetries times, before failing entries are dropped. Capabilities the
-// appetite does not reach are not yet recovered. It writes the store, never
-// the repo.
+// MaxRetries times, before failing entries are dropped. Sessions read their
+// sources whole, and none starts unless every first turn fits the appetite;
+// retries the appetite cannot hold leave answers unchecked. It writes the
+// store, never the repo.
 package recovery
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,8 +20,8 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/fit"
 	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/recovering"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
@@ -36,17 +38,22 @@ const (
 	// DefaultAppetite is how many tokens all of a run's sessions may use
 	// together when the run names no appetite.
 	DefaultAppetite = 300_000
+	// ReplyReserve is what a session's first turn, and each retry, keeps of
+	// the appetite for its reply.
+	ReplyReserve = 12_000
 )
 
-// Limits is what one capability's sources are fitted under: a smaller budget
-// than propose's, larger caps on each PR body and review comment, change
-// messages kept, and no clusters, which the recovering prompt never writes.
-// Each number is a first guess, to be tuned from real runs
-// (measure-before-budget).
-var Limits = fit.Limits{
-	InputBudget: 30_000, ReplyReserve: 12_000, MinBudget: 5_000,
-	DocsShare: 35, PRsShare: 45, CommitsShare: 20, ClustersShare: 0,
-	CommentsShare: 35, PRBodyTokens: 1_500, CommentTokens: 600, CommitMessageTokens: 300,
+// TooSmall is returned by Run when its Appetite cannot hold the whole prompt
+// plus ReplyReserve of each of its Capabilities: Need, an estimate. Nothing
+// is cut to make them fit, and no session started.
+type TooSmall struct {
+	Capabilities int
+	Need         int64
+	Appetite     int64
+}
+
+func (e *TooSmall) Error() string {
+	return fmt.Sprintf("recovering %s needs an appetite of about %s tokens (each prompt plus %s for its reply) and has %s; no session started, and nothing was spent on recovering", plural(e.Capabilities, "capability", "capabilities"), reading.Thousands(e.Need), reading.Thousands(ReplyReserve), reading.Thousands(e.Appetite))
 }
 
 // The values of Outcome.Status, as the store keeps them.
@@ -138,22 +145,17 @@ type job struct {
 }
 
 // Run is init's recover and check phases end to end. For each capability
-// (those of s.Only, or all the proposal holds) it fits the sources linked to
-// it, runs one prompt-only session with the recovering skill, checks the
-// capability's text it writes, split into its folder, sends problems back on
-// the same session up to MaxRetries times, and then drops the entries and
-// overview still at fault. It stores one
-// row per capability, replacing any earlier one of that capability.
+// (those of s.Only, or all the proposal holds) it runs one prompt-only
+// session with the recovering skill on its linked sources, whole, checks the
+// text it writes, sends problems back up to MaxRetries times, then drops
+// what is still at fault; its row replaces the capability's earlier one.
 //
-// With no proposal it returns ErrNoProposal; a name in s.Only the proposal
-// lacks, or an appetite too small for one session, is an error too. None of
-// these resolves an agent. A capability that fails, or that the appetite
-// does not reach, is not an error: the Report says so.
+// No proposal (ErrNoProposal), a name in s.Only the proposal lacks, and an
+// appetite that cannot hold every first turn (*TooSmall) are errors that
+// resolve no agent and store nothing. A capability that fails, or that the
+// appetite does not reach, is not an error: the Report says so.
 func Run(ctx context.Context, st Store, s Session) (Report, error) {
-	appetite := s.Appetite
-	if appetite == 0 {
-		appetite = DefaultAppetite
-	}
+	appetite := cmp.Or(s.Appetite, DefaultAppetite)
 	rep := Report{Appetite: appetite}
 	p, ok, err := st.Proposed()
 	if err != nil {
@@ -177,9 +179,23 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	if err != nil {
 		return rep, err
 	}
-	budget, err := fit.BudgetWith(appetite, recovering.Overhead(), Limits)
-	if err != nil {
-		return rep, err
+	now := s.Now
+	if now == nil {
+		now = time.Now
+	}
+	date := now().UTC()
+
+	jobs := make([]job, len(chosen))
+	var need int64
+	for i, c := range chosen {
+		prompt := recovering.Prompt(recovering.Input{
+			Product: stored.Proposal.Product.Promise, Name: c.Name, Promise: c.Promise,
+			Questions: c.Questions, Date: date, Sources: reading.Of(sources(g, c), recovering.Reads)})
+		jobs[i] = job{capability: c, prompt: prompt, reserve: int64(reading.Tokens(prompt) + ReplyReserve)}
+		need += jobs[i].reserve
+	}
+	if need > appetite {
+		return rep, &TooSmall{Capabilities: len(jobs), Need: need, Appetite: appetite}
 	}
 	if s.Agent == nil {
 		return rep, errors.New("no agent to recover with")
@@ -188,21 +204,8 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	if err != nil {
 		return rep, err
 	}
-	now := s.Now
-	if now == nil {
-		now = time.Now
-	}
-	date := now().UTC()
-
-	jobs := make([]job, len(chosen))
-	for i, c := range chosen {
-		prompt := recovering.Prompt(recovering.Input{
-			Product: stored.Proposal.Product.Promise, Name: c.Name, Promise: c.Promise,
-			Questions: c.Questions, Date: date, Sources: fit.FitWith(sources(g, c), budget, Limits)})
-		jobs[i] = job{capability: c, prompt: prompt, reserve: int64(fit.Tokens(prompt) + Limits.ReplyReserve)}
-	}
 	r := &runner{
-		agent: a, ledger: newLedger(appetite), progress: s.Progress,
+		agent: a, ledger: newLedger(appetite, need), progress: s.Progress,
 		check: checker{product: stored.Proposal.Product.Promise, root: s.Root, prExists: resolver(g, s.PRExists), openRepo: s.OpenRepo},
 	}
 	if s.Progress != nil {

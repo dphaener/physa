@@ -55,20 +55,22 @@ Physa collects sources into the local store. Nothing is written to the repo yet.
 - **History is bounded** by default: the last 12 months or 1,000 PRs, whichever is smaller (the shorter window). Teams can widen it with `--since YYYY-MM-DD` (the date bound) and `--max-prs N` (the PR bound).
 - **When the PR limit is reached first**, history starts at the merge time of the oldest gathered PR, so both sources cover the same window.
 - **Without a forge**, only the date applies, and PRs are reported unavailable. That is not a failure.
-- **Decision-record folders** are found by name or by shape (numbered markdown files). Files over 2 MB are skipped and listed in the summary; fitting the sources to an agent is the next phase's job (§2.3).
+- **Decision-record folders** are found by name or by shape (numbered markdown files). Files over 2 MB are skipped and listed in the summary. Every source gathered reaches the later phases whole (§2.3).
 - **Files that change together** are used only as hints for proposing capabilities during init. File paths never enter the map.
 - **`physa init --gather`** runs this phase alone. It writes only the store, replacing the previous gather in one transaction, and prints a summary as text or `--json`: each source with its kind and reason, each skipped file with its why, counts by source, the bound used, discovery's outcome (sources named and added, tokens spent of the cap, or why discovery did not run), and an estimated token count of the sources (bytes / 2.3, an estimate).
 
 ### 2.3 Propose capabilities (agent)
 
-The customer's agent receives the gathered sources (summarised to fit), Physa's mapping skill, and the budgets from 01. It proposes:
+The customer's agent receives the gathered sources, whole, Physa's mapping skill, and the budgets from 01. It proposes:
 
 - the product's promise for `product/index.md`;
 - as many capabilities as the product really has (no fixed count, `measure-before-budget`), each a promise, each with the PRs or changes that best show it.
 
 This is one agent session. It is the step that most shapes the map, so it is the step a person reviews most closely.
 
-It is built as `physa init --propose`, which needs a stored gather and says so when there is none. The gathered sources are fitted deterministically to an input budget before the agent sees them, with no agent involved. The budget is a named constant, a first guess tuned from runs (`measure-before-budget`). Fitting estimates a token as 2.3 bytes, measured on #25's real prompts at 2.38 to 2.70 bytes a token, so the estimate errs high. It charges each item its own wrapping (labels and fences) as well as its text, and keeps a share of the PR budget for review comments, so long PR bodies cannot push them all out. Sources are cut in this order: docs (long ones cut by section, their headings kept), PRs (titles first, then bodies, then review comments, those requesting changes first), commit subjects, and finally clusters of files that change together, used as hints only. The summary says what was cut and how much. The proposal is one prompt-only session with no tools, under the appetite (§2.7), shown before it starts. Uncertain knowledge comes back as questions, never as guesses (Q2). `physa init --propose` prints the proposal as markdown or `--json` and stores it for the next phase. It writes nothing to the repo, and a new gather clears the stored proposal.
+It is built as `physa init --propose`, which needs a stored gather and says so when there is none. Settled with the owner (2026-11-23): **nothing is cut.** In the owner's words: "This process is important, nothing should get cut. People might have to just bite the bullet on appetite." The session reads every gathered doc, PR title, PR body, review comment and change subject whole, with no input budget, no shares between sources and no cap on any item. What propose reads is a choice, not a cut: it reads each change's short id and subject, not its message, and the clusters of files that change together, as hints only. The gather is shaped into the prompt deterministically, with no agent involved: docs by kind, then path; PRs newest first; changes newest first; then the clusters. Tokens are estimated at 2.3 bytes a token, measured on #25's real prompts at 2.38 to 2.70 bytes a token, so the estimate errs high.
+
+Before the session starts, its prompt plus 16,000 tokens for the reply must fit in propose's appetite; otherwise propose does not start, spends nothing, and says the appetite it needs (an estimate) and how to continue (§2.7). The proposal is one prompt-only session with no tools, under the appetite (§2.7), shown before it starts. Uncertain knowledge comes back as questions, never as guesses (Q2). `physa init --propose` prints the proposal as markdown or `--json` and stores it for the next phase; its "Read" section says what the session read: each source with its count and estimated tokens, and the prompt's estimated tokens. It writes nothing to the repo, and a new gather clears the stored proposal.
 
 ### 2.4 Recover knowledge (agent, one session per capability)
 
@@ -85,7 +87,7 @@ Sessions are independent, so they can run in parallel.
 
 Settled as built with `physa init --recover` (decided by Claude as arbiter for the owner to review):
 
-- A session receives the product's promise, the capability's promise and its questions from the proposal, the recovering skill, and the capability's linked sources fitted to a 30,000-token input budget, with no clusters. It has no tools and runs in a fresh directory.
+- A session receives the product's promise, the capability's promise and its questions from the proposal, the recovering skill, and the capability's linked sources whole: every doc, and each linked PR's title, body and review comments and each linked change's message, with no input budget and no cap on any item (§2.3, the owner, 2026-11-23). It reads no clusters. It has no tools and runs in a fresh directory.
 - Its reply is the capability text and its glossary terms. Physa writes the front matter, with the proposal's promise on one line, and adds a title when the session wrote none. Questions Physa records carry "raised by physa", the date and their anchors.
 - A decision whose person or date the sources do not show becomes a question.
 - At most three sessions run at once. Each has its session id assigned before it starts, so a retry resumes the same session (§2.5).
@@ -123,7 +125,7 @@ Settled as built with `physa init --write` (decided by Claude as arbiter for the
 
 Calls made, for the owner to check:
 
-- Propose gets half the appetite, at most its default (§2.7); recovery gets the rest, less what proposing used.
+- Propose may spend what discovery left of the appetite, and recovery gets the rest, less what proposing spent (§2.7).
 - A capability not yet recovered, or failed, is written with its promise only, and the PR body says which.
 - A repo whose default branch already holds a map is refused, and `physa map learn` keeps it learning.
 - An existing `physa/init` is replaced by one fresh commit. The push is leased to the fetched remote branch: a lost lease stops the run without a retry, and the local branch moves only after the push succeeds.
@@ -132,17 +134,25 @@ Calls made, for the owner to check:
 
 ### 2.7 Appetite for init
 
-Init spends the customer's tokens, so it has an appetite (Q4): a token budget shown before it starts, with a circuit breaker. If recovery runs out, the capabilities already done are kept and the rest are listed as "not yet recovered", to be filled from future PRs. `--appetite` sets it. Propose's input budget (§2.3) leaves room in the appetite for the reply, and an appetite too small for any input is refused, naming the smallest that works.
+Init spends the customer's tokens, so it has an appetite (Q4): a token budget shown before it starts, with a circuit breaker. If recovery runs out, the capabilities already done are kept and the rest are listed as "not yet recovered", to be filled from future PRs. `--appetite` sets it.
+
+**Budgets come from the appetite, never from constants, and never by cutting sources** (the owner, 2026-11-23: "This process is important, nothing should get cut. People might have to just bite the bullet on appetite."). Phases inside a run share the one appetite, with no fixed caps (10 Q3). Before a session starts, init estimates its whole prompt; if the prompt plus the session's reply reserve does not fit in what is left of the appetite, init does not start it, spends nothing on it, and says the appetite that would be needed (an estimate) and the command that continues. It keeps what it finished.
 
 Settled as built with `physa init --recover`:
 
 - The default appetite is 300,000 tokens, shared by all of a run's sessions. Input and output both count.
-- Before its first turn a session reserves its prompt plus 12,000 tokens for the reply. Before each retry it reserves what it has used so far, plus the retry's message and another 12,000. A reservation that cannot fit beside what is already spent is refused. One that waits only on other sessions' reservations waits for them to settle.
+- Before any session starts, recovery estimates every chosen capability's whole prompt. If their sum, plus 12,000 tokens for each reply, exceeds the appetite, no session starts and nothing is stored: `physa init: stopped before recovering: recovering K capabilities needs an appetite of about N tokens (each prompt plus 12,000 for its reply) and has A; no session started, and nothing was spent on recovering. The proposal is stored: physa init --recover --appetite N continues.` The command names `--only`, `--agent` and the writing flags when they were given. It exits 1.
+- Before its first turn a session reserves its prompt plus 12,000 tokens for the reply. Before each retry it reserves what it has used so far, plus the retry's message and another 12,000. A reservation that cannot fit beside what is already spent is refused. One that waits only on other sessions' reservations waits for them to settle. The appetite named as needed covers first turns, not retries.
 - A session that reports more tokens than its reservation is stopped by the circuit breaker.
 - Bare `physa init`, `--propose` and `--recover` refuse a repo whose default branch already holds a map before gathering or running any agent, saying `physa map learn` keeps it current. When no default branch can be found they check the working tree for `.physa/product.md` instead, and `--write` reports the missing default branch as before; `--gather` alone still runs: its only spend is discovery's, which a mapped repo never starts, and it writes only the store.
 - When the appetite ends a session, a capability with a checked answer keeps it, with its entries settled by dropping. A capability with no checked answer is "not yet recovered", as are those not started. A capability whose retries run out with no readable answer fails, with the read problem.
 
-Settled as built with a bare `physa init` (decided by Claude as arbiter for the owner to review): the whole run spends one appetite, given by `--appetite` or the default of 300,000 tokens. Before any token is spent, the run prints its plan as one line, for example `physa init: appetite 300000 tokens: gather up to 75000 (the discovery agent); propose up to 150000; recover the rest, about 75000, shared by its sessions; check and write 0.` Once gather has run, and before propose starts, the run prints the propose prompt's figures as one line, `physa init: propose's prompt is about P tokens plus R for the reply.` The figures are estimates: the propose prompt is fitted as §2.3 describes, and the reply reserve is propose's own. Recovery gets the appetite less what discovery and proposing spent.
+`physa init --propose` alone spends its `--appetite`, by default 150,000 tokens. When its prompt plus 16,000 for the reply does not fit, it starts no session and exits 1: `physa init: stopped before proposing: propose needs an appetite of about N tokens (its prompt about P, its reply 16,000) and has A; it did not start, and nothing was spent on it. physa init --propose --appetite N continues.`
+
+Settled as built with a bare `physa init` (decided by Claude as arbiter for the owner to review, brought up to date for the owner's decision of 2026-11-23): the whole run spends one appetite, given by `--appetite` or the default of 300,000 tokens. Discovery may spend a quarter of it (§2.2), propose may spend what discovery left, and recovery gets what is left after discovery and propose. Before any token is spent, the run prints its plan as one line, for example `physa init: appetite 300000 tokens: gather up to 75000 (the discovery agent); propose with what gather leaves; recover with what is left after both, shared by its sessions; check and write 0. No source is cut: a phase that does not fit what is left is not started.` Once gather has run, and before propose starts, the run prints the propose prompt's figures as one line, `physa init: propose's prompt is about P tokens plus 16000 for the reply; L of the appetite is left.` The figures are estimates.
+
+- If propose's prompt and reply reserve do not fit in what is left, the run stops before proposing, with nothing spent on it, keeping the gather, and exits 1: `physa init: stopped before proposing: … The gather is stored: physa init --propose --appetite N continues, then physa init --recover --write.` (`--write` and the other writing flags only when they were asked.)
+- If, after proposing, the capabilities' prompts and reply reserves do not fit in what is left, the run stops before recovering, keeps the stored proposal, writes nothing, and exits 1, with the refusal above: `physa init --recover --appetite N` continues, with `--write` when it was asked.
 
 ### 2.8 A new codebase
 

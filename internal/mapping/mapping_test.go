@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/fit"
+	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
 )
 
@@ -101,22 +101,25 @@ const goodReply = "The product keeps notes.\n\n```json\n" + `{
 }` + "\n```\n"
 
 func TestPromptHoldsSkillAndFencesWhatOthersWrote(t *testing.T) {
-	in := fit.Fit(testGather(), 100_000)
+	in := Read(testGather())
 	p := Prompt(in)
 	if !strings.HasPrefix(p, strings.TrimRight(skill, "\n")) {
 		t.Fatal("the prompt does not start with the skill")
 	}
 	for _, want := range []string{
 		"## Sources\n\n### Docs\n", "\n### Pull requests\n", "\n### Changes\n",
-		"\n### Files that change together (hints)\n", "\n### What was cut\n",
+		"\n### Files that change together (hints)\n",
 		"path: README.md\nkind: readme\n", "#12, merged 2026-11-20:", "title: Export every note\nissues:\n- Exports lose notes\nbody:\n",
-		"Review comment on #12, requests changes:", "a1b2c3d feat(export): Export every note\n", "- docs: kept whole\n",
+		"Review comment on #12, requests changes:", "a1b2c3d feat(export): Export every note\n",
 	} {
 		if !strings.Contains(p, want) {
 			t.Errorf("the prompt lacks %q", want)
 		}
 	}
-	order := []string{"### Docs", "### Pull requests", "### Changes", "### Files that change together (hints)", "### What was cut"}
+	if strings.Contains(p, "cut") {
+		t.Error("the prompt speaks of cutting, and nothing is cut")
+	}
+	order := []string{"### Docs", "### Pull requests", "### Changes", "### Files that change together (hints)"}
 	sources := p[strings.Index(p, "## Sources"):]
 	last := -1
 	for _, h := range order {
@@ -148,61 +151,31 @@ func TestPromptHoldsSkillAndFencesWhatOthersWrote(t *testing.T) {
 	}
 }
 
-func TestPromptOverheadCoversItsOwnText(t *testing.T) {
-	empty := Prompt(fit.Input{})
-	if got := fit.Tokens(empty); got > Overhead() {
-		t.Errorf("the prompt with no sources is %d tokens, over the overhead of %d", got, Overhead())
-	}
-	if Overhead() <= fit.Tokens(skill) {
-		t.Error("the overhead leaves nothing for headings")
-	}
+func TestPromptEmptyPartsSayNone(t *testing.T) {
+	empty := Prompt(reading.Input{})
 	if strings.Count(empty, "none\n") < 4 {
 		t.Errorf("empty parts should say none:\n%s", empty[strings.Index(empty, "## Sources"):])
 	}
 }
 
-// realisticGather is a gather shaped like a real repo's: docs with sections,
-// PRs with bodies, issues and review comments (some with fences of their
-// own), and changes whose files cluster.
-func realisticGather() store.Gather {
-	var g store.Gather
-	para := "This paragraph explains a rule, why it holds, and the PR that settled it in some detail.\n"
-	for d, kind := range []string{"agent", "readme", "decisions", "contributing"} {
-		var b strings.Builder
-		for s := 0; b.Len() < 60_000; s++ {
-			fmt.Fprintf(&b, "## Section %d\n\n%s%s\n", s, strings.Repeat(para, 5), "```go\nfunc x() {}\n```")
-		}
-		g.Docs = append(g.Docs, store.Doc{Path: fmt.Sprintf("docs/part-%d.md", d), Kind: kind, Body: b.String()})
+// TestPromptHoldsLongSourcesWhole checks that nothing is cut: a long doc,
+// a long PR body and a long review comment reach the prompt whole.
+func TestPromptHoldsLongSourcesWhole(t *testing.T) {
+	var b strings.Builder
+	for s := 0; b.Len() < 400_000; s++ {
+		fmt.Fprintf(&b, "## Section %d\n\n%s", s, strings.Repeat("This paragraph explains a rule and why it holds.\n", 20))
 	}
-	for i := 0; i < 400; i++ {
-		p := store.GatheredPR{Number: 1000 + i, Title: fmt.Sprintf("feat(area%d): Change the way part %d works", i%9, i), Author: "dev",
-			MergedAt: gatherAt.Add(-time.Duration(i) * time.Hour), Issues: []string{fmt.Sprintf("Part %d is slow", i)},
-			Body: "## Summary\n\n" + strings.Repeat(para, 1+i%12) + "## Test plan\n\n- `go test ./...`\n"}
-		for c := 0; c < i%4; c++ {
-			p.Comments = append(p.Comments, store.GatheredComment{Author: fmt.Sprintf("reviewer%d", c), At: p.MergedAt,
-				RequestsChanges: c == 0 && i%5 == 0, Body: "Could this use the existing helper?\n\n```go\nhelper()\n```\n"})
-		}
-		g.PRs = append(g.PRs, p)
+	doc, body := b.String(), strings.Repeat("A long PR body line, kept whole.\n", 10_000)
+	g := testGather()
+	g.Docs = append(g.Docs, store.Doc{Path: "docs/design.md", Kind: "overview", Body: doc})
+	g.PRs[0].Body = body
+	g.PRs[0].Comments[0].Body = body
+	p := Prompt(Read(g))
+	if !strings.Contains(p, "text:\n"+doc) || !strings.Contains(p, "body:\n"+body) || strings.Count(p, body) != 2 {
+		t.Fatal("a long doc, PR body or review comment did not reach the prompt whole")
 	}
-	for i := 0; i < 3_000; i++ {
-		id := fmt.Sprintf("%040x", i)
-		g.Changes = append(g.Changes, store.GatheredChange{ID: id, Short: id[:7], Subject: fmt.Sprintf("fix(area%d): Mend part %d of the flow", i%9, i),
-			At:    gatherAt.Add(-time.Duration(i) * time.Minute),
-			Files: []string{fmt.Sprintf("internal/area%d/a.go", i%30), fmt.Sprintf("internal/area%d/b.go", i%30), fmt.Sprintf("internal/area%d/a_test.go", i%30)}})
-	}
-	return g
-}
-
-// TestPromptCostIsCharged checks that what fit charges, plus the overhead,
-// covers the prompt mapping writes, and by no more than a tenth.
-func TestPromptCostIsCharged(t *testing.T) {
-	for _, budget := range []int{fit.Propose.MinBudget, 30_000, fit.Propose.InputBudget} {
-		in := fit.Fit(realisticGather(), budget)
-		est, real := in.Report.Used+Overhead(), fit.Tokens(Prompt(in))
-		t.Logf("budget %d: estimate %d, prompt %d (%.1f%% over)", budget, est, real, 100*float64(est-real)/float64(real))
-		if est < real || est > real*11/10 {
-			t.Errorf("budget %d: estimate %d for a prompt of %d tokens", budget, est, real)
-		}
+	if got := Estimate(g); got != reading.Tokens(p) || got < reading.Tokens(doc)+2*reading.Tokens(body) {
+		t.Fatalf("estimate %d for a prompt of %d tokens", got, reading.Tokens(p))
 	}
 }
 
@@ -405,12 +378,22 @@ func TestProposeNoGatherStartsNoAgent(t *testing.T) {
 func TestProposeTooSmallAnAppetiteStartsNoAgent(t *testing.T) {
 	a := &fakeAdapter{}
 	s := session(a, &bytes.Buffer{})
-	s.Appetite = 10_000
+	resolved := 0
+	s.Agent = func() (adapter.Adapter, error) { resolved++; return a, nil }
+	need := int64(Estimate(testGather()) + ReplyReserve)
+	s.Appetite = need - 1
 	st := &fakeStore{gather: testGather(), has: true}
-	if _, err := Propose(context.Background(), st, s); err == nil || !strings.Contains(err.Error(), "too small") {
+	_, err := Propose(context.Background(), st, s)
+	var small *TooSmall
+	if !errors.As(err, &small) || small.Need() != need || small.Appetite != need-1 {
 		t.Fatalf("got %v", err)
 	}
-	if a.starts != 0 || len(st.put) != 0 {
+	want := fmt.Sprintf("propose needs an appetite of about %s tokens (its prompt about %s, its reply 16,000) and has %s; it did not start, and nothing was spent on it",
+		reading.Thousands(need), reading.Thousands(int64(Estimate(testGather()))), reading.Thousands(need-1))
+	if err.Error() != want {
+		t.Errorf("message = %q\nwant      %q", err, want)
+	}
+	if resolved != 0 || a.starts != 0 || len(st.put) != 0 {
 		t.Errorf("started %d, stored %d; want none", a.starts, len(st.put))
 	}
 }
@@ -428,12 +411,12 @@ func TestProposeHappyPathStoresTheProposal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.starts != 1 || !a.spec.PromptOnly || a.spec.Prompt != Prompt(fit.Fit(testGather(), res.Fit.Budget)) {
-		t.Errorf("the session was not one prompt-only session with the fitted prompt (starts %d, prompt-only %v)", a.starts, a.spec.PromptOnly)
+	if a.starts != 1 || !a.spec.PromptOnly || a.spec.Prompt != Prompt(Read(testGather())) {
+		t.Errorf("the session was not one prompt-only session with the whole prompt (starts %d, prompt-only %v)", a.starts, a.spec.PromptOnly)
 	}
-	wantLine := "physa init: appetite 60000 tokens; sources ~"
-	if !strings.HasPrefix(atStart, wantLine) || !strings.HasSuffix(atStart, "-token budget; session "+a.spec.SessionID+"\n") ||
-		!strings.Contains(atStart, " tokens fitted to ~") || strings.Count(atStart, "\n") != 1 {
+	wantLine := "physa init: appetite 60000 tokens; propose reads its sources whole, ~"
+	if !strings.HasPrefix(atStart, wantLine) || !strings.HasSuffix(atStart, " plus 16000 for the reply; session "+a.spec.SessionID+"\n") ||
+		!strings.Contains(atStart, fmt.Sprintf(" tokens, in a prompt of ~%d tokens", Estimate(testGather()))) || strings.Count(atStart, "\n") != 1 {
 		t.Errorf("progress when the agent started = %q", atStart)
 	}
 	if progress.String() != atStart {
@@ -443,7 +426,7 @@ func TestProposeHappyPathStoresTheProposal(t *testing.T) {
 		t.Errorf("result = %+v", res)
 	}
 	if res.Model != "test-model" || res.SessionID != "11111111-2222-4333-8444-555555555555" || res.Appetite != 60_000 ||
-		res.Tokens != (adapter.Tokens{Input: 4000, CachedInput: 1000, Output: 500}) || res.Fit.Budget == 0 {
+		res.Tokens != (adapter.Tokens{Input: 4000, CachedInput: 1000, Output: 500}) || res.PromptTokens != Estimate(testGather()) {
 		t.Errorf("result = %+v", res)
 	}
 	if len(st.put) != 1 {
@@ -460,10 +443,10 @@ func TestProposeHappyPathStoresTheProposal(t *testing.T) {
 	if err := dec.Decode(&body); err != nil {
 		t.Fatalf("the stored body: %v\n%s", err, p.Body)
 	}
-	if !reflect.DeepEqual(body.Proposal, res.Proposal) || body.Fit.Budget != res.Fit.Budget || len(body.Fit.Sources) != 6 {
+	if !reflect.DeepEqual(body.Proposal, res.Proposal) || body.Read.PromptTokens != res.PromptTokens || len(body.Read.Sources) != 5 {
 		t.Errorf("stored body = %+v", body)
 	}
-	for _, key := range []string{`"proposal":`, `"dropped":[]`, `"malformed":[]`, `"fit":`} {
+	for _, key := range []string{`"proposal":`, `"dropped":[]`, `"malformed":[]`, `"read":`} {
 		if !strings.Contains(string(p.Body), key) {
 			t.Errorf("the stored body lacks %s: %s", key, p.Body)
 		}
@@ -552,11 +535,13 @@ func smallResult() Result {
 		},
 		Dropped:   Dropped{{What: WhatRef, Capability: "search", Value: "#99", Reason: "no such PR was gathered"}},
 		Malformed: []Malformed{{Raw: "\"billing\"", Reason: "a capability must be a JSON object"}},
-		Fit: fit.Report{Budget: 1000, Used: 700, Sources: []fit.SourceReport{
-			{Name: "docs", Items: 2, Kept: 2, Tokens: 300, KeptTokens: 300},
-			{Name: "pr titles", Items: 4, Kept: 3, Tokens: 500, KeptTokens: 400},
+		Read: reading.Report{Tokens: 800, Sources: []reading.SourceReport{
+			{Name: "docs", Items: 2, Tokens: 300},
+			{Name: "pull requests", Items: 4, Tokens: 500},
+			{Name: "review comments"},
 		}},
-		SessionID: "11111111-2222-4333-8444-555555555555", Model: "test-model",
+		PromptTokens: 1200,
+		SessionID:    "11111111-2222-4333-8444-555555555555", Model: "test-model",
 		Tokens: adapter.Tokens{Input: 4000, CachedInput: 1000, Output: 500}, Appetite: 60_000,
 	}
 }
@@ -591,12 +576,13 @@ Shown by: nothing gathered
 - ref of search ` + "`#99`" + `: no such PR was gathered
 - malformed item ` + "`\"billing\"`" + `: a capability must be a JSON object
 
-## Fitting
+## Read
 
-Sources fitted to about 700 of a budget of 1000 tokens.
+Every source whole, about 800 tokens, in a prompt of about 1200 tokens.
 
-- docs: kept whole
-- pr titles: 3 of 4 kept (100 of 500 tokens left out)
+- docs: 2, whole, about 300 tokens
+- pull requests: 4, whole, about 500 tokens
+- review comments: none
 
 ## Session
 
@@ -607,7 +593,7 @@ Sources fitted to about 700 of a budget of 1000 tokens.
 `
 
 const wantJSON = `{
-  "version": 1,
+  "version": 2,
   "stopped": false,
   "product": {
     "promise": "People keep their notes and find them again."
@@ -658,30 +644,30 @@ const wantJSON = `{
       "reason": "a capability must be a JSON object"
     }
   ],
-  "fitting": {
-    "budget": 1000,
-    "used": 700,
+  "read": {
+    "prompt_tokens": 1200,
+    "source_tokens": 800,
     "sources": [
       {
         "name": "docs",
         "items": 2,
-        "kept": 2,
-        "partial": 0,
-        "tokens": 300,
-        "kept_tokens": 300
+        "tokens": 300
       },
       {
-        "name": "pr titles",
+        "name": "pull requests",
         "items": 4,
-        "kept": 3,
-        "partial": 0,
-        "tokens": 500,
-        "kept_tokens": 400
+        "tokens": 500
+      },
+      {
+        "name": "review comments",
+        "items": 0,
+        "tokens": 0
       }
     ],
     "lines": [
-      "docs: kept whole",
-      "pr titles: 3 of 4 kept (100 of 500 tokens left out)"
+      "docs: 2, whole, about 300 tokens",
+      "pull requests: 4, whole, about 500 tokens",
+      "review comments: none"
     ]
   },
   "session": {
@@ -750,20 +736,20 @@ func TestPluralTokensSingularAndPlural(t *testing.T) {
 
 func TestWriteTextCountsOneTokenInTheSingular(t *testing.T) {
 	var one, many bytes.Buffer
-	r := Result{Stopped: true, Appetite: 1, Fit: fit.Report{Budget: 1, Used: 1}}
+	r := Result{Stopped: true, Appetite: 1, Read: reading.Report{Tokens: 1}, PromptTokens: 1}
 	if err := WriteText(&one, r); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Stopped at the appetite (1 token) after", "fitted to about 1 of a budget of 1 token.\n"} {
+	for _, want := range []string{"Stopped at the appetite (1 token) after", "Every source whole, about 1 token, in a prompt of about 1 token.\n"} {
 		if !strings.Contains(one.String(), want) {
 			t.Errorf("text lacks %q:\n%s", want, one.String())
 		}
 	}
-	r = Result{Stopped: true, Appetite: 60_000, Fit: fit.Report{Budget: 1000, Used: 700}}
+	r = Result{Stopped: true, Appetite: 60_000, Read: reading.Report{Tokens: 700}, PromptTokens: 1000}
 	if err := WriteText(&many, r); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Stopped at the appetite (60000 tokens) after", "fitted to about 700 of a budget of 1000 tokens.\n"} {
+	for _, want := range []string{"Stopped at the appetite (60000 tokens) after", "Every source whole, about 700 tokens, in a prompt of about 1000 tokens.\n"} {
 		if !strings.Contains(many.String(), want) {
 			t.Errorf("text lacks %q:\n%s", want, many.String())
 		}

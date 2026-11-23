@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/draft"
-	"github.com/dphaener/physa/internal/fit"
+	"github.com/dphaener/physa/internal/reading"
 )
 
 // skill is the recovering skill: what the session is told before the
@@ -20,26 +20,13 @@ var skill string
 // none stands in a part of the prompt that holds nothing.
 const none = "none\n"
 
-// headingAllowance is the tokens allowed for the prompt's own text that fit
-// does not charge: its headings, the capability with its promises and
-// questions, what was cut, and the labels this prompt writes beside those fit
-// sizes its wrapping by (a PR's author, a review comment's date, a fence
-// around each change). It is a first guess, to be tuned from real runs
-// (measure-before-budget).
-const headingAllowance = 1_200
-
-// Overhead is what the prompt costs beside the fitted sources: the skill's
-// tokens plus a fixed allowance for headings and the capability. fit's
-// BudgetWith takes it off the appetite.
-func Overhead() int { return fit.Tokens(skill) + headingAllowance }
-
 // Prompt returns everything the session reads: the recovering skill, then
-// the capability, then its fitted sources under their own headings. All
+// the capability, then its sources, whole, under their own headings. All
 // that others wrote (the promises and questions an agent proposed, docs, PR
 // titles, bodies and review comments, change subjects and messages, names)
 // sits in fenced blocks nothing inside can close; the labels outside the
 // fences are Physa's own. Clusters of files are never written: recovery
-// fits none. The same input always gives the same text.
+// reads none. The same input always gives the same text.
 func Prompt(in Input) string {
 	var w strings.Builder
 	w.WriteString(strings.TrimRight(skill, "\n"))
@@ -69,11 +56,7 @@ func Prompt(in Input) string {
 		if i > 0 {
 			w.WriteString("\n")
 		}
-		label := fmt.Sprintf("Doc %d of %d", i+1, len(src.Docs))
-		if d.Cut {
-			label += ", cut by section"
-		}
-		w.WriteString(label + ":\n\n")
+		fmt.Fprintf(&w, "Doc %d of %d:\n\n", i+1, len(src.Docs))
 		draft.Fence(&w, "path: "+draft.OneLine(d.Path)+"\nkind: "+draft.OneLine(d.Kind)+"\ntext:\n"+d.Body)
 	}
 
@@ -99,26 +82,11 @@ func Prompt(in Input) string {
 		writeChange(&w, c)
 	}
 
-	w.WriteString("\n### What was cut\n\n")
-	r := src.Report
-	r.Sources = nil
-	for _, s := range src.Report.Sources {
-		if s.Name != "clusters" { // never written, so never said
-			r.Sources = append(r.Sources, s)
-		}
-	}
-	lines := r.Lines()
-	if len(lines) == 0 {
-		w.WriteString(none)
-	}
-	for _, l := range lines {
-		w.WriteString("- " + l + "\n")
-	}
 	return w.String()
 }
 
 // writePR writes one PR and its review comments.
-func writePR(w *strings.Builder, p fit.PR) {
+func writePR(w *strings.Builder, p reading.PR) {
 	fmt.Fprintf(w, "#%d, merged %s:\n\n", p.Number, p.MergedAt.UTC().Format(time.DateOnly))
 	var t strings.Builder
 	t.WriteString("title: " + draft.OneLine(p.Title))
@@ -151,7 +119,7 @@ func writePR(w *strings.Builder, p fit.PR) {
 
 // writeChange writes one change in its own fence: its message can hold
 // anything, so no line of one can pass for the next change.
-func writeChange(w *strings.Builder, c fit.Commit) {
+func writeChange(w *strings.Builder, c reading.Commit) {
 	var t strings.Builder
 	t.WriteString(draft.OneLine(c.Short) + " " + draft.OneLine(c.Subject))
 	if c.Author != "" {

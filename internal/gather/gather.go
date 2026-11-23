@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/fit"
 	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
 )
@@ -161,7 +161,7 @@ func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now ti
 		return store.Gather{}, Summary{}, err
 	}
 	s.History = summariseHistory(g.Changes)
-	s.EstimatedTokens = fit.BytesTokens(s.Docs.Bytes + s.History.Bytes + s.PRs.Bytes)
+	s.EstimatedTokens = reading.BytesTokens(s.Docs.Bytes + s.History.Bytes + s.PRs.Bytes)
 	return g, s, nil
 }
 

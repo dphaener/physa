@@ -1,9 +1,6 @@
-package fit
+package reading
 
-import (
-	"fmt"
-	"strconv"
-)
+import "strconv"
 
 // Each cluster number below is a first guess, to be tuned from real runs
 // (measure-before-budget).
@@ -30,32 +27,20 @@ func BytesTokens(n int) int { return (n*10 + BytesPerTokenTenths - 1) / BytesPer
 // Tokens estimates the tokens in s; see BytesTokens.
 func Tokens(s string) int { return BytesTokens(len(s)) }
 
-// tokenBytes is the most bytes estimated at no more than t tokens.
-func tokenBytes(t int) int { return t * BytesPerTokenTenths / 10 }
-
 // Figure is the bytes per token as people read it: "2.3".
 func Figure() string {
 	return strconv.Itoa(BytesPerTokenTenths/10) + "." + strconv.Itoa(BytesPerTokenTenths%10)
 }
 
-// Budget is BudgetWith under the Propose limits.
-func Budget(appetite int64, overhead int) (int, error) {
-	return BudgetWith(appetite, overhead, Propose)
-}
-
-// BudgetWith returns the input budget for a session under appetite, after
-// the reply's reserve and overhead (the skill and the prompt's own text):
-// min(InputBudget, appetite − ReplyReserve − overhead). It errors, naming the
-// smallest appetite that works, when that leaves less than MinBudget.
-func BudgetWith(appetite int64, overhead int, l Limits) (int, error) {
-	b := appetite - int64(l.ReplyReserve) - int64(overhead)
-	if b < int64(l.MinBudget) {
-		least := l.MinBudget + l.ReplyReserve + overhead
-		return 0, fmt.Errorf("the appetite of %s tokens is too small: init needs at least %s (%s for the sources, %s for the reply and %s for the skill)",
-			thousands(int(appetite)), thousands(least), thousands(l.MinBudget), thousands(l.ReplyReserve), thousands(overhead))
+// Thousands writes n with commas: 14300 is "14,300".
+func Thousands(n int64) string {
+	s := strconv.FormatInt(n, 10)
+	neg := ""
+	if n < 0 {
+		neg, s = "-", s[1:]
 	}
-	if b > int64(l.InputBudget) {
-		b = int64(l.InputBudget)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
 	}
-	return int(b), nil
+	return neg + s
 }

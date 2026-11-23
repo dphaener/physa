@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -249,7 +250,7 @@ func TestFullPlanLineComesFirst(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d, stderr %s", code, stderr.String())
 	}
-	want := "physa init: appetite 100000 tokens: gather up to 25000 (the discovery agent); propose up to 50000; recover the rest, about 25000, shared by its sessions; check and write 0.\n"
+	want := "physa init: appetite 100000 tokens: gather up to 25000 (the discovery agent); propose with what gather leaves; recover with what is left after both, shared by its sessions; check and write 0. No source is cut: a phase that does not fit what is left is not started.\n"
 	if !strings.HasPrefix(seen, want) {
 		t.Errorf("before the first session, stderr was %q", seen)
 	}
@@ -257,7 +258,7 @@ func TestFullPlanLineComesFirst(t *testing.T) {
 		t.Errorf("sessions %v (discovery read-only: %v); want discovery first, read-only", a.started, a.readOnly)
 	}
 	if after := strings.TrimPrefix(stderr.String(), seen); !strings.Contains(after, "physa init: propose's prompt is about ") ||
-		!strings.Contains(after, " tokens plus 16000 for the reply.") {
+		!strings.Contains(after, " tokens plus 16000 for the reply; 98990 of the appetite is left.\n") {
 		t.Errorf("after gathering, stderr was %q", after)
 	}
 	if out := gitIn(t, ".", "branch", "--list", "physa/init"); out != "" {
@@ -317,61 +318,112 @@ func storedRow(t *testing.T, env Env, c string) store.Recovered {
 	return store.Recovered{}
 }
 
-func TestFullSmallAppetiteThenRecoverWrite(t *testing.T) {
+// appetiteIn returns the appetite N of the command "physa init <phase>
+// --appetite N" that errOut says continues.
+func appetiteIn(t *testing.T, errOut, phase string) string {
+	t.Helper()
+	m := regexp.MustCompile(`physa init ` + phase + ` --appetite (\d+)`).FindStringSubmatch(errOut)
+	if m == nil {
+		t.Fatalf("stderr names no physa init %s --appetite N: %s", phase, errOut)
+	}
+	return m[1]
+}
+
+// TestFullRefusesBeforeProposing checks that a full run whose appetite,
+// after gathering, cannot hold propose's whole prompt and its reply reserve
+// never starts propose, says the appetite needed, and continues from the
+// stored gather with --propose at that appetite.
+func TestFullRefusesBeforeProposing(t *testing.T) {
+	remoteRepo(t)
+	a := newRoutedAgent()
+	env := fullEnv(t, onePR(), a)
+	// A quarter of 19,000 is too small to start discovery, and propose's
+	// prompt plus 16,000 for its reply is more than 19,000.
+	code, out, errOut := runInit(env, "--write", "--appetite", "19000")
+	if code != 1 || len(a.started) != 0 {
+		t.Fatalf("code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
+	}
+	for _, want := range []string{"physa init: propose's prompt is about ", "; 19000 of the appetite is left.\n",
+		"physa init: stopped before proposing: propose needs an appetite of about ", " and has 19,000; it did not start, and nothing was spent on it. The gather is stored: physa init --propose --appetite ",
+		" continues, then physa init --recover --write.\n"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, errOut)
+		}
+	}
+	if strings.Contains(out, "# Proposed map") || gitIn(t, ".", "branch", "--list", "physa/init") != "" {
+		t.Errorf("something was proposed or written:\n%s", out)
+	}
+	n := appetiteIn(t, errOut, "--propose")
+
+	// --propose alone refuses the same way, naming its own continuation.
+	code, _, errOut = runInit(env, "--propose", "--appetite", "100")
+	if code != 1 || len(a.started) != 0 || !strings.Contains(errOut, "and has 100; it did not start, and nothing was spent on it. physa init --propose --appetite "+n+" continues.\n") {
+		t.Fatalf("--propose under 100: code %d, sessions %v, stderr %s", code, a.started, errOut)
+	}
+	code, out, errOut = runInit(env, "--propose", "--appetite", n)
+	if code != 0 || !slices.Equal(a.started, []string{"propose"}) || !strings.Contains(out, "## Read\n\nEvery source whole") {
+		t.Fatalf("--propose under %s: code %d, sessions %v\nstdout %s\nstderr %s", n, code, a.started, out, errOut)
+	}
+}
+
+// TestFullStopsBeforeRecoveringThenRecoverWrite checks that a full run whose
+// appetite, after proposing, cannot hold every capability's whole prompt and
+// reply reserve starts no recovery session, keeps the proposal, writes
+// nothing, and names the --recover command and appetite that continue; that
+// command then recovers and writes.
+func TestFullStopsBeforeRecoveringThenRecoverWrite(t *testing.T) {
 	dir, _ := remoteRepo(t)
 	a := newRoutedAgent()
 	a.propose = 25_600
 	env := fullEnv(t, onePR(), a)
-	// Discovery uses 1,010 and proposing 25,620 of 52,410; recovering's
-	// 25,780 holds one capability's reserve (its prompt and 12,000 for the
-	// reply) and no more.
+	// A quarter of 52,410 is too small to start discovery; proposing uses
+	// 25,620, and the 26,790 left holds one capability's prompt and reply
+	// reserve, not two.
 	code, out, errOut := runInit(env, "--write", "--appetite", "52410")
-	if code != 1 || !strings.Contains(out, "Not yet recovered") {
-		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	if code != 1 || !slices.Equal(a.started, []string{"propose"}) {
+		t.Fatalf("code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
 	}
-	var first, missing string
+	for _, want := range []string{"physa init: stopped before recovering: recovering 2 capabilities needs an appetite of about ",
+		" and has 26,790; no session started, and nothing was spent on recovering. The proposal is stored: physa init --recover --appetite ",
+		" --write continues.\n"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, errOut)
+		}
+	}
+	if !strings.Contains(out, "# Proposed map") || gitIn(t, dir, "branch", "--list", "physa/init") != "" {
+		t.Errorf("the proposal was not shown, or a branch was written:\n%s", out)
+	}
+	st, err := env.Store(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, kept, err := st.Proposed()
+	rows, rerr := st.Recovered()
+	st.Close()
+	if err != nil || rerr != nil || !kept || len(rows) != 0 {
+		t.Fatalf("proposal kept %v (%v), %d recovered rows (%v)", kept, err, len(rows), rerr)
+	}
+
+	n := appetiteIn(t, errOut, "--recover")
+	code, out, errOut = runInit(env, "--recover", "--appetite", n, "--write")
+	if code != 0 || !slices.Equal(a.started, []string{"propose", "delivery", "search"}) && !slices.Equal(a.started, []string{"propose", "search", "delivery"}) {
+		t.Fatalf("recover --write: code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
+	}
 	for _, c := range []string{"delivery", "search"} {
-		if storedRow(t, env, c).File != "" {
-			first = c
-		} else {
-			missing = c
-		}
-	}
-	if first == "" || missing == "" {
-		t.Fatalf("want one recovered and one not; got first %q, missing %q", first, missing)
-	}
-	if files := strings.TrimSpace(gitIn(t, dir, "ls-tree", "--name-only", "physa/init:.physa/capabilities/"+missing)); files != "index.md" {
-		t.Errorf("%s's folder holds %q, want index.md alone", missing, files)
-	}
-	file := gitIn(t, dir, "show", "physa/init:.physa/capabilities/"+missing+"/index.md")
-	if strings.Contains(file, "rules.md") || !strings.Contains(file, "promise: ") {
-		t.Errorf("%s is not promise-only:\n%s", missing, file)
-	}
-	earlier := storedRow(t, env, first).File
-	code, out, errOut = runInit(env, "--recover", "--only", missing, "--write")
-	if code != 0 {
-		t.Fatalf("recover --write: code %d\nstdout %s\nstderr %s", code, out, errOut)
-	}
-	if got := storedRow(t, env, first).File; got != earlier {
-		t.Errorf("the earlier file of %s was not kept:\n%s", first, got)
-	}
-	for _, c := range []string{first, missing} {
 		if f := gitIn(t, dir, "show", "physa/init:.physa/capabilities/"+c+"/rules.md"); !strings.Contains(f, "\n### ") {
-			t.Errorf("rewritten %s holds no rules:\n%s", c, f)
+			t.Errorf("%s holds no rules:\n%s", c, f)
 		}
 	}
-	if !strings.Contains(out, "Recovered 1, not yet recovered 0") || !strings.Contains(out, "Wrote physa/init at ") {
+	if !strings.Contains(out, "Recovered 2, not yet recovered 0") || !strings.Contains(out, "Wrote physa/init at ") {
 		t.Errorf("stdout %s", out)
-	}
-	if n := strings.Count(gitIn(t, dir, "log", "--format=%H", "main..physa/init"), "\n"); n != 1 {
-		t.Errorf("physa/init holds %d changes past main, want one", n)
 	}
 }
 
 func TestFullBreakerWritesNothing(t *testing.T) {
 	remoteRepo(t)
-	f := &fakeAgent{reports: []adapter.Tokens{{Input: 900_000}}, result: adapter.Result{Text: twoReply}}
-	code, _, errOut := runInit(fullEnv(t, onePR(), f), "--write")
+	a := newRoutedAgent()
+	a.propose = 900_000
+	code, _, errOut := runInit(fullEnv(t, onePR(), a), "--write")
 	if code != 1 || !strings.Contains(errOut, "the circuit breaker stopped proposing") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}

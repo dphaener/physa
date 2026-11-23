@@ -1,4 +1,4 @@
-package fit
+package reading
 
 import (
 	"sort"
@@ -111,34 +111,4 @@ func dedupe(sorted []string) []string {
 		}
 	}
 	return out
-}
-
-// clusterTokens is what c costs with its wrapping.
-func clusterTokens(c Cluster) int {
-	n := clusterWrap
-	for _, p := range c.Paths {
-		n += pathWrap + len(p)
-	}
-	return BytesTokens(n)
-}
-
-// fitClusters keeps clusters, in order, within left tokens.
-func fitClusters(changes []store.GatheredChange, left int) ([]Cluster, SourceReport) {
-	r := SourceReport{Name: "clusters"}
-	var kept []Cluster
-	full := true
-	for _, c := range clusters(changes) {
-		n := clusterTokens(c)
-		r.Items++
-		r.Tokens += n
-		if !full || n > left {
-			full = false
-			continue
-		}
-		left -= n
-		r.Kept++
-		r.KeptTokens += n
-		kept = append(kept, c)
-	}
-	return kept, r
 }

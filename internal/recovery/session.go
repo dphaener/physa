@@ -9,7 +9,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/draft"
-	"github.com/dphaener/physa/internal/fit"
+	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/recovering"
 )
 
@@ -24,11 +24,12 @@ type runner struct {
 }
 
 // all runs jobs in order, at most Concurrency at once, and returns one
-// outcome per job. A job starts once its first attempt is reserved; when one
-// cannot be, it and every job after it are not yet recovered.
+// outcome per job. Each first attempt's reservation is queued in the ledger
+// before any starts; once the context ends, jobs not started are not yet
+// recovered.
 func (r *runner) all(ctx context.Context, jobs []job) []Outcome {
 	outcomes := make([]Outcome, len(jobs))
-	var start sync.Mutex // held while the next job is taken and reserved, so jobs start in order
+	var start sync.Mutex // held while the next job is taken, so jobs start in order
 	var wg sync.WaitGroup
 	next, halted := 0, false
 	for range min(Concurrency, len(jobs)) {
@@ -43,10 +44,9 @@ func (r *runner) all(ctx context.Context, jobs []job) []Outcome {
 				}
 				i := next
 				next++
-				if !halted && (ctx.Err() != nil || !r.ledger.reserve(jobs[i].reserve)) {
-					halted = true
-				}
+				halted = halted || ctx.Err() != nil
 				run := !halted
+				r.ledger.start(jobs[i].reserve, run)
 				start.Unlock()
 
 				if run {
@@ -142,7 +142,7 @@ func (r *runner) capability(ctx context.Context, j job) Outcome {
 			break
 		}
 		message := recovering.Retry(problems)
-		reserved = res.Tokens.Input + res.Tokens.Output + int64(fit.Tokens(message)+Limits.ReplyReserve)
+		reserved = res.Tokens.Input + res.Tokens.Output + int64(reading.Tokens(message)+ReplyReserve)
 		if !r.ledger.reserve(reserved) {
 			starved = true
 			break

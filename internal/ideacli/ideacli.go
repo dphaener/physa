@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
@@ -24,7 +25,9 @@ func Command(newForge func(dir string) forge.Forge) *cobra.Command {
 }
 
 func (e *Env) command() *cobra.Command {
-	return command.New("idea",
+	var asJSON, addJSON, listJSON, showJSON bool
+	var slug string
+	return command.Declare(command.New("idea",
 		"Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; "+
 			"its facts say where it stands. A slug left out is chosen from a list on a terminal.",
 		[]string{
@@ -33,22 +36,28 @@ func (e *Env) command() *cobra.Command {
 			"physa idea list [--json]",
 			"physa idea show [<slug>] [--json]",
 		},
-		e.list,
+		func(args []string, stdout, stderr io.Writer) int { return e.list(args, asJSON, stdout, stderr) },
 		leaf("add", `physa idea add "<text>" [--slug <slug>] [--json]`,
-			"Add an idea and print its slug, made from the text unless --slug chooses it.", e.add),
+			"Add an idea and print its slug, made from the text unless --slug chooses it.",
+			func(args []string, stdout, stderr io.Writer) int { return e.add(args, slug, addJSON, stdout, stderr) },
+			func(fs *pflag.FlagSet) { JSON(fs, &addJSON); String(fs, "slug", &slug) }),
 		leaf("list", "physa idea list [--json]",
-			"List the ideas, newest first, with who added them and their facts.", e.list),
+			"List the ideas, newest first, with who added them and their facts.",
+			func(args []string, stdout, stderr io.Writer) int { return e.list(args, listJSON, stdout, stderr) },
+			func(fs *pflag.FlagSet) { JSON(fs, &listJSON) }),
 		leaf("show", "physa idea show [<slug>] [--json]",
-			"Show an idea: its text, who added it, and its pursuits.", e.show))
+			"Show an idea: its text, who added it, and its pursuits.",
+			func(args []string, stdout, stderr io.Writer) int { return e.show(args, showJSON, stdout, stderr) },
+			func(fs *pflag.FlagSet) { JSON(fs, &showJSON) })),
+		func(fs *pflag.FlagSet) { JSON(fs, &asJSON) })
 }
 
-func leaf(name, usage, summary string, run func(args []string, stdout, stderr io.Writer) int) *cobra.Command {
-	return command.New(name, summary, []string{usage}, run)
+func leaf(name, usage, summary string, run command.Run, flags func(*pflag.FlagSet)) *cobra.Command {
+	return command.Declare(command.New(name, summary, []string{usage}, run), flags)
 }
 
-func (e *Env) add(args []string, stdout, stderr io.Writer) int {
-	f, ok := Parse(args, "slug", "json")
-	if !ok || len(f.Args) != 1 {
+func (e *Env) add(args []string, slug string, asJSON bool, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
 		return command.BadUsage
 	}
 	repo, err := e.Repo()
@@ -60,10 +69,10 @@ func (e *Env) add(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	var out workapi.IdeaOut
-	if err := e.Call("idea.add", workapi.AddIn{Repo: repo, Text: f.Args[0], Slug: f.Slug, Person: who}, &out); err != nil {
+	if err := e.Call("idea.add", workapi.AddIn{Repo: repo, Text: args[0], Slug: slug, Person: who}, &out); err != nil {
 		return Failed(stderr, "idea add", err)
 	}
-	if f.JSON {
+	if asJSON {
 		return Written(stderr, "idea add", output.JSON(stdout, out))
 	}
 	e.View(stdout).Title("Added idea " + out.Slug)
@@ -77,9 +86,8 @@ func (e *Env) Ideas(repo string) ([]workapi.IdeaOut, error) {
 	return out, err
 }
 
-func (e *Env) list(args []string, stdout, stderr io.Writer) int {
-	f, ok := Parse(args, "json")
-	if !ok || len(f.Args) > 0 {
+func (e *Env) list(args []string, asJSON bool, stdout, stderr io.Writer) int {
+	if len(args) > 0 {
 		return command.BadUsage
 	}
 	repo, err := e.Repo()
@@ -90,7 +98,7 @@ func (e *Env) list(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return Failed(stderr, "idea list", err)
 	}
-	if f.JSON {
+	if asJSON {
 		return Written(stderr, "idea list", output.JSON(stdout, ideas))
 	}
 	v := e.View(stdout)
@@ -148,16 +156,15 @@ func (e *Env) chooseIdea(repo string, args []string) (string, error) {
 	return e.ChooseSlug("idea", "", IdeaChoices(ideas))
 }
 
-func (e *Env) show(args []string, stdout, stderr io.Writer) int {
-	f, ok := Parse(args, "json")
-	if !ok || len(f.Args) > 1 {
+func (e *Env) show(args []string, asJSON bool, stdout, stderr io.Writer) int {
+	if len(args) > 1 {
 		return command.BadUsage
 	}
 	repo, err := e.Repo()
 	if err != nil {
 		return Failed(stderr, "idea show", err)
 	}
-	slug, err := e.chooseIdea(repo, f.Args)
+	slug, err := e.chooseIdea(repo, args)
 	if err != nil {
 		return Failed(stderr, "idea show", err)
 	}
@@ -165,7 +172,7 @@ func (e *Env) show(args []string, stdout, stderr io.Writer) int {
 	if err := e.Call("idea.show", workapi.SlugIn{Repo: repo, Slug: slug}, &out); err != nil {
 		return Failed(stderr, "idea show", err)
 	}
-	if f.JSON {
+	if asJSON {
 		return Written(stderr, "idea show", output.JSON(stdout, out))
 	}
 	e.showIdea(e.View(stdout), out)

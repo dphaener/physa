@@ -176,11 +176,18 @@ func TestListsFactsPlainAndFiltered(t *testing.T) {
 
 func TestBadUsageExitsTwo(t *testing.T) {
 	e := newTest(t)
-	for _, args := range [][]string{{"--bogus"}, {"extra"}, {"--limit", "x"}, {"--limit", "0"}, {"--limit"}, {"--json=1"}, {"--pursuit", "a", "--pursuit", "b"}} {
+	for _, args := range [][]string{{"--bogus"}, {"extra"}, {"--limit", "x"}, {"--limit", "0"}, {"--limit"}, {"--json=1"}, {"--pursuit="}, {"--limit=-1"}} {
 		code, out, errs := evidence(e, args...)
 		if code != 2 || out != "" || !strings.Contains(errs, "physa evidence [--capability <slug>]") {
 			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
 		}
+	}
+}
+
+func TestRepeatedFlagLastWins(t *testing.T) {
+	e := newTest(t)
+	if code, out, errs := evidence(e, "--limit", "2", "--limit", "3"); code != 0 || strings.Contains(out, "usage") {
+		t.Errorf("repeated --limit: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 }
 

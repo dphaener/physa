@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
@@ -34,16 +35,24 @@ const noSignal = "none (started before signals)"
 
 func commandsFor(env *ideacli.Env) []*cobra.Command {
 	p := pursuits{env}
-	leaf := func(name, usage, summary string, run func([]string, io.Writer, io.Writer) int) *cobra.Command {
-		return command.New(name, summary, []string{usage}, run)
+	var pursueJSON, groupJSON, listJSON, showJSON, stopJSON, stopYes bool
+	var appetite, signalFrom, stopReason string
+	leaf := func(name, usage, summary string, run command.Run, flags func(*pflag.FlagSet)) *cobra.Command {
+		return command.Declare(command.New(name, summary, []string{usage}, run), flags)
 	}
-	pursue := command.New("pursue",
+	pursue := command.Declare(command.New("pursue",
 		"Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). "+
 			"On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. "+
 			"--appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. "+
 			"Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.",
-		[]string{usagePursue}, p.start)
-	group := command.New("pursuit",
+		[]string{usagePursue}, func(args []string, stdout, stderr io.Writer) int {
+			return p.start(args, appetite, signalFrom, pursueJSON, stdout, stderr)
+		}), func(fs *pflag.FlagSet) {
+		ideacli.String(fs, "appetite", &appetite)
+		ideacli.String(fs, "signal-from", &signalFrom)
+		ideacli.JSON(fs, &pursueJSON)
+	})
+	group := command.Declare(command.New("pursuit",
 		"List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: "+
 			"inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.",
 		[]string{
@@ -54,13 +63,25 @@ func commandsFor(env *ideacli.Env) []*cobra.Command {
 			"physa pursuit plan show [<pursuit>] [--history] [--json]",
 			"physa pursuit work <pursuit>/<change> [--json]",
 		},
-		p.list,
-		leaf("list", "physa pursuit list [--json]", "List the pursuits, newest first, with their appetite and what is spent.", p.list),
-		leaf("show", "physa pursuit show [<slug>] [--json]", "Show a pursuit: its facts, its signal, its progress as facts and what needs its person.", p.show),
+		func(args []string, stdout, stderr io.Writer) int { return p.list(args, groupJSON, stdout, stderr) },
+		leaf("list", "physa pursuit list [--json]", "List the pursuits, newest first, with their appetite and what is spent.",
+			func(args []string, stdout, stderr io.Writer) int { return p.list(args, listJSON, stdout, stderr) },
+			func(fs *pflag.FlagSet) { ideacli.JSON(fs, &listJSON) }),
+		leaf("show", "physa pursuit show [<slug>] [--json]", "Show a pursuit: its facts, its signal, its progress as facts and what needs its person.",
+			func(args []string, stdout, stderr io.Writer) int { return p.show(args, showJSON, stdout, stderr) },
+			func(fs *pflag.FlagSet) { ideacli.JSON(fs, &showJSON) }),
 		leaf("stop", "physa pursuit stop [<slug>] [--reason <text>] [--yes] [--json]",
-			"Stop an active pursuit, asking first on a terminal unless --yes.", p.stop),
+			"Stop an active pursuit, asking first on a terminal unless --yes.",
+			func(args []string, stdout, stderr io.Writer) int {
+				return p.stop(args, stopReason, stopYes, stopJSON, stdout, stderr)
+			},
+			func(fs *pflag.FlagSet) {
+				ideacli.String(fs, "reason", &stopReason)
+				command.Switch(fs, "yes", &stopYes, "")
+				ideacli.JSON(fs, &stopJSON)
+			}),
 		p.planGroup(),
-		workCommand(p))
+		workCommand(p)), func(fs *pflag.FlagSet) { ideacli.JSON(fs, &groupJSON) })
 	return []*cobra.Command{pursue, group}
 }
 
@@ -80,9 +101,8 @@ func (p pursuits) all(repo string) ([]workapi.PursuitOut, error) {
 	return out, err
 }
 
-func (p pursuits) list(args []string, stdout, stderr io.Writer) int {
-	f, ok := ideacli.Parse(args, "json")
-	if !ok || len(f.Args) > 0 {
+func (p pursuits) list(args []string, asJSON bool, stdout, stderr io.Writer) int {
+	if len(args) > 0 {
 		return command.BadUsage
 	}
 	repo, err := p.Repo()
@@ -93,7 +113,7 @@ func (p pursuits) list(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit list", err)
 	}
-	if f.JSON {
+	if asJSON {
 		return ideacli.Written(stderr, "pursuit list", output.JSON(stdout, all))
 	}
 	v := p.View(stdout)
@@ -135,16 +155,15 @@ func (p pursuits) choose(repo string, given string, keep func(workapi.PursuitOut
 	return p.ChooseSlug("pursuit", "", cs)
 }
 
-func (p pursuits) show(args []string, stdout, stderr io.Writer) int {
-	f, ok := ideacli.Parse(args, "json")
-	if !ok || len(f.Args) > 1 {
+func (p pursuits) show(args []string, asJSON bool, stdout, stderr io.Writer) int {
+	if len(args) > 1 {
 		return command.BadUsage
 	}
 	repo, err := p.Repo()
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit show", err)
 	}
-	slug, err := p.choose(repo, firstArg(f.Args), func(workapi.PursuitOut) bool { return true })
+	slug, err := p.choose(repo, firstArg(args), func(workapi.PursuitOut) bool { return true })
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit show", err)
 	}
@@ -152,7 +171,7 @@ func (p pursuits) show(args []string, stdout, stderr io.Writer) int {
 	if err := p.Call("pursuit.show", workapi.SlugIn{Repo: repo, Slug: slug}, &o); err != nil {
 		return ideacli.Failed(stderr, "pursuit show", err)
 	}
-	if f.JSON {
+	if asJSON {
 		return ideacli.Written(stderr, "pursuit show", output.JSON(stdout, o))
 	}
 	showPursuit(p.View(stdout), o)
@@ -193,12 +212,11 @@ func signalText(s workapi.SignalOut) string {
 	return strings.Join(lines, "\n")
 }
 
-func (p pursuits) stop(args []string, stdout, stderr io.Writer) int {
+func (p pursuits) stop(args []string, reason string, yes, asJSON bool, stdout, stderr io.Writer) int {
 	if p.refuse("pursuit.stop", "pursuit stop", stderr) {
 		return 2
 	}
-	f, ok := ideacli.Parse(args, "reason", "yes", "json")
-	if !ok || len(f.Args) > 1 {
+	if len(args) > 1 {
 		return command.BadUsage
 	}
 	repo, err := p.Repo()
@@ -209,11 +227,11 @@ func (p pursuits) stop(args []string, stdout, stderr io.Writer) int {
 	if who == "" {
 		return 2
 	}
-	slug, err := p.choose(repo, firstArg(f.Args), func(o workapi.PursuitOut) bool { return o.State == "active" })
+	slug, err := p.choose(repo, firstArg(args), func(o workapi.PursuitOut) bool { return o.State == "active" })
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit stop", err)
 	}
-	if p.Interactive() && !f.Yes {
+	if p.Interactive() && !yes {
 		yes, err := p.Confirm("Stop pursuit " + slug + "?")
 		if err != nil && !errors.Is(err, picker.ErrAborted) {
 			return ideacli.Failed(stderr, "pursuit stop", err)
@@ -224,10 +242,10 @@ func (p pursuits) stop(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	var o workapi.PursuitOut
-	if err := p.Call("pursuit.stop", workapi.StopIn{Repo: repo, Slug: slug, Reason: f.Reason, Person: who}, &o); err != nil {
+	if err := p.Call("pursuit.stop", workapi.StopIn{Repo: repo, Slug: slug, Reason: reason, Person: who}, &o); err != nil {
 		return ideacli.Failed(stderr, "pursuit stop", err)
 	}
-	if f.JSON {
+	if asJSON {
 		return ideacli.Written(stderr, "pursuit stop", output.JSON(stdout, o))
 	}
 	p.View(stdout).Title("Stopped pursuit " + o.Slug)

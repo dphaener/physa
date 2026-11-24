@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/evidencecli"
@@ -22,16 +23,29 @@ import (
 func (p pursuits) planGroup() *cobra.Command {
 	const set = "physa pursuit plan set [<pursuit>] [--reason <text>] [--from <file>|-] [--json]"
 	const show = "physa pursuit plan show [<pursuit>] [--history] [--json]"
+	var setReason, setFrom string
+	var setJSON, showHistory, showJSON bool
 	return command.New("plan",
 		"Set and show a pursuit's plan: the changes it will land, each in one capability, with what to do and how to tell it is done.",
 		[]string{set, show}, nil,
-		command.New("set",
+		command.Declare(command.New("set",
 			"Set a pursuit's plan as its next revision, reading the plan's JSON from --from, or from stdin off a terminal. "+
 				"A revision after the first needs --reason: what the plan missed. Agents may set a plan.",
-			[]string{set}, p.planSet),
-		command.New("show",
+			[]string{set}, func(args []string, stdout, stderr io.Writer) int {
+				return p.planSet(args, setReason, setFrom, setJSON, stdout, stderr)
+			}), func(fs *pflag.FlagSet) {
+			ideacli.String(fs, "reason", &setReason)
+			ideacli.String(fs, "from", &setFrom)
+			ideacli.JSON(fs, &setJSON)
+		}),
+		command.Declare(command.New("show",
 			"Show a pursuit's current plan and its changes; --history lists every revision, oldest first, with its reason.",
-			[]string{show}, p.planShow))
+			[]string{show}, func(args []string, stdout, stderr io.Writer) int {
+				return p.planShow(args, showHistory, showJSON, stdout, stderr)
+			}), func(fs *pflag.FlagSet) {
+			command.Switch(fs, "history", &showHistory, "")
+			ideacli.JSON(fs, &showJSON)
+		}))
 }
 
 // planInput reads the plan's JSON: from --from (a file, or - for stdin),
@@ -63,12 +77,11 @@ func plural(n int, one, many string) string {
 	return fmt.Sprintf("%d %s", n, many)
 }
 
-func (p pursuits) planSet(args []string, stdout, stderr io.Writer) int {
-	f, ok := ideacli.Parse(args, "reason", "from", "json")
-	if !ok || len(f.Args) > 1 {
+func (p pursuits) planSet(args []string, reason, from string, asJSON bool, stdout, stderr io.Writer) int {
+	if len(args) > 1 {
 		return command.BadUsage
 	}
-	if f.From == "" && p.Interactive() {
+	if from == "" && p.Interactive() {
 		return ideacli.Failed(stderr, "pursuit plan set", &ideacli.UsageError{Msg: "on a terminal the plan comes from a file; pass --from <file>"})
 	}
 	repo, err := p.Repo()
@@ -79,20 +92,20 @@ func (p pursuits) planSet(args []string, stdout, stderr io.Writer) int {
 	if who == "" {
 		return 2
 	}
-	slug, err := p.choose(repo, firstArg(f.Args), func(o workapi.PursuitOut) bool { return o.State == "active" })
+	slug, err := p.choose(repo, firstArg(args), func(o workapi.PursuitOut) bool { return o.State == "active" })
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit plan set", err)
 	}
-	data, err := p.planInput(f.From)
+	data, err := p.planInput(from)
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit plan set", err)
 	}
 	var out workapi.PlanOut
-	in := workapi.PlanSetIn{Repo: repo, Pursuit: slug, Reason: f.Reason, Person: who, Plan: json.RawMessage(data)}
+	in := workapi.PlanSetIn{Repo: repo, Pursuit: slug, Reason: reason, Person: who, Plan: json.RawMessage(data)}
 	if err := p.Call("plan.set", in, &out); err != nil {
 		return ideacli.Failed(stderr, "pursuit plan set", err)
 	}
-	if f.JSON {
+	if asJSON {
 		return ideacli.Written(stderr, "pursuit plan set", output.JSON(stdout, out))
 	}
 	line := fmt.Sprintf("Plan for %s set: revision %d, %s", out.Pursuit, out.N, plural(len(out.Changes), "change", "changes"))
@@ -103,24 +116,23 @@ func (p pursuits) planSet(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func (p pursuits) planShow(args []string, stdout, stderr io.Writer) int {
-	f, ok := ideacli.Parse(args, "history", "json")
-	if !ok || len(f.Args) > 1 {
+func (p pursuits) planShow(args []string, history, asJSON bool, stdout, stderr io.Writer) int {
+	if len(args) > 1 {
 		return command.BadUsage
 	}
 	repo, err := p.Repo()
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit plan show", err)
 	}
-	slug, err := p.choose(repo, firstArg(f.Args), func(workapi.PursuitOut) bool { return true })
+	slug, err := p.choose(repo, firstArg(args), func(workapi.PursuitOut) bool { return true })
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit plan show", err)
 	}
 	var out workapi.PlanOut
-	if err := p.Call("plan.show", workapi.PlanShowIn{Repo: repo, Pursuit: slug, History: f.History}, &out); err != nil {
+	if err := p.Call("plan.show", workapi.PlanShowIn{Repo: repo, Pursuit: slug, History: history}, &out); err != nil {
 		return ideacli.Failed(stderr, "pursuit plan show", err)
 	}
-	if f.JSON {
+	if asJSON {
 		return ideacli.Written(stderr, "pursuit plan show", output.JSON(stdout, out))
 	}
 	v := p.View(stdout)
@@ -134,7 +146,7 @@ func (p pursuits) planShow(args []string, stdout, stderr io.Writer) int {
 	for _, c := range out.Changes {
 		v.Section(c.Name, changeText(c))
 	}
-	if f.History {
+	if history {
 		var lines []string
 		for _, r := range out.History {
 			line := fmt.Sprintf("%d  %s by %s: %s", r.N, ideacli.When(r.At), r.Person, strings.Join(r.Changes, ", "))

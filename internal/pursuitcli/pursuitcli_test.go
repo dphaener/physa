@@ -472,10 +472,14 @@ func TestAgentSessionRefusedBeforeAnything(t *testing.T) {
 	te.pursue("try-a-quiet-mode", "--appetite", "1k")
 	te.env["CLAUDE_CODE_SESSION_ID"], te.env["CLAUDECODE"] = "x", "1"
 	te.e.Person = func(string, forge.Forge, io.Writer) string { t.Error("person asked"); return "" }
-	for _, args := range [][]string{{"try-a-quiet-mode", "--appetite", "1k"}, {"--bogus"}} {
+	for _, args := range [][]string{{"try-a-quiet-mode", "--appetite", "1k"}, {"a", "b"}} {
 		if errs := te.pursueFails(args...); !strings.Contains(errs, "A person must start this pursuit: physa is running inside a Claude Code session.") {
 			t.Errorf("%v: %q", args, errs)
 		}
+	}
+	// A flag pflag rejects is a usage error before the job runs, so it is not refused.
+	if errs := te.pursueFails("--bogus"); !strings.HasPrefix(errs, "usage: physa pursue") {
+		t.Errorf("--bogus: %q", errs)
 	}
 	if errs := te.fails("stop", "try-a-quiet-mode", "--yes"); !strings.Contains(errs, "A person must stop this pursuit: physa is running inside a Claude Code session.") {
 		t.Errorf("stop: %q", errs)

@@ -19,19 +19,18 @@ const usagePursue = "physa pursue [<idea slug>] [--appetite <tokens>] [--signal-
 // start starts a pursuit of an idea: the signal read with --signal-from from
 // a file or stdin, else written by a person in their editor; off a terminal
 // --signal-from is the only way.
-func (p pursuits) start(args []string, stdout, stderr io.Writer) int {
+func (p pursuits) start(args []string, appetite, signalFrom string, asJSON bool, stdout, stderr io.Writer) int {
 	if p.refuse("pursuit.start", "pursue", stderr) {
 		return 2
 	}
-	f, ok := ideacli.Parse(args, "appetite", "signal-from", "json")
-	if !ok || len(f.Args) > 1 {
+	if len(args) > 1 {
 		return command.BadUsage
 	}
-	if f.SignalFrom == "" && !p.Interactive() {
+	if signalFrom == "" && !p.Interactive() {
 		return ideacli.Failed(stderr, "pursue", &ideacli.UsageError{Msg: "off a terminal, give the signal with --signal-from <file>, or --signal-from - to read it from stdin"})
 	}
-	if f.Appetite != "" {
-		if _, err := tokens.Parse(f.Appetite); err != nil {
+	if appetite != "" {
+		if _, err := tokens.Parse(appetite); err != nil {
 			return ideacli.Failed(stderr, "pursue", err)
 		}
 	}
@@ -55,13 +54,14 @@ func (p pursuits) start(args []string, stdout, stderr io.Writer) int {
 			open = append(open, o)
 		}
 	}
-	slug, err := p.ChooseSlug("idea", firstArg(f.Args), ideacli.IdeaChoices(open))
+	slug, err := p.ChooseSlug("idea", firstArg(args), ideacli.IdeaChoices(open))
 	if err != nil {
 		return ideacli.Failed(stderr, "pursue", err)
 	}
 	var sig signal.Signal
-	if f.SignalFrom != "" {
-		md, err := p.ReadFrom(f.SignalFrom)
+	var ok bool
+	if signalFrom != "" {
+		md, err := p.ReadFrom(signalFrom)
 		if err == nil {
 			sig, err = signal.Parse(md, time.Now())
 		}
@@ -72,12 +72,12 @@ func (p pursuits) start(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	var out workapi.PursuitOut
-	in := workapi.StartIn{Repo: repo, Slug: slug, Appetite: f.Appetite, Person: who, Signal: workapi.SignalOut{
+	in := workapi.StartIn{Repo: repo, Slug: slug, Appetite: appetite, Person: who, Signal: workapi.SignalOut{
 		Claim: sig.Claim, For: sig.For, Against: sig.Against, Window: sig.Window, Resolver: sig.Resolver}}
 	if err := p.Call("pursuit.start", in, &out); err != nil {
 		return ideacli.Failed(stderr, "pursue", err)
 	}
-	if f.JSON {
+	if asJSON {
 		return ideacli.Written(stderr, "pursue", output.JSON(stdout, out))
 	}
 	p.View(stdout).Title(fmt.Sprintf("Pursuing %q as %s, appetite %s, read on %s", out.IdeaText, out.Slug, ideacli.Appetite(out.Appetite), sig.Window))

@@ -8,12 +8,12 @@ package evidencecli
 import (
 	"fmt"
 	"io"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
@@ -31,60 +31,37 @@ func Command(newForge func(dir string) forge.Forge) *cobra.Command {
 }
 
 func commandFor(env *ideacli.Env) *cobra.Command {
-	return command.New("evidence",
+	var (
+		in     workapi.EvidenceIn
+		limit  string
+		asJSON bool
+	)
+	return command.Declare(command.New("evidence",
 		"List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. "+
 			"It reads what the engine stored and polls nothing.",
-		[]string{usage}, func(args []string, stdout, stderr io.Writer) int { return run(env, args, stdout, stderr) })
+		[]string{usage}, func(args []string, stdout, stderr io.Writer) int {
+			if len(args) > 0 {
+				return command.BadUsage
+			}
+			if limit != "" {
+				n, err := strconv.Atoi(limit)
+				if err != nil || n < 1 {
+					return command.BadUsage
+				}
+				in.Limit = n
+			}
+			return run(env, in, asJSON, stdout, stderr)
+		}),
+		func(fs *pflag.FlagSet) {
+			in, limit = workapi.EvidenceIn{}, ""
+			ideacli.String(fs, "capability", &in.Capability)
+			ideacli.String(fs, "pursuit", &in.Pursuit)
+			ideacli.String(fs, "limit", &limit)
+			ideacli.JSON(fs, &asJSON)
+		})
 }
 
-// parse reads the flags: --capability, --pursuit and --limit with values, --json
-// alone. ok is false for anything else, a repeated flag or a bad limit.
-func parse(args []string) (in workapi.EvidenceIn, asJSON, ok bool) {
-	seen := map[string]bool{}
-	for i := 0; i < len(args); i++ {
-		name, val, hasVal := strings.Cut(strings.TrimPrefix(args[i], "--"), "=")
-		if !strings.HasPrefix(args[i], "--") || seen[name] || !slices.Contains([]string{"capability", "pursuit", "limit", "json"}, name) {
-			return in, false, false
-		}
-		seen[name] = true
-		if name == "json" {
-			if hasVal {
-				return in, false, false
-			}
-			asJSON = true
-			continue
-		}
-		if !hasVal {
-			if i+1 >= len(args) {
-				return in, false, false
-			}
-			i++
-			val = args[i]
-		}
-		if val == "" {
-			return in, false, false
-		}
-		switch name {
-		case "capability":
-			in.Capability = val
-		case "pursuit":
-			in.Pursuit = val
-		case "limit":
-			n, err := strconv.Atoi(val)
-			if err != nil || n < 1 {
-				return in, false, false
-			}
-			in.Limit = n
-		}
-	}
-	return in, asJSON, true
-}
-
-func run(env *ideacli.Env, args []string, stdout, stderr io.Writer) int {
-	in, asJSON, ok := parse(args)
-	if !ok {
-		return command.BadUsage
-	}
+func run(env *ideacli.Env, in workapi.EvidenceIn, asJSON bool, stdout, stderr io.Writer) int {
 	repo, err := env.Repo()
 	if err != nil {
 		return ideacli.Failed(stderr, "evidence", err)

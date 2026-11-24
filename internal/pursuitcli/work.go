@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/ideacli"
@@ -25,27 +26,31 @@ import (
 const sessionVar = "CLAUDE_CODE_SESSION_ID"
 
 func workCommand(p pursuits) *cobra.Command {
-	return command.New("work",
+	var current, asJSON bool
+	return command.Declare(command.New("work",
 		"Record that this agent session works on a planned change, so its commits carry a Change: trailer. "+
 			"--current prints <pursuit>/<change> for the session, or nothing; it reads the store and never fails.",
-		[]string{"physa pursuit work <pursuit>/<change> [--json]", "physa pursuit work --current"}, p.work)
+		[]string{"physa pursuit work <pursuit>/<change> [--json]", "physa pursuit work --current"},
+		func(args []string, stdout, stderr io.Writer) int {
+			return p.work(args, current, asJSON, stdout, stderr)
+		}),
+		func(fs *pflag.FlagSet) {
+			command.Switch(fs, "current", &current, "")
+			ideacli.JSON(fs, &asJSON)
+		})
 }
 
-func (p pursuits) work(args []string, stdout, stderr io.Writer) int {
-	f, ok := ideacli.Parse(args, "current", "json")
-	if !ok {
-		return command.BadUsage
-	}
-	if f.Current {
-		if len(f.Args) > 0 || f.JSON {
+func (p pursuits) work(args []string, current, asJSON bool, stdout, stderr io.Writer) int {
+	if current {
+		if len(args) > 0 || asJSON {
 			return command.BadUsage
 		}
 		return p.current(stdout, stderr)
 	}
-	if len(f.Args) != 1 {
+	if len(args) != 1 {
 		return command.BadUsage
 	}
-	slug, change, ok := strings.Cut(f.Args[0], "/")
+	slug, change, ok := strings.Cut(args[0], "/")
 	if !ok || slug == "" || change == "" || strings.Contains(change, "/") {
 		return command.BadUsage
 	}
@@ -62,7 +67,7 @@ func (p pursuits) work(args []string, stdout, stderr io.Writer) int {
 	if err := p.Call("pursuit.work", workapi.WorkIn{Repo: repo, Pursuit: slug, Change: change, Session: session}, &out); err != nil {
 		return ideacli.Failed(stderr, "pursuit work", err)
 	}
-	if f.JSON {
+	if asJSON {
 		return ideacli.Written(stderr, "pursuit work", output.JSON(stdout, out))
 	}
 	p.View(stdout).Title(fmt.Sprintf("Session %s works on %s/%s", session, out.Pursuit, out.Change))

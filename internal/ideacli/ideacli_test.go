@@ -181,11 +181,30 @@ func TestAddBadUsage(t *testing.T) {
 	for _, args := range [][]string{
 		{"idea", "add"}, {"idea", "add", "a", "b"}, {"idea", "add", "x", "-s", "y"},
 		{"idea", "add", "x", "--slug"}, {"idea", "add", "x", "--from", "f"}, {"idea", "list", "extra"},
+		{"idea", "add", "x", "--slug="}, {"idea", "add", "x", "--json=maybe"}, {"idea", "add", "x", "--json=false"},
+		{"idea", "list", "--slug", "a"}, {"idea", "show", "a", "b"}, {"idea", "show", "-h"}, {"idea", "-j"},
 	} {
 		code, out, errs := te.run(args...)
 		if code != 2 || out != "" || !strings.Contains(errs, "usage: physa idea") {
 			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
 		}
+	}
+}
+
+func TestIdeaFlagsAreDeclared(t *testing.T) {
+	te := newTest(t)
+	te.must("idea", "add", "First idea", "--slug", "first", "--slug=second")
+	for _, args := range [][]string{
+		{"idea", "--json"}, {"idea", "list", "--json", "--json"}, {"idea", "show", "--json", "second"},
+		{"idea", "show", "--", "second"}, {"idea", "show", "second", "--json"},
+	} {
+		code, out, errs := te.run(args...)
+		if code != 0 || errs != "" || out == "" {
+			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
+		}
+	}
+	if out := te.must("idea", "list", "--json"); !strings.Contains(out, `"slug": "second"`) && !strings.Contains(out, `"slug":"second"`) {
+		t.Errorf("the last --slug wins: %q", out)
 	}
 }
 
@@ -287,34 +306,6 @@ func TestPickerChoosesSlugOnTerminal(t *testing.T) {
 	}
 	te.e.Pick = func(string, []picker.Item) (string, error) { return "", picker.ErrAborted }
 	te.fails("idea", "show")
-}
-
-func TestParse(t *testing.T) {
-	for _, c := range []struct {
-		args    []string
-		allowed []string
-		want    Flags
-		ok      bool
-	}{
-		{[]string{"a", "--json"}, []string{"json"}, Flags{JSON: true, Args: []string{"a"}}, true},
-		{[]string{"--from", "-", "s"}, []string{"from"}, Flags{From: "-", Args: []string{"s"}}, true},
-		{[]string{"--signal-from=sig.md", "s"}, []string{"signal-from"}, Flags{SignalFrom: "sig.md", Args: []string{"s"}}, true},
-		{[]string{"--signal-from", "-"}, []string{"from"}, Flags{}, false},
-		{[]string{"--appetite=200k", "--reason", "why not", "--yes"}, []string{"appetite", "reason", "yes"},
-			Flags{Appetite: "200k", Reason: "why not", Yes: true}, true},
-		{[]string{"-"}, nil, Flags{Args: []string{"-"}}, true},
-		{[]string{"--slug", "a", "--slug", "b"}, []string{"slug"}, Flags{}, false},
-		{[]string{"--slug="}, []string{"slug"}, Flags{}, false},
-		{[]string{"--slug"}, []string{"slug"}, Flags{}, false},
-		{[]string{"--json=true"}, []string{"json"}, Flags{}, false},
-		{[]string{"-j"}, []string{"json"}, Flags{}, false},
-		{[]string{"--reason", "x"}, []string{"json"}, Flags{}, false},
-	} {
-		got, ok := Parse(c.args, c.allowed...)
-		if ok != c.ok || (ok && fmt.Sprint(got) != fmt.Sprint(c.want)) {
-			t.Errorf("Parse(%q, %q) = %+v, %v; want %+v, %v", c.args, c.allowed, got, ok, c.want, c.ok)
-		}
-	}
 }
 
 func TestRepoIsTheRootAbove(t *testing.T) {

@@ -63,6 +63,9 @@ func WriteText(w io.Writer, s Summary) error {
 	p("History: %s, %d with trailers, %s, %d with altered files, %s.",
 		plural(h.Changes, "change", "changes"), h.WithTrailers, plural(h.Reverts, "revert", "reverts"),
 		h.WithAltered, plural(h.DistinctFiles, "distinct file", "distinct files"))
+	if h.Shallow {
+		p("The clone is shallow, so history holds only the changes it fetched. Fetch the full history (git fetch --unshallow) and gather again.")
+	}
 	if r := s.PRs; r.Available {
 		p("PRs: %d, %s (%d requesting changes), %s.", r.Count,
 			plural(r.ReviewComments, "review comment", "review comments"), r.RequestingChanges,

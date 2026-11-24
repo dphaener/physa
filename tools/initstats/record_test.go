@@ -38,7 +38,7 @@ func keep(t *testing.T) string {
 	s := gather.Summary{Version: 1, Store: canary, EstimatedTokens: 470000,
 		Bound:     gather.BoundSummary{Since: canary, HistorySince: "2026-01-02" + canary, MaxPRs: 50, PRLimitReached: true},
 		Docs:      gather.DocsSummary{Count: 3, Bytes: 900, Files: []gather.DocFile{{Path: canary, Kind: canary, Reason: canary}}, Skipped: []gather.Skip{{Path: canary, Why: canary}}},
-		History:   gather.HistorySummary{Changes: 800, DistinctFiles: 4000},
+		History:   gather.HistorySummary{Changes: 800, DistinctFiles: 4000, Shallow: true},
 		PRs:       gather.PRsSummary{Available: true, Reason: canary, Count: 200},
 		Discovery: gather.Discovery{Started: true, Why: canary, Named: 4, Added: 2, Model: canary, Tokens: tok}}
 	var b bytes.Buffer
@@ -107,7 +107,7 @@ func TestRecordKeepsTheNumbers(t *testing.T) {
 	if rec.Date != "2026-11-24" || rec.Physa != "other" || rec.Phases["recovery"].Seconds != 2100 || rec.Phases["recovery"].Exit != 1 {
 		t.Fatalf("meta %+v", rec)
 	}
-	if g := rec.Gather; g == nil || g.EstimatedTokens != 470000 || g.Docs.Count != 3 || g.Docs.Skipped != 1 || g.History.Changes != 800 || g.Discovery.Model != "other" || g.Discovery.Tokens.Input != 1000 ||
+	if g := rec.Gather; g == nil || g.EstimatedTokens != 470000 || g.Docs.Count != 3 || g.Docs.Skipped != 1 || g.History.Changes != 800 || !g.History.Shallow || g.Discovery.Model != "other" || g.Discovery.Tokens.Input != 1000 ||
 		g.Bound.Since != "" || g.Bound.HistorySince != "2026-01-02" || g.Bound.MaxPRs != 50 || !g.Bound.PRLimitReached {
 		t.Fatalf("gather %+v", rec.Gather)
 	}

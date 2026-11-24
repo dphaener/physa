@@ -457,3 +457,26 @@ func TestUseLoginsNamesChangesByLogin(t *testing.T) {
 		t.Errorf("a failing or plain forge changed the authors")
 	}
 }
+
+func TestRunSaysWhenTheCloneIsShallow(t *testing.T) {
+	r := newTestRepo(t)
+	r.commit("feat: first", "a.go")
+	r.commit("feat: second", "b.go")
+	r.commit("feat: third", "a.go")
+	if s, _ := run(t, r, nil, bounds(t)); s.History.Shallow {
+		t.Fatal("a full clone reads as shallow")
+	}
+	shallow := &testRepo{t: t, dir: t.TempDir(), n: r.n}
+	shallow.git("clone", "-q", "--depth", "1", "file://"+r.dir, ".")
+	s, changes := run(t, shallow, nil, bounds(t))
+	if !s.History.Shallow || changes != 1 {
+		t.Fatalf("shallow %v, %d changes", s.History.Shallow, changes)
+	}
+	var b strings.Builder
+	if err := WriteText(&b, s); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), "The clone is shallow") || !strings.Contains(b.String(), "git fetch --unshallow") {
+		t.Fatalf("text does not say the clone is shallow:\n%s", b.String())
+	}
+}

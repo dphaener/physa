@@ -81,6 +81,8 @@ type HistorySummary struct {
 	WithAltered   int `json:"with_altered_files"`
 	DistinctFiles int `json:"distinct_files"`
 	Bytes         int `json:"bytes"`
+	// Shallow is true when the clone is shallow: history is only what was fetched.
+	Shallow bool `json:"shallow"`
 }
 
 // PRsSummary counts the PRs, or says why there are none to count.
@@ -160,6 +162,7 @@ func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now ti
 	}
 	useLogins(f, g.Changes)
 	s.History = summariseHistory(g.Changes)
+	s.History.Shallow = repo.Partial()
 	s.EstimatedTokens = reading.BytesTokens(s.Docs.Bytes + s.History.Bytes + s.PRs.Bytes)
 	return g, s, nil
 }

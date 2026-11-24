@@ -66,12 +66,13 @@ type Gather struct {
 		Skipped int `json:"skipped"`
 	} `json:"docs"`
 	History struct {
-		Changes       int `json:"changes"`
-		WithTrailers  int `json:"with_trailers"`
-		Reverts       int `json:"reverts"`
-		WithAltered   int `json:"with_altered_files"`
-		DistinctFiles int `json:"distinct_files"`
-		Bytes         int `json:"bytes"`
+		Changes       int  `json:"changes"`
+		WithTrailers  int  `json:"with_trailers"`
+		Reverts       int  `json:"reverts"`
+		WithAltered   int  `json:"with_altered_files"`
+		DistinctFiles int  `json:"distinct_files"`
+		Bytes         int  `json:"bytes"`
+		Shallow       bool `json:"shallow"`
 	} `json:"history"`
 	PRs struct {
 		Available         bool `json:"available"`

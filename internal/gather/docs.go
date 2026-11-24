@@ -37,10 +37,8 @@ var ignoredDirs = map[string]bool{"vendor": true, "node_modules": true, "tmp": t
 // five digits. A date is not a number here: folders of dated files, such as
 // session logs named 2026-06-01-x.md or 20260601-x.md, are not decision
 // records, and read whole they can outgrow a session.
-var (
-	numbered = regexp.MustCompile(`^[0-9]{1,5}[-_]`)
-	dated    = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}`)
-)
+var numbered = regexp.MustCompile(`^[0-9]{1,5}[-_]`)
+var dated = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}`)
 
 // Docs reads the repo's docs from the working tree under root: agent docs
 // (including CONTEXT.md), contributing guides, readmes, decisions with

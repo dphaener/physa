@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -121,10 +122,19 @@ func testEnv(t *testing.T, f forge.Forge, a adapter.Adapter) Env {
 	}
 }
 
+// runInit runs "physa init" with args through init's declared command and
+// Run, returning Run's own code (command.BadUsage for a bad line) and its
+// output.
 func runInit(env Env, args ...string) (int, string, string) {
 	var stdout, stderr bytes.Buffer
-	code := Run(args, &stdout, &stderr, env)
+	code := runInitTo(&stdout, &stderr, env, args...)
 	return code, stdout.String(), stderr.String()
+}
+
+func runInitTo(stdout, stderr io.Writer, env Env, args ...string) int {
+	return execute(args, stdout, stderr, func(f Flags, pos, words []string, stdout, stderr io.Writer) int {
+		return Run(f, pos, words, stdout, stderr, env)
+	})
 }
 
 func storedGather(t *testing.T, env Env) store.Gather {

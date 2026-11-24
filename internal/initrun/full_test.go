@@ -270,7 +270,7 @@ func TestFullPlanLineComesFirst(t *testing.T) {
 	a := newRoutedAgent()
 	var seen string
 	a.first = func() { seen = stderr.String() }
-	code := Run([]string{"--yes"}, &bytes.Buffer{}, &stderr, fullEnv(t, onePR(), a))
+	code := runInitTo(&bytes.Buffer{}, &stderr, fullEnv(t, onePR(), a), "--yes")
 	if code != 0 {
 		t.Fatalf("code %d, stderr %s", code, stderr.String())
 	}

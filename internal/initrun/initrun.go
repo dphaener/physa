@@ -54,10 +54,11 @@ type Env struct {
 // the full run stopped before proposing for want of a yes, or some
 // capabilities are not yet recovered (still written with --write), 2 when it
 // could not (a capability failed, the map failed its check, the hook was
-// refused), and command.BadUsage for arguments not understood.
-func Run(args []string, stdout, stderr io.Writer, env Env) int {
-	o, ok := ParseFlags(args, env.Now())
-	if !ok {
+// refused), and command.BadUsage for a bad line. o is the line's flags as
+// Declare read them, args its positionals and words the words typed after
+// init, which a rerun hint repeats.
+func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
+	if !o.read(args, env.Now()) {
 		return command.BadUsage
 	}
 	root, err := filepath.Abs(".")
@@ -81,7 +82,7 @@ func Run(args []string, stdout, stderr io.Writer, env Env) int {
 			fmt.Fprintf(stderr, "physa init: the spend cache was not saved: %v\n", err)
 		}
 	}()
-	r := &run{o: o, env: env, st: st, root: root, args: args, stderr: stderr, cache: cache, p: newPrinter(o, stdout), counts: map[string]spend.Count{}}
+	r := &run{o: o, env: env, st: st, root: root, args: words, stderr: stderr, cache: cache, p: newPrinter(o, stdout), counts: map[string]spend.Count{}}
 	code := 0
 	switch {
 	case o.Propose:

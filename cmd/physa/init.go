@@ -18,10 +18,12 @@ import (
 // initCommand builds physa init: every phase in order, or the one a flag names.
 func initCommand() *cobra.Command {
 	const summary = "Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose or --recover runs one phase."
-	return command.New("init", summary, initrun.Usage,
+	var f initrun.Flags
+	var c *cobra.Command
+	c = command.Declare(command.New("init", summary, initrun.Usage,
 		func(args []string, stdout, stderr io.Writer) int {
 			cache, _ := spend.Path() // no settings directory: prices are kept for the run only
-			return initrun.Run(args, stdout, stderr, initrun.Env{
+			return initrun.Run(f, args, command.Words(c), stdout, stderr, initrun.Env{
 				Store:      openStore,
 				Repo:       git.Open,
 				Forge:      newForge,
@@ -35,5 +37,6 @@ func initCommand() *cobra.Command {
 				Confirm:    func(q string) (bool, error) { return picker.ConfirmOrNo(os.Stdin, os.Stderr, q) },
 				Spend:      cache,
 			})
-		})
+		}), f.Declare)
+	return c
 }

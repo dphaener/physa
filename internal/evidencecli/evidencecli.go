@@ -13,7 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/spf13/cobra"
+
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/output"
@@ -24,18 +26,15 @@ const usage = "physa evidence [--capability <slug>] [--pursuit <slug>] [--limit 
 
 // Command returns the evidence command, naming people through the forge
 // newForge builds for a repo.
-func Command(newForge func(dir string) forge.Forge) *cli.Command {
+func Command(newForge func(dir string) forge.Forge) *cobra.Command {
 	return commandFor(ideacli.New(newForge))
 }
 
-func commandFor(env *ideacli.Env) *cli.Command {
-	return &cli.Command{
-		Name: "evidence",
-		Summary: "List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. " +
+func commandFor(env *ideacli.Env) *cobra.Command {
+	return command.New("evidence",
+		"List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. "+
 			"It reads what the engine stored and polls nothing.",
-		Usage: []string{usage},
-		Run:   func(args []string, stdout, stderr io.Writer) int { return run(env, args, stdout, stderr) },
-	}
+		[]string{usage}, func(args []string, stdout, stderr io.Writer) int { return run(env, args, stdout, stderr) })
 }
 
 // parse reads the flags: --capability, --pursuit and --limit with values, --json
@@ -84,7 +83,7 @@ func parse(args []string) (in workapi.EvidenceIn, asJSON, ok bool) {
 func run(env *ideacli.Env, args []string, stdout, stderr io.Writer) int {
 	in, asJSON, ok := parse(args)
 	if !ok {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	repo, err := env.Repo()
 	if err != nil {

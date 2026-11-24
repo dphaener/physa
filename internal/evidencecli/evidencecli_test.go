@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/apiclient"
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/engine"
 	"github.com/dphaener/physa/internal/enginestart"
 	"github.com/dphaener/physa/internal/forge"
@@ -113,8 +113,8 @@ func newTest(t *testing.T, messages ...string) *ideacli.Env {
 
 func evidence(e *ideacli.Env, args ...string) (int, string, string) {
 	var out, errb bytes.Buffer
-	root := &cli.Command{Name: "physa", Subs: []*cli.Command{commandFor(e)}}
-	code := cli.Dispatch(root, append([]string{"evidence"}, args...), &out, &errb)
+	root := command.New("physa", "", nil, nil, commandFor(e))
+	code := command.Execute(root, append([]string{"evidence"}, args...), &out, &errb)
 	return code, out.String(), errb.String()
 }
 

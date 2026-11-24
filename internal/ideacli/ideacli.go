@@ -8,7 +8,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/spf13/cobra"
+
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/tokens"
@@ -17,41 +19,37 @@ import (
 
 // Command returns the idea group, naming people through the forge newForge
 // builds for a repo.
-func Command(newForge func(dir string) forge.Forge) *cli.Command {
+func Command(newForge func(dir string) forge.Forge) *cobra.Command {
 	return New(newForge).command()
 }
 
-func (e *Env) command() *cli.Command {
-	return &cli.Command{
-		Name: "idea",
-		Summary: "Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; " +
+func (e *Env) command() *cobra.Command {
+	return command.New("idea",
+		"Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; "+
 			"its facts say where it stands. A slug left out is chosen from a list on a terminal.",
-		Usage: []string{
+		[]string{
 			"physa idea [--json]",
 			`physa idea add "<text>" [--slug <slug>] [--json]`,
 			"physa idea list [--json]",
 			"physa idea show [<slug>] [--json]",
 		},
-		Run: e.list,
-		Subs: []*cli.Command{
-			leaf("add", `physa idea add "<text>" [--slug <slug>] [--json]`,
-				"Add an idea and print its slug, made from the text unless --slug chooses it.", e.add),
-			leaf("list", "physa idea list [--json]",
-				"List the ideas, newest first, with who added them and their facts.", e.list),
-			leaf("show", "physa idea show [<slug>] [--json]",
-				"Show an idea: its text, who added it, and its pursuits.", e.show),
-		},
-	}
+		e.list,
+		leaf("add", `physa idea add "<text>" [--slug <slug>] [--json]`,
+			"Add an idea and print its slug, made from the text unless --slug chooses it.", e.add),
+		leaf("list", "physa idea list [--json]",
+			"List the ideas, newest first, with who added them and their facts.", e.list),
+		leaf("show", "physa idea show [<slug>] [--json]",
+			"Show an idea: its text, who added it, and its pursuits.", e.show))
 }
 
-func leaf(name, usage, summary string, run func(args []string, stdout, stderr io.Writer) int) *cli.Command {
-	return &cli.Command{Name: name, Summary: summary, Usage: []string{usage}, Run: run}
+func leaf(name, usage, summary string, run func(args []string, stdout, stderr io.Writer) int) *cobra.Command {
+	return command.New(name, summary, []string{usage}, run)
 }
 
 func (e *Env) add(args []string, stdout, stderr io.Writer) int {
 	f, ok := Parse(args, "slug", "json")
 	if !ok || len(f.Args) != 1 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	repo, err := e.Repo()
 	if err != nil {
@@ -82,7 +80,7 @@ func (e *Env) Ideas(repo string) ([]workapi.IdeaOut, error) {
 func (e *Env) list(args []string, stdout, stderr io.Writer) int {
 	f, ok := Parse(args, "json")
 	if !ok || len(f.Args) > 0 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	repo, err := e.Repo()
 	if err != nil {
@@ -153,7 +151,7 @@ func (e *Env) chooseIdea(repo string, args []string) (string, error) {
 func (e *Env) show(args []string, stdout, stderr io.Writer) int {
 	f, ok := Parse(args, "json")
 	if !ok || len(f.Args) > 1 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	repo, err := e.Repo()
 	if err != nil {

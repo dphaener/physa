@@ -14,8 +14,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-
-	"github.com/dphaener/physa/internal/cli"
 )
 
 func init() {
@@ -152,14 +150,4 @@ func Help(c *cobra.Command, w io.Writer) {
 	for _, s := range subs {
 		fmt.Fprintf(w, "  %s  %s\n", s.Name()+strings.Repeat(" ", width-len(s.Name())), s.Short)
 	}
-}
-
-// FromCLI builds the same tree from an internal/cli command. It lasts only
-// until the engine's packages build their commands with New.
-func FromCLI(c *cli.Command) *cobra.Command {
-	subs := make([]*cobra.Command, len(c.Subs))
-	for i, s := range c.Subs {
-		subs[i] = FromCLI(s)
-	}
-	return New(c.Name, c.Summary, c.Usage, c.Run, subs...)
 }

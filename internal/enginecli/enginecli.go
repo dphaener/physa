@@ -14,7 +14,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/spf13/cobra"
+
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/configdir"
 	"github.com/dphaener/physa/internal/engine"
 	"github.com/dphaener/physa/internal/enginestart"
@@ -33,15 +35,15 @@ const alreadyRunning = 3
 
 // Commands returns the engine and api groups. version is what a foreground
 // engine reports in engine.status.
-func Commands(version string) []*cli.Command {
+func Commands(version string) []*cobra.Command {
 	return commands(version, enginestart.Options{})
 }
 
 // commands builds the groups, starting engines with start's Command, so
 // tests can make sure nothing is spawned.
-func commands(version string, start enginestart.Options) []*cli.Command {
+func commands(version string, start enginestart.Options) []*cobra.Command {
 	g := group{version, start}
-	return []*cli.Command{g.engineCommand(), g.apiCommand()}
+	return []*cobra.Command{g.engineCommand(), g.apiCommand()}
 }
 
 // group is what the commands share: the version a foreground engine
@@ -51,31 +53,27 @@ type group struct {
 	start   enginestart.Options
 }
 
-func (g group) engineCommand() *cli.Command {
-	return &cli.Command{
-		Name: "engine",
-		Summary: "Start, check and stop the machine's one engine: a bare engine prints its status. " +
+func (g group) engineCommand() *cobra.Command {
+	return command.New("engine",
+		"Start, check and stop the machine's one engine: a bare engine prints its status. "+
 			"status and the api commands start the engine when it is not running; stop never does.",
-		Usage: []string{
+		[]string{
 			"physa engine [--json]",
 			"physa engine run [--dir <dir>] [--idle <duration>]",
 			"physa engine start [--idle <duration>] [--json]",
 			"physa engine status [--json]",
 			"physa engine stop [--json]",
 		},
-		Run: g.engineStatus,
-		Subs: []*cli.Command{
-			leaf("run", "physa engine run [--dir <dir>] [--idle <duration>]",
-				"Run the engine in the foreground until it is stopped, interrupted, or idle for --idle (default 30m). "+
-					"--dir is the absolute directory it serves, by default the Physa settings directory; engine start passes it to the engine it starts.", g.engineRun),
-			leaf("start", "physa engine start [--idle <duration>] [--json]",
-				"Start the engine in the background unless it is running, and print its status. --idle applies only to an engine this starts.", g.engineStart),
-			leaf("status", "physa engine status [--json]",
-				"Print the engine's version, pid, start time, API revision and open repos, starting the engine when it is not running.", g.engineStatus),
-			leaf("stop", "physa engine stop [--json]",
-				"Stop the engine and wait until it is gone. No engine running is not an error.", engineStop),
-		},
-	}
+		g.engineStatus,
+		leaf("run", "physa engine run [--dir <dir>] [--idle <duration>]",
+			"Run the engine in the foreground until it is stopped, interrupted, or idle for --idle (default 30m). "+
+				"--dir is the absolute directory it serves, by default the Physa settings directory; engine start passes it to the engine it starts.", g.engineRun),
+		leaf("start", "physa engine start [--idle <duration>] [--json]",
+			"Start the engine in the background unless it is running, and print its status. --idle applies only to an engine this starts.", g.engineStart),
+		leaf("status", "physa engine status [--json]",
+			"Print the engine's version, pid, start time, API revision and open repos, starting the engine when it is not running.", g.engineStatus),
+		leaf("stop", "physa engine stop [--json]",
+			"Stop the engine and wait until it is gone. No engine running is not an error.", engineStop))
 }
 
 // engineRun serves in the foreground until SIGINT or SIGTERM, engine.stop
@@ -83,7 +81,7 @@ func (g group) engineCommand() *cli.Command {
 func (g group) engineRun(args []string, _, stderr io.Writer) int {
 	f, ok := parse(args, "dir", "idle")
 	if !ok || len(f.args) > 0 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	dir, err := f.dir, error(nil)
 	if dir == "" {
@@ -108,7 +106,7 @@ func (g group) engineRun(args []string, _, stderr io.Writer) int {
 func (g group) engineStart(args []string, stdout, stderr io.Writer) int {
 	f, ok := parse(args, "idle", "json")
 	if !ok || len(f.args) > 0 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	dir, err := configdir.Dir()
 	if err != nil {
@@ -146,7 +144,7 @@ func (g group) engineStart(args []string, stdout, stderr io.Writer) int {
 func (g group) engineStatus(args []string, stdout, stderr io.Writer) int {
 	f, ok := parse(args, "json")
 	if !ok || len(f.args) > 0 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	var s engine.Status
 	if err := g.call(0, "engine.status", nil, &s); err != nil {
@@ -177,7 +175,7 @@ func printStatus(p *output.Printer, s engine.Status) {
 func engineStop(args []string, stdout, stderr io.Writer) int {
 	f, ok := parse(args, "json")
 	if !ok || len(f.args) > 0 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	dir, err := configdir.Dir()
 	if err != nil {
@@ -220,8 +218,8 @@ func (g group) call(idle time.Duration, method string, params, result any) error
 }
 
 // leaf is a subcommand with one usage line.
-func leaf(name, usage, summary string, run func(args []string, stdout, stderr io.Writer) int) *cli.Command {
-	return &cli.Command{Name: name, Summary: summary, Usage: []string{usage}, Run: run}
+func leaf(name, usage, summary string, run func(args []string, stdout, stderr io.Writer) int) *cobra.Command {
+	return command.New(name, summary, []string{usage}, run)
 }
 
 // failed prints "physa <name>: <err>" and returns 2.

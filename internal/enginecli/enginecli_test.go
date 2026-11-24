@@ -15,8 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dphaener/physa/internal/apiclient"
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/engine"
 	"github.com/dphaener/physa/internal/enginestart"
 )
@@ -37,7 +39,7 @@ func TestMain(m *testing.M) {
 // testEngine is an engine run in this process for one test.
 type testEngine struct {
 	dir  string // the engine's directory, $XDG_CONFIG_HOME/physa
-	root *cli.Command
+	root *cobra.Command
 }
 
 // newEngine points XDG_CONFIG_HOME at a new short temporary directory,
@@ -96,13 +98,13 @@ func idleDir(t *testing.T) *testEngine {
 		cmd.Env = append(os.Environ(), "PHYSA_ENGINECLI_EXIT1=1")
 		return cmd
 	}}
-	root := &cli.Command{Name: "physa", Subs: commands("test", opts)}
+	root := command.New("physa", "", nil, nil, commands("test", opts)...)
 	return &testEngine{dir: filepath.Join(tmp, "physa"), root: root}
 }
 
 func (te *testEngine) run(args ...string) (int, string, string) {
 	var out, errb bytes.Buffer
-	code := cli.Dispatch(te.root, args, &out, &errb)
+	code := command.Execute(te.root, args, &out, &errb)
 	return code, out.String(), errb.String()
 }
 

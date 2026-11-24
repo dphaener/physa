@@ -40,14 +40,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 // rootCommand builds the tree of commands.
 func rootCommand() *cobra.Command {
 	root := command.New("physa", "Physa: product management for agents.", []string{"physa <command> [--help]"}, nil,
-		checkCommand(), mapCommand(), initCommand(), command.FromCLI(ideacli.Command(newForge)))
-	for _, c := range pursuitcli.Commands(newForge) {
-		root.AddCommand(command.FromCLI(c))
-	}
-	root.AddCommand(command.FromCLI(evidencecli.Command(newForge)))
-	for _, c := range enginecli.Commands(version) {
-		root.AddCommand(command.FromCLI(c))
-	}
+		checkCommand(), mapCommand(), initCommand(), ideacli.Command(newForge))
+	root.AddCommand(pursuitcli.Commands(newForge)...)
+	root.AddCommand(evidencecli.Command(newForge))
+	root.AddCommand(enginecli.Commands(version)...)
 	root.AddCommand(
 		command.New("sync", "Not built yet: it returns with digests, after the engine.", []string{"physa sync"},
 			func(_ []string, _, stderr io.Writer) int {

@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/signal"
@@ -25,7 +25,7 @@ func (p pursuits) start(args []string, stdout, stderr io.Writer) int {
 	}
 	f, ok := ideacli.Parse(args, "appetite", "signal-from", "json")
 	if !ok || len(f.Args) > 1 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	if f.SignalFrom == "" && !p.Interactive() {
 		return ideacli.Failed(stderr, "pursue", &ideacli.UsageError{Msg: "off a terminal, give the signal with --signal-from <file>, or --signal-from - to read it from stdin"})

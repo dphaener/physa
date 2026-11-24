@@ -7,7 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/spf13/cobra"
+
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/evidencecli"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/output"
@@ -17,30 +19,19 @@ import (
 )
 
 // planGroup is the `physa pursuit plan` group: set and show a pursuit's plan.
-func (p pursuits) planGroup() *cli.Command {
-	return &cli.Command{
-		Name:    "plan",
-		Summary: "Set and show a pursuit's plan: the changes it will land, each in one capability, with what to do and how to tell it is done.",
-		Usage: []string{
-			"physa pursuit plan set [<pursuit>] [--reason <text>] [--from <file>|-] [--json]",
-			"physa pursuit plan show [<pursuit>] [--history] [--json]",
-		},
-		Subs: []*cli.Command{
-			{
-				Name:  "set",
-				Usage: []string{"physa pursuit plan set [<pursuit>] [--reason <text>] [--from <file>|-] [--json]"},
-				Summary: "Set a pursuit's plan as its next revision, reading the plan's JSON from --from, or from stdin off a terminal. " +
-					"A revision after the first needs --reason: what the plan missed. Agents may set a plan.",
-				Run: p.planSet,
-			},
-			{
-				Name:    "show",
-				Usage:   []string{"physa pursuit plan show [<pursuit>] [--history] [--json]"},
-				Summary: "Show a pursuit's current plan and its changes; --history lists every revision, oldest first, with its reason.",
-				Run:     p.planShow,
-			},
-		},
-	}
+func (p pursuits) planGroup() *cobra.Command {
+	const set = "physa pursuit plan set [<pursuit>] [--reason <text>] [--from <file>|-] [--json]"
+	const show = "physa pursuit plan show [<pursuit>] [--history] [--json]"
+	return command.New("plan",
+		"Set and show a pursuit's plan: the changes it will land, each in one capability, with what to do and how to tell it is done.",
+		[]string{set, show}, nil,
+		command.New("set",
+			"Set a pursuit's plan as its next revision, reading the plan's JSON from --from, or from stdin off a terminal. "+
+				"A revision after the first needs --reason: what the plan missed. Agents may set a plan.",
+			[]string{set}, p.planSet),
+		command.New("show",
+			"Show a pursuit's current plan and its changes; --history lists every revision, oldest first, with its reason.",
+			[]string{show}, p.planShow))
 }
 
 // planInput reads the plan's JSON: from --from (a file, or - for stdin),
@@ -75,7 +66,7 @@ func plural(n int, one, many string) string {
 func (p pursuits) planSet(args []string, stdout, stderr io.Writer) int {
 	f, ok := ideacli.Parse(args, "reason", "from", "json")
 	if !ok || len(f.Args) > 1 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	if f.From == "" && p.Interactive() {
 		return ideacli.Failed(stderr, "pursuit plan set", &ideacli.UsageError{Msg: "on a terminal the plan comes from a file; pass --from <file>"})
@@ -115,7 +106,7 @@ func (p pursuits) planSet(args []string, stdout, stderr io.Writer) int {
 func (p pursuits) planShow(args []string, stdout, stderr io.Writer) int {
 	f, ok := ideacli.Parse(args, "history", "json")
 	if !ok || len(f.Args) > 1 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	repo, err := p.Repo()
 	if err != nil {

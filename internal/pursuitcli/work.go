@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/spf13/cobra"
+
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/state/plan"
@@ -22,33 +24,30 @@ import (
 // sessionVar is the environment variable that names the agent's session.
 const sessionVar = "CLAUDE_CODE_SESSION_ID"
 
-func workCommand(p pursuits) *cli.Command {
-	return &cli.Command{
-		Name:  "work",
-		Usage: []string{"physa pursuit work <pursuit>/<change> [--json]", "physa pursuit work --current"},
-		Summary: "Record that this agent session works on a planned change, so its commits carry a Change: trailer. " +
+func workCommand(p pursuits) *cobra.Command {
+	return command.New("work",
+		"Record that this agent session works on a planned change, so its commits carry a Change: trailer. "+
 			"--current prints <pursuit>/<change> for the session, or nothing; it reads the store and never fails.",
-		Run: p.work,
-	}
+		[]string{"physa pursuit work <pursuit>/<change> [--json]", "physa pursuit work --current"}, p.work)
 }
 
 func (p pursuits) work(args []string, stdout, stderr io.Writer) int {
 	f, ok := ideacli.Parse(args, "current", "json")
 	if !ok {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	if f.Current {
 		if len(f.Args) > 0 || f.JSON {
-			return cli.BadUsage
+			return command.BadUsage
 		}
 		return p.current(stdout, stderr)
 	}
 	if len(f.Args) != 1 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	slug, change, ok := strings.Cut(f.Args[0], "/")
 	if !ok || slug == "" || change == "" || strings.Contains(change, "/") {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	session := p.Getenv(sessionVar)
 	if session == "" {

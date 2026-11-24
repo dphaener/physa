@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/apiclient"
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/engine"
 	"github.com/dphaener/physa/internal/enginestart"
 	"github.com/dphaener/physa/internal/forge"
@@ -121,8 +121,8 @@ func newTest(t *testing.T) *tenv {
 func (te *tenv) run(args ...string) (int, string, string) {
 	te.t.Helper()
 	var out, errb bytes.Buffer
-	root := &cli.Command{Name: "physa", Subs: []*cli.Command{te.e.command()}}
-	code := cli.Dispatch(root, args, &out, &errb)
+	root := command.New("physa", "", nil, nil, te.e.command())
+	code := command.Execute(root, args, &out, &errb)
 	return code, out.String(), errb.String()
 }
 

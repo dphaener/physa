@@ -7,9 +7,11 @@ import (
 	"io"
 	"os"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dphaener/physa/internal/agentenv"
 	"github.com/dphaener/physa/internal/api"
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/workapi"
 )
@@ -17,33 +19,29 @@ import (
 // getenv is how apiCall finds an agent's session; tests replace it.
 var getenv = os.Getenv
 
-func (g group) apiCommand() *cli.Command {
-	return &cli.Command{
-		Name: "api",
-		Summary: "Call the engine's API by name, for debugging: a bare api lists its methods. " +
+func (g group) apiCommand() *cobra.Command {
+	return command.New("api",
+		"Call the engine's API by name, for debugging: a bare api lists its methods. "+
 			"Each command starts the engine when it is not running.",
-		Usage: []string{
+		[]string{
 			"physa api [--json]",
 			"physa api list [--json]",
 			"physa api describe <method> [--json]",
 			"physa api call <method> [<json>|-]",
 		},
-		Run: g.apiList,
-		Subs: []*cli.Command{
-			leaf("list", "physa api list [--json]",
-				"List the API's methods with their summaries.", g.apiList),
-			leaf("describe", "physa api describe <method> [--json]",
-				"Describe one method: its summary, the schemas of its input and output, examples and notes.", g.apiDescribe),
-			leaf("call", "physa api call <method> [<json>|-]",
-				"Call a method with JSON params (- reads them from stdin; none means {}) and print its result as JSON.", g.apiCall),
-		},
-	}
+		g.apiList,
+		leaf("list", "physa api list [--json]",
+			"List the API's methods with their summaries.", g.apiList),
+		leaf("describe", "physa api describe <method> [--json]",
+			"Describe one method: its summary, the schemas of its input and output, examples and notes.", g.apiDescribe),
+		leaf("call", "physa api call <method> [<json>|-]",
+			"Call a method with JSON params (- reads them from stdin; none means {}) and print its result as JSON.", g.apiCall))
 }
 
 func (g group) apiList(args []string, stdout, stderr io.Writer) int {
 	f, ok := parse(args, "json")
 	if !ok || len(f.args) > 0 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	var methods []api.MethodSummary
 	if err := g.call(0, "api.list", nil, &methods); err != nil {
@@ -65,7 +63,7 @@ func (g group) apiList(args []string, stdout, stderr io.Writer) int {
 func (g group) apiDescribe(args []string, stdout, stderr io.Writer) int {
 	f, ok := parse(args, "json")
 	if !ok || len(f.args) != 1 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	var d api.Description
 	if err := g.call(0, "api.describe", api.DescribeInput{Name: f.args[0]}, &d); err != nil {
@@ -109,7 +107,7 @@ func (g group) apiDescribe(args []string, stdout, stderr io.Writer) int {
 func (g group) apiCall(args []string, stdout, stderr io.Writer) int {
 	f, ok := parse(args)
 	if !ok || len(f.args) < 1 || len(f.args) > 2 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	if agent, in := agentenv.Detect(getenv); in && workapi.PersonOnly(f.args[0]) {
 		return failed(stderr, "api call", errors.New(workapi.Refusal(f.args[0], agent)))

@@ -11,7 +11,7 @@ import (
 
 	"github.com/dphaener/physa/internal/agentenv"
 	"github.com/dphaener/physa/internal/api"
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/configdir"
 	"github.com/dphaener/physa/internal/enginestart"
 	"github.com/dphaener/physa/internal/forge"
@@ -134,14 +134,14 @@ func BadRequest(err error) bool {
 }
 
 // Failed says what went wrong and returns the exit code: for a UsageError
-// its message, then cli.BadUsage so the command's help follows; else
+// its message, then command.BadUsage so the command's help follows; else
 // "physa <name>: <err>" and 2. An engine's refusal is shown as its message
 // alone.
 func Failed(stderr io.Writer, name string, err error) int {
 	var ue *UsageError
 	if errors.As(err, &ue) {
 		fmt.Fprintf(stderr, "physa %s: %s\n", name, ue.Msg)
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	var ae *api.Error
 	if errors.As(err, &ae) && ae.Code == api.CodeBadRequest {

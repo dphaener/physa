@@ -9,7 +9,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/spf13/cobra"
+
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/output"
@@ -20,7 +22,7 @@ import (
 
 // Commands returns `physa pursue` and the pursuit group, naming people
 // through the forge newForge builds for a repo.
-func Commands(newForge func(dir string) forge.Forge) []*cli.Command {
+func Commands(newForge func(dir string) forge.Forge) []*cobra.Command {
 	return commandsFor(ideacli.New(newForge))
 }
 
@@ -30,25 +32,21 @@ type pursuits struct{ *ideacli.Env }
 // signal.
 const noSignal = "none (started before signals)"
 
-func commandsFor(env *ideacli.Env) []*cli.Command {
+func commandsFor(env *ideacli.Env) []*cobra.Command {
 	p := pursuits{env}
-	leaf := func(name, usage, summary string, run func([]string, io.Writer, io.Writer) int) *cli.Command {
-		return &cli.Command{Name: name, Summary: summary, Usage: []string{usage}, Run: run}
+	leaf := func(name, usage, summary string, run func([]string, io.Writer, io.Writer) int) *cobra.Command {
+		return command.New(name, summary, []string{usage}, run)
 	}
-	pursue := &cli.Command{
-		Name: "pursue",
-		Summary: "Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). " +
-			"On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. " +
-			"--appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. " +
+	pursue := command.New("pursue",
+		"Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). "+
+			"On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. "+
+			"--appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. "+
 			"Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.",
-		Usage: []string{usagePursue},
-		Run:   p.start,
-	}
-	group := &cli.Command{
-		Name: "pursuit",
-		Summary: "List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: " +
+		[]string{usagePursue}, p.start)
+	group := command.New("pursuit",
+		"List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: "+
 			"inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.",
-		Usage: []string{
+		[]string{
 			"physa pursuit [list] [--json]",
 			"physa pursuit show [<slug>] [--json]",
 			"physa pursuit stop [<slug>] [--reason <text>] [--yes] [--json]",
@@ -56,17 +54,14 @@ func commandsFor(env *ideacli.Env) []*cli.Command {
 			"physa pursuit plan show [<pursuit>] [--history] [--json]",
 			"physa pursuit work <pursuit>/<change> [--json]",
 		},
-		Run: p.list,
-		Subs: []*cli.Command{
-			leaf("list", "physa pursuit list [--json]", "List the pursuits, newest first, with their appetite and what is spent.", p.list),
-			leaf("show", "physa pursuit show [<slug>] [--json]", "Show a pursuit: its facts, its signal, its progress as facts and what needs its person.", p.show),
-			leaf("stop", "physa pursuit stop [<slug>] [--reason <text>] [--yes] [--json]",
-				"Stop an active pursuit, asking first on a terminal unless --yes.", p.stop),
-			p.planGroup(),
-			workCommand(p),
-		},
-	}
-	return []*cli.Command{pursue, group}
+		p.list,
+		leaf("list", "physa pursuit list [--json]", "List the pursuits, newest first, with their appetite and what is spent.", p.list),
+		leaf("show", "physa pursuit show [<slug>] [--json]", "Show a pursuit: its facts, its signal, its progress as facts and what needs its person.", p.show),
+		leaf("stop", "physa pursuit stop [<slug>] [--reason <text>] [--yes] [--json]",
+			"Stop an active pursuit, asking first on a terminal unless --yes.", p.stop),
+		p.planGroup(),
+		workCommand(p))
+	return []*cobra.Command{pursue, group}
 }
 
 // refuse says a pursuit is only a person's to start or stop when Physa runs
@@ -88,7 +83,7 @@ func (p pursuits) all(repo string) ([]workapi.PursuitOut, error) {
 func (p pursuits) list(args []string, stdout, stderr io.Writer) int {
 	f, ok := ideacli.Parse(args, "json")
 	if !ok || len(f.Args) > 0 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	repo, err := p.Repo()
 	if err != nil {
@@ -143,7 +138,7 @@ func (p pursuits) choose(repo string, given string, keep func(workapi.PursuitOut
 func (p pursuits) show(args []string, stdout, stderr io.Writer) int {
 	f, ok := ideacli.Parse(args, "json")
 	if !ok || len(f.Args) > 1 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	repo, err := p.Repo()
 	if err != nil {
@@ -204,7 +199,7 @@ func (p pursuits) stop(args []string, stdout, stderr io.Writer) int {
 	}
 	f, ok := ideacli.Parse(args, "reason", "yes", "json")
 	if !ok || len(f.Args) > 1 {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	repo, err := p.Repo()
 	if err != nil {

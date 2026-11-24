@@ -11,6 +11,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/draft"
+	"github.com/dphaener/physa/internal/mapping/shareview"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
 )
@@ -64,7 +65,16 @@ type Result struct {
 	Model string
 	// Tokens is what the session used.
 	Tokens adapter.Tokens
+	// Shares and Merge are set only for a proposal made in shares: what each
+	// share's session and the merge's read and used. Then Read is the whole
+	// gather's, PromptTokens is every prompt's together, and Tokens is every
+	// session's together. Both are empty for one session.
+	Shares []Share
+	Merge  *Share
 }
+
+// Share is what one share's session, or the merge's, read and used.
+type Share = shareview.Share
 
 // Stored is the JSON form of store.Proposal's Body: the checked proposal
 // with what was dropped, what was malformed and what the session read.
@@ -73,6 +83,18 @@ type Stored struct {
 	Dropped   Dropped     `json:"dropped"`
 	Malformed []Malformed `json:"malformed"`
 	Read      Reading     `json:"read"`
+	// Sessions are every session the proposal ran, the shares' in order and
+	// then the merge's; empty for one session, whose id the store holds.
+	Sessions []string `json:"sessions,omitempty"`
+}
+
+// Ran returns the sessions the proposal ran: Sessions, or just id, the
+// proposal's own, when it ran one session.
+func (s Stored) Ran(id string) []string {
+	if len(s.Sessions) == 0 {
+		return []string{id}
+	}
+	return append([]string{}, s.Sessions...)
 }
 
 // Propose is init's second phase end to end. It reads the stored gather,

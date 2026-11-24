@@ -751,3 +751,79 @@ func TestCheckKeepsOnlyGatheredDocs(t *testing.T) {
 		t.Errorf("the missing doc was not dropped with its reason: %+v", d)
 	}
 }
+
+func sharesResult() Result {
+	r := smallResult()
+	r.Shares = []Share{
+		{Read: reading.Report{Tokens: 500, Sources: []reading.SourceReport{{Name: "docs", Items: 2, Tokens: 500}}}, PromptTokens: 900,
+			SessionID: "share-a", Model: "m", Tokens: adapter.Tokens{Input: 10, CachedInput: 2, Output: 3}},
+		{Read: reading.Report{Tokens: 300, Sources: []reading.SourceReport{{Name: "pull requests", Items: 4, Tokens: 300}}}, PromptTokens: 700,
+			SessionID: "share-b", Model: "m", Tokens: adapter.Tokens{Input: 20, Output: 4}},
+	}
+	r.Merge = &Share{PromptTokens: 400, SessionID: "merge-c", Model: "m", Tokens: adapter.Tokens{Input: 5, Output: 1}}
+	r.PromptTokens = 2000
+	r.Tokens = adapter.Tokens{Input: 35, CachedInput: 2, Output: 8}
+	return r
+}
+
+func TestWriteTextListsEachShareAndTheMerge(t *testing.T) {
+	var b bytes.Buffer
+	if err := WriteText(&b, sharesResult()); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Every source whole, about 800 tokens, in 2 shares and a merge, prompts of about 2000 tokens together.\n",
+		"Share 1 of 2, about 500 tokens in a prompt of about 900 tokens\n\n  - ",
+		"Share 2 of 2, about 300 tokens in a prompt of about 700 tokens\n",
+		"The merge read only the shares' proposals, in a prompt of about 400 tokens.\n",
+		"- share 1: id share-a, model m, tokens 10 in (2 cached), 3 out\n",
+		"- share 2: id share-b,", "- merge: id merge-c,", "- total tokens: 35 in (2 cached), 8 out\n",
+	} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("text lacks %q:\n%s", want, b.String())
+		}
+	}
+}
+
+func TestWriteJSONListsEachShareAndTheMerge(t *testing.T) {
+	var b bytes.Buffer
+	if err := WriteJSON(&b, sharesResult()); err != nil {
+		t.Fatal(err)
+	}
+	var got struct{ Read Reading }
+	if err := json.Unmarshal(b.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Read.Shares) != 2 || got.Read.Shares[1].Session.ID != "share-b" || got.Read.Shares[0].SourceTokens != 500 ||
+		got.Read.Merge == nil || got.Read.Merge.Session.ID != "merge-c" || got.Read.Merge.PromptTokens != 400 || got.Read.Merge.Sources == nil {
+		t.Errorf("read = %+v", got.Read)
+	}
+	var one bytes.Buffer
+	if err := WriteJSON(&one, smallResult()); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(one.String(), `"shares"`) || strings.Contains(one.String(), `"merge"`) {
+		t.Errorf("one session's JSON names shares:\n%s", one.String())
+	}
+}
+
+func TestStoredSessionsRoundTrip(t *testing.T) {
+	in := Stored{Sessions: []string{"a", "b", "merge"}}
+	b, err := json.Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out Stored
+	if err := json.Unmarshal(b, &out); err != nil || !reflect.DeepEqual(out.Sessions, in.Sessions) {
+		t.Errorf("round trip = %v, %v", out.Sessions, err)
+	}
+	if got := out.Ran("x"); !reflect.DeepEqual(got, in.Sessions) {
+		t.Errorf("Ran = %v", got)
+	}
+	if got := (Stored{}).Ran("x"); !reflect.DeepEqual(got, []string{"x"}) {
+		t.Errorf("one session Ran = %v", got)
+	}
+	if b, _ := json.Marshal(Stored{}); strings.Contains(string(b), "sessions") {
+		t.Errorf("one session stores sessions: %s", b)
+	}
+}

@@ -6,8 +6,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/draft"
+	"github.com/dphaener/physa/internal/mapping/shareview"
 )
 
 // ResultVersion is the version of a Result's JSON form. It changes only when
@@ -25,19 +25,22 @@ type Reading struct {
 	Sources      []ReadSource `json:"sources"`
 	// Lines says per source what was read, as reading.Report.Lines does.
 	Lines []string `json:"lines"`
+	// Shares and Merge are set only for a proposal made in shares.
+	Shares []shareview.JSON `json:"shares,omitempty"`
+	Merge  *shareview.JSON  `json:"merge,omitempty"`
 }
 
 // ReadSource is reading.SourceReport in its JSON form.
-type ReadSource struct {
-	Name   string `json:"name"`
-	Items  int    `json:"items"`
-	Tokens int    `json:"tokens"`
-}
+type ReadSource = shareview.Source
 
 func read(r Result) Reading {
-	f := Reading{PromptTokens: r.PromptTokens, SourceTokens: r.Read.Tokens, Sources: []ReadSource{}, Lines: orEmpty(r.Read.Lines())}
-	for _, s := range r.Read.Sources {
-		f.Sources = append(f.Sources, ReadSource{Name: s.Name, Items: s.Items, Tokens: s.Tokens})
+	f := Reading{PromptTokens: r.PromptTokens, SourceTokens: r.Read.Tokens, Sources: shareview.Sources(r.Read), Lines: orEmpty(r.Read.Lines())}
+	for _, s := range r.Shares {
+		f.Shares = append(f.Shares, s.JSON())
+	}
+	if r.Merge != nil {
+		m := r.Merge.JSON()
+		f.Merge = &m
 	}
 	return f
 }
@@ -104,12 +107,21 @@ func WriteText(w io.Writer, r Result) error {
 		}
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "## Read\n\nEvery source whole, about %s, in a prompt of about %s.\n\n", plural(r.Read.Tokens, "token", "tokens"), plural(r.PromptTokens, "token", "tokens"))
-	for _, l := range r.Read.Lines() {
-		b.WriteString("- " + l + "\n")
+	b.WriteString("## Read\n\n")
+	if len(r.Shares) > 0 {
+		shareview.Read(&b, r.Read.Tokens, r.PromptTokens, r.Shares, r.Merge)
+	} else {
+		fmt.Fprintf(&b, "Every source whole, about %s, in a prompt of about %s.\n\n", plural(r.Read.Tokens, "token", "tokens"), plural(r.PromptTokens, "token", "tokens"))
+		for _, l := range r.Read.Lines() {
+			b.WriteString("- " + l + "\n")
+		}
 	}
 	b.WriteString("\n## Session\n\n")
-	fmt.Fprintf(&b, "- id: %s\n- model: %s\n- tokens: %s\n", orNone(r.SessionID), orNone(r.Model), r.Tokens)
+	if len(r.Shares) > 0 {
+		shareview.Sessions(&b, r.Shares, r.Merge, r.Tokens)
+	} else {
+		fmt.Fprintf(&b, "- id: %s\n- model: %s\n- tokens: %s\n", orNone(r.SessionID), orNone(r.Model), r.Tokens)
+	}
 	_, err := io.WriteString(w, b.String())
 	return err
 }
@@ -143,11 +155,7 @@ type resultJSON struct {
 	Session      sessionJSON  `json:"session"`
 }
 
-type sessionJSON struct {
-	ID     string         `json:"id"`
-	Model  string         `json:"model"`
-	Tokens adapter.Tokens `json:"tokens"`
-}
+type sessionJSON = shareview.Session
 
 // WriteJSON writes r in its versioned JSON form, indented, holding what
 // WriteText shows, with empty lists as [].

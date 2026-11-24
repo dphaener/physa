@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
+	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
@@ -429,5 +431,36 @@ func TestRecoverFailedExitsTwo(t *testing.T) {
 	code, out, _ := runInit(env, "--recover", "--only", "delivery")
 	if code != 2 || !strings.Contains(out, "## delivery: failed") {
 		t.Errorf("code %d, stdout %q", code, out)
+	}
+}
+
+func TestStoredMapGivesOneSessionPerShareAndTheMerge(t *testing.T) {
+	env := proposedEnv(t, nil)
+	st, err := env.Store(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	prop, ok, err := st.Proposed()
+	if err != nil || !ok {
+		t.Fatalf("proposed: ok %v, err %v", ok, err)
+	}
+	m, err := storedMap(st, "repo", env)
+	if err != nil || len(m.Sessions) != 1 || m.Sessions[0] != prop.SessionID {
+		t.Fatalf("one session: %v, %v; want [%s]", m.Sessions, err, prop.SessionID)
+	}
+	var s mapping.Stored
+	if err := json.Unmarshal(prop.Body, &s); err != nil {
+		t.Fatal(err)
+	}
+	s.Sessions = []string{"share-1", "share-2", "merge"}
+	if prop.Body, err = json.Marshal(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutProposal(prop); err != nil {
+		t.Fatal(err)
+	}
+	if m, err = storedMap(st, "repo", env); err != nil || !reflect.DeepEqual(m.Sessions, s.Sessions) {
+		t.Errorf("in shares: %v, %v; want %v", m.Sessions, err, s.Sessions)
 	}
 }

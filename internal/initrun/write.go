@@ -52,7 +52,7 @@ func storedMap(st *store.Store, root string, env Env) (initbranch.Map, error) {
 		return initbranch.Map{}, err
 	}
 	m := initbranch.Map{ProductName: newcodebase.TitleCase(filepath.Base(root)), ProductPromise: s.Proposal.Product.Promise,
-		Sessions: []string{prop.SessionID}, Date: env.Now()}
+		Sessions: s.Ran(prop.SessionID), Date: env.Now()}
 	for _, q := range s.Proposal.Questions {
 		m.ProductQuestions = append(m.ProductQuestions, initbranch.Question{Question: q.Question, SuggestedBy: q.SuggestedBy})
 	}

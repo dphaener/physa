@@ -266,10 +266,10 @@ func (e *entries) Set(s string) error { e.list = append(e.list, s); return nil }
 func (e *entries) Type() string       { return "entry" }
 func (e *entries) Reset()             { e.list = nil }
 
-// declaredTree builds: physa (raw) > dec (declared, with flags), quiet
-// (declared, no flags) and raw (raw). dec prints its flags, its
-// positionals and the words typed after its name; it returns BadUsage for
-// more than three positionals.
+// declaredTree builds: physa > dec (with flags), quiet (declared with no
+// flags) and plain (never declared). dec prints its flags, its positionals
+// and the words typed after its name; it returns BadUsage for more than
+// three positionals.
 func declaredTree() *cobra.Command {
 	var (
 		asJSON bool
@@ -298,7 +298,7 @@ func declaredTree() *cobra.Command {
 	return New("physa", "test root", []string{"physa <command>"}, nil,
 		dec,
 		Declare(New("quiet", "takes no flags", []string{"physa quiet"}, echo("quiet")), nil),
-		New("raw", "raw mode", []string{"physa raw"}, echo("raw")),
+		New("plain", "never declared", []string{"physa plain [<arg>...]"}, echo("plain")),
 	)
 }
 
@@ -330,14 +330,15 @@ func TestDeclaredParsesFlagsAndPassesPositionals(t *testing.T) {
 	}
 }
 
-func TestDeclaredModeParsesFlagsWithArbitraryArgs(t *testing.T) {
+func TestEveryCommandParsesFlagsWithArbitraryArgs(t *testing.T) {
 	root := declaredTree()
-	dec := root.Commands()[0]
-	if dec.DisableFlagParsing || dec.Args == nil || dec.Args(dec, []string{"a", "b", "c", "d", "e"}) != nil {
-		t.Fatalf("dec: DisableFlagParsing %v, Args take any count: %v", dec.DisableFlagParsing, dec.Args != nil)
-	}
-	if !root.Commands()[2].DisableFlagParsing {
-		t.Fatal("a command built with New left raw mode")
+	for _, c := range append([]*cobra.Command{root}, root.Commands()...) {
+		if c.Args == nil || c.Args(c, []string{"a", "b", "c", "d", "e"}) != nil {
+			t.Fatalf("%s: Args do not take any count", c.Name())
+		}
+		if code, _, _ := execute(root, append(strings.Fields(c.CommandPath())[1:], "--bogus")...); code != 2 {
+			t.Fatalf("%s --bogus: got %d", c.CommandPath(), code)
+		}
 	}
 	code, out, errs := execute(root, "dec", "a", "b", "c", "d")
 	if code != 2 || out != "" || errs != decHelp(t) {
@@ -402,11 +403,11 @@ func TestDeclaredHelpFlagHasNoShorthand(t *testing.T) {
 	}
 }
 
-func TestDeclaredHelpMatchesRawHelp(t *testing.T) {
-	var raw bytes.Buffer
-	Help(New("dec", "a declared command", []string{"physa dec [<arg>...] [--json] [--slug <slug>] [--limit N] [--tag T]... [--entry E]"}, nil), &raw)
-	if got := decHelp(t); got != raw.String() {
-		t.Fatalf("got %q, want %q", got, raw.String())
+func TestDeclaredHelpMatchesUndeclaredHelp(t *testing.T) {
+	var plain bytes.Buffer
+	Help(New("dec", "a declared command", []string{"physa dec [<arg>...] [--json] [--slug <slug>] [--limit N] [--tag T]... [--entry E]"}, nil), &plain)
+	if got := decHelp(t); got != plain.String() {
+		t.Fatalf("got %q, want %q", got, plain.String())
 	}
 }
 
@@ -425,21 +426,49 @@ func TestDeclaredFlagsResetForEachLine(t *testing.T) {
 		t.Fatalf("third line: got %d %q", code, out)
 	}
 	for _, f := range []string{"json", "slug", "limit", "tag", "entry"} {
-		execute(root, "raw")
+		execute(root, "plain")
 		if root.Commands()[0].Flags().Lookup(f).Changed {
 			t.Errorf("--%s still changed", f)
 		}
 	}
 }
 
-func TestRawModeUnchangedBesideDeclared(t *testing.T) {
-	code, out, _ := execute(declaredTree(), "raw", "--bogus", "-h", "--", "x")
-	if code != 0 || out != "raw --bogus,-h,--,x\n" {
-		t.Fatalf("got %d %q", code, out)
+// TestUndeclaredCommandTakesNoFlags: a command New built and Declare never
+// touched parses like one declared with no flags.
+func TestUndeclaredCommandTakesNoFlags(t *testing.T) {
+	for _, args := range [][]string{
+		{"plain", "--bogus"},
+		{"plain", "-h"},
+		{"plain", "x", "--json"},
+		{"plain", "--help=false"},
+		{"--bogus"},
+		{"-h"},
+	} {
+		code, out, errs := execute(declaredTree(), args...)
+		if code != 2 || out != "" || errs == "" {
+			t.Errorf("%v: got %d %q %q", args, code, out, errs)
+		}
 	}
-	if w := Words(declaredTree().Commands()[2]); w != nil {
-		t.Fatalf("raw command has words %q", w)
+	code, out, errs := execute(declaredTree(), "plain", "x", "--", "-h", "--bogus")
+	if code != 0 || out != "plain x,-h,--bogus\n" || errs != "" {
+		t.Fatalf("after --: got %d %q %q", code, out, errs)
 	}
+	code, out, _ = execute(declaredTree(), "plain", "a", "--help")
+	if code != 0 || !strings.HasPrefix(out, "usage: physa plain") {
+		t.Fatalf("--help: got %d %q", code, out)
+	}
+	if w := Words(&cobra.Command{Use: "foreign"}); w != nil {
+		t.Fatalf("a command New did not build has words %q", w)
+	}
+}
+
+func TestDeclareNeedsACommandFromNew(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("Declare took a command New did not build")
+		}
+	}()
+	Declare(&cobra.Command{Use: "foreign"}, nil)
 }
 
 func TestCompletionAnswersFromDeclarations(t *testing.T) {
@@ -474,11 +503,12 @@ func TestDrift(t *testing.T) {
 			fs.String("from", "", "")
 			fs.Bool("write", false, "")
 		}),
-		New("raw", "", []string{"physa raw [--anything]"}, nil),
+		New("plain", "", []string{"physa plain [--anything]"}, nil),
 	)
 	want := []string{
 		"physa grp: declares --quiet, which its usage lines don't name",
 		"physa odd: its usage lines name --push, which it doesn't declare",
+		"physa plain: its usage lines name --anything, which it doesn't declare",
 	}
 	if got := Drift(root); !slices.Equal(got, want) {
 		t.Fatalf("got %q\nwant %q", got, want)

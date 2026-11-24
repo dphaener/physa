@@ -1,16 +1,14 @@
 // Package command runs physa's commands on Cobra. Cobra holds the tree of
-// grouped commands, routes a command line to the command it names and hands
-// out help. A command runs in one of two modes until every command has moved:
-// in raw mode it keeps its own arguments and parses them itself, so Cobra
-// parses none of its flags; in declared mode it declares its flags once, on
-// its own Cobra command, pflag parses them and its job gets the positionals.
-// --help anywhere after a command's name prints its help to stdout; a bad
-// line, a bad flag included, prints that command's help to stderr and exits
-// 2, with no error text of its own. Names match exactly: there are no
-// aliases, no short flags (-h included), no prefix matching and no
+// grouped commands, routes a command line to the command it names and parses
+// every command's flags from its declaration: a command declares its flags
+// once, on its own Cobra command, and its job gets only the positionals.
+// Help prints the command's usage lines, its summary and its subcommands.
+// --help anywhere after a command's name prints its help to stdout; -h is
+// not a flag. A bad line, a bad flag included, prints that command's help to
+// stderr and exits 2, with no error text of its own. Names match exactly:
+// there are no aliases, no short flags, no prefix matching and no
 // suggestions. Shell completion comes from the declarations through a hidden
-// completion command. Drift ties each declared command's usage lines to its
-// flags.
+// completion command. Drift ties every command's usage lines to its flags.
 package command
 
 import (
@@ -49,25 +47,16 @@ func (e exitCode) Error() string { return fmt.Sprintf("exit %d", int(e)) }
 
 // New builds a command named name with its summary, its usage lines (each a
 // full command line such as "physa map index [dir]"), the job run does (nil
-// for a group with no bare job) and its subcommands, in order.
+// for a group with no bare job) and its subcommands, in order. It takes no
+// flags until Declare gives it some, so any flag is a bad flag.
 func New(name, summary string, usage []string, run Run, subs ...*cobra.Command) *cobra.Command {
 	c := &cobra.Command{
-		Use:                name,
-		Short:              summary,
-		DisableFlagParsing: true,
-		Args:               cobra.ArbitraryArgs,
+		Use:   name,
+		Short: summary,
+		Args:  cobra.ArbitraryArgs,
 		RunE: func(c *cobra.Command, args []string) error {
-			// A declared command's --help was handled by Execute, before pflag.
-			raw := declared(c) == nil
-			if raw && slices.Contains(args, "--help") {
-				Help(c, c.OutOrStdout())
-				return nil
-			}
-			if !raw && emptyValue(c.Flags()) {
-				Help(c, c.ErrOrStderr())
-				return exitCode(2)
-			}
-			if run == nil {
+			// --help was handled by Execute, before pflag.
+			if emptyValue(c.Flags()) || run == nil {
 				Help(c, c.ErrOrStderr())
 				return exitCode(2)
 			}
@@ -82,9 +71,14 @@ func New(name, summary string, usage []string, run Run, subs ...*cobra.Command) 
 			return nil
 		},
 	}
+	c.SetFlagErrorFunc(func(c *cobra.Command, _ error) error {
+		Help(c, c.ErrOrStderr())
+		return exitCode(2)
+	})
 	if len(usage) > 0 {
 		c.Annotations = map[string]string{usageKey: strings.Join(usage, "\n")}
 	}
+	redeclare(c, &helpFlag{})
 	c.AddCommand(subs...)
 	return c
 }
@@ -105,7 +99,7 @@ func Execute(root *cobra.Command, args []string, stdout, stderr io.Writer) int {
 	root.SetHelpFunc(func(c *cobra.Command, _ []string) { Help(c, c.OutOrStdout()) })
 	redeclareTree(root)
 	if c, rest, err := root.Find(args); err == nil {
-		if h := declared(c); h != nil {
+		if h := own(c); h != nil {
 			h.words = append([]string{}, rest...)
 			if slices.Contains(rest, "--help") {
 				Help(c, stdout)
@@ -155,35 +149,35 @@ type Resetter interface {
 	Reset()
 }
 
-// Declare switches c, built by New, to declared mode: flags declares c's
-// flags on fs, and pflag parses them, so c's job gets only its positionals.
-// flags runs again before every command line Execute runs, so each line
-// starts from the defaults; a value it does not build afresh implements
-// Resetter. A bad flag, a missing or invalid value, a shorthand such as -h
-// and an empty string value print c's help to stderr and exit 2. flags may
-// be nil for a command that takes none; it must not declare help.
+// Declare gives c, built by New, its flags: flags declares them on fs, and
+// pflag parses them, so c's job gets only its positionals. flags runs again
+// before every command line Execute runs, so each line starts from the
+// defaults; a value it does not build afresh implements Resetter. A bad
+// flag, a missing or invalid value, a shorthand such as -h and an empty
+// string value print c's help to stderr and exit 2. flags must not declare
+// help.
 func Declare(c *cobra.Command, flags func(fs *pflag.FlagSet)) *cobra.Command {
-	c.DisableFlagParsing = false
-	c.SetFlagErrorFunc(func(c *cobra.Command, _ error) error {
-		Help(c, c.ErrOrStderr())
-		return exitCode(2)
-	})
-	redeclare(c, &helpFlag{declare: flags})
+	h := own(c)
+	if h == nil {
+		panic("command.Declare: " + c.Name() + " was not built by New")
+	}
+	h.declare = flags
+	redeclare(c, h)
 	return c
 }
 
 // Words returns the words typed after c's name on the line Execute is
-// running, in order and unparsed, or nil for a command in raw mode.
+// running, in order and unparsed, or nil for a command New did not build.
 func Words(c *cobra.Command) []string {
-	if h := declared(c); h != nil {
+	if h := own(c); h != nil {
 		return append([]string{}, h.words...)
 	}
 	return nil
 }
 
-// helpFlag is a declared command's --help, hidden and without a shorthand.
-// It also keeps the command's declaration and the words of the line being
-// run, so a declared command carries its own state.
+// helpFlag is a command's --help, hidden and without a shorthand. It also
+// keeps the command's declaration and the words of the line being run, so a
+// command carries its own state.
 type helpFlag struct {
 	on      bool
 	declare func(*pflag.FlagSet)
@@ -202,11 +196,9 @@ func (h *helpFlag) Set(s string) error {
 	return nil
 }
 
-// declared returns c's help flag when c is in declared mode, else nil.
-func declared(c *cobra.Command) *helpFlag {
-	if c.DisableFlagParsing {
-		return nil
-	}
+// own returns c's help flag when New built c, else nil: Cobra's own
+// completion commands have none.
+func own(c *cobra.Command) *helpFlag {
 	if f := c.Flags().Lookup("help"); f != nil {
 		if h, ok := f.Value.(*helpFlag); ok {
 			return h
@@ -215,9 +207,9 @@ func declared(c *cobra.Command) *helpFlag {
 	return nil
 }
 
-// redeclareTree gives every declared command under root fresh flags.
+// redeclareTree gives every command under root that New built fresh flags.
 func redeclareTree(root *cobra.Command) {
-	if h := declared(root); h != nil {
+	if h := own(root); h != nil {
 		redeclare(root, h)
 	}
 	for _, s := range root.Commands() {
@@ -227,7 +219,7 @@ func redeclareTree(root *cobra.Command) {
 
 // redeclare replaces c's flags with a fresh declaration, so every value is
 // back to its default and no flag is changed. The help flag takes no
-// optional value, so routing reads --help as it does in raw mode, and
+// optional value, so routing reads --help as a flag with a value, and
 // Execute prints help for a bare --help before pflag sees it.
 func redeclare(c *cobra.Command, h *helpFlag) {
 	c.ResetFlags()
@@ -261,16 +253,12 @@ func emptyValue(fs *pflag.FlagSet) bool {
 	return empty
 }
 
-// Drift returns one line per mismatch between a declared command's usage
-// lines and its flags: a visible flag its usage lines don't name, or a
-// --flag they name that it doesn't declare. A usage line that names one of
-// the command's subcommands belongs to that subcommand. Commands in raw mode
-// are skipped.
+// Drift returns one line per mismatch between a command's usage lines and
+// its flags, for every command under root: a visible flag its usage lines
+// don't name, or a --flag they name that it doesn't declare. A usage line
+// that names one of the command's subcommands belongs to that subcommand.
 func Drift(root *cobra.Command) []string {
-	var problems []string
-	if declared(root) != nil {
-		problems = append(problems, drift(root)...)
-	}
+	problems := drift(root)
 	for _, s := range root.Commands() {
 		problems = append(problems, Drift(s)...)
 	}
@@ -280,7 +268,7 @@ func Drift(root *cobra.Command) []string {
 // flagName matches a --flag named in a usage line.
 var flagName = regexp.MustCompile(`--([A-Za-z0-9][A-Za-z0-9-]*)`)
 
-// drift checks one declared command.
+// drift checks one command.
 func drift(c *cobra.Command) []string {
 	path := strings.Fields(c.CommandPath())
 	var named []string

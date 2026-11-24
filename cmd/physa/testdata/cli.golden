@@ -804,13 +804,17 @@ $ physa check map --json
 exit 2
 --- stdout
 --- stderr
-physa check map: stat --json/.physa: no such file or directory
+usage: physa check map [dir]
+
+Check the map: 0 when sound, 1 with problems, 2 when it cannot be read.
 
 $ physa map index --json
 exit 2
 --- stdout
 --- stderr
-physa map index: stat --json/.physa: no such file or directory
+usage: physa map index [dir]
+
+List the capabilities of the map with their promises.
 
 $ physa map hooks --json
 exit 2

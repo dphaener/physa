@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func echo(name string) Run {
@@ -166,17 +168,34 @@ func TestHelpWithoutUsageDerivesFromName(t *testing.T) {
 	}
 }
 
-func TestNoCompletionCommand(t *testing.T) {
+func TestCompletionCommandIsHidden(t *testing.T) {
 	root := tree()
 	code, out, errs := execute(root, "completion", "bash")
-	if code != 2 || out != "" || !strings.HasPrefix(errs, "usage: physa <command>") {
-		t.Fatalf("got %d %q %q", code, out, errs)
+	if code != 0 || errs != "" || !strings.HasPrefix(out, "# bash completion V2 for physa") {
+		t.Fatalf("got %d %q %q", code, firstLine(out), errs)
 	}
+	found := false
 	for _, s := range root.Commands() {
 		if s.Name() == "completion" {
-			t.Fatal("root has a completion command")
+			found = true
+			if !s.Hidden {
+				t.Fatal("the completion command is visible")
+			}
 		}
 	}
+	if !found {
+		t.Fatal("root has no completion command")
+	}
+	var b bytes.Buffer
+	Help(root, &b)
+	if strings.Contains(b.String(), "completion") {
+		t.Fatalf("root help lists completion:\n%s", b.String())
+	}
+}
+
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(s, "\n")
+	return line
 }
 
 func TestNoHelpCommandUnlessDeclared(t *testing.T) {
@@ -235,5 +254,272 @@ func TestNilArgsDoNotReadOSArgs(t *testing.T) {
 	code := Execute(tree(), nil, &out, &errb)
 	if code != 2 || out.String() != "" || !strings.HasPrefix(errb.String(), "usage: physa <command>") {
 		t.Fatalf("got %d %q %q", code, out.String(), errb.String())
+	}
+}
+
+// entries is a custom value kept outside its declaration, so it resets
+// itself.
+type entries struct{ list []string }
+
+func (e *entries) String() string     { return strings.Join(e.list, ",") }
+func (e *entries) Set(s string) error { e.list = append(e.list, s); return nil }
+func (e *entries) Type() string       { return "entry" }
+func (e *entries) Reset()             { e.list = nil }
+
+// declaredTree builds: physa (raw) > dec (declared, with flags), quiet
+// (declared, no flags) and raw (raw). dec prints its flags, its
+// positionals and the words typed after its name; it returns BadUsage for
+// more than three positionals.
+func declaredTree() *cobra.Command {
+	var (
+		asJSON bool
+		slug   string
+		limit  int
+		tags   []string
+		entry  entries
+		dec    *cobra.Command
+	)
+	dec = Declare(New("dec", "a declared command", []string{"physa dec [<arg>...] [--json] [--slug <slug>] [--limit N] [--tag T]... [--entry E]"},
+		func(args []string, stdout, _ io.Writer) int {
+			if len(args) > 3 {
+				return BadUsage
+			}
+			fmt.Fprintf(stdout, "json=%v slug=%q limit=%d tags=%q entry=%q args=%q words=%q\n",
+				asJSON, slug, limit, tags, entry.list, args, Words(dec))
+			return 0
+		}),
+		func(fs *pflag.FlagSet) {
+			fs.BoolVar(&asJSON, "json", false, "")
+			fs.StringVar(&slug, "slug", "", "")
+			fs.IntVar(&limit, "limit", 7, "")
+			fs.StringArrayVar(&tags, "tag", nil, "")
+			fs.Var(&entry, "entry", "")
+		})
+	return New("physa", "test root", []string{"physa <command>"}, nil,
+		dec,
+		Declare(New("quiet", "takes no flags", []string{"physa quiet"}, echo("quiet")), nil),
+		New("raw", "raw mode", []string{"physa raw"}, echo("raw")),
+	)
+}
+
+func decHelp(t *testing.T) string {
+	t.Helper()
+	var b bytes.Buffer
+	Help(declaredTree().Commands()[0], &b)
+	return b.String()
+}
+
+func TestDeclaredParsesFlagsAndPassesPositionals(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"dec"}, `json=false slug="" limit=7 tags=[] entry=[] args=[] words=[]`},
+		{[]string{"dec", "a", "--json", "b", "--slug", "s", "--limit", "3", "c"}, `json=true slug="s" limit=3 tags=[] entry=[] args=["a" "b" "c"] words=["a" "--json" "b" "--slug" "s" "--limit" "3" "c"]`},
+		{[]string{"dec", "--slug=s", "--limit=4"}, `json=false slug="s" limit=4 tags=[] entry=[] args=[] words=["--slug=s" "--limit=4"]`},
+		{[]string{"dec", "--slug", "x", "--slug", "y"}, `json=false slug="y" limit=7 tags=[] entry=[] args=[] words=["--slug" "x" "--slug" "y"]`},
+		{[]string{"dec", "--json=false"}, `json=false slug="" limit=7 tags=[] entry=[] args=[] words=["--json=false"]`},
+		{[]string{"dec", "--json=true"}, `json=true slug="" limit=7 tags=[] entry=[] args=[] words=["--json=true"]`},
+		{[]string{"dec", "--", "-x", "--json"}, `json=false slug="" limit=7 tags=[] entry=[] args=["-x" "--json"] words=["--" "-x" "--json"]`},
+		{[]string{"dec", "--tag", "a", "--tag=b", "--entry", "e"}, `json=false slug="" limit=7 tags=["a" "b"] entry=["e"] args=[] words=["--tag" "a" "--tag=b" "--entry" "e"]`},
+	} {
+		code, out, errs := execute(declaredTree(), tc.args...)
+		if code != 0 || errs != "" || out != tc.want+"\n" {
+			t.Errorf("%v: got %d %q %q\nwant %q", tc.args, code, out, errs, tc.want)
+		}
+	}
+}
+
+func TestDeclaredModeParsesFlagsWithArbitraryArgs(t *testing.T) {
+	root := declaredTree()
+	dec := root.Commands()[0]
+	if dec.DisableFlagParsing || dec.Args == nil || dec.Args(dec, []string{"a", "b", "c", "d", "e"}) != nil {
+		t.Fatalf("dec: DisableFlagParsing %v, Args take any count: %v", dec.DisableFlagParsing, dec.Args != nil)
+	}
+	if !root.Commands()[2].DisableFlagParsing {
+		t.Fatal("a command built with New left raw mode")
+	}
+	code, out, errs := execute(root, "dec", "a", "b", "c", "d")
+	if code != 2 || out != "" || errs != decHelp(t) {
+		t.Fatalf("too many positionals: got %d %q %q", code, out, errs)
+	}
+}
+
+func TestDeclaredBadFlagsPrintHelpToStderr(t *testing.T) {
+	for _, args := range [][]string{
+		{"dec", "-h"},
+		{"dec", "--bogus"},
+		{"dec", "--bogus=1"},
+		{"dec", "-x"},
+		{"dec", "x", "-j"},
+		{"dec", "--slug"},
+		{"dec", "--limit", "x"},
+		{"dec", "--limit="},
+		{"dec", "--json=maybe"},
+		{"dec", "--slug="},
+		{"dec", "--slug", ""},
+		{"dec", "--tag="},
+		{"dec", "--tag", "a", "--tag", ""},
+		{"dec", "--help=maybe"},
+	} {
+		code, out, errs := execute(declaredTree(), args...)
+		if code != 2 || out != "" || errs != decHelp(t) {
+			t.Errorf("%v: got %d %q %q", args, code, out, errs)
+		}
+	}
+	code, out, errs := execute(declaredTree(), "quiet", "--json")
+	if code != 2 || out != "" || !strings.HasPrefix(errs, "usage: physa quiet\n") {
+		t.Errorf("quiet --json: got %d %q %q", code, out, errs)
+	}
+}
+
+func TestDeclaredHelpWinsAnywhere(t *testing.T) {
+	for _, args := range [][]string{
+		{"dec", "--help"},
+		{"dec", "a", "--help"},
+		{"dec", "--slug", "--help"},
+		{"dec", "--bogus", "--help"},
+		{"dec", "--slug=", "--help"},
+		{"dec", "-h", "--help"},
+		{"dec", "--", "--help"},
+		{"dec", "a", "b", "c", "d", "--help"},
+		{"dec", "--help=true"},
+	} {
+		code, out, errs := execute(declaredTree(), args...)
+		if code != 0 || errs != "" || out != decHelp(t) {
+			t.Errorf("%v: got %d %q %q", args, code, out, errs)
+		}
+	}
+}
+
+func TestDeclaredHelpFlagHasNoShorthand(t *testing.T) {
+	root := declaredTree()
+	execute(root, "dec")
+	dec := root.Commands()[0]
+	f := dec.Flags().Lookup("help")
+	if f == nil || f.Shorthand != "" || !f.Hidden || dec.Flags().ShorthandLookup("h") != nil {
+		t.Fatalf("help flag %+v", f)
+	}
+}
+
+func TestDeclaredHelpMatchesRawHelp(t *testing.T) {
+	var raw bytes.Buffer
+	Help(New("dec", "a declared command", []string{"physa dec [<arg>...] [--json] [--slug <slug>] [--limit N] [--tag T]... [--entry E]"}, nil), &raw)
+	if got := decHelp(t); got != raw.String() {
+		t.Fatalf("got %q, want %q", got, raw.String())
+	}
+}
+
+func TestDeclaredFlagsResetForEachLine(t *testing.T) {
+	root := declaredTree()
+	code, out, _ := execute(root, "dec", "--json", "--slug", "s", "--limit", "1", "--tag", "a", "--entry", "e", "x")
+	if code != 0 || !strings.HasPrefix(out, `json=true slug="s" limit=1 tags=["a"] entry=["e"]`) {
+		t.Fatalf("first line: got %d %q", code, out)
+	}
+	code, out, _ = execute(root, "dec")
+	if want := `json=false slug="" limit=7 tags=[] entry=[] args=[] words=[]` + "\n"; code != 0 || out != want {
+		t.Fatalf("second line: got %d %q, want %q", code, out, want)
+	}
+	code, out, _ = execute(root, "dec", "--tag", "b", "--entry", "f")
+	if code != 0 || !strings.Contains(out, `tags=["b"] entry=["f"]`) {
+		t.Fatalf("third line: got %d %q", code, out)
+	}
+	for _, f := range []string{"json", "slug", "limit", "tag", "entry"} {
+		execute(root, "raw")
+		if root.Commands()[0].Flags().Lookup(f).Changed {
+			t.Errorf("--%s still changed", f)
+		}
+	}
+}
+
+func TestRawModeUnchangedBesideDeclared(t *testing.T) {
+	code, out, _ := execute(declaredTree(), "raw", "--bogus", "-h", "--", "x")
+	if code != 0 || out != "raw --bogus,-h,--,x\n" {
+		t.Fatalf("got %d %q", code, out)
+	}
+	if w := Words(declaredTree().Commands()[2]); w != nil {
+		t.Fatalf("raw command has words %q", w)
+	}
+}
+
+func TestCompletionAnswersFromDeclarations(t *testing.T) {
+	code, out, _ := execute(declaredTree(), "__complete", "dec", "--")
+	if code != 0 {
+		t.Fatalf("got %d %q", code, out)
+	}
+	for _, f := range []string{"--json", "--slug", "--limit", "--tag", "--entry"} {
+		if !strings.Contains(out, f) {
+			t.Errorf("no %s in %q", f, out)
+		}
+	}
+	if strings.Contains(out, "--help") {
+		t.Errorf("hidden --help completed: %q", out)
+	}
+}
+
+func TestDrift(t *testing.T) {
+	if p := Drift(declaredTree()); len(p) != 0 {
+		t.Fatalf("clean tree drifts: %q", p)
+	}
+	root := New("physa", "", []string{"physa <command> [--help]"}, nil,
+		Declare(New("grp", "", []string{"physa grp [--json]", "physa grp sub [--deep]"}, nil,
+			Declare(New("sub", "", []string{"physa grp sub [--deep]"}, nil), func(fs *pflag.FlagSet) { fs.Bool("deep", false, "") }),
+		), func(fs *pflag.FlagSet) {
+			fs.Bool("json", false, "")
+			fs.Bool("quiet", false, "")
+			fs.Bool("secret", false, "")
+			_ = fs.MarkHidden("secret")
+		}),
+		Declare(New("odd", "", []string{"physa odd [--from <file>|-] [--write [--push]]"}, nil), func(fs *pflag.FlagSet) {
+			fs.String("from", "", "")
+			fs.Bool("write", false, "")
+		}),
+		New("raw", "", []string{"physa raw [--anything]"}, nil),
+	)
+	want := []string{
+		"physa grp: declares --quiet, which its usage lines don't name",
+		"physa odd: its usage lines name --push, which it doesn't declare",
+	}
+	if got := Drift(root); !slices.Equal(got, want) {
+		t.Fatalf("got %q\nwant %q", got, want)
+	}
+}
+
+func TestSwitchTakesNoValue(t *testing.T) {
+	var on bool
+	root := New("physa", "test root", nil, nil,
+		Declare(New("leaf", "a leaf", []string{"physa leaf [--on]"}, func(_ []string, stdout, _ io.Writer) int {
+			fmt.Fprintln(stdout, on)
+			return 0
+		}), func(fs *pflag.FlagSet) { Switch(fs, "on", &on, "") }))
+	for _, c := range []struct {
+		line []string
+		code int
+		out  string
+	}{
+		{[]string{"leaf"}, 0, "false\n"},
+		{[]string{"leaf", "--on"}, 0, "true\n"},
+		{[]string{"leaf"}, 0, "false\n"},
+		{[]string{"leaf", "--on", "--on"}, 0, "true\n"},
+		{[]string{"leaf", "--on=false"}, 2, ""},
+		{[]string{"leaf", "--on=1"}, 2, ""},
+	} {
+		code, out, _ := execute(root, c.line...)
+		if code != c.code || out != c.out {
+			t.Errorf("%v: got %d %q, want %d %q", c.line, code, out, c.code, c.out)
+		}
+	}
+}
+
+func TestDeclaredHelpTakesNoValue(t *testing.T) {
+	root := New("physa", "test root", nil, nil,
+		Declare(New("leaf", "a leaf", []string{"physa leaf"}, echo("leaf")), nil))
+	if code, out, _ := execute(root, "leaf", "--help=true"); code != 0 || !strings.HasPrefix(out, "usage: physa leaf") {
+		t.Errorf("--help=true: got %d %q", code, out)
+	}
+	for _, v := range []string{"--help=false", "--help=1"} {
+		if code, out, errs := execute(root, "leaf", v); code != 2 || out != "" || !strings.HasPrefix(errs, "usage: physa leaf") {
+			t.Errorf("%s: got %d %q %q", v, code, out, errs)
+		}
 	}
 }

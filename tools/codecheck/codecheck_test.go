@@ -243,3 +243,18 @@ func TestStateBudget(t *testing.T) {
 		t.Errorf("internal/repos budget = %d, want 350", got)
 	}
 }
+
+func TestMapBelowEngine(t *testing.T) {
+	vs := mustCheck(t, "testdata/mapengine")
+	got := rules(vs)
+	want := []string{"internal/mapfile map-below-engine", "internal/vcs map-below-engine"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	for i, file := range []string{"mapfile.go imports example.com/mapengine/internal/engine", "vcs_test.go imports example.com/mapengine/internal/state/work"} {
+		if !strings.Contains(vs[i].Message, file) {
+			t.Errorf("violation %d: want %q in %q", i, file, vs[i].Message)
+		}
+	}
+	t.Logf("reported: %s: %s: %s", vs[0].Dir, vs[0].Rule, vs[0].Message)
+}

@@ -217,7 +217,7 @@ Pricing is postponed until the product exists.
 
 ## 10a. Technology
 
-- **Open-source core in Go**: a single static binary that installs with one command anywhere and answers agents in milliseconds. Kept reviewable by rule: a size budget, plain Go with mostly the standard library, small packages each with one job, a CI check that the core imports nothing above it, and a short doc per package stating its promise in glossary terms. Its small web pieces (the flag service, single-user phone web) are server-rendered Go templates.
+- **Open-source core in Go**: one binary holding two products, the map (init, map, check, learn), usable alone, and the engine (ideas, pursuits, evidence) on top of it. A single static binary that installs with one command anywhere and answers agents in milliseconds. Kept reviewable by rule: a size budget, plain Go with mostly the standard library, small packages each with one job, a CI check that the core imports nothing above it and that the map never imports the engine, and a short doc per package stating its promise in glossary terms. Its small web pieces (the flag service, single-user phone web) are server-rendered Go templates.
 - **Hosted layer in Rails**, where most of the product's screens live and the owner is strongest.
 - **One implementation of the map**: the hosted layer calls the core binary (JSON out) to read the map instead of reimplementing it.
 - **Two repos from day one**, which makes Physa itself a multi-repo product: building it dogfoods the hosted layer's product-level map across repos.

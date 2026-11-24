@@ -1,4 +1,5 @@
-// Command codecheck checks that the core imports nothing above it and that
+// Command codecheck checks that the core imports nothing above it, that the
+// map's side never imports the engine's, and that
 // every package stays within its size budget and has a doc comment stating
 // its promise. It also checks that no package outside internal/state writes
 // the engine's tables (a string literal holding SQL that inserts into,
@@ -50,9 +51,38 @@ var packageBudgets = map[string]int{
 // never import them.
 var aboveCore = []string{"plugins", "cmd"}
 
+// engineSide lists the packages, relative to the module, of the engine: the
+// engine process, its API and state, and ideas, pursuits and evidence on top
+// of the map. A listed directory covers its subdirectories. Every other
+// package under internal/ is the map's side (init, map, check, learn) with
+// the foundations both sides use, and must never import one of these, so the
+// map works with no engine at all. The engine may import the map's side. A
+// new engine package goes here; until it does, a package of it that imports
+// the engine is reported.
+var engineSide = []string{
+	"internal/api",
+	"internal/apiclient",
+	"internal/apischema",
+	"internal/engine",
+	"internal/enginecli",
+	"internal/enginestart",
+	"internal/evidence",
+	"internal/evidencecli",
+	"internal/ideacli",
+	"internal/plan",
+	"internal/progress",
+	"internal/pursuitcli",
+	"internal/repos",
+	"internal/signal",
+	"internal/state",
+	"internal/tokens",
+	"internal/workapi",
+}
+
 // Rule names reported in violations.
 const (
 	ruleImports = "no-plugin-imports"
+	ruleEngine  = "map-below-engine"
 	ruleSize    = "size-budget"
 	ruleDoc     = "package-doc"
 	ruleGit     = "git-adapter-only"
@@ -199,6 +229,7 @@ func checkPackage(root, module string, pk *pkg, budgets map[string]int) ([]Viola
 	var out []Violation
 	fset := token.NewFileSet()
 	inCore := pk.dir == "internal" || strings.HasPrefix(pk.dir, "internal/")
+	mapSide := inCore && !onEngineSide(pk.dir)
 	lines := 0
 	hasDoc, docOK := false, false
 	pkgName := ""
@@ -219,6 +250,9 @@ func checkPackage(root, module string, pk *pkg, budgets map[string]int) ([]Viola
 				}
 				if forbidden(module, ip) {
 					out = append(out, Violation{pk.dir, ruleImports, fmt.Sprintf("%s imports %s", name, ip)})
+				}
+				if rel, ok := strings.CutPrefix(ip, module+"/"); ok && mapSide && onEngineSide(rel) {
+					out = append(out, Violation{pk.dir, ruleEngine, fmt.Sprintf("%s imports %s, on the engine's side; the map's side never imports it", name, ip)})
 				}
 			}
 		}
@@ -351,6 +385,17 @@ func tableWrites(f *ast.File, fset *token.FileSet) []tableWrite {
 		return true
 	})
 	return out
+}
+
+// onEngineSide reports whether dir, relative to the module, is at or under
+// a package of engineSide.
+func onEngineSide(dir string) bool {
+	for _, e := range engineSide {
+		if dir == e || strings.HasPrefix(dir, e+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // forbidden reports whether import path ip is at or under a package above the core.

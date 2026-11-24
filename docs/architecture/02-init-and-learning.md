@@ -72,6 +72,26 @@ It is built as `physa init --propose`, which needs a stored gather and says so w
 
 The proposal is one prompt-only session with no tools, with no appetite and no circuit breaker; a full run shows its prompt's estimate before it asks to go on (§2.7). Uncertain knowledge comes back as questions, never as guesses (Q2). `physa init --propose` prints the proposal as markdown or `--json` and stores it for the next phase; its "Read" section says what the session read: each source with its count and estimated tokens, and the prompt's estimated tokens. It writes nothing to the repo, and a new gather clears the stored proposal.
 
+### 2.3.1 Propose in shares (settled 2026-11-24, not built)
+
+> **Designed by Myxo; the owner chose shares and settled the three questions below (2026-11-24), each as recommended. Nothing here is built.** The owner chose to split propose after a large repo's propose prompt came to about 1.97M tokens, then, with its PRs read whole, about 1.6M: more than one session holds.
+
+When the whole prompt fits in one session, propose runs as §2.3 says, unchanged. When it doesn't, propose reads its sources in **shares**, then merges what the shares proposed:
+
+1. **Shares.** The sources are shaped as today (docs by kind, then path; PRs newest first; changes newest first; then clusters) and laid into shares in that order, each share's prompt within what one session holds less the reply reserve. Every source reaches exactly one share whole; no source is split or cut (`init-no-cut`). Each share's session gets the same skill and instructions as today's one session, and proposes the product's promise and capabilities from what it read, each with the PRs, changes and docs that show it.
+2. **Merge.** One more session reads only the shares' proposals, never the sources: every promise, with its links and questions. It returns one list: the product's promise, and capabilities merged where two shares proposed the same promise, each keeping the union of its links. It may reword a promise; it may not add a link no share gave. Physa checks that, deterministically, as it checks a proposal today.
+3. **What follows is unchanged.** The merged proposal is stored like one session's, and recovery reads each capability's linked sources (§2.4).
+
+Nothing is cut, but no single session reads everything: a capability visible only across two shares' sources may come back as two, or as none. That is the trade the owner accepted in choosing shares over a shorter bound.
+
+The estimate (§2.7) counts each share's prompt and the merge's; the "Read" section lists each share and what it read.
+
+Settled with the owner (2026-11-24):
+
+1. **Docs in every share.** When the docs take no more than half a session, every share also reads all of them, so each share sees the product's frame and only PRs and changes are divided; otherwise the docs are divided too. It costs a share's worth of docs per share.
+2. **The adapter states the window, and a refusal halves the share.** The adapter states the model's window; when a session is refused as too long anyway, propose halves that share and tries again, so a wrong figure costs one refused call, never a failed run.
+3. **A source larger than a share stops init.** Init stops before spending on propose, names the source and its size, and says how to leave it out of the gather. Cutting it would break `init-no-cut`, and leaving it out silently would too.
+
 ### 2.4 Recover knowledge (agent, one session per capability)
 
 For each capability, a fresh agent session receives that capability's promise and the sources linked to it: the PRs and changes propose named for it, the changes those revert or are reverted by, the docs propose linked to it, and the repo's agent instructions, readme and contributing guide, never the other docs. On nebari, giving every session every doc meant each read about 570,000 tokens; linking them brought recovery from 10.9M tokens to 6.1M with a map at least as rich (2026-11-23). Propose is told that a doc of kind `decisions` goes under every capability whose choices it records, usually every capability for a product-wide decision log (the owner's choice, 2026-11-23): in run 8 on nebari it linked its 423-entry `docs/decisions.md` to none, and recovered decisions fell from 72 to 28. The session writes one text for `capabilities/<name>/` (09 §7): front matter, title, optional overview, then its Rules, Decisions and Questions sections. Physa splits it into the folder's files:

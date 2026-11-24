@@ -33,7 +33,14 @@ type Skip struct {
 
 var ignoredDirs = map[string]bool{"vendor": true, "node_modules": true, "tmp": true, "log": true}
 
-var numbered = regexp.MustCompile(`^[0-9]+[-_]`)
+// numbered matches a decision record's number, such as 0001- or 12_: one to
+// five digits. A date is not a number here: folders of dated files, such as
+// session logs named 2026-06-01-x.md or 20260601-x.md, are not decision
+// records, and read whole they can outgrow a session.
+var (
+	numbered = regexp.MustCompile(`^[0-9]{1,5}[-_]`)
+	dated    = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}`)
+)
 
 // Docs reads the repo's docs from the working tree under root: agent docs
 // (including CONTEXT.md), contributing guides, readmes, decisions with
@@ -192,7 +199,7 @@ func recordFolders(root, dir string, depth int) ([]string, error) {
 
 // isRecordFolder reports whether the folder is named decisions or
 // decision-records, or holds two or more markdown files numbered like
-// 0001-name.md.
+// 0001-name.md, never dated like 2026-06-01-name.md.
 func isRecordFolder(root, rel string) (bool, error) {
 	if b := path.Base(rel); b == "decisions" || b == "decision-records" {
 		return true, nil
@@ -203,7 +210,7 @@ func isRecordFolder(root, rel string) (bool, error) {
 	}
 	n := 0
 	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".md") && numbered.MatchString(e.Name()) {
+		if strings.HasSuffix(e.Name(), ".md") && numbered.MatchString(e.Name()) && !dated.MatchString(e.Name()) {
 			n++
 		}
 	}

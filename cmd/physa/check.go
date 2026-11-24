@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/mapcheck"
@@ -19,13 +19,13 @@ func checkCommand() *cobra.Command {
 		"physa check map [dir]",
 		"physa check changes [<range>] [--json] [--strict]",
 	}
-	return command.New("check", "Check the map and the changes of a range against it.", usage,
+	var bare, sub changesOptions
+	return command.Declare(command.New("check", "Check the map and the changes of a range against it.", usage,
 		func(args []string, stdout, stderr io.Writer) int {
-			opts, ok := parseChanges(args, false)
-			if !ok {
+			if !bare.takeRange(args) {
 				return command.BadUsage
 			}
-			return checkBare(".", opts, stdout, stderr)
+			return checkBare(".", bare, stdout, stderr)
 		},
 		command.New("map", "Check the map: 0 when sound, 1 with problems, 2 when it cannot be read.", []string{"physa check map [dir]"},
 			func(args []string, stdout, stderr io.Writer) int {
@@ -38,15 +38,14 @@ func checkCommand() *cobra.Command {
 				}
 				return checkMap(dir, "physa check map", stdout, stderr)
 			}),
-		command.New("changes", "Check each change of a range, and the map as each leaves it.", []string{"physa check changes [<range>] [--json] [--strict]"},
+		command.Declare(command.New("changes", "Check each change of a range, and the map as each leaves it.", []string{"physa check changes [<range>] [--json] [--strict]"},
 			func(args []string, stdout, stderr io.Writer) int {
-				opts, ok := parseChanges(args, true)
-				if !ok {
+				if !sub.takeRange(args) {
 					return command.BadUsage
 				}
-				return checkChanges(".", "physa check changes", opts, stdout, stderr)
-			}),
-	)
+				return checkChanges(".", "physa check changes", sub, stdout, stderr)
+			}), func(fs *pflag.FlagSet) { sub = changesOptions{}; sub.declare(fs, true) }),
+	), func(fs *pflag.FlagSet) { bare = changesOptions{}; bare.declare(fs, false) })
 }
 
 // checkBare is physa check: the change check when a range is given or the
@@ -103,23 +102,25 @@ type changesOptions struct {
 	json, strict bool
 }
 
-// parseChanges reads at most one range and the flags --strict and, when
-// allowJSON, --json, in any order. It reports false for anything else.
-func parseChanges(args []string, allowJSON bool) (changesOptions, bool) {
-	o := changesOptions{rng: defaultRange}
-	for _, a := range args {
-		switch {
-		case a == "--json" && allowJSON:
-			o.json = true
-		case a == "--strict":
-			o.strict = true
-		case strings.HasPrefix(a, "--") || o.given:
-			return o, false
-		default:
-			o.rng, o.given = a, true
-		}
+// declare declares --strict and, when withJSON, --json on fs, bound to o.
+func (o *changesOptions) declare(fs *pflag.FlagSet, withJSON bool) {
+	command.Switch(fs, "strict", &o.strict, "")
+	if withJSON {
+		command.Switch(fs, "json", &o.json, "")
 	}
-	return o, true
+}
+
+// takeRange reads at most one range from the positionals into o. It reports
+// false for more.
+func (o *changesOptions) takeRange(args []string) bool {
+	o.rng, o.given = defaultRange, false
+	if len(args) > 1 {
+		return false
+	}
+	if len(args) == 1 {
+		o.rng, o.given = args[0], true
+	}
+	return true
 }
 
 // plural returns n with its noun in singular or plural form.

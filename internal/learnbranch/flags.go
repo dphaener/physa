@@ -1,11 +1,12 @@
 package learnbranch
 
 import (
-	"strconv"
-	"strings"
+	"github.com/spf13/pflag"
+
+	"github.com/dphaener/physa/internal/command"
 )
 
-// Flags is a parsed physa map learn command line.
+// Flags is a physa map learn command line as its declared flags read it.
 type Flags struct {
 	Signals  bool
 	Since    string
@@ -15,38 +16,31 @@ type Flags struct {
 	PR       bool   // open or refresh the PR; needs Push
 	Appetite int64  // most tokens a draft session may use; zero is the default
 	Agent    string // agent to draft with; empty is the default
+
+	fs *pflag.FlagSet
 }
 
-// ParseFlags reads the arguments after "learn": the flags --signals, --json,
-// --write, --push, --pr and the values --since, --appetite and --agent (each
-// also as --name=value). It reports false for anything else, --appetite,
-// --agent or --write with --signals, --push without --write, --pr without
-// --push, and an appetite that is not a positive integer.
-func ParseFlags(args []string) (Flags, bool) {
-	var o Flags
-	flags := map[string]*bool{"--signals": &o.Signals, "--json": &o.JSON, "--write": &o.Write, "--push": &o.Push, "--pr": &o.PR}
-	strs := map[string]*string{"--since": &o.Since, "--agent": &o.Agent}
-	for i := 0; i < len(args); i++ {
-		name, val, hasVal := strings.Cut(args[i], "=")
-		if b, ok := flags[name]; ok && !hasVal {
-			*b = true
-			continue
-		}
-		if !hasVal && i+1 < len(args) {
-			i++
-			val = args[i]
-		}
-		if val == "" {
-			return o, false
-		}
-		if p, ok := strs[name]; ok {
-			*p = val
-		} else if n, err := strconv.ParseInt(val, 10, 64); name == "--appetite" && err == nil && n > 0 {
-			o.Appetite = n
-		} else {
-			return o, false
-		}
+// Declare declares the flags of physa map learn on fs and starts f afresh, so
+// it runs once for every command line.
+func (f *Flags) Declare(fs *pflag.FlagSet) {
+	*f = Flags{fs: fs}
+	command.Switch(fs, "signals", &f.Signals, "stop at the signals")
+	fs.StringVar(&f.Since, "since", "", "learn from the changes after this change")
+	command.Switch(fs, "json", &f.JSON, "print JSON")
+	command.Switch(fs, "write", &f.Write, "commit the kept proposals to physa/learn")
+	command.Switch(fs, "push", &f.Push, "push physa/learn")
+	command.Switch(fs, "pr", &f.PR, "open or refresh the PR")
+	fs.Int64Var(&f.Appetite, "appetite", 0, "most tokens a draft session may use")
+	fs.StringVar(&f.Agent, "agent", "", "agent to draft with")
+}
+
+// Valid reports whether the parsed line is a good one: --appetite a positive
+// integer, no --appetite, --agent or --write with --signals, no --push
+// without --write and no --pr without --push.
+func (f *Flags) Valid() bool {
+	if f.fs.Changed("appetite") && f.Appetite <= 0 {
+		return false
 	}
-	valid := !o.Signals || (o.Appetite == 0 && o.Agent == "" && !o.Write)
-	return o, valid && (!o.Push || o.Write) && (!o.PR || o.Push)
+	ok := !f.Signals || (!f.fs.Changed("appetite") && f.Agent == "" && !f.Write)
+	return ok && (!f.Push || f.Write) && (!f.PR || f.Push)
 }

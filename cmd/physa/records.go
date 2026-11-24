@@ -64,17 +64,6 @@ func recordSlice(dir string, req mapslice.Request, stderr io.Writer) {
 	}
 }
 
-// parseRecords reads the arguments after "records": only --json.
-func parseRecords(args []string) (asJSON, ok bool) {
-	for _, a := range args {
-		if a != "--json" {
-			return false, false
-		}
-		asJSON = true
-	}
-	return asJSON, true
-}
-
 // records lists the slice records of the store in dir, newest first: 0 when
 // it listed, 2 when the store cannot be read or the list cannot be written.
 func records(dir string, asJSON bool, stdout, stderr io.Writer) int {

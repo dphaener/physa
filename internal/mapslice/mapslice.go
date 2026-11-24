@@ -6,7 +6,7 @@
 // matches, ranks or searches the map; it takes only what is named, and the
 // same map and request always give the same slice. Every slice carries the
 // slice skill, and no slice is built from a map the check would reject. It
-// also parses the flags of physa map slice into a Request.
+// also declares the flags of physa map slice and reads them into a Request.
 package mapslice
 
 import (

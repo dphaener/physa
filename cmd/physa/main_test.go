@@ -784,7 +784,7 @@ func TestTrailersNoMapIsError(t *testing.T) {
 }
 
 func TestTrailersBadUsage(t *testing.T) {
-	for _, args := range [][]string{{"a", "b"}, {"--bogus"}, {"--json=1"}} {
+	for _, args := range [][]string{{"a", "b"}, {"--bogus"}, {"--json=maybe"}} {
 		var stdout, stderr bytes.Buffer
 		code := run(append([]string{"map", "changes"}, args...), &stdout, &stderr)
 		if code != 2 || stderr.String() != helpOf(t, "map", "changes") || stdout.Len() != 0 {

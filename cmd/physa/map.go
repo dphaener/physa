@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/history"
@@ -32,7 +32,11 @@ func mapCommand() *cobra.Command {
 		learnUsage,
 		"physa map hooks",
 	)
-	return command.New("map", "Read the map: a bare map prints the index.", usage,
+	var cs changesOptions
+	var sl mapslice.Line
+	var lf learnbranch.Flags
+	var asJSON, check bool
+	return command.Declare(command.New("map", "Read the map: a bare map prints the index.", usage,
 		func(args []string, stdout, stderr io.Writer) int {
 			if len(args) > 0 {
 				return command.BadUsage
@@ -50,37 +54,31 @@ func mapCommand() *cobra.Command {
 				}
 				return index(dir, stdout, stderr)
 			}),
-		command.New("slice", "Print the slice of the map a task needs.", sliceUsage,
+		command.Declare(command.New("slice", "Print the slice of the map a task needs.", sliceUsage,
 			func(args []string, stdout, stderr io.Writer) int {
-				opts, ok := mapslice.ParseFlags(args)
+				opts, ok := sl.Flags(args)
 				if !ok {
 					return command.BadUsage
 				}
 				return slice(".", opts, stdout, stderr)
-			}),
-		command.New("changes", "List the capability each change of a range names, with the findings.", []string{"physa map changes [<range>] [--json] [--strict]"},
+			}), sl.Declare),
+		command.Declare(command.New("changes", "List the capability each change of a range names, with the findings.", []string{"physa map changes [<range>] [--json] [--strict]"},
 			func(args []string, stdout, stderr io.Writer) int {
-				opts, ok := parseChanges(args, true)
-				if !ok {
+				if !cs.takeRange(args) {
 					return command.BadUsage
 				}
-				return changes(".", opts, stdout, stderr)
-			}),
-		command.New("records", "List the slice records, newest first.", []string{"physa map records [--json]"},
+				return changes(".", cs, stdout, stderr)
+			}), func(fs *pflag.FlagSet) { cs = changesOptions{}; cs.declare(fs, true) }),
+		command.Declare(command.New("records", "List the slice records, newest first.", []string{"physa map records [--json]"},
 			func(args []string, stdout, stderr io.Writer) int {
-				asJSON, ok := parseRecords(args)
-				if !ok {
+				if len(args) > 0 {
 					return command.BadUsage
 				}
 				return records(".", asJSON, stdout, stderr)
-			}),
-		command.New("fmt", "Rewrite the map's folders to their format: contents, index links and spacing (--check writes nothing and exits 1 when a file would change).", []string{"physa map fmt [--check] [dir]"},
+			}), func(fs *pflag.FlagSet) { command.Switch(fs, "json", &asJSON, "") }),
+		command.Declare(command.New("fmt", "Rewrite the map's folders to their format: contents, index links and spacing (--check writes nothing and exits 1 when a file would change).", []string{"physa map fmt [--check] [dir]"},
 			func(args []string, stdout, stderr io.Writer) int {
-				check := len(args) > 0 && args[0] == "--check"
-				if check {
-					args = args[1:]
-				}
-				if len(args) > 1 || (len(args) == 1 && strings.HasPrefix(args[0], "-")) {
+				if len(args) > 1 {
 					return command.BadUsage
 				}
 				dir := "."
@@ -88,23 +86,22 @@ func mapCommand() *cobra.Command {
 					dir = args[0]
 				}
 				return format(dir, check, stdout, stderr)
-			}),
-		command.New("learn", "Find what the merged changes have to teach the map, and draft proposals from it for the stewards to review (--signals stops at the signals; --write commits the kept proposals to physa/learn, --push pushes it, --pr opens its PR).", []string{learnUsage},
+			}), func(fs *pflag.FlagSet) { command.Switch(fs, "check", &check, "") }),
+		command.Declare(command.New("learn", "Find what the merged changes have to teach the map, and draft proposals from it for the stewards to review (--signals stops at the signals; --write commits the kept proposals to physa/learn, --push pushes it, --pr opens its PR).", []string{learnUsage},
 			func(args []string, stdout, stderr io.Writer) int {
-				opts, ok := learnbranch.ParseFlags(args)
-				if !ok {
+				if len(args) > 0 || !lf.Valid() {
 					return command.BadUsage
 				}
-				return learnMap(".", opts, stdout, stderr)
-			}),
-		command.New("hooks", "Point the repo's hooks at the one that stamps Session: on commits made in Claude Code, so learning can join a change to its session.", []string{"physa map hooks"},
+				return learnMap(".", lf, stdout, stderr)
+			}), lf.Declare),
+		command.Declare(command.New("hooks", "Point the repo's hooks at the one that stamps Session: on commits made in Claude Code, so learning can join a change to its session.", []string{"physa map hooks"},
 			func(args []string, stdout, stderr io.Writer) int {
 				if len(args) > 0 {
 					return command.BadUsage
 				}
 				return hooks(".", stdout, stderr)
-			}),
-	)
+			}), nil),
+	), nil)
 }
 
 // index prints the index of the map in dir: 0 when it printed, even if the map

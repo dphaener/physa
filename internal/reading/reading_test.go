@@ -196,3 +196,28 @@ func synthetic() store.Gather {
 	}
 	return g
 }
+
+// TestRecounted checks that a part of an Input reports only what it reads,
+// under the whole's source names, and that the whole recounts as Of counts.
+func TestRecounted(t *testing.T) {
+	g := store.Gather{
+		Docs: []store.Doc{{Path: "README.md", Kind: "readme", Body: "# Thing\n"}},
+		PRs: []store.GatheredPR{
+			{Number: 1, Title: "Start", Body: "First.", MergedAt: day(1)},
+			{Number: 2, Title: "Grow", Body: "Second.", MergedAt: day(2), Comments: []store.GatheredComment{{Author: "ann", Body: "Nice."}}},
+		},
+		Changes: []store.GatheredChange{{ID: "aaa1", Short: "aaa1", Subject: "Start", At: day(1)}},
+	}
+	in := Of(g, Propose)
+	if got := in.Recounted(); !reflect.DeepEqual(got, in) {
+		t.Fatalf("recounted whole = %+v, want %+v", got.Report, in.Report)
+	}
+	part := Input{PRs: in.PRs[:1], Report: in.Report}.Recounted() // #2, the newest
+	want := []string{"docs: none", "pull requests: 1, whole, about 5 tokens", "review comments: 1, whole, about 4 tokens", "changes: none", "clusters: none"}
+	if got := part.Report.Lines(); !reflect.DeepEqual(got, want) || part.Report.Tokens != 9 {
+		t.Fatalf("part reports %q, %d tokens", got, part.Report.Tokens)
+	}
+	if bare := (Input{Commits: in.Commits}).Recounted(); len(bare.Report.Sources) != 4 || bare.Report.Sources[3].Items != 1 {
+		t.Fatalf("an Input with no report names = %+v", bare.Report)
+	}
+}

@@ -38,3 +38,65 @@ func (r Report) Lines() []string {
 	}
 	return out
 }
+
+// sourceNames are the sources a Report counts, in order; clusters only when
+// they are read.
+var sourceNames = []string{"docs", "pull requests", "review comments", "changes", "clusters"}
+
+// Recounted is in with its Report counted again from what in holds, under
+// the sources in's Report names (all of sourceNames but clusters when it
+// names none, and clusters too when in holds any). A part of an Input, such
+// as one share of propose, so reports exactly what it reads, counted as Of
+// counts it.
+func (in Input) Recounted() Input {
+	var names []string
+	for _, s := range in.Report.Sources {
+		names = append(names, s.Name)
+	}
+	if names == nil {
+		names = sourceNames[:4]
+		if len(in.Clusters) > 0 {
+			names = sourceNames
+		}
+	}
+	in.Report = Report{}
+	for _, n := range names {
+		s := SourceReport{Name: n}
+		switch n {
+		case "docs":
+			for _, d := range in.Docs {
+				s.add(len(d.Path) + len(d.Kind) + len(d.Body))
+			}
+		case "pull requests":
+			for _, p := range in.PRs {
+				b := len(p.Title) + len(p.Author) + len(p.Body)
+				for _, is := range p.Issues {
+					b += len(is)
+				}
+				s.add(b)
+			}
+		case "review comments":
+			for _, p := range in.PRs {
+				for _, c := range p.Comments {
+					s.add(len(c.Author) + len(c.Body))
+				}
+			}
+		case "changes":
+			for _, k := range in.Commits {
+				s.add(len(k.Short) + len(k.Subject) + len(k.Message) + len(k.Author) + len(k.Reverts))
+			}
+		case "clusters":
+			for _, c := range in.Clusters {
+				b := 0
+				for _, p := range c.Paths {
+					b += len(p)
+				}
+				s.add(b)
+			}
+		}
+		s.Tokens = BytesTokens(s.bytes)
+		in.Report.Tokens += s.Tokens
+		in.Report.Sources = append(in.Report.Sources, s)
+	}
+	return in
+}

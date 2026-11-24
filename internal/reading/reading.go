@@ -104,7 +104,6 @@ func rank(kind string) int {
 // gather and options always give the same Input.
 func Of(g store.Gather, o Options) Input {
 	var in Input
-	docs := SourceReport{Name: "docs"}
 	ds := append([]store.Doc(nil), g.Docs...)
 	sort.SliceStable(ds, func(i, j int) bool {
 		if ri, rj := rank(ds[i].Kind), rank(ds[j].Kind); ri != rj {
@@ -114,11 +113,8 @@ func Of(g store.Gather, o Options) Input {
 	})
 	for _, d := range ds {
 		in.Docs = append(in.Docs, Doc{Path: d.Path, Kind: d.Kind, Body: d.Body})
-		docs.add(len(d.Path) + len(d.Kind) + len(d.Body))
 	}
 
-	prs := SourceReport{Name: "pull requests"}
-	comments := SourceReport{Name: "review comments"}
 	ps := append([]store.GatheredPR(nil), g.PRs...)
 	sort.SliceStable(ps, func(i, j int) bool {
 		if !ps[i].MergedAt.Equal(ps[j].MergedAt) {
@@ -128,19 +124,12 @@ func Of(g store.Gather, o Options) Input {
 	})
 	for _, p := range ps {
 		pr := PR{Number: p.Number, Title: p.Title, Author: p.Author, MergedBy: p.MergedBy, MergedAt: p.MergedAt, Issues: append([]string{}, p.Issues...), Body: p.Body}
-		n := len(p.Title) + len(p.Author) + len(p.Body)
-		for _, is := range p.Issues {
-			n += len(is)
-		}
-		prs.add(n)
 		for _, c := range p.Comments {
 			pr.Comments = append(pr.Comments, Comment{Author: c.Author, At: c.At, RequestsChanges: c.RequestsChanges, Body: c.Body})
-			comments.add(len(c.Author) + len(c.Body))
 		}
 		in.PRs = append(in.PRs, pr)
 	}
 
-	changes := SourceReport{Name: "changes"}
 	cs := append([]store.GatheredChange(nil), g.Changes...)
 	sort.SliceStable(cs, func(i, j int) bool {
 		if !cs[i].At.Equal(cs[j].At) {
@@ -157,28 +146,16 @@ func Of(g store.Gather, o Options) Input {
 			k.Author, k.At, k.Reverts = c.Author, c.At, c.Reverts
 		}
 		in.Commits = append(in.Commits, k)
-		changes.add(len(k.Short) + len(k.Subject) + len(k.Message) + len(k.Author) + len(k.Reverts))
 	}
-	in.Report.Sources = []SourceReport{docs, prs, comments, changes}
-
+	names := sourceNames[:4]
 	if o.Clusters {
-		clustered := SourceReport{Name: "clusters"}
-		for _, c := range clusters(g.Changes) {
-			in.Clusters = append(in.Clusters, c)
-			n := 0
-			for _, p := range c.Paths {
-				n += len(p)
-			}
-			clustered.add(n)
-		}
-		in.Report.Sources = append(in.Report.Sources, clustered)
+		in.Clusters = append(in.Clusters, clusters(g.Changes)...)
+		names = sourceNames
 	}
-	for i := range in.Report.Sources {
-		s := &in.Report.Sources[i]
-		s.Tokens = BytesTokens(s.bytes)
-		in.Report.Tokens += s.Tokens
+	for _, n := range names {
+		in.Report.Sources = append(in.Report.Sources, SourceReport{Name: n})
 	}
-	return in
+	return in.Recounted()
 }
 
 // Linked is the docs a capability's session reads: the agent docs, readme

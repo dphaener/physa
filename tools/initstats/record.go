@@ -54,7 +54,13 @@ type Tokens struct {
 // Gather is the gather phase's counts.
 type Gather struct {
 	EstimatedTokens int `json:"estimated_tokens"`
-	Docs            struct {
+	Bound           struct {
+		Since          string `json:"since"`
+		MaxPRs         int    `json:"max_prs"`
+		PRLimitReached bool   `json:"pr_limit_reached"`
+		HistorySince   string `json:"history_since,omitempty"`
+	} `json:"bound"`
+	Docs struct {
 		Count   int `json:"count"`
 		Bytes   int `json:"bytes"`
 		Skipped int `json:"skipped"`
@@ -134,6 +140,7 @@ var (
 	modelPattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,63}$`)
 	extPattern    = regexp.MustCompile(`^\.[a-z0-9]{1,8}$`)
 	commitPattern = regexp.MustCompile(`^[0-9a-f]{12}$`)
+	datePattern   = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}`)
 	sourceNames   = map[string]bool{"docs": true, "pull requests": true, "review comments": true, "changes": true, "clusters": true}
 	statuses      = map[string]bool{"recovered": true, "not yet recovered": true, "failed": true}
 )
@@ -188,6 +195,7 @@ func build(kept, label string) (Record, error) {
 		out := g.Gather
 		out.Docs.Count, out.Docs.Bytes, out.Docs.Skipped = g.Docs.Count, g.Docs.Bytes, len(g.Docs.Skipped)
 		out.Discovery.Model = model(out.Discovery.Model)
+		out.Bound.Since, out.Bound.HistorySince = date(out.Bound.Since), date(out.Bound.HistorySince)
 		rec.Gather = &out
 	}
 	var p struct {
@@ -340,4 +348,9 @@ func topLevel(dir string) (string, error) {
 		}
 		d = up
 	}
+}
+
+// date keeps a value's leading YYYY-MM-DD and nothing else.
+func date(s string) string {
+	return datePattern.FindString(s)
 }

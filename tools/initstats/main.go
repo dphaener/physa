@@ -11,7 +11,7 @@
 // reach it. Read it before it leaves.
 //
 //	go build -o ~/bin/initstats ./tools/initstats   # once, in Physa's clone
-//	initstats -label repo-a [-dir REPO] [-physa physa] [-agent NAME]
+//	initstats -label repo-a [-dir REPO] [-physa physa] [-agent NAME] [-since YYYY-MM-DD] [-max-prs N]
 //	initstats -label repo-a -from REPO/.git/physa/initstats/<time>
 package main
 
@@ -46,6 +46,8 @@ func main() {
 	physa := flag.String("physa", "physa", "the physa binary")
 	agent := flag.String("agent", "", "passed to init as --agent")
 	from := flag.String("from", "", "a kept run's folder: print its record without running init again")
+	since := flag.String("since", "", "passed to init's gather as --since (YYYY-MM-DD): a shorter window of history and PRs")
+	maxPRs := flag.String("max-prs", "", "passed to init's gather as --max-prs")
 	flag.Parse()
 	if !regexp.MustCompile(`^[a-z0-9-]{1,32}$`).MatchString(*label) {
 		fail(errors.New("-label is required: lowercase letters, digits and dashes, such as repo-a"))
@@ -53,7 +55,7 @@ func main() {
 	kept := *from
 	if kept == "" {
 		var err error
-		if kept, err = run(*dir, *physa, *agent); err != nil {
+		if kept, err = run(*dir, *physa, *agent, *since, *maxPRs); err != nil {
 			fail(err)
 		}
 		fmt.Fprintf(os.Stderr, "initstats: raw output kept in %s\n", kept)
@@ -94,7 +96,7 @@ type Phase struct {
 
 // run runs the phases in dir and keeps their output; it returns the folder.
 // A phase that fails ends the run, since the next one reads what it stored.
-func run(dir, physa, agent string) (string, error) {
+func run(dir, physa, agent, since, maxPRs string) (string, error) {
 	repo, err := git.Open(dir)
 	if err != nil {
 		return "", err
@@ -114,6 +116,12 @@ func run(dir, physa, agent string) (string, error) {
 		args := []string{"init", p.flag, "--json"}
 		if agent != "" {
 			args = append(args, "--agent", agent)
+		}
+		if p.name == "gather" && since != "" {
+			args = append(args, "--since", since)
+		}
+		if p.name == "gather" && maxPRs != "" {
+			args = append(args, "--max-prs", maxPRs)
 		}
 		out, err := os.Create(filepath.Join(kept, p.name+".json"))
 		if err != nil {

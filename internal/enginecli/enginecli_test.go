@@ -259,7 +259,7 @@ func TestUsage(t *testing.T) {
 		{"engine", "status", "extra"}, {"engine", "--bogus"}, {"engine", "status", "-j"},
 		{"engine", "start", "--idle"}, {"engine", "start", "--idle", "soon"}, {"engine", "start", "--idle", "-5s"},
 		{"engine", "start", "--dir", "/x"}, {"engine", "run", "--json"}, {"engine", "run", "--dir"},
-		{"engine", "run", "--idle", "1s", "--idle", "2s"}, {"engine", "stop", "now"}, {"engine", "stop", "--json=yes"},
+		{"engine", "run", "--idle", "0"}, {"engine", "run", "--dir="}, {"engine", "stop", "now"}, {"engine", "stop", "--json=yes"},
 		{"api", "list", "extra"}, {"api", "describe"}, {"api", "describe", "a", "b"},
 		{"api", "call"}, {"api", "call", "m", "{}", "more"}, {"api", "call", "m", "--json"},
 	} {

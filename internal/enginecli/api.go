@@ -20,7 +20,7 @@ import (
 var getenv = os.Getenv
 
 func (g group) apiCommand() *cobra.Command {
-	return command.New("api",
+	return build("api",
 		"Call the engine's API by name, for debugging: a bare api lists its methods. "+
 			"Each command starts the engine when it is not running.",
 		[]string{
@@ -29,18 +29,17 @@ func (g group) apiCommand() *cobra.Command {
 			"physa api describe <method> [--json]",
 			"physa api call <method> [<json>|-]",
 		},
-		g.apiList,
+		g.apiList, []string{"json"},
 		leaf("list", "physa api list [--json]",
-			"List the API's methods with their summaries.", g.apiList),
+			"List the API's methods with their summaries.", g.apiList, "json"),
 		leaf("describe", "physa api describe <method> [--json]",
-			"Describe one method: its summary, the schemas of its input and output, examples and notes.", g.apiDescribe),
+			"Describe one method: its summary, the schemas of its input and output, examples and notes.", g.apiDescribe, "json"),
 		leaf("call", "physa api call <method> [<json>|-]",
 			"Call a method with JSON params (- reads them from stdin; none means {}) and print its result as JSON.", g.apiCall))
 }
 
-func (g group) apiList(args []string, stdout, stderr io.Writer) int {
-	f, ok := parse(args, "json")
-	if !ok || len(f.args) > 0 {
+func (g group) apiList(f *flags, args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 {
 		return command.BadUsage
 	}
 	var methods []api.MethodSummary
@@ -60,13 +59,12 @@ func (g group) apiList(args []string, stdout, stderr io.Writer) int {
 
 // apiDescribe prints a method's description: its summary, name, schemas,
 // examples and notes, in that order.
-func (g group) apiDescribe(args []string, stdout, stderr io.Writer) int {
-	f, ok := parse(args, "json")
-	if !ok || len(f.args) != 1 {
+func (g group) apiDescribe(f *flags, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
 		return command.BadUsage
 	}
 	var d api.Description
-	if err := g.call(0, "api.describe", api.DescribeInput{Name: f.args[0]}, &d); err != nil {
+	if err := g.call(0, "api.describe", api.DescribeInput{Name: args[0]}, &d); err != nil {
 		return failed(stderr, "api describe", err)
 	}
 	if f.json {
@@ -104,29 +102,28 @@ func (g group) apiDescribe(args []string, stdout, stderr io.Writer) int {
 
 // apiCall calls a method with the params given, read from stdin for "-",
 // and prints the result as JSON.
-func (g group) apiCall(args []string, stdout, stderr io.Writer) int {
-	f, ok := parse(args)
-	if !ok || len(f.args) < 1 || len(f.args) > 2 {
+func (g group) apiCall(_ *flags, args []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 || len(args) > 2 {
 		return command.BadUsage
 	}
-	if agent, in := agentenv.Detect(getenv); in && workapi.PersonOnly(f.args[0]) {
-		return failed(stderr, "api call", errors.New(workapi.Refusal(f.args[0], agent)))
+	if agent, in := agentenv.Detect(getenv); in && workapi.PersonOnly(args[0]) {
+		return failed(stderr, "api call", errors.New(workapi.Refusal(args[0], agent)))
 	}
 	params := []byte("{}")
-	if len(f.args) == 2 && f.args[1] == "-" {
+	if len(args) == 2 && args[1] == "-" {
 		b, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return failed(stderr, "api call", err)
 		}
 		params = b
-	} else if len(f.args) == 2 {
-		params = []byte(f.args[1])
+	} else if len(args) == 2 {
+		params = []byte(args[1])
 	}
 	if !json.Valid(params) {
 		return failed(stderr, "api call", errors.New("the params are not valid JSON"))
 	}
 	var result json.RawMessage
-	if err := g.call(0, f.args[0], json.RawMessage(params), &result); err != nil {
+	if err := g.call(0, args[0], json.RawMessage(params), &result); err != nil {
 		return failed(stderr, "api call", err)
 	}
 	return written(stderr, "api call", output.JSON(stdout, result))

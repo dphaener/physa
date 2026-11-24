@@ -9,12 +9,12 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/configdir"
@@ -54,7 +54,7 @@ type group struct {
 }
 
 func (g group) engineCommand() *cobra.Command {
-	return command.New("engine",
+	return build("engine",
 		"Start, check and stop the machine's one engine: a bare engine prints its status. "+
 			"status and the api commands start the engine when it is not running; stop never does.",
 		[]string{
@@ -64,23 +64,26 @@ func (g group) engineCommand() *cobra.Command {
 			"physa engine status [--json]",
 			"physa engine stop [--json]",
 		},
-		g.engineStatus,
+		g.engineStatus, []string{"json"},
 		leaf("run", "physa engine run [--dir <dir>] [--idle <duration>]",
 			"Run the engine in the foreground until it is stopped, interrupted, or idle for --idle (default 30m). "+
-				"--dir is the absolute directory it serves, by default the Physa settings directory; engine start passes it to the engine it starts.", g.engineRun),
+				"--dir is the absolute directory it serves, by default the Physa settings directory; engine start passes it to the engine it starts.",
+			g.engineRun, "dir", "idle"),
 		leaf("start", "physa engine start [--idle <duration>] [--json]",
-			"Start the engine in the background unless it is running, and print its status. --idle applies only to an engine this starts.", g.engineStart),
+			"Start the engine in the background unless it is running, and print its status. --idle applies only to an engine this starts.",
+			g.engineStart, "idle", "json"),
 		leaf("status", "physa engine status [--json]",
-			"Print the engine's version, pid, start time, API revision and open repos, starting the engine when it is not running.", g.engineStatus),
+			"Print the engine's version, pid, start time, API revision and open repos, starting the engine when it is not running.",
+			g.engineStatus, "json"),
 		leaf("stop", "physa engine stop [--json]",
-			"Stop the engine and wait until it is gone. No engine running is not an error.", engineStop))
+			"Stop the engine and wait until it is gone. No engine running is not an error.", engineStop, "json"))
 }
 
 // engineRun serves in the foreground until SIGINT or SIGTERM, engine.stop
 // or the idle time.
-func (g group) engineRun(args []string, _, stderr io.Writer) int {
-	f, ok := parse(args, "dir", "idle")
-	if !ok || len(f.args) > 0 {
+func (g group) engineRun(f *flags, args []string, _, stderr io.Writer) int {
+	idle, _, ok := f.duration()
+	if !ok || len(args) > 0 {
 		return command.BadUsage
 	}
 	dir, err := f.dir, error(nil)
@@ -94,7 +97,7 @@ func (g group) engineRun(args []string, _, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	err = engine.Run(ctx, engine.Options{Dir: dir, Idle: f.idle, Version: g.version, Methods: workapi.Methods, State: workapi.StateOptions()})
+	err = engine.Run(ctx, engine.Options{Dir: dir, Idle: idle, Version: g.version, Methods: workapi.Methods, State: workapi.StateOptions()})
 	var running *engine.RunningError
 	if errors.As(err, &running) {
 		failed(stderr, "engine run", err)
@@ -103,9 +106,9 @@ func (g group) engineRun(args []string, _, stderr io.Writer) int {
 	return written(stderr, "engine run", err)
 }
 
-func (g group) engineStart(args []string, stdout, stderr io.Writer) int {
-	f, ok := parse(args, "idle", "json")
-	if !ok || len(f.args) > 0 {
+func (g group) engineStart(f *flags, args []string, stdout, stderr io.Writer) int {
+	idle, idleSet, ok := f.duration()
+	if !ok || len(args) > 0 {
 		return command.BadUsage
 	}
 	dir, err := configdir.Dir()
@@ -113,11 +116,11 @@ func (g group) engineStart(args []string, stdout, stderr io.Writer) int {
 		return failed(stderr, "engine start", err)
 	}
 	o := g.start
-	o.Dir, o.Idle = dir, f.idle
+	o.Dir, o.Idle = dir, idle
 	started, err := enginestart.Start(context.Background(), o)
 	var s engine.Status
 	if err == nil {
-		err = g.call(f.idle, "engine.status", nil, &s)
+		err = g.call(idle, "engine.status", nil, &s)
 	}
 	if err != nil {
 		return failed(stderr, "engine start", err)
@@ -135,15 +138,14 @@ func (g group) engineStart(args []string, stdout, stderr io.Writer) int {
 		p.Heading("Engine already running")
 	}
 	printStatus(p, s)
-	if !started && f.idleSet {
+	if !started && idleSet {
 		p.Line("The running engine keeps its own idle time; --idle applies only to an engine that starts.")
 	}
 	return 0
 }
 
-func (g group) engineStatus(args []string, stdout, stderr io.Writer) int {
-	f, ok := parse(args, "json")
-	if !ok || len(f.args) > 0 {
+func (g group) engineStatus(f *flags, args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 {
 		return command.BadUsage
 	}
 	var s engine.Status
@@ -172,9 +174,8 @@ func printStatus(p *output.Printer, s engine.Status) {
 }
 
 // engineStop stops the engine; it never starts one.
-func engineStop(args []string, stdout, stderr io.Writer) int {
-	f, ok := parse(args, "json")
-	if !ok || len(f.args) > 0 {
+func engineStop(f *flags, args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 {
 		return command.BadUsage
 	}
 	dir, err := configdir.Dir()
@@ -217,9 +218,31 @@ func (g group) call(idle time.Duration, method string, params, result any) error
 	return c.Call(ctx, method, params, result)
 }
 
-// leaf is a subcommand with one usage line.
-func leaf(name, usage, summary string, run func(args []string, stdout, stderr io.Writer) int) *cobra.Command {
-	return command.New(name, summary, []string{usage}, run)
+// run is a command's job: it gets its flags and the positionals.
+type run func(f *flags, args []string, stdout, stderr io.Writer) int
+
+// leaf is a subcommand with one usage line and the flags named.
+func leaf(name, usage, summary string, job run, names ...string) *cobra.Command {
+	return build(name, summary, []string{usage}, job, names)
+}
+
+// build is a command declaring the flags named: "json", "dir" and "idle".
+func build(name, summary string, usage []string, job run, names []string, subs ...*cobra.Command) *cobra.Command {
+	f := &flags{}
+	return command.Declare(command.New(name, summary, usage,
+		func(args []string, stdout, stderr io.Writer) int { return job(f, args, stdout, stderr) }, subs...),
+		func(fs *pflag.FlagSet) {
+			for _, n := range names {
+				switch n {
+				case "json":
+					command.Switch(fs, "json", &f.json, "")
+				case "dir":
+					fs.StringVar(&f.dir, "dir", "", "")
+				default:
+					fs.StringVar(&f.idle, n, "", "")
+				}
+			}
+		})
 }
 
 // failed prints "physa <name>: <err>" and returns 2.
@@ -236,52 +259,19 @@ func written(stderr io.Writer, name string, err error) int {
 	return 0
 }
 
-// flags are a command line's flags and the arguments left.
+// flags are the values a command's flags bind to. --dir and --idle are
+// strings, checked by the job, since an empty value is already bad usage.
 type flags struct {
-	json, idleSet bool
-	dir           string
-	idle          time.Duration
-	args          []string
+	json      bool
+	dir, idle string
 }
 
-// parse reads args, taking only the flags in allowed: --json, and --dir
-// and --idle each with a value (--name value or --name=value). A lone "-"
-// is an argument. ok is false for any other flag, a flag given twice, or
-// a missing or bad value; --idle must be a positive duration.
-func parse(args []string, allowed ...string) (f flags, ok bool) {
-	seen := map[string]bool{}
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "-" || !strings.HasPrefix(a, "-") {
-			f.args = append(f.args, a)
-			continue
-		}
-		name, val, hasVal := strings.Cut(strings.TrimPrefix(a, "--"), "=")
-		if !strings.HasPrefix(a, "--") || seen[name] || !slices.Contains(allowed, name) || (name == "json" && hasVal) {
-			return f, false
-		}
-		seen[name] = true
-		if name == "json" {
-			f.json = true
-			continue
-		}
-		if !hasVal {
-			if i+1 >= len(args) {
-				return f, false
-			}
-			i++
-			val = args[i]
-		}
-		if name == "dir" {
-			f.dir = val
-		} else if d, err := time.ParseDuration(val); err == nil && d > 0 {
-			f.idle, f.idleSet = d, true
-		} else {
-			return f, false
-		}
-		if val == "" {
-			return f, false
-		}
+// duration reads --idle: set is false when it is absent, and ok is false
+// unless it is a positive duration.
+func (f *flags) duration() (d time.Duration, set, ok bool) {
+	if f.idle == "" {
+		return 0, false, true
 	}
-	return f, true
+	d, err := time.ParseDuration(f.idle)
+	return d, true, err == nil && d > 0
 }

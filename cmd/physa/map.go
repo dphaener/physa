@@ -6,7 +6,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/spf13/cobra"
+
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/history"
 	"github.com/dphaener/physa/internal/learnbranch"
 	"github.com/dphaener/physa/internal/mapfile"
@@ -17,126 +19,92 @@ import (
 )
 
 // mapCommand builds the map group.
-func mapCommand() *cli.Command {
-	return &cli.Command{
-		Name:    "map",
-		Summary: "Read the map: a bare map prints the index.",
-		Usage: []string{
-			"physa map",
-			"physa map index [dir]",
-			"physa map slice <capability>... [--with decisions|questions|all] [--format md|json]",
-			"physa map slice --entry <slug>... [--format md|json]",
-			"physa map changes [<range>] [--json] [--strict]",
-			"physa map records [--json]",
-			"physa map fmt [--check] [dir]",
-			"physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]",
-			"physa map hooks",
-		},
-		Run: func(args []string, stdout, stderr io.Writer) int {
+func mapCommand() *cobra.Command {
+	const learnUsage = "physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]"
+	sliceUsage := []string{
+		"physa map slice <capability>... [--with decisions|questions|all] [--format md|json]",
+		"physa map slice --entry <slug>... [--format md|json]",
+	}
+	usage := append(append([]string{"physa map", "physa map index [dir]"}, sliceUsage...),
+		"physa map changes [<range>] [--json] [--strict]",
+		"physa map records [--json]",
+		"physa map fmt [--check] [dir]",
+		learnUsage,
+		"physa map hooks",
+	)
+	return command.New("map", "Read the map: a bare map prints the index.", usage,
+		func(args []string, stdout, stderr io.Writer) int {
 			if len(args) > 0 {
-				return cli.BadUsage
+				return command.BadUsage
 			}
 			return index(".", stdout, stderr)
 		},
-		Subs: []*cli.Command{
-			{
-				Name:    "index",
-				Summary: "List the capabilities of the map with their promises.",
-				Usage:   []string{"physa map index [dir]"},
-				Run: func(args []string, stdout, stderr io.Writer) int {
-					if len(args) > 1 {
-						return cli.BadUsage
-					}
-					dir := "."
-					if len(args) == 1 {
-						dir = args[0]
-					}
-					return index(dir, stdout, stderr)
-				},
-			},
-			{
-				Name:    "slice",
-				Summary: "Print the slice of the map a task needs.",
-				Usage: []string{
-					"physa map slice <capability>... [--with decisions|questions|all] [--format md|json]",
-					"physa map slice --entry <slug>... [--format md|json]",
-				},
-				Run: func(args []string, stdout, stderr io.Writer) int {
-					opts, ok := mapslice.ParseFlags(args)
-					if !ok {
-						return cli.BadUsage
-					}
-					return slice(".", opts, stdout, stderr)
-				},
-			},
-			{
-				Name:    "changes",
-				Summary: "List the capability each change of a range names, with the findings.",
-				Usage:   []string{"physa map changes [<range>] [--json] [--strict]"},
-				Run: func(args []string, stdout, stderr io.Writer) int {
-					opts, ok := parseChanges(args, true)
-					if !ok {
-						return cli.BadUsage
-					}
-					return changes(".", opts, stdout, stderr)
-				},
-			},
-			{
-				Name:    "records",
-				Summary: "List the slice records, newest first.",
-				Usage:   []string{"physa map records [--json]"},
-				Run: func(args []string, stdout, stderr io.Writer) int {
-					asJSON, ok := parseRecords(args)
-					if !ok {
-						return cli.BadUsage
-					}
-					return records(".", asJSON, stdout, stderr)
-				},
-			},
-			{
-				Name:    "fmt",
-				Summary: "Rewrite the map's folders to their format: contents, index links and spacing (--check writes nothing and exits 1 when a file would change).",
-				Usage:   []string{"physa map fmt [--check] [dir]"},
-				Run: func(args []string, stdout, stderr io.Writer) int {
-					check := len(args) > 0 && args[0] == "--check"
-					if check {
-						args = args[1:]
-					}
-					if len(args) > 1 || (len(args) == 1 && strings.HasPrefix(args[0], "-")) {
-						return cli.BadUsage
-					}
-					dir := "."
-					if len(args) == 1 {
-						dir = args[0]
-					}
-					return format(dir, check, stdout, stderr)
-				},
-			},
-			{
-				Name:    "learn",
-				Summary: "Find what the merged changes have to teach the map, and draft proposals from it for the stewards to review (--signals stops at the signals; --write commits the kept proposals to physa/learn, --push pushes it, --pr opens its PR).",
-				Usage:   []string{"physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]"},
-				Run: func(args []string, stdout, stderr io.Writer) int {
-					opts, ok := learnbranch.ParseFlags(args)
-					if !ok {
-						return cli.BadUsage
-					}
-					return learnMap(".", opts, stdout, stderr)
-				},
-			},
-			{
-				Name:    "hooks",
-				Summary: "Point the repo's hooks at the one that stamps Session: on commits made in Claude Code, so learning can join a change to its session.",
-				Usage:   []string{"physa map hooks"},
-				Run: func(args []string, stdout, stderr io.Writer) int {
-					if len(args) > 0 {
-						return cli.BadUsage
-					}
-					return hooks(".", stdout, stderr)
-				},
-			},
-		},
-	}
+		command.New("index", "List the capabilities of the map with their promises.", []string{"physa map index [dir]"},
+			func(args []string, stdout, stderr io.Writer) int {
+				if len(args) > 1 {
+					return command.BadUsage
+				}
+				dir := "."
+				if len(args) == 1 {
+					dir = args[0]
+				}
+				return index(dir, stdout, stderr)
+			}),
+		command.New("slice", "Print the slice of the map a task needs.", sliceUsage,
+			func(args []string, stdout, stderr io.Writer) int {
+				opts, ok := mapslice.ParseFlags(args)
+				if !ok {
+					return command.BadUsage
+				}
+				return slice(".", opts, stdout, stderr)
+			}),
+		command.New("changes", "List the capability each change of a range names, with the findings.", []string{"physa map changes [<range>] [--json] [--strict]"},
+			func(args []string, stdout, stderr io.Writer) int {
+				opts, ok := parseChanges(args, true)
+				if !ok {
+					return command.BadUsage
+				}
+				return changes(".", opts, stdout, stderr)
+			}),
+		command.New("records", "List the slice records, newest first.", []string{"physa map records [--json]"},
+			func(args []string, stdout, stderr io.Writer) int {
+				asJSON, ok := parseRecords(args)
+				if !ok {
+					return command.BadUsage
+				}
+				return records(".", asJSON, stdout, stderr)
+			}),
+		command.New("fmt", "Rewrite the map's folders to their format: contents, index links and spacing (--check writes nothing and exits 1 when a file would change).", []string{"physa map fmt [--check] [dir]"},
+			func(args []string, stdout, stderr io.Writer) int {
+				check := len(args) > 0 && args[0] == "--check"
+				if check {
+					args = args[1:]
+				}
+				if len(args) > 1 || (len(args) == 1 && strings.HasPrefix(args[0], "-")) {
+					return command.BadUsage
+				}
+				dir := "."
+				if len(args) == 1 {
+					dir = args[0]
+				}
+				return format(dir, check, stdout, stderr)
+			}),
+		command.New("learn", "Find what the merged changes have to teach the map, and draft proposals from it for the stewards to review (--signals stops at the signals; --write commits the kept proposals to physa/learn, --push pushes it, --pr opens its PR).", []string{learnUsage},
+			func(args []string, stdout, stderr io.Writer) int {
+				opts, ok := learnbranch.ParseFlags(args)
+				if !ok {
+					return command.BadUsage
+				}
+				return learnMap(".", opts, stdout, stderr)
+			}),
+		command.New("hooks", "Point the repo's hooks at the one that stamps Session: on commits made in Claude Code, so learning can join a change to its session.", []string{"physa map hooks"},
+			func(args []string, stdout, stderr io.Writer) int {
+				if len(args) > 0 {
+					return command.BadUsage
+				}
+				return hooks(".", stdout, stderr)
+			}),
+	)
 }
 
 // index prints the index of the map in dir: 0 when it printed, even if the map

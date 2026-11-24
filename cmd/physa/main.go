@@ -16,7 +16,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/spf13/cobra"
+
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/enginecli"
 	"github.com/dphaener/physa/internal/evidencecli"
 	"github.com/dphaener/physa/internal/ideacli"
@@ -32,53 +34,42 @@ func main() {
 
 // run executes one command line and returns the process exit code.
 func run(args []string, stdout, stderr io.Writer) int {
-	return cli.Dispatch(rootCommand(), args, stdout, stderr)
+	return command.Execute(rootCommand(), args, stdout, stderr)
 }
 
 // rootCommand builds the tree of commands.
-func rootCommand() *cli.Command {
-	root := &cli.Command{
-		Name:    "physa",
-		Summary: "Physa: product management for agents.",
-		Usage:   []string{"physa <command> [--help]"},
+func rootCommand() *cobra.Command {
+	root := command.New("physa", "Physa: product management for agents.", []string{"physa <command> [--help]"}, nil,
+		checkCommand(), mapCommand(), initCommand(), command.FromCLI(ideacli.Command(newForge)))
+	for _, c := range pursuitcli.Commands(newForge) {
+		root.AddCommand(command.FromCLI(c))
 	}
-	root.Subs = []*cli.Command{checkCommand(), mapCommand(), initCommand(), ideacli.Command(newForge)}
-	root.Subs = append(append(root.Subs, pursuitcli.Commands(newForge)...), evidencecli.Command(newForge))
-	root.Subs = append(root.Subs, enginecli.Commands(version)...)
-	root.Subs = append(root.Subs, []*cli.Command{
-		{
-			Name:    "sync",
-			Summary: "Not built yet: it returns with digests, after the engine.",
-			Usage:   []string{"physa sync"},
-			Run: func(_ []string, _, stderr io.Writer) int {
+	root.AddCommand(command.FromCLI(evidencecli.Command(newForge)))
+	for _, c := range enginecli.Commands(version) {
+		root.AddCommand(command.FromCLI(c))
+	}
+	root.AddCommand(
+		command.New("sync", "Not built yet: it returns with digests, after the engine.", []string{"physa sync"},
+			func(_ []string, _, stderr io.Writer) int {
 				fmt.Fprintln(stderr, "physa sync: not yet; it returns with digests, after the engine (design 07 §7)")
 				return 2
-			},
-		},
-		{
-			Name:    "version",
-			Summary: "Print the version of this build.",
-			Usage:   []string{"physa version"},
-			Run: func(args []string, stdout, _ io.Writer) int {
+			}),
+		command.New("version", "Print the version of this build.", []string{"physa version"},
+			func(args []string, stdout, _ io.Writer) int {
 				if len(args) > 0 {
-					return cli.BadUsage
+					return command.BadUsage
 				}
 				fmt.Fprintf(stdout, "physa %s\n", version)
 				return 0
-			},
-		},
-		{
-			Name:    "help",
-			Summary: "Print the commands.",
-			Usage:   []string{"physa help"},
-			Run: func(args []string, stdout, _ io.Writer) int {
+			}),
+		command.New("help", "Print the commands.", []string{"physa help"},
+			func(args []string, stdout, _ io.Writer) int {
 				if len(args) > 0 {
-					return cli.BadUsage
+					return command.BadUsage
 				}
-				cli.Help(root, stdout)
+				command.Help(root, stdout)
 				return 0
-			},
-		},
-	}...)
+			}),
+	)
 	return root
 }

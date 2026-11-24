@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/store"
@@ -199,7 +199,7 @@ func TestGatherReplaces(t *testing.T) {
 func TestBadSinceIsBadUsage(t *testing.T) {
 	newRepo(t)
 	code, _, _ := runInit(testEnv(t, nil, nil), "--gather", "--since", "yesterday")
-	if code != cli.BadUsage {
+	if code != command.BadUsage {
 		t.Errorf("code %d", code)
 	}
 }
@@ -287,7 +287,7 @@ func TestProposeHasNoCircuitBreaker(t *testing.T) {
 func TestAppetiteIsBadUsage(t *testing.T) {
 	newRepo(t)
 	for _, args := range [][]string{{"--appetite", "1000"}, {"--gather", "--appetite", "1000"}, {"--propose", "--appetite=1000"}, {"--recover", "--appetite", "1000"}} {
-		if code, _, _ := runInit(testEnv(t, nil, nil), args...); code != cli.BadUsage {
+		if code, _, _ := runInit(testEnv(t, nil, nil), args...); code != command.BadUsage {
 			t.Errorf("%v: code %d", args, code)
 		}
 	}
@@ -295,7 +295,7 @@ func TestAppetiteIsBadUsage(t *testing.T) {
 
 func TestProposeWithGatherIsBadUsage(t *testing.T) {
 	newRepo(t)
-	if code, _, _ := runInit(testEnv(t, nil, nil), "--propose", "--gather"); code != cli.BadUsage {
+	if code, _, _ := runInit(testEnv(t, nil, nil), "--propose", "--gather"); code != command.BadUsage {
 		t.Errorf("code %d", code)
 	}
 }
@@ -352,7 +352,7 @@ func TestRecoverUnknownOnly(t *testing.T) {
 func TestRecoverBadCombinationsAreBadUsage(t *testing.T) {
 	newRepo(t)
 	for _, args := range [][]string{{"--recover", "--gather"}, {"--recover", "--propose"}, {"--only", "x"}} {
-		if code, _, _ := runInit(testEnv(t, nil, nil), args...); code != cli.BadUsage {
+		if code, _, _ := runInit(testEnv(t, nil, nil), args...); code != command.BadUsage {
 			t.Errorf("%v: code %d", args, code)
 		}
 	}

@@ -39,7 +39,7 @@ Commit messages follow Conventional Commits, written with the `commit-style` ski
 
 ## Code
 
-- Plain Go, mostly the standard library. Two exceptions, chosen by the owner (03 §16): Charm's libraries for the CLI on a terminal, and one WebSocket library for the engine's API. Small packages, each with one job and a short doc stating its promise in glossary terms.
+- Plain Go, mostly the standard library. Three exceptions, chosen by the owner: Charm's libraries for the CLI on a terminal and one WebSocket library for the engine's API (03 §16), and Cobra (github.com/spf13/cobra) for the command tree. Fang is left out for now, because it is experimental and can wrap the root later in one call. Small packages, each with one job and a short doc stating its promise in glossary terms.
 - The core imports nothing above it: a package under `internal/` never imports `cmd/` or `plugins/`. CI enforces this with `go run ./tools/codecheck`.
 - The map never imports the engine: a package under `internal/` on the map's side, including the foundations both use (version control, the forge, the adapter, the store, output), never imports a package on the engine's side. The engine may import the map's. `engineSide` in `tools/codecheck` lists the engine's packages; a new engine package goes there.
 - Every package stays under 800 non-blank lines of non-test Go and has a doc comment stating its promise (`tools/codecheck`). Going over means cutting scope, not raising the budget.

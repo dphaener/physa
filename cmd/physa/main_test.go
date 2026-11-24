@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/forge/github"
 	"github.com/dphaener/physa/internal/mapfolder"
@@ -114,7 +114,7 @@ func TestVersion(t *testing.T) {
 // rootHelp is the root help text.
 func rootHelp() string {
 	var b bytes.Buffer
-	cli.Help(rootCommand(), &b)
+	command.Help(rootCommand(), &b)
 	return b.String()
 }
 

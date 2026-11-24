@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/discovery"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
@@ -54,11 +54,11 @@ type Env struct {
 // the full run stopped before proposing for want of a yes, or some
 // capabilities are not yet recovered (still written with --write), 2 when it
 // could not (a capability failed, the map failed its check, the hook was
-// refused), and cli.BadUsage for arguments not understood.
+// refused), and command.BadUsage for arguments not understood.
 func Run(args []string, stdout, stderr io.Writer, env Env) int {
 	o, ok := ParseFlags(args, env.Now())
 	if !ok {
-		return cli.BadUsage
+		return command.BadUsage
 	}
 	root, err := filepath.Abs(".")
 	if err != nil {

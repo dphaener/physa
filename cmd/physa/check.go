@@ -5,58 +5,48 @@ import (
 	"io"
 	"strings"
 
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/spf13/cobra"
+
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/vcs/git"
 )
 
 // checkCommand builds the check group.
-func checkCommand() *cli.Command {
-	return &cli.Command{
-		Name:    "check",
-		Summary: "Check the map and the changes of a range against it.",
-		Usage: []string{
-			"physa check [<range>] [--strict]",
-			"physa check map [dir]",
-			"physa check changes [<range>] [--json] [--strict]",
-		},
-		Run: func(args []string, stdout, stderr io.Writer) int {
+func checkCommand() *cobra.Command {
+	usage := []string{
+		"physa check [<range>] [--strict]",
+		"physa check map [dir]",
+		"physa check changes [<range>] [--json] [--strict]",
+	}
+	return command.New("check", "Check the map and the changes of a range against it.", usage,
+		func(args []string, stdout, stderr io.Writer) int {
 			opts, ok := parseChanges(args, false)
 			if !ok {
-				return cli.BadUsage
+				return command.BadUsage
 			}
 			return checkBare(".", opts, stdout, stderr)
 		},
-		Subs: []*cli.Command{
-			{
-				Name:    "map",
-				Summary: "Check the map: 0 when sound, 1 with problems, 2 when it cannot be read.",
-				Usage:   []string{"physa check map [dir]"},
-				Run: func(args []string, stdout, stderr io.Writer) int {
-					if len(args) > 1 {
-						return cli.BadUsage
-					}
-					dir := "."
-					if len(args) == 1 {
-						dir = args[0]
-					}
-					return checkMap(dir, "physa check map", stdout, stderr)
-				},
-			},
-			{
-				Name:    "changes",
-				Summary: "Check each change of a range, and the map as each leaves it.",
-				Usage:   []string{"physa check changes [<range>] [--json] [--strict]"},
-				Run: func(args []string, stdout, stderr io.Writer) int {
-					opts, ok := parseChanges(args, true)
-					if !ok {
-						return cli.BadUsage
-					}
-					return checkChanges(".", "physa check changes", opts, stdout, stderr)
-				},
-			},
-		},
-	}
+		command.New("map", "Check the map: 0 when sound, 1 with problems, 2 when it cannot be read.", []string{"physa check map [dir]"},
+			func(args []string, stdout, stderr io.Writer) int {
+				if len(args) > 1 {
+					return command.BadUsage
+				}
+				dir := "."
+				if len(args) == 1 {
+					dir = args[0]
+				}
+				return checkMap(dir, "physa check map", stdout, stderr)
+			}),
+		command.New("changes", "Check each change of a range, and the map as each leaves it.", []string{"physa check changes [<range>] [--json] [--strict]"},
+			func(args []string, stdout, stderr io.Writer) int {
+				opts, ok := parseChanges(args, true)
+				if !ok {
+					return command.BadUsage
+				}
+				return checkChanges(".", "physa check changes", opts, stdout, stderr)
+			}),
+	)
 }
 
 // checkBare is physa check: the change check when a range is given or the

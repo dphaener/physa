@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/cli"
+	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/mapcheck"
@@ -691,7 +691,7 @@ func TestFullHooksRefusedKeepsBranch(t *testing.T) {
 func TestFullBadCombinationsAreBadUsage(t *testing.T) {
 	newRepo(t)
 	for _, args := range [][]string{{"--push"}, {"--write", "--propose"}, {"--answers", "a.txt", "--recover"}, {"--hooks"}, {"--yes", "--gather"}, {"--appetite", "300000"}} {
-		if code, _, _ := runInit(testEnv(t, nil, nil), args...); code != cli.BadUsage {
+		if code, _, _ := runInit(testEnv(t, nil, nil), args...); code != command.BadUsage {
 			t.Errorf("%v: code %d", args, code)
 		}
 	}

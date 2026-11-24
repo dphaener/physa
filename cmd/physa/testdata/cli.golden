@@ -1,0 +1,756 @@
+$ physa 
+exit 2
+--- stdout
+--- stderr
+usage: physa <command> [--help]
+
+Physa: product management for agents.
+
+Commands:
+  check     Check the map and the changes of a range against it.
+  map       Read the map: a bare map prints the index.
+  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose or --recover runs one phase.
+  idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
+  pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
+  pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
+  evidence  List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. It reads what the engine stored and polls nothing.
+  engine    Start, check and stop the machine's one engine: a bare engine prints its status. status and the api commands start the engine when it is not running; stop never does.
+  api       Call the engine's API by name, for debugging: a bare api lists its methods. Each command starts the engine when it is not running.
+  sync      Not built yet: it returns with digests, after the engine.
+  version   Print the version of this build.
+  help      Print the commands.
+
+$ physa bogus
+exit 2
+--- stdout
+--- stderr
+usage: physa <command> [--help]
+
+Physa: product management for agents.
+
+Commands:
+  check     Check the map and the changes of a range against it.
+  map       Read the map: a bare map prints the index.
+  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose or --recover runs one phase.
+  idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
+  pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
+  pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
+  evidence  List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. It reads what the engine stored and polls nothing.
+  engine    Start, check and stop the machine's one engine: a bare engine prints its status. status and the api commands start the engine when it is not running; stop never does.
+  api       Call the engine's API by name, for debugging: a bare api lists its methods. Each command starts the engine when it is not running.
+  sync      Not built yet: it returns with digests, after the engine.
+  version   Print the version of this build.
+  help      Print the commands.
+
+$ physa bogus list
+exit 2
+--- stdout
+--- stderr
+usage: physa <command> [--help]
+
+Physa: product management for agents.
+
+Commands:
+  check     Check the map and the changes of a range against it.
+  map       Read the map: a bare map prints the index.
+  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose or --recover runs one phase.
+  idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
+  pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
+  pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
+  evidence  List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. It reads what the engine stored and polls nothing.
+  engine    Start, check and stop the machine's one engine: a bare engine prints its status. status and the api commands start the engine when it is not running; stop never does.
+  api       Call the engine's API by name, for debugging: a bare api lists its methods. Each command starts the engine when it is not running.
+  sync      Not built yet: it returns with digests, after the engine.
+  version   Print the version of this build.
+  help      Print the commands.
+
+$ physa --help
+exit 0
+--- stdout
+usage: physa <command> [--help]
+
+Physa: product management for agents.
+
+Commands:
+  check     Check the map and the changes of a range against it.
+  map       Read the map: a bare map prints the index.
+  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose or --recover runs one phase.
+  idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
+  pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
+  pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
+  evidence  List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. It reads what the engine stored and polls nothing.
+  engine    Start, check and stop the machine's one engine: a bare engine prints its status. status and the api commands start the engine when it is not running; stop never does.
+  api       Call the engine's API by name, for debugging: a bare api lists its methods. Each command starts the engine when it is not running.
+  sync      Not built yet: it returns with digests, after the engine.
+  version   Print the version of this build.
+  help      Print the commands.
+--- stderr
+
+$ physa help
+exit 0
+--- stdout
+usage: physa <command> [--help]
+
+Physa: product management for agents.
+
+Commands:
+  check     Check the map and the changes of a range against it.
+  map       Read the map: a bare map prints the index.
+  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose or --recover runs one phase.
+  idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
+  pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
+  pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
+  evidence  List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. It reads what the engine stored and polls nothing.
+  engine    Start, check and stop the machine's one engine: a bare engine prints its status. status and the api commands start the engine when it is not running; stop never does.
+  api       Call the engine's API by name, for debugging: a bare api lists its methods. Each command starts the engine when it is not running.
+  sync      Not built yet: it returns with digests, after the engine.
+  version   Print the version of this build.
+  help      Print the commands.
+--- stderr
+
+$ physa help extra
+exit 2
+--- stdout
+--- stderr
+usage: physa help
+
+Print the commands.
+
+$ physa version extra
+exit 2
+--- stdout
+--- stderr
+usage: physa version
+
+Print the version of this build.
+
+$ physa sync
+exit 2
+--- stdout
+--- stderr
+physa sync: not yet; it returns with digests, after the engine (design 07 §7)
+
+$ physa check --help
+exit 0
+--- stdout
+usage: physa check [<range>] [--strict]
+       physa check map [dir]
+       physa check changes [<range>] [--json] [--strict]
+
+Check the map and the changes of a range against it.
+
+Commands:
+  map      Check the map: 0 when sound, 1 with problems, 2 when it cannot be read.
+  changes  Check each change of a range, and the map as each leaves it.
+--- stderr
+
+$ physa check map --help
+exit 0
+--- stdout
+usage: physa check map [dir]
+
+Check the map: 0 when sound, 1 with problems, 2 when it cannot be read.
+--- stderr
+
+$ physa check changes --help
+exit 0
+--- stdout
+usage: physa check changes [<range>] [--json] [--strict]
+
+Check each change of a range, and the map as each leaves it.
+--- stderr
+
+$ physa map --help
+exit 0
+--- stdout
+usage: physa map
+       physa map index [dir]
+       physa map slice <capability>... [--with decisions|questions|all] [--format md|json]
+       physa map slice --entry <slug>... [--format md|json]
+       physa map changes [<range>] [--json] [--strict]
+       physa map records [--json]
+       physa map fmt [--check] [dir]
+       physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]
+       physa map hooks
+
+Read the map: a bare map prints the index.
+
+Commands:
+  index    List the capabilities of the map with their promises.
+  slice    Print the slice of the map a task needs.
+  changes  List the capability each change of a range names, with the findings.
+  records  List the slice records, newest first.
+  fmt      Rewrite the map's folders to their format: contents, index links and spacing (--check writes nothing and exits 1 when a file would change).
+  learn    Find what the merged changes have to teach the map, and draft proposals from it for the stewards to review (--signals stops at the signals; --write commits the kept proposals to physa/learn, --push pushes it, --pr opens its PR).
+  hooks    Point the repo's hooks at the one that stamps Session: on commits made in Claude Code, so learning can join a change to its session.
+--- stderr
+
+$ physa map index --help
+exit 0
+--- stdout
+usage: physa map index [dir]
+
+List the capabilities of the map with their promises.
+--- stderr
+
+$ physa map slice --help
+exit 0
+--- stdout
+usage: physa map slice <capability>... [--with decisions|questions|all] [--format md|json]
+       physa map slice --entry <slug>... [--format md|json]
+
+Print the slice of the map a task needs.
+--- stderr
+
+$ physa map changes --help
+exit 0
+--- stdout
+usage: physa map changes [<range>] [--json] [--strict]
+
+List the capability each change of a range names, with the findings.
+--- stderr
+
+$ physa map records --help
+exit 0
+--- stdout
+usage: physa map records [--json]
+
+List the slice records, newest first.
+--- stderr
+
+$ physa map fmt --help
+exit 0
+--- stdout
+usage: physa map fmt [--check] [dir]
+
+Rewrite the map's folders to their format: contents, index links and spacing (--check writes nothing and exits 1 when a file would change).
+--- stderr
+
+$ physa map learn --help
+exit 0
+--- stdout
+usage: physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]
+
+Find what the merged changes have to teach the map, and draft proposals from it for the stewards to review (--signals stops at the signals; --write commits the kept proposals to physa/learn, --push pushes it, --pr opens its PR).
+--- stderr
+
+$ physa map hooks --help
+exit 0
+--- stdout
+usage: physa map hooks
+
+Point the repo's hooks at the one that stamps Session: on commits made in Claude Code, so learning can join a change to its session.
+--- stderr
+
+$ physa init --help
+exit 0
+--- stdout
+usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]
+       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--json]
+       physa init --propose [--agent NAME] [--json]
+       physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
+
+Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose or --recover runs one phase.
+--- stderr
+
+$ physa idea --help
+exit 0
+--- stdout
+usage: physa idea [--json]
+       physa idea add "<text>" [--slug <slug>] [--json]
+       physa idea list [--json]
+       physa idea show [<slug>] [--json]
+
+Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
+
+Commands:
+  add   Add an idea and print its slug, made from the text unless --slug chooses it.
+  list  List the ideas, newest first, with who added them and their facts.
+  show  Show an idea: its text, who added it, and its pursuits.
+--- stderr
+
+$ physa idea add --help
+exit 0
+--- stdout
+usage: physa idea add "<text>" [--slug <slug>] [--json]
+
+Add an idea and print its slug, made from the text unless --slug chooses it.
+--- stderr
+
+$ physa idea list --help
+exit 0
+--- stdout
+usage: physa idea list [--json]
+
+List the ideas, newest first, with who added them and their facts.
+--- stderr
+
+$ physa idea show --help
+exit 0
+--- stdout
+usage: physa idea show [<slug>] [--json]
+
+Show an idea: its text, who added it, and its pursuits.
+--- stderr
+
+$ physa pursue --help
+exit 0
+--- stdout
+usage: physa pursue [<idea slug>] [--appetite <tokens>] [--signal-from <file>|-] [--json]
+
+Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
+--- stderr
+
+$ physa pursuit --help
+exit 0
+--- stdout
+usage: physa pursuit [list] [--json]
+       physa pursuit show [<slug>] [--json]
+       physa pursuit stop [<slug>] [--reason <text>] [--yes] [--json]
+       physa pursuit plan set [<pursuit>] [--reason <text>] [--from <file>|-] [--json]
+       physa pursuit plan show [<pursuit>] [--history] [--json]
+       physa pursuit work <pursuit>/<change> [--json]
+
+List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
+
+Commands:
+  list  List the pursuits, newest first, with their appetite and what is spent.
+  show  Show a pursuit: its facts, its signal, its progress as facts and what needs its person.
+  stop  Stop an active pursuit, asking first on a terminal unless --yes.
+  plan  Set and show a pursuit's plan: the changes it will land, each in one capability, with what to do and how to tell it is done.
+  work  Record that this agent session works on a planned change, so its commits carry a Change: trailer. --current prints <pursuit>/<change> for the session, or nothing; it reads the store and never fails.
+--- stderr
+
+$ physa pursuit list --help
+exit 0
+--- stdout
+usage: physa pursuit list [--json]
+
+List the pursuits, newest first, with their appetite and what is spent.
+--- stderr
+
+$ physa pursuit show --help
+exit 0
+--- stdout
+usage: physa pursuit show [<slug>] [--json]
+
+Show a pursuit: its facts, its signal, its progress as facts and what needs its person.
+--- stderr
+
+$ physa pursuit stop --help
+exit 0
+--- stdout
+usage: physa pursuit stop [<slug>] [--reason <text>] [--yes] [--json]
+
+Stop an active pursuit, asking first on a terminal unless --yes.
+--- stderr
+
+$ physa pursuit plan --help
+exit 0
+--- stdout
+usage: physa pursuit plan set [<pursuit>] [--reason <text>] [--from <file>|-] [--json]
+       physa pursuit plan show [<pursuit>] [--history] [--json]
+
+Set and show a pursuit's plan: the changes it will land, each in one capability, with what to do and how to tell it is done.
+
+Commands:
+  set   Set a pursuit's plan as its next revision, reading the plan's JSON from --from, or from stdin off a terminal. A revision after the first needs --reason: what the plan missed. Agents may set a plan.
+  show  Show a pursuit's current plan and its changes; --history lists every revision, oldest first, with its reason.
+--- stderr
+
+$ physa pursuit plan set --help
+exit 0
+--- stdout
+usage: physa pursuit plan set [<pursuit>] [--reason <text>] [--from <file>|-] [--json]
+
+Set a pursuit's plan as its next revision, reading the plan's JSON from --from, or from stdin off a terminal. A revision after the first needs --reason: what the plan missed. Agents may set a plan.
+--- stderr
+
+$ physa pursuit plan show --help
+exit 0
+--- stdout
+usage: physa pursuit plan show [<pursuit>] [--history] [--json]
+
+Show a pursuit's current plan and its changes; --history lists every revision, oldest first, with its reason.
+--- stderr
+
+$ physa pursuit work --help
+exit 0
+--- stdout
+usage: physa pursuit work <pursuit>/<change> [--json]
+       physa pursuit work --current
+
+Record that this agent session works on a planned change, so its commits carry a Change: trailer. --current prints <pursuit>/<change> for the session, or nothing; it reads the store and never fails.
+--- stderr
+
+$ physa evidence --help
+exit 0
+--- stdout
+usage: physa evidence [--capability <slug>] [--pursuit <slug>] [--limit N] [--json]
+
+List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. It reads what the engine stored and polls nothing.
+--- stderr
+
+$ physa engine --help
+exit 0
+--- stdout
+usage: physa engine [--json]
+       physa engine run [--dir <dir>] [--idle <duration>]
+       physa engine start [--idle <duration>] [--json]
+       physa engine status [--json]
+       physa engine stop [--json]
+
+Start, check and stop the machine's one engine: a bare engine prints its status. status and the api commands start the engine when it is not running; stop never does.
+
+Commands:
+  run     Run the engine in the foreground until it is stopped, interrupted, or idle for --idle (default 30m). --dir is the absolute directory it serves, by default the Physa settings directory; engine start passes it to the engine it starts.
+  start   Start the engine in the background unless it is running, and print its status. --idle applies only to an engine this starts.
+  status  Print the engine's version, pid, start time, API revision and open repos, starting the engine when it is not running.
+  stop    Stop the engine and wait until it is gone. No engine running is not an error.
+--- stderr
+
+$ physa engine run --help
+exit 0
+--- stdout
+usage: physa engine run [--dir <dir>] [--idle <duration>]
+
+Run the engine in the foreground until it is stopped, interrupted, or idle for --idle (default 30m). --dir is the absolute directory it serves, by default the Physa settings directory; engine start passes it to the engine it starts.
+--- stderr
+
+$ physa engine start --help
+exit 0
+--- stdout
+usage: physa engine start [--idle <duration>] [--json]
+
+Start the engine in the background unless it is running, and print its status. --idle applies only to an engine this starts.
+--- stderr
+
+$ physa engine status --help
+exit 0
+--- stdout
+usage: physa engine status [--json]
+
+Print the engine's version, pid, start time, API revision and open repos, starting the engine when it is not running.
+--- stderr
+
+$ physa engine stop --help
+exit 0
+--- stdout
+usage: physa engine stop [--json]
+
+Stop the engine and wait until it is gone. No engine running is not an error.
+--- stderr
+
+$ physa api --help
+exit 0
+--- stdout
+usage: physa api [--json]
+       physa api list [--json]
+       physa api describe <method> [--json]
+       physa api call <method> [<json>|-]
+
+Call the engine's API by name, for debugging: a bare api lists its methods. Each command starts the engine when it is not running.
+
+Commands:
+  list      List the API's methods with their summaries.
+  describe  Describe one method: its summary, the schemas of its input and output, examples and notes.
+  call      Call a method with JSON params (- reads them from stdin; none means {}) and print its result as JSON.
+--- stderr
+
+$ physa api list --help
+exit 0
+--- stdout
+usage: physa api list [--json]
+
+List the API's methods with their summaries.
+--- stderr
+
+$ physa api describe --help
+exit 0
+--- stdout
+usage: physa api describe <method> [--json]
+
+Describe one method: its summary, the schemas of its input and output, examples and notes.
+--- stderr
+
+$ physa api call --help
+exit 0
+--- stdout
+usage: physa api call <method> [<json>|-]
+
+Call a method with JSON params (- reads them from stdin; none means {}) and print its result as JSON.
+--- stderr
+
+$ physa sync --help
+exit 0
+--- stdout
+usage: physa sync
+
+Not built yet: it returns with digests, after the engine.
+--- stderr
+
+$ physa version --help
+exit 0
+--- stdout
+usage: physa version
+
+Print the version of this build.
+--- stderr
+
+$ physa help --help
+exit 0
+--- stdout
+usage: physa help
+
+Print the commands.
+--- stderr
+
+$ physa map slice x --help
+exit 0
+--- stdout
+usage: physa map slice <capability>... [--with decisions|questions|all] [--format md|json]
+       physa map slice --entry <slug>... [--format md|json]
+
+Print the slice of the map a task needs.
+--- stderr
+
+$ physa map --help index
+exit 0
+--- stdout
+usage: physa map
+       physa map index [dir]
+       physa map slice <capability>... [--with decisions|questions|all] [--format md|json]
+       physa map slice --entry <slug>... [--format md|json]
+       physa map changes [<range>] [--json] [--strict]
+       physa map records [--json]
+       physa map fmt [--check] [dir]
+       physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]
+       physa map hooks
+
+Read the map: a bare map prints the index.
+
+Commands:
+  index    List the capabilities of the map with their promises.
+  slice    Print the slice of the map a task needs.
+  changes  List the capability each change of a range names, with the findings.
+  records  List the slice records, newest first.
+  fmt      Rewrite the map's folders to their format: contents, index links and spacing (--check writes nothing and exits 1 when a file would change).
+  learn    Find what the merged changes have to teach the map, and draft proposals from it for the stewards to review (--signals stops at the signals; --write commits the kept proposals to physa/learn, --push pushes it, --pr opens its PR).
+  hooks    Point the repo's hooks at the one that stamps Session: on commits made in Claude Code, so learning can join a change to its session.
+--- stderr
+
+$ physa engine status -h
+exit 2
+--- stdout
+--- stderr
+usage: physa engine status [--json]
+
+Print the engine's version, pid, start time, API revision and open repos, starting the engine when it is not running.
+
+$ physa map -h
+exit 2
+--- stdout
+--- stderr
+usage: physa map
+       physa map index [dir]
+       physa map slice <capability>... [--with decisions|questions|all] [--format md|json]
+       physa map slice --entry <slug>... [--format md|json]
+       physa map changes [<range>] [--json] [--strict]
+       physa map records [--json]
+       physa map fmt [--check] [dir]
+       physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]
+       physa map hooks
+
+Read the map: a bare map prints the index.
+
+Commands:
+  index    List the capabilities of the map with their promises.
+  slice    Print the slice of the map a task needs.
+  changes  List the capability each change of a range names, with the findings.
+  records  List the slice records, newest first.
+  fmt      Rewrite the map's folders to their format: contents, index links and spacing (--check writes nothing and exits 1 when a file would change).
+  learn    Find what the merged changes have to teach the map, and draft proposals from it for the stewards to review (--signals stops at the signals; --write commits the kept proposals to physa/learn, --push pushes it, --pr opens its PR).
+  hooks    Point the repo's hooks at the one that stamps Session: on commits made in Claude Code, so learning can join a change to its session.
+
+$ physa pursuit plan
+exit 2
+--- stdout
+--- stderr
+usage: physa pursuit plan set [<pursuit>] [--reason <text>] [--from <file>|-] [--json]
+       physa pursuit plan show [<pursuit>] [--history] [--json]
+
+Set and show a pursuit's plan: the changes it will land, each in one capability, with what to do and how to tell it is done.
+
+Commands:
+  set   Set a pursuit's plan as its next revision, reading the plan's JSON from --from, or from stdin off a terminal. A revision after the first needs --reason: what the plan missed. Agents may set a plan.
+  show  Show a pursuit's current plan and its changes; --history lists every revision, oldest first, with its reason.
+
+$ physa pursuit plan bogus
+exit 2
+--- stdout
+--- stderr
+usage: physa pursuit plan set [<pursuit>] [--reason <text>] [--from <file>|-] [--json]
+       physa pursuit plan show [<pursuit>] [--history] [--json]
+
+Set and show a pursuit's plan: the changes it will land, each in one capability, with what to do and how to tell it is done.
+
+Commands:
+  set   Set a pursuit's plan as its next revision, reading the plan's JSON from --from, or from stdin off a terminal. A revision after the first needs --reason: what the plan missed. Agents may set a plan.
+  show  Show a pursuit's current plan and its changes; --history lists every revision, oldest first, with its reason.
+
+$ physa check a b
+exit 2
+--- stdout
+--- stderr
+usage: physa check [<range>] [--strict]
+       physa check map [dir]
+       physa check changes [<range>] [--json] [--strict]
+
+Check the map and the changes of a range against it.
+
+Commands:
+  map      Check the map: 0 when sound, 1 with problems, 2 when it cannot be read.
+  changes  Check each change of a range, and the map as each leaves it.
+
+$ physa check map a b
+exit 2
+--- stdout
+--- stderr
+usage: physa check map [dir]
+
+Check the map: 0 when sound, 1 with problems, 2 when it cannot be read.
+
+$ physa map index a b
+exit 2
+--- stdout
+--- stderr
+usage: physa map index [dir]
+
+List the capabilities of the map with their promises.
+
+$ physa map records --bogus
+exit 2
+--- stdout
+--- stderr
+usage: physa map records [--json]
+
+List the slice records, newest first.
+
+$ physa map fmt a b
+exit 2
+--- stdout
+--- stderr
+usage: physa map fmt [--check] [dir]
+
+Rewrite the map's folders to their format: contents, index links and spacing (--check writes nothing and exits 1 when a file would change).
+
+$ physa map hooks extra
+exit 2
+--- stdout
+--- stderr
+usage: physa map hooks
+
+Point the repo's hooks at the one that stamps Session: on commits made in Claude Code, so learning can join a change to its session.
+
+$ physa init --bogus
+exit 2
+--- stdout
+--- stderr
+usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]
+       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--json]
+       physa init --propose [--agent NAME] [--json]
+       physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
+
+Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose or --recover runs one phase.
+
+$ physa idea list extra
+exit 2
+--- stdout
+--- stderr
+usage: physa idea list [--json]
+
+List the ideas, newest first, with who added them and their facts.
+
+$ physa evidence --bogus
+exit 2
+--- stdout
+--- stderr
+usage: physa evidence [--capability <slug>] [--pursuit <slug>] [--limit N] [--json]
+
+List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. It reads what the engine stored and polls nothing.
+
+$ physa engine status extra
+exit 2
+--- stdout
+--- stderr
+usage: physa engine status [--json]
+
+Print the engine's version, pid, start time, API revision and open repos, starting the engine when it is not running.
+
+$ physa engine --bogus
+exit 2
+--- stdout
+--- stderr
+usage: physa engine [--json]
+       physa engine run [--dir <dir>] [--idle <duration>]
+       physa engine start [--idle <duration>] [--json]
+       physa engine status [--json]
+       physa engine stop [--json]
+
+Start, check and stop the machine's one engine: a bare engine prints its status. status and the api commands start the engine when it is not running; stop never does.
+
+Commands:
+  run     Run the engine in the foreground until it is stopped, interrupted, or idle for --idle (default 30m). --dir is the absolute directory it serves, by default the Physa settings directory; engine start passes it to the engine it starts.
+  start   Start the engine in the background unless it is running, and print its status. --idle applies only to an engine this starts.
+  status  Print the engine's version, pid, start time, API revision and open repos, starting the engine when it is not running.
+  stop    Stop the engine and wait until it is gone. No engine running is not an error.
+
+$ physa engine status -j
+exit 2
+--- stdout
+--- stderr
+usage: physa engine status [--json]
+
+Print the engine's version, pid, start time, API revision and open repos, starting the engine when it is not running.
+
+$ physa engine start --dir /x
+exit 2
+--- stdout
+--- stderr
+usage: physa engine start [--idle <duration>] [--json]
+
+Start the engine in the background unless it is running, and print its status. --idle applies only to an engine this starts.
+
+$ physa api describe
+exit 2
+--- stdout
+--- stderr
+usage: physa api describe <method> [--json]
+
+Describe one method: its summary, the schemas of its input and output, examples and notes.
+
+$ physa api call m {} more
+exit 2
+--- stdout
+--- stderr
+usage: physa api call <method> [<json>|-]
+
+Call a method with JSON params (- reads them from stdin; none means {}) and print its result as JSON.
+
+$ physa pursuit work a/b/c
+exit 2
+--- stdout
+--- stderr
+usage: physa pursuit work <pursuit>/<change> [--json]
+       physa pursuit work --current
+
+Record that this agent session works on a planned change, so its commits carry a Change: trailer. --current prints <pursuit>/<change> for the session, or nothing; it reads the store and never fails.
+
+$ physa pursuit list --bogus
+exit 2
+--- stdout
+--- stderr
+usage: physa pursuit list [--json]
+
+List the pursuits, newest first, with their appetite and what is spent.
+

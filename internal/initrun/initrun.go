@@ -19,6 +19,7 @@ import (
 	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/recovery"
+	"github.com/dphaener/physa/internal/shares"
 	"github.com/dphaener/physa/internal/spend"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
@@ -51,8 +52,8 @@ type Env struct {
 // phase has an appetite or a circuit breaker (design 10 Q6). Every session
 // is weighed through a spend.Meter, and the prices it learns are saved to
 // the machine's spend cache. It returns 0 when all asked was done, 1 when
-// the full run stopped before proposing for want of a yes, or some
-// capabilities are not yet recovered (still written with --write), 2 when it
+// it stopped before proposing, for want of a yes or for a source larger than
+// one share of propose, or some capabilities are not yet recovered (still written with --write), 2 when it
 // could not (a capability failed, the map failed its check, the hook was
 // refused), and command.BadUsage for a bad line. o is the line's flags as
 // Declare read them, args its positionals and words the words typed after
@@ -212,10 +213,10 @@ func (r *run) gatherInto(off string) (store.Gather, gather.Summary, error) {
 	return g, sum, nil
 }
 
-// propose proposes a map from the stored gather and prints it.
+// propose proposes a map from the stored gather, in one session or in shares, and prints it.
 func (r *run) propose() int {
 	from := r.meter.Count()
-	res, err := mapping.Propose(context.Background(), r.st, mapping.Session{Agent: r.agent, Progress: r.stderr, Now: r.env.Now})
+	res, err := shares.Propose(context.Background(), r.st, mapping.Session{Agent: r.agent, Progress: r.stderr, Now: r.env.Now})
 	r.spent("propose", from)
 	if err != nil {
 		return failed(r.stderr, err)
@@ -246,8 +247,11 @@ func (r *run) recoverPhase(only []string, done func(recovery.Report)) int {
 	return code
 }
 
-// failed prints err as init's failure and returns 2.
+// failed prints err as init's failure and returns 2, or 1 for a stop before spending on propose.
 func failed(stderr io.Writer, err error) int {
 	fmt.Fprintf(stderr, "physa init: %v\n", err)
+	if _, ok := err.(*shares.TooLarge); ok { // found before any share ran; after a halving it comes wrapped
+		return 1
+	}
 	return 2
 }

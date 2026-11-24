@@ -20,6 +20,8 @@ import (
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/mapcheck"
+	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/spend"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
@@ -819,5 +821,123 @@ func TestGatherChoosesTheDiscoveryAgent(t *testing.T) {
 	}
 	if g := storedGather(t, env); !slices.ContainsFunc(g.Docs, func(d store.Doc) bool { return d.Path == "docs/notes/why.md" && d.Reason == "why the product exists" }) {
 		t.Errorf("stored docs %+v", g.Docs)
+	}
+}
+
+// mergeMarker is a line of the merge skill, which only the merge's prompt
+// holds.
+const mergeMarker = "You merge what several sessions proposed"
+
+// windowedAgent is a routedAgent that states its window, and records which
+// propose sessions it started read a share or merged, with their ids: those
+// that are not discovery's, a recovering session's (whose prompt names its
+// capability) or resumed.
+type windowedAgent struct {
+	*routedAgent
+	window  int
+	propose []string // "share" or "merge", in order
+	ids     []string
+}
+
+func (w *windowedAgent) Window() int { return w.window }
+
+func (w *windowedAgent) Start(ctx context.Context, s adapter.Spec) (adapter.Session, error) {
+	if !s.Resume && !strings.Contains(s.Prompt, discoveryMarker) && !strings.Contains(s.Prompt, "\nname: delivery\n") && !strings.Contains(s.Prompt, "\nname: search\n") {
+		kind := "share"
+		if strings.Contains(s.Prompt, mergeMarker) {
+			kind = "merge"
+		}
+		w.propose, w.ids = append(w.propose, kind), append(w.ids, s.SessionID)
+	}
+	return w.routedAgent.Start(ctx, s)
+}
+
+// shareWindow leaves one share of propose room for the skill and 6,000
+// estimated tokens.
+var shareWindow = reading.Tokens(mapping.Prompt(reading.Input{})) + 6_000 + mapping.ReplyReserve
+
+// bigPRs is a forge that lists PRs 3, 4 and 5 as merged, each with a body of
+// about tokens estimated tokens.
+func bigPRs(tokens int) forge.Forge {
+	var prs []forge.PR
+	for n := 3; n <= 5; n++ {
+		body := strings.Repeat(fmt.Sprintf("PR %d says why. ", n), tokens*23/10/len("PR 3 says why. "))
+		prs = append(prs, forge.PR{Number: n, Title: fmt.Sprintf("Change %d", n), Body: body, MergedAt: time.Now().Add(-time.Duration(n) * time.Hour)})
+	}
+	return mergedFake{prs: prs}
+}
+
+// TestFullProposesInSharesWhenOneSessionCannotHoldTheSources checks that a
+// bare run whose sources are more than one session of the agent holds
+// estimates every share and the merge, proposes in shares and a merge
+// before recovering, and writes a Session: trailer for each of them.
+func TestFullProposesInSharesWhenOneSessionCannotHoldTheSources(t *testing.T) {
+	remoteRepo(t)
+	a := &windowedAgent{routedAgent: newRoutedAgent(), window: shareWindow}
+	code, out, errOut := runInit(fullEnv(t, bigPRs(4_000), a), "--write", "--yes")
+	if code != 0 {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	if want := []string{"share", "share", "share", "merge"}; !slices.Equal(a.propose, want) {
+		t.Fatalf("propose sessions %v, want %v", a.propose, want)
+	}
+	if got := a.started[:5]; !slices.Equal(got, []string{"discover", "propose", "propose", "propose", "propose"}) || len(a.started) != 7 {
+		t.Errorf("sessions %v: want discovery, the shares and the merge, then recovering", a.started)
+	}
+	for _, want := range []string{"tokens: propose's 3 shares and their merge, prompts of about ", " for their replies, at 2.05 times as weighed, and recovering at ",
+		"physa init: propose reads share 1 of 3 whole, ", "physa init: propose reads share 3 of 3 whole, ", "physa init: propose merges the proposals of its 3 shares"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, errOut)
+		}
+	}
+	if strings.Contains(errOut, "propose's prompt of about") {
+		t.Errorf("the estimate counts one session:\n%s", errOut)
+	}
+	for _, want := range []string{"in 3 shares and a merge", "Share 1 of 3, about ", "The merge read only the shares' proposals", "## delivery: recovered", "Wrote physa/init at "} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, out)
+		}
+	}
+	msg := gitIn(t, ".", "log", "-1", "--format=%B", "physa/init")
+	if n := strings.Count(msg, "Session: "); n != 6 {
+		t.Errorf("%d Session: trailers, want the 3 shares', the merge's and 2 recoveries':\n%s", n, msg)
+	}
+	for _, id := range a.ids {
+		if !strings.Contains(msg, "Session: "+id+"\n") {
+			t.Errorf("no Session: trailer for propose's session %s:\n%s", id, msg)
+		}
+	}
+}
+
+// TestFullOneSessionWithinTheWindowIsUnchanged checks that an agent whose
+// window holds the whole prompt proposes in one session, as before.
+func TestFullOneSessionWithinTheWindowIsUnchanged(t *testing.T) {
+	remoteRepo(t)
+	a := &windowedAgent{routedAgent: newRoutedAgent(), window: 1_000_000}
+	code, out, errOut := runInit(fullEnv(t, bigPRs(4_000), a), "--yes")
+	if code != 0 || !slices.Equal(a.propose, []string{"share"}) || !strings.Contains(errOut, "tokens: propose's prompt of about ") ||
+		strings.Contains(errOut, "shares") || strings.Contains(out, "Share 1 of") {
+		t.Errorf("code %d, propose sessions %v\nstdout %s\nstderr %s", code, a.propose, out, errOut)
+	}
+}
+
+// TestFullStopsOnASourceLargerThanAShare checks that a PR larger than an
+// empty share stops a bare run with exit 1 before any propose session, and
+// --propose alone the same way, naming the PR and how to leave it out.
+func TestFullStopsOnASourceLargerThanAShare(t *testing.T) {
+	remoteRepo(t)
+	a := &windowedAgent{routedAgent: newRoutedAgent(), window: shareWindow}
+	env := fullEnv(t, bigPRs(10_000), a)
+	stop := regexp.MustCompile(`physa init: PR #3 takes about [0-9,]+ estimated tokens, and with the skill it is more than one share of propose holds \(about [0-9,]+ tokens\)\. ` +
+		`Nothing is cut, so init stops before spending on propose\. To leave it out of the gather, gather again with --since a date after it merged on [0-9-]+ \(physa init --gather --since [0-9-]+\), or with a smaller --max-prs\.\n$`)
+	code, out, errOut := runInit(env, "--yes")
+	t.Logf("bare run: exit %d\nstderr:\n%s", code, errOut)
+	if code != 1 || !slices.Equal(a.started, []string{"discover"}) || len(a.propose) != 0 || !stop.MatchString(errOut) || strings.Contains(out, "# Proposed map") {
+		t.Errorf("bare run: code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
+	}
+	code, out, errOut = runInit(env, "--propose")
+	t.Logf("--propose: exit %d\nstderr:\n%s", code, errOut)
+	if code != 1 || !slices.Equal(a.started, []string{"discover"}) || len(a.propose) != 0 || !stop.MatchString(errOut) || out != "" {
+		t.Errorf("--propose: code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
 	}
 }

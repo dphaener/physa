@@ -2,12 +2,18 @@ package initcost
 
 import (
 	"bytes"
+	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/shares"
 	"github.com/dphaener/physa/internal/spend"
+	"github.com/dphaener/physa/internal/store"
 )
 
 // priced is a cache that knows claude-code's default model at $4 a million.
@@ -49,6 +55,56 @@ func TestEstimateContainsRun9(t *testing.T) {
 	c.RecordRatio(12_500_000, 998_000, 1_400_000, 682_510, time.Now().Add(time.Hour))
 	if e := New(c, "claude-code", spend.Spend{}, 682_510-16_000, 16_000, 998_000); e.Lo.Tokens < 13_800_000 || e.Hi.Tokens > 14_000_000 {
 		t.Errorf("from run 9 twice, the estimate is %d to %d", e.Lo.Tokens, e.Hi.Tokens)
+	}
+}
+
+func TestLineWithShares(t *testing.T) {
+	// (1.25M prompts + 64k replies) × 2.05 + 470k sources × 6.25 to 18.75:
+	// 5.63M to 11.51M.
+	e := New(priced(), "claude-code", spend.Spend{Tokens: 74_000, MicroUSD: 300_000}, 1_250_000, 64_000, 470_000)
+	e.Shares = 3
+	want := "discovery spent 74k tokens (about $0.30). The rest of the run should spend about 5.6M to 11.5M tokens (about $23 to $46): propose's 3 shares and their merge, prompts of about 1.2M tokens plus 64k for their replies, at 2.05 times as weighed, and recovering at 6.25 to 18.75 times the sources' 470k tokens (nebari's measured ratio of 12.5, until two runs are recorded on this machine). An estimate, not a limit."
+	if got := e.Line(); got != want {
+		t.Errorf("Line =\n%s\nwant\n%s", got, want)
+	}
+	e.Shares = 0
+	if got := e.Line(); !strings.Contains(got, ": propose's prompt of about 1.2M tokens plus 64k for its reply, at 2.05 times") {
+		t.Errorf("Line with no shares = %s", got)
+	}
+}
+
+// windowed is an adapter that states its window and never runs.
+type windowed int
+
+func (windowed) Name() string { return "claude-code" }
+func (windowed) Start(context.Context, adapter.Spec) (adapter.Session, error) {
+	return nil, errors.New("the estimate starts no session")
+}
+func (w windowed) Window() int { return int(w) }
+
+func TestForCountsTheShares(t *testing.T) {
+	g := store.Gather{}
+	for n := 1; n <= 3; n++ {
+		g.PRs = append(g.PRs, store.GatheredPR{Number: n, Title: "A change", Body: strings.Repeat("Why it changed. ", 1_500), MergedAt: time.Now()})
+	}
+	one, reply, k, err := shares.Estimate(g, 0)
+	if err != nil || k != 0 {
+		t.Fatalf("with no window: %d shares, %v", k, err)
+	}
+	m := &spend.Meter{Adapter: windowed(one + reply + 1), Cache: priced()}
+	if e, err := For(priced(), m, g, 9_000); err != nil || e.Shares != 0 || e.Prompt != one || e.Reply != reply || e.Sources != 9_000 {
+		t.Errorf("within the window: %+v, %v", e, err)
+	}
+	m.Adapter = windowed(one + reply - 1)
+	prompt, reply, k, _ := shares.Estimate(g, int(m.Adapter.(windowed)))
+	e, err := For(priced(), m, g, 9_000)
+	if err != nil || k < 2 || e.Shares != k || e.Prompt != prompt || e.Reply != reply || !strings.Contains(e.Line(), fmt.Sprintf("propose's %d shares and their merge", k)) {
+		t.Errorf("over the window: %+v, %v; want %d shares", e, err, k)
+	}
+	m.Adapter = windowed(mapping.ReplyReserve + 100)
+	var big *shares.TooLarge
+	if _, err := For(priced(), m, g, 9_000); !errors.As(err, &big) || !strings.HasPrefix(big.Source, "PR #") {
+		t.Errorf("a PR larger than a share: %v", err)
 	}
 }
 

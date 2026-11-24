@@ -6,19 +6,18 @@ import (
 	"strings"
 
 	"github.com/dphaener/physa/internal/initcost"
-	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/newcodebase"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/store"
 )
 
 // full is bare physa init (design 02 section 2.1). Init is never bounded
-// (design 10 Q6): it says so before any token is spent, then gathers, with
-// the discovery agent, and for a new codebase takes the person's answers
-// instead. Otherwise it estimates the rest of the run and asks to go on
-// (initcost); with a yes it proposes, recovers, saying once if the spend
-// passes the top of the estimate, records what proposing and recovering
-// spent, weighed, against their prompt and sources for the next estimate, and with --write writes physa/init.
+// (design 10 Q6): it says so before any token is spent, then gathers, with the discovery agent,
+// and for a new codebase takes the person's answers instead. Otherwise it estimates the rest of
+// the run and asks to go on (initcost), or stops, before spending on propose, when a source is
+// larger than one share of it (shares.TooLarge); with a yes it proposes, recovers, saying once if
+// the spend passes the top of the estimate, records what proposing and recovering spent, weighed,
+// against their prompt and sources for the next estimate, and with --write writes physa/init.
 // Every run starts fresh: it replaces the stored gather, proposal and recoveries.
 func (r *run) full() int {
 	r.agent() // resolved here so the first line can say what a token is worth; gather reports a failure
@@ -34,7 +33,10 @@ func (r *run) full() int {
 	if _, err := r.agent(); err != nil {
 		return failed(r.stderr, err)
 	}
-	est := initcost.New(r.cache, r.meter.Name(), r.meter.Spent(), mapping.Estimate(g), mapping.ReplyReserve, sum.EstimatedTokens)
+	est, err := initcost.For(r.cache, r.meter, g, sum.EstimatedTokens)
+	if err != nil {
+		return failed(r.stderr, err)
+	}
 	fmt.Fprintf(r.stderr, "physa init: %s\n", est.Line())
 	ask := initcost.Ask{Yes: r.o.Yes, Rerun: strings.Join(append([]string{"physa init"}, append(r.args, "--yes")...), " ")}
 	if r.env.IsTerminal != nil && r.env.IsTerminal() {
@@ -58,10 +60,7 @@ func (r *run) full() int {
 // recoverySession is how recovering runs: on the capabilities of only (none
 // means all), from the repo at root.
 func (r *run) recoverySession(only []string) recovery.Session {
-	s := recovery.Session{
-		Agent: r.agent, Only: only, Root: r.root,
-		OpenRepo: r.env.Repo, Progress: r.stderr, Now: r.env.Now,
-	}
+	s := recovery.Session{Agent: r.agent, Only: only, Root: r.root, OpenRepo: r.env.Repo, Progress: r.stderr, Now: r.env.Now}
 	if r.env.PRExists != nil {
 		s.PRExists = r.env.PRExists(".")
 	}

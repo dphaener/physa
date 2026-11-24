@@ -1,8 +1,9 @@
 // Package initcost is init being up front about its cost, since it is never
 // bounded (design 10 Q6, Q10, Q10a): what a token of its spend is worth, the
-// estimate of the rest of a run once it has gathered, the yes it waits for,
-// the one warning when the spend passes the estimate's top, and the table of
-// what each phase spent. Spend reads in weighted tokens first, with the cost
+// estimate of the rest of a run once it has gathered, with propose in one
+// session or in shares (design 02 §2.3.1), the yes it waits for, the one
+// warning when the spend passes the estimate's top, and the table of what
+// each phase spent. Spend reads in weighted tokens first, with the cost
 // estimate beside it when prices are known.
 package initcost
 
@@ -12,7 +13,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/shares"
 	"github.com/dphaener/physa/internal/spend"
+	"github.com/dphaener/physa/internal/store"
 )
 
 // Unit says what a token of a run of the adapter named agent is worth: an
@@ -29,6 +33,8 @@ func Unit(c *spend.Cache, agent string) string {
 // tokens, as a range measured from past runs: propose's prompt and reply
 // reserve, which are known, times propose's weighted-to-raw factor, plus
 // the sources' estimated tokens times recovery's weighted-to-sources ratio.
+// Propose in shares counts every share's prompt and the merge's, and a reply
+// reserve for each.
 // A one-turn session writes its whole prompt to a 1-hour cache at twice
 // input, so both are measured, never assumed. It is never a limit.
 type Estimate struct {
@@ -37,6 +43,8 @@ type Estimate struct {
 	// Prompt and Reply are propose's prompt and reply reserve, and Sources
 	// the gathered sources, in estimated tokens.
 	Prompt, Reply, Sources int
+	// Shares is the shares propose reads its sources in, 0 for one session.
+	Shares int
 	// Ratios are the factors' ranges and the runs they come from.
 	Ratios spend.Ratios
 	// Lo and Hi are the range, weighed.
@@ -53,6 +61,21 @@ func New(c *spend.Cache, agent string, discovery spend.Spend, prompt, reply, sou
 	return e
 }
 
+// For estimates the rest of a run from gather g, whose sources take sources
+// estimated tokens, after discovery spent what m has counted: propose in
+// one session, or in the shares it needs within the window m's agent states
+// (shares.Estimate). A source larger than one share is a *shares.TooLarge,
+// returned before anything is spent on propose.
+func For(c *spend.Cache, m *spend.Meter, g store.Gather, sources int) (Estimate, error) {
+	prompt, reply, k, err := shares.Estimate(g, adapter.Window(m))
+	if err != nil {
+		return Estimate{}, err
+	}
+	e := New(c, m.Name(), m.Spent(), prompt, reply, sources)
+	e.Shares = k
+	return e, nil
+}
+
 // Range reads like "1.9M to 5.6M tokens (about $7.60 to $23)".
 func (e Estimate) Range() string { return spend.Range(e.Lo, e.Hi) }
 
@@ -63,9 +86,12 @@ func (e Estimate) Line() string {
 		from = fmt.Sprintf("the smallest and largest of %d runs recorded on this machine", e.Ratios.Measured)
 	}
 	r := e.Ratios
-	return fmt.Sprintf("discovery spent %s. The rest of the run should spend about %s: propose's prompt of about %s tokens plus %s for its reply, at %s times as weighed, and recovering at %s times the sources' %s tokens (%s). An estimate, not a limit.",
-		e.Discovery, e.Range(), spend.Tokens(int64(e.Prompt)), spend.Tokens(int64(e.Reply)),
-		span(r.ProposeLo, r.ProposeHi), span(r.RecoverLo, r.RecoverHi), spend.Tokens(int64(e.Sources)), from)
+	propose := fmt.Sprintf("propose's prompt of about %s tokens plus %s for its reply", spend.Tokens(int64(e.Prompt)), spend.Tokens(int64(e.Reply)))
+	if e.Shares > 0 {
+		propose = fmt.Sprintf("propose's %d shares and their merge, prompts of about %s tokens plus %s for their replies", e.Shares, spend.Tokens(int64(e.Prompt)), spend.Tokens(int64(e.Reply)))
+	}
+	return fmt.Sprintf("discovery spent %s. The rest of the run should spend about %s: %s, at %s times as weighed, and recovering at %s times the sources' %s tokens (%s). An estimate, not a limit.",
+		e.Discovery, e.Range(), propose, span(r.ProposeLo, r.ProposeHi), span(r.RecoverLo, r.RecoverHi), spend.Tokens(int64(e.Sources)), from)
 }
 
 // span is a range of ratios in thousandths: "2.05", or "6.25 to 18.75".

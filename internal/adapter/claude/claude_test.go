@@ -566,3 +566,41 @@ func TestParseNoModelUsageNoCost(t *testing.T) {
 		t.Fatalf("cost of a result without modelUsage = %+v, err %v", st.result.cost(), err)
 	}
 }
+
+func TestWindow(t *testing.T) {
+	if got := adapter.Window(New()); got != 1_000_000 {
+		t.Errorf("Window = %d, want 1000000", got)
+	}
+}
+
+func TestSessionTooLong(t *testing.T) {
+	stream := initLine + "\n" + `{"type":"result","subtype":"success","is_error":true,"result":"Prompt is too long","usage":{"input_tokens":4,"output_tokens":1}}` + "\n"
+	cmd, _ := fake(t, stream, "", 1)
+	_, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p"})
+	if !errors.Is(err, adapter.ErrFailed) || !errors.Is(err, adapter.ErrTooLong) {
+		t.Fatalf("err = %v, want ErrFailed and ErrTooLong", err)
+	}
+	if !strings.Contains(err.Error(), "Prompt is too long") {
+		t.Errorf("err = %q, want the agent's message kept", err)
+	}
+}
+
+func TestSessionTooLongOnStderr(t *testing.T) {
+	cmd, _ := fake(t, "", "Error: prompt is too long: 1200000 tokens", 1)
+	_, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p"})
+	if !errors.Is(err, adapter.ErrFailed) || !errors.Is(err, adapter.ErrTooLong) {
+		t.Fatalf("err = %v, want ErrFailed and ErrTooLong", err)
+	}
+}
+
+func TestSessionOtherFailureIsNotTooLong(t *testing.T) {
+	stream := initLine + "\n" + `{"type":"result","subtype":"success","is_error":true,"result":"rate limited","usage":{"input_tokens":4,"output_tokens":1}}` + "\n"
+	cmd, _ := fake(t, stream, "", 1)
+	_, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p"})
+	if !errors.Is(err, adapter.ErrFailed) {
+		t.Fatalf("err = %v, want ErrFailed", err)
+	}
+	if errors.Is(err, adapter.ErrTooLong) {
+		t.Fatalf("err = %v, must not be ErrTooLong", err)
+	}
+}

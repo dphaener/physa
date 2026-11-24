@@ -101,3 +101,23 @@ func TestRatioRangeDefaultThenMeasured(t *testing.T) {
 		t.Errorf("the old raw ratios were kept:\n%s", b)
 	}
 }
+
+type windowedResult struct{ oneResult }
+
+func (windowedResult) Window() int { return 1_000_000 }
+
+func TestMeterWindow(t *testing.T) {
+	if got := (&Meter{Adapter: windowedResult{}}).Window(); got != 1_000_000 {
+		t.Errorf("Window through a meter = %d, want 1000000", got)
+	}
+	if got := adapter.Window(&Meter{Adapter: windowedResult{}}); got != 1_000_000 {
+		t.Errorf("adapter.Window of a meter = %d", got)
+	}
+	if got := adapter.Window(&Meter{Adapter: oneResult{}}); got != 0 {
+		t.Errorf("Window over an adapter with none = %d, want 0", got)
+	}
+	var nilMeter *Meter
+	if nilMeter.Window() != 0 || (&Meter{}).Window() != 0 {
+		t.Error("a nil meter or one with no adapter states a window")
+	}
+}

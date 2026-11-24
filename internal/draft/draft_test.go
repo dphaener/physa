@@ -3,6 +3,7 @@ package draft
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -848,5 +849,13 @@ func TestFenceGetsALongerFenceThanAnyRun(t *testing.T) {
 	Fence(&w, "plain\n")
 	if want := "```text\nplain\n```\n"; w.String() != want {
 		t.Fatalf("Fence of plain text wrote %q, want %q", w.String(), want)
+	}
+}
+
+func TestRunPassesTooLongThrough(t *testing.T) {
+	f := &fakeAdapter{waitErr: fmt.Errorf("%w: %w: Prompt is too long", adapter.ErrFailed, adapter.ErrTooLong)}
+	_, err := Run(context.Background(), f, "the prompt", 1000, "")
+	if !errors.Is(err, adapter.ErrTooLong) || !errors.Is(err, adapter.ErrFailed) {
+		t.Fatalf("err = %v, want ErrTooLong and ErrFailed through Run", err)
 	}
 }

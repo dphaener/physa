@@ -41,6 +41,11 @@ const stderrTail = 2 << 10
 // process is killed.
 const waitDelay = 5 * time.Second
 
+// window is the most estimated tokens one session holds, the owner's choice of
+// 2026-11-24: a propose prompt of about 670k estimated tokens ran in one
+// session, and one of about 1.2M was refused as too long.
+const window = 1_000_000
+
 // Adapter runs sessions with the Claude Code command.
 type Adapter struct {
 	// Command is the claude command to run; empty means "claude" on PATH.
@@ -51,6 +56,9 @@ var _ adapter.Adapter = (*Adapter)(nil)
 
 // New returns an adapter that runs "claude" from PATH.
 func New() *Adapter { return &Adapter{Command: "claude"} }
+
+// Window states 1,000,000 estimated tokens for one session.
+func (a *Adapter) Window() int { return window }
 
 // Name returns "claude-code".
 func (a *Adapter) Name() string { return Name }
@@ -150,7 +158,21 @@ func (s *session) Wait() (adapter.Result, error) {
 	if readErr != nil {
 		return res, fmt.Errorf("%w: reading the stream: %v", adapter.ErrFailed, readErr)
 	}
-	return res, fmt.Errorf("%w: %s", adapter.ErrFailed, s.message(st.result, exitErr))
+	msg := s.message(st.result, exitErr)
+	if s.tooLong(st.result) {
+		return res, fmt.Errorf("%w: %w: %s", adapter.ErrFailed, adapter.ErrTooLong, msg)
+	}
+	return res, fmt.Errorf("%w: %s", adapter.ErrFailed, msg)
+}
+
+// tooLong is whether the agent refused the session's prompt as too long, by
+// the result's text or the end of stderr.
+func (s *session) tooLong(r *resultLine) bool {
+	text := s.stderr.String()
+	if r != nil {
+		text += "\n" + r.Result
+	}
+	return strings.Contains(strings.ToLower(text), "prompt is too long")
 }
 
 // message is the agent's own account of a failure: the exit status when there

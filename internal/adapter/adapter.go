@@ -3,7 +3,8 @@
 // starts it, wait for its result, the tokens it used and what it cost, and
 // read a session's log for what learning needs from it (answered asks,
 // interventions and checks' reports), redacted. One package per agent implements it; nothing
-// here is particular to one agent.
+// here is particular to one agent. An agent may also state its window, the
+// most one session holds, and name a refusal as too long.
 package adapter
 
 import (
@@ -21,6 +22,11 @@ var ErrNotInstalled = errors.New("agent not installed")
 // wrapped with the agent's own message.
 var ErrFailed = errors.New("agent session failed")
 
+// ErrTooLong is returned by Wait, together with ErrFailed, when the session
+// was refused because its prompt is more than the agent's model holds. Both
+// wrap the agent's own message, so errors.Is finds each.
+var ErrTooLong = errors.New("prompt too long for the agent's model")
+
 // ErrUnavailable is returned by Logs.ReadSession when a session's log is
 // missing or cannot be read. It is wrapped with the reason.
 var ErrUnavailable = errors.New("session log unavailable")
@@ -36,6 +42,23 @@ type Adapter interface {
 	// Start starts a headless session for s. The session runs until it
 	// ends or ctx is cancelled.
 	Start(ctx context.Context, s Spec) (Session, error)
+}
+
+// Windowed is an Adapter that states how much one of its sessions holds. An
+// adapter that does not implement it states no window.
+type Windowed interface {
+	// Window is the most estimated tokens one session of the agent holds,
+	// prompt and reply together.
+	Window() int
+}
+
+// Window is the window a states, or 0 when a is nil or states none; 0 means
+// unknown.
+func Window(a Adapter) int {
+	if w, ok := a.(Windowed); ok {
+		return w.Window()
+	}
+	return 0
 }
 
 // Spec is what a session starts with.

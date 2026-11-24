@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,5 +39,38 @@ func TestSentinelsDistinct(t *testing.T) {
 	}
 	if errors.Is(ErrNotInstalled, ErrFailed) {
 		t.Fatal("ErrNotInstalled is ErrFailed")
+	}
+}
+
+type plain struct{}
+
+func (plain) Name() string { return "plain" }
+func (plain) Start(context.Context, Spec) (Session, error) {
+	return nil, nil
+}
+
+type windowed struct{ plain }
+
+func (windowed) Window() int { return 123 }
+
+func TestWindow(t *testing.T) {
+	if got := Window(windowed{}); got != 123 {
+		t.Errorf("Window(windowed) = %d, want 123", got)
+	}
+	if got := Window(plain{}); got != 0 {
+		t.Errorf("Window(plain) = %d, want 0", got)
+	}
+	if got := Window(nil); got != 0 {
+		t.Errorf("Window(nil) = %d, want 0", got)
+	}
+}
+
+func TestTooLongIsFoundBesideFailed(t *testing.T) {
+	err := fmt.Errorf("%w: %w: x", ErrFailed, ErrTooLong)
+	if !errors.Is(err, ErrFailed) || !errors.Is(err, ErrTooLong) {
+		t.Fatalf("err = %v", err)
+	}
+	if errors.Is(ErrFailed, ErrTooLong) {
+		t.Fatal("ErrFailed is ErrTooLong")
 	}
 }

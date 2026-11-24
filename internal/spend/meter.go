@@ -60,6 +60,15 @@ func (m *Meter) Name() string {
 	return m.Adapter.Name()
 }
 
+// Window is the window the meter's adapter states, 0 when it states none or
+// there is none.
+func (m *Meter) Window() int {
+	if m == nil || m.Adapter == nil {
+		return 0
+	}
+	return adapter.Window(m.Adapter)
+}
+
 // Start starts s on the meter's adapter, weighing the session when it ends.
 func (m *Meter) Start(ctx context.Context, s adapter.Spec) (adapter.Session, error) {
 	sess, err := m.Adapter.Start(ctx, s)

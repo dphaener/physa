@@ -1,5 +1,6 @@
 // Package recovery is init's recover and check phases: one prompt-only
-// session per capability, at most Concurrency at once; each capability's
+// session per capability, at most Concurrency at once, reading what it cites
+// and what coverage places with it by files; each capability's
 // text, split into its folder, goes through the map check and back to the
 // same session with the problems, up to MaxRetries times, before failing
 // entries are dropped. Sessions read their sources whole, with no appetite
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/coverage"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/recovering"
@@ -157,11 +159,13 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	}
 	date := now().UTC()
 
+	// Placed over every capability proposed, so --only reads what a full run would.
+	pl, _ := coverage.Place(g, stored.Proposal.Capabilities)
 	jobs := make([]job, len(chosen))
 	for i, c := range chosen {
 		system, prompt := recovering.Split(recovering.Input{
 			Product: stored.Proposal.Product.Promise, Name: c.Name, Promise: c.Promise,
-			Questions: c.Questions, Date: date, Sources: reading.Of(sources(g, c), recovering.Reads)})
+			Questions: c.Questions, Date: date, Sources: reading.Of(sources(g, c, pl), recovering.Reads)})
 		jobs[i] = job{capability: c, system: system, prompt: prompt}
 	}
 	if s.Agent == nil {

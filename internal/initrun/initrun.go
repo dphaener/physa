@@ -12,6 +12,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/command"
+	"github.com/dphaener/physa/internal/coverage"
 	"github.com/dphaener/physa/internal/discovery"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
@@ -227,6 +228,12 @@ func (r *run) propose() int {
 		return failed(r.stderr, err)
 	}
 	r.p.proposal(res)
+	if g, ok, err := r.st.Gathered(); err == nil && ok { // what recovery reads beyond the citations, and what no capability got
+		_, c := coverage.Place(g, res.Proposal.Capabilities)
+		if coverage.Warn(r.stderr, c); !r.p.json || r.p.multi { // --propose --json prints the proposal alone
+			r.p.value("coverage", coverage.Text(c), c)
+		}
+	}
 	return 0
 }
 

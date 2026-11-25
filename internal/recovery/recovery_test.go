@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/coverage"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/mapping"
@@ -603,7 +604,7 @@ func TestScaffoldAloneChecksClean(t *testing.T) {
 func TestSourcesAreTheCapabilitysOwn(t *testing.T) {
 	g := testGather()
 	sub := sources(g, mapping.Capability{Name: "export", ShownBy: []string{"#12"},
-		Questions: []mapping.Question{{Question: "Was it reverted?", SuggestedBy: []string{"b1b2c3d"}}}})
+		Questions: []mapping.Question{{Question: "Was it reverted?", SuggestedBy: []string{"b1b2c3d"}}}}, coverage.Placement{})
 	if len(sub.Docs) != 1 || len(sub.PRs) != 1 || sub.PRs[0].Number != 12 {
 		t.Errorf("docs %d, PRs %+v", len(sub.Docs), sub.PRs)
 	}
@@ -612,9 +613,25 @@ func TestSourcesAreTheCapabilitysOwn(t *testing.T) {
 		t.Errorf("changes %+v", sub.Changes)
 	}
 	// And the other way: the revert comes with the change it reverts.
-	sub = sources(g, mapping.Capability{ShownBy: []string{"a1b2c3d"}})
+	sub = sources(g, mapping.Capability{ShownBy: []string{"a1b2c3d"}}, coverage.Placement{})
 	if len(sub.Changes) != 2 || len(sub.PRs) != 0 {
 		t.Errorf("changes %+v, PRs %+v", sub.Changes, sub.PRs)
+	}
+}
+
+// TestSourcesHoldWhatIsPlacedWithTheCapability checks that a capability
+// reads the PRs and changes placed with it by their files, besides what it
+// cites, and not those placed with another.
+func TestSourcesHoldWhatIsPlacedWithTheCapability(t *testing.T) {
+	g := testGather()
+	pl := coverage.Placement{PRs: map[string][]int{"export": {12}, "search": {7}}, Changes: map[string][]string{"export": {idA}}}
+	sub := sources(g, mapping.Capability{Name: "export"}, pl)
+	if len(sub.PRs) != 1 || sub.PRs[0].Number != 12 {
+		t.Errorf("PRs %+v, want #12 alone", sub.PRs)
+	}
+	// a1b2c3d is placed; b1b2c3d, its revert, comes with it.
+	if len(sub.Changes) != 2 {
+		t.Errorf("changes %+v", sub.Changes)
 	}
 }
 
@@ -796,7 +813,7 @@ func TestSourcesHoldOnlyTheCapabilitysDocs(t *testing.T) {
 		{Path: "AGENTS.md", Kind: "agent"}, {Path: "README.md", Kind: "readme"}, {Path: "CONTRIBUTING.md", Kind: "contributing"},
 		{Path: "docs/export.md", Kind: "overview"}, {Path: "docs/search.md", Kind: "overview"}, {Path: "docs/decisions.md", Kind: "decisions"},
 	}
-	sub := sources(g, mapping.Capability{Name: "export", Docs: []string{"docs/export.md", "docs/decisions.md"}})
+	sub := sources(g, mapping.Capability{Name: "export", Docs: []string{"docs/export.md", "docs/decisions.md"}}, coverage.Placement{})
 	var got []string
 	for _, d := range sub.Docs {
 		got = append(got, d.Path)

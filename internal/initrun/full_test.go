@@ -527,6 +527,7 @@ func TestFullJSONIsOneDocument(t *testing.T) {
 			}
 		}
 		Proposal, Recovery json.RawMessage
+		Coverage           struct{ PRs, Cited int }
 		Write              struct {
 			Branch string
 			Commit struct{ Subject string }
@@ -539,6 +540,9 @@ func TestFullJSONIsOneDocument(t *testing.T) {
 	}
 	if d := doc.Gather.Discovery; doc.Gather.Version != 3 || !d.Started || d.Tokens.Input != 1_000 {
 		t.Errorf("gather %+v", doc.Gather)
+	}
+	if c := doc.Coverage; c.PRs != 1 || c.Cited > 1 {
+		t.Errorf("coverage %+v", c)
 	}
 	if len(doc.Proposal) == 0 || len(doc.Recovery) == 0 || doc.Write.Branch != "physa/init" ||
 		doc.Write.Commit.Subject == "" || doc.Write.Pushed || doc.Write.PR.State != "not asked" {

@@ -9,7 +9,7 @@ You have no tools. You cannot read files, run commands or look anything up. Writ
 After this skill come two sections, in this order:
 
 - `## The capability`: the product's promise, the capability's name and promise, the questions about it that the proposal raised, each with what suggested it, and today's date.
-- `## Sources`: what is linked to this capability, with these parts in this order:
+- `## Sources`: what is linked to this capability, the sources its proposal cites and the PRs and changes that touch the same files, with these parts in this order:
   - `### Docs`: the repo's docs for agents and contributors, each with its path and kind.
   - `### Pull requests`: merged PRs, newest first, each with its number, the date it merged, its title, its author, the titles of what it closes, its body, and its review comments, each with its author and date. A review comment marked `requests changes` asked for a correction before the PR could merge.
   - `### Changes`: changes from history, newest first, each with its short id, subject, author, time, the change it reverts when it reverts one, and its message.

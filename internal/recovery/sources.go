@@ -5,14 +5,16 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dphaener/physa/internal/coverage"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
 )
 
 // sources is the part of g linked to c, in g's order: the docs it reads, the PRs and changes
-// that show it or suggested its questions, and the changes those revert or are reverted by.
-func sources(g store.Gather, c mapping.Capability) store.Gather {
+// that show it or suggested its questions, those pl places with it by their files, and the
+// changes those revert or are reverted by.
+func sources(g store.Gather, c mapping.Capability, pl coverage.Placement) store.Gather {
 	refs := map[string]bool{}
 	for _, r := range c.ShownBy {
 		refs[strings.TrimSpace(r)] = true
@@ -23,6 +25,13 @@ func sources(g store.Gather, c mapping.Capability) store.Gather {
 		}
 	}
 	delete(refs, "")
+	for _, n := range pl.PRs[c.Name] {
+		refs["#"+strconv.Itoa(n)] = true
+	}
+	placed := map[string]bool{}
+	for _, id := range pl.Changes[c.Name] {
+		placed[id] = true
+	}
 	sub := store.Gather{Run: g.Run, Docs: reading.Linked(g.Docs, c.Docs)}
 	for _, p := range g.PRs {
 		if refs["#"+strconv.Itoa(p.Number)] {
@@ -31,6 +40,7 @@ func sources(g store.Gather, c mapping.Capability) store.Gather {
 	}
 	linked := make([]bool, len(g.Changes))
 	for i, ch := range g.Changes {
+		linked[i] = placed[ch.ID]
 		for r := range refs {
 			if !strings.HasPrefix(r, "#") && (r == ch.Short || strings.HasPrefix(ch.ID, r)) {
 				linked[i] = true

@@ -6,12 +6,23 @@ import (
 	"github.com/dphaener/physa/internal/store"
 )
 
-// clusters finds files that change together. Changes touching more than
-// ClusterMaxFiles files are skipped; pairs of files sharing at least
-// ClusterMinChanges changes are joined, and joined pairs form clusters. Each
-// cluster counts the changes touching two or more of its files. Clusters are
-// ordered by that count, most first, then by first path.
+// clusters is Clusters as propose reads them: each with its first
+// ClusterPaths paths.
 func clusters(changes []store.GatheredChange) []Cluster {
+	out := Clusters(changes)
+	for i := range out {
+		out[i].Paths = out[i].Paths[:min(len(out[i].Paths), ClusterPaths)]
+	}
+	return out
+}
+
+// Clusters finds files that change together, each cluster with all its
+// paths. Changes touching more than ClusterMaxFiles files are skipped;
+// pairs of files sharing at least ClusterMinChanges changes are joined, and
+// joined pairs form clusters. Each cluster counts the changes touching two
+// or more of its files. Clusters are ordered by that count, most first,
+// then by first path.
+func Clusters(changes []store.GatheredChange) []Cluster {
 	var sets [][]string
 	for _, c := range changes {
 		if len(c.Files) < 2 || len(c.Files) > ClusterMaxFiles {
@@ -92,7 +103,7 @@ func clusters(changes []store.GatheredChange) []Cluster {
 	var out []Cluster
 	for r, fs := range members {
 		sort.Strings(fs)
-		out = append(out, Cluster{Paths: fs[:min(len(fs), ClusterPaths)], Changes: count[r]})
+		out = append(out, Cluster{Paths: fs, Changes: count[r]})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Changes != out[j].Changes {

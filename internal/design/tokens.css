@@ -2,8 +2,7 @@
    Light is the default; dark follows the system, and data-theme on <html> overrides either way.
    Kept by hand, one source per value. See README.md for where each one is used. */
 
-@font-face { font-family: "Bricolage Grotesque"; src: url("fonts/BricolageGrotesque.woff2") format("woff2"); font-weight: 500 800; font-display: swap; }
-@font-face { font-family: "Instrument Sans"; src: url("fonts/InstrumentSans.woff2") format("woff2"); font-weight: 400 700; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("fonts/Inter.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
 @font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono.woff2") format("woff2"); font-weight: 400 600; font-display: swap; }
 
 :root {
@@ -32,8 +31,8 @@
   --focus: #1757f5;
   --shadow-sheet: 0 1px 2px rgba(11,26,51,0.06), 0 8px 24px rgba(11,26,51,0.08);
 
-  --font-display: "Bricolage Grotesque", "Instrument Sans", system-ui, sans-serif;
-  --font-sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   --space-1: 4px;

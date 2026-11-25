@@ -113,11 +113,23 @@ type Outcome struct {
 	Error     string               `json:"error,omitempty"`
 }
 
-// job is one capability ready to run: its proposal and its prompt.
+// job is one capability ready to run: its proposal, its prompt and what
+// its sources hold.
 type job struct {
 	capability mapping.Capability
 	system     string
 	prompt     string
+	read       reading.Report
+}
+
+// tooLong is err, a session refused as too long, with how big physa made
+// its prompt, by its own estimate. An agent's own account may count
+// everything physa passes outside the message as its system prompt, which
+// here holds only the skill and the docs every capability reads; the
+// capability's own sources are in the message.
+func (j job) tooLong(err error) error {
+	return fmt.Errorf("%w (by physa's estimate, the system prompt, the recovering skill and the docs every capability reads, came to about %s tokens, and the message, with this capability's own sources, to about %s; its sources: %s)",
+		err, reading.Thousands(int64(reading.Tokens(j.system))), reading.Thousands(int64(reading.Tokens(j.prompt))), strings.Join(j.read.Lines(), "; "))
 }
 
 // Run is init's recover and check phases end to end. For each capability
@@ -163,10 +175,11 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	pl, _ := coverage.Place(g, stored.Proposal.Capabilities)
 	jobs := make([]job, len(chosen))
 	for i, c := range chosen {
+		in := reading.Of(sources(g, c, pl), recovering.Reads)
 		system, prompt := recovering.Split(recovering.Input{
 			Product: stored.Proposal.Product.Promise, Name: c.Name, Promise: c.Promise,
-			Questions: c.Questions, Date: date, Sources: reading.Of(sources(g, c, pl), recovering.Reads)})
-		jobs[i] = job{capability: c, system: system, prompt: prompt}
+			Questions: c.Questions, Date: date, Sources: in})
+		jobs[i] = job{capability: c, system: system, prompt: prompt, read: in.Report}
 	}
 	if s.Agent == nil {
 		return rep, errors.New("no agent to recover with")

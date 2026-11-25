@@ -17,7 +17,7 @@ Each step: what lands, what the owner can do with it, and when it is done. Comma
 
 ### 0. Audit and slim the owner's harness
 
-- **Status: done** (2026-11-20). The audit is in `docs/research/harness-audit.md`; the slimmed harness is **dharness** (Q6), adopted after a comparison the owner cut short.
+- **Status: done** (2026-11-20). The audit is in the private docs; the slimmed harness is **dharness** (Q6), adopted after a comparison the owner cut short.
 - **Why first:** everything after step 0 is built by this harness, and it had not been audited since several model releases (the owner: "Before we build anything with my harness I want to audit it and slim it down").
 - **Lands:** an audit of afk and forge-cli, the harnesses Rhiza was built on; a slimmed harness as its own plugin repo; before-and-after measurements on real tasks.
 - **The owner can:** build Physa with a harness that is smaller, cheaper in tokens, and no less trusted.

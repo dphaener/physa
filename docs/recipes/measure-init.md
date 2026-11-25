@@ -36,7 +36,7 @@ initstats -label repo-a -from .git/physa/initstats/<time>
 
 ## Bring the record back
 
-Read the record before it leaves: it is short JSON. Then share it with whoever is tuning init. Records of private repos stay out of this repo.
+Read the record before it leaves: it is short JSON, and its label is the only name in it. Then share it with whoever is tuning init. Records of private repos stay out of this repo.
 
 ## What the record holds
 

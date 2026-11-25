@@ -63,6 +63,7 @@ func main() {
 	rec, err := build(kept, *label)
 	if err == nil {
 		rec.Repo, err = shape(*dir)
+		warn(os.Stderr, kept, rec)
 	}
 	if err != nil {
 		fail(err)
@@ -199,4 +200,26 @@ func clone() string {
 		return ""
 	}
 	return id[:12]
+}
+
+// warn says on w, which stays on this machine, when the gather was not what a
+// measurement needs: a shallow clone, or no PRs. The reason PRs were
+// unavailable is read from the raw gather, so it never reaches the record.
+func warn(w io.Writer, kept string, rec Record) {
+	g := rec.Gather
+	if g == nil {
+		return
+	}
+	if g.History.Shallow {
+		fmt.Fprintln(w, "initstats: warning: the clone is shallow, so history is only what was fetched; run git fetch --unshallow and measure again")
+	}
+	if !g.PRs.Available {
+		var raw struct {
+			PRs struct {
+				Reason string `json:"reason"`
+			} `json:"prs"`
+		}
+		readJSON(filepath.Join(kept, "gather.json"), &raw)
+		fmt.Fprintf(w, "initstats: warning: no PRs were gathered (%s), so propose and recovery read docs and changes only\n", raw.PRs.Reason)
+	}
 }

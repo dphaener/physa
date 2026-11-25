@@ -178,3 +178,27 @@ func TestCloneIsTheSourcesCommit(t *testing.T) {
 		t.Fatalf("clone %q", c)
 	}
 }
+
+func TestWarnSaysWhatTheGatherLacked(t *testing.T) {
+	dir := keep(t)
+	os.WriteFile(filepath.Join(dir, "gather.json"), mustJSON(t, gather.Summary{
+		History: gather.HistorySummary{Shallow: true}, PRs: gather.PRsSummary{Available: false, Reason: "no forge"}}), 0o644)
+	rec, err := build(dir, "repo-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b bytes.Buffer
+	warn(&b, dir, rec)
+	if !strings.Contains(b.String(), "shallow") || !strings.Contains(b.String(), "no PRs were gathered (no forge)") {
+		t.Fatalf("warnings:\n%s", b.String())
+	}
+	b.Reset()
+	if rec, err = build(keep(t), "repo-a"); err != nil {
+		t.Fatal(err)
+	}
+	rec.Gather.History.Shallow = false
+	warn(&b, "", rec)
+	if b.Len() != 0 {
+		t.Fatalf("a full gather warned:\n%s", b.String())
+	}
+}

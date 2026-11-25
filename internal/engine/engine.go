@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/api"
 	"github.com/dphaener/physa/internal/state"
 )
@@ -39,7 +40,7 @@ func PathsIn(dir string) (Paths, error) {
 	dir = filepath.Clean(dir)
 	p := Paths{
 		Dir:    dir,
-		Socket: filepath.Join(dir, "engine.sock"),
+		Socket: filepath.Join(dir, client.SocketName),
 		Lock:   filepath.Join(dir, "engine.lock"),
 		Log:    filepath.Join(dir, "engine.log"),
 	}

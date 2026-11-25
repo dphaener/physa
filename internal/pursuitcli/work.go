@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/output"
@@ -19,7 +20,6 @@ import (
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
-	"github.com/dphaener/physa/internal/workapi"
 )
 
 // sessionVar is the environment variable that names the agent's session.
@@ -63,8 +63,8 @@ func (p pursuits) work(args []string, current, asJSON bool, stdout, stderr io.Wr
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit work", err)
 	}
-	var out workapi.WorkOut
-	if err := p.Call("pursuit.work", workapi.WorkIn{Repo: repo, Pursuit: slug, Change: change, Session: session}, &out); err != nil {
+	var out client.WorkOut
+	if err := p.Call("pursuit.work", client.WorkIn{Repo: repo, Pursuit: slug, Change: change, Session: session}, &out); err != nil {
 		return ideacli.Failed(stderr, "pursuit work", err)
 	}
 	if asJSON {

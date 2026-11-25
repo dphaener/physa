@@ -1,4 +1,4 @@
-package workapi
+package client
 
 import (
 	"encoding/json"

@@ -11,11 +11,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/tokens"
-	"github.com/dphaener/physa/internal/workapi"
 )
 
 // Command returns the idea group, naming people through the forge newForge
@@ -68,8 +68,8 @@ func (e *Env) add(args []string, slug string, asJSON bool, stdout, stderr io.Wri
 	if who == "" {
 		return 2
 	}
-	var out workapi.IdeaOut
-	if err := e.Call("idea.add", workapi.AddIn{Repo: repo, Text: args[0], Slug: slug, Person: who}, &out); err != nil {
+	var out client.IdeaOut
+	if err := e.Call("idea.add", client.AddIn{Repo: repo, Text: args[0], Slug: slug, Person: who}, &out); err != nil {
 		return Failed(stderr, "idea add", err)
 	}
 	if asJSON {
@@ -80,9 +80,9 @@ func (e *Env) add(args []string, slug string, asJSON bool, stdout, stderr io.Wri
 }
 
 // Ideas lists the repo's ideas, newest first.
-func (e *Env) Ideas(repo string) ([]workapi.IdeaOut, error) {
-	var out []workapi.IdeaOut
-	err := e.Call("idea.list", workapi.RepoIn{Repo: repo}, &out)
+func (e *Env) Ideas(repo string) ([]client.IdeaOut, error) {
+	var out []client.IdeaOut
+	err := e.Call("idea.list", client.RepoIn{Repo: repo}, &out)
 	return out, err
 }
 
@@ -116,7 +116,7 @@ func (e *Env) list(args []string, asJSON bool, stdout, stderr io.Writer) int {
 
 // Facts says where an idea stands: its latest pursuit's state, or that it
 // was never pursued.
-func Facts(o workapi.IdeaOut) string {
+func Facts(o client.IdeaOut) string {
 	switch {
 	case o.Pursuit == "":
 		return "not pursued"
@@ -135,7 +135,7 @@ func Appetite(n int64) string {
 }
 
 // IdeaChoices makes the choices for ChooseSlug from ideas.
-func IdeaChoices(ideas []workapi.IdeaOut) []Choice {
+func IdeaChoices(ideas []client.IdeaOut) []Choice {
 	cs := make([]Choice, len(ideas))
 	for i, o := range ideas {
 		cs[i] = Choice{Slug: o.Slug, Text: o.Text, Detail: Facts(o)}
@@ -168,8 +168,8 @@ func (e *Env) show(args []string, asJSON bool, stdout, stderr io.Writer) int {
 	if err != nil {
 		return Failed(stderr, "idea show", err)
 	}
-	var out workapi.IdeaOut
-	if err := e.Call("idea.show", workapi.SlugIn{Repo: repo, Slug: slug}, &out); err != nil {
+	var out client.IdeaOut
+	if err := e.Call("idea.show", client.SlugIn{Repo: repo, Slug: slug}, &out); err != nil {
 		return Failed(stderr, "idea show", err)
 	}
 	if asJSON {
@@ -179,7 +179,7 @@ func (e *Env) show(args []string, asJSON bool, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func (e *Env) showIdea(v *View, o workapi.IdeaOut) {
+func (e *Env) showIdea(v *View, o client.IdeaOut) {
 	v.Title(o.Text)
 	pursuits := "none"
 	if len(o.Pursuits) > 0 {

@@ -17,7 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dphaener/physa/internal/apiclient"
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/engine"
 	"github.com/dphaener/physa/internal/enginestart"
@@ -67,7 +67,7 @@ func newEngine(t *testing.T) *testEngine {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		dctx, dcancel := context.WithTimeout(context.Background(), time.Second)
-		c, err := apiclient.Dial(dctx, p.Socket)
+		c, err := client.Dial(dctx, p.Socket)
 		if err == nil {
 			err = c.Call(dctx, "engine.status", nil, nil)
 			c.Close()

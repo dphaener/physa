@@ -6,12 +6,12 @@ import (
 	"os"
 	"time"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/signal"
 	"github.com/dphaener/physa/internal/tokens"
-	"github.com/dphaener/physa/internal/workapi"
 )
 
 const usagePursue = "physa pursue [<idea slug>] [--appetite <tokens>] [--signal-from <file>|-] [--json]"
@@ -46,7 +46,7 @@ func (p pursuits) start(args []string, appetite, signalFrom string, asJSON bool,
 	if err != nil {
 		return ideacli.Failed(stderr, "pursue", err)
 	}
-	var open []workapi.IdeaOut
+	var open []client.IdeaOut
 	text := map[string]string{}
 	for _, o := range ideas {
 		text[o.Slug] = o.Text
@@ -71,8 +71,8 @@ func (p pursuits) start(args []string, appetite, signalFrom string, asJSON bool,
 	} else if sig, ok = p.signalInEditor(text[slug], stderr); !ok {
 		return 2
 	}
-	var out workapi.PursuitOut
-	in := workapi.StartIn{Repo: repo, Slug: slug, Appetite: appetite, Person: who, Signal: workapi.SignalOut{
+	var out client.PursuitOut
+	in := client.StartIn{Repo: repo, Slug: slug, Appetite: appetite, Person: who, Signal: client.SignalOut{
 		Claim: sig.Claim, For: sig.For, Against: sig.Against, Window: sig.Window, Resolver: sig.Resolver}}
 	if err := p.Call("pursuit.start", in, &out); err != nil {
 		return ideacli.Failed(stderr, "pursue", err)

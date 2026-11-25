@@ -14,8 +14,8 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/api"
-	"github.com/dphaener/physa/internal/apiclient"
 )
 
 type echoIn struct {
@@ -66,11 +66,11 @@ func serve(t *testing.T, h api.Hooks, methods ...api.Method) (socket string, srv
 	return socket, srv
 }
 
-func dial(t *testing.T, socket string) *apiclient.Client {
+func dial(t *testing.T, socket string) *client.Client {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	c, err := apiclient.Dial(ctx, socket)
+	c, err := client.Dial(ctx, socket)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +349,7 @@ func TestServerClose(t *testing.T) {
 	if got := websocket.CloseStatus(err); got != websocket.StatusGoingAway {
 		t.Fatalf("pending call = %v, want a going-away close", err)
 	}
-	if _, err := apiclient.Dial(timeout(t), socket); err == nil {
+	if _, err := client.Dial(timeout(t), socket); err == nil {
 		t.Fatal("a closed server accepted a connection")
 	}
 }

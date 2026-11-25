@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/api"
-	"github.com/dphaener/physa/internal/apiclient"
 	"github.com/dphaener/physa/internal/configdir"
 	"github.com/dphaener/physa/internal/repos"
 	"github.com/dphaener/physa/internal/state"
@@ -101,23 +101,23 @@ func (r *running) result(d time.Duration) (error, bool) {
 	}
 }
 
-func dial(socket string) (*apiclient.Client, error) {
+func dial(socket string) (*client.Client, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	return apiclient.Dial(ctx, socket)
+	return client.Dial(ctx, socket)
 }
 
-func call(c *apiclient.Client, method string, result any) error {
+func call(c *client.Client, method string, result any) error {
 	return callWith(c, method, nil, result)
 }
 
-func callWith(c *apiclient.Client, method string, params, result any) error {
+func callWith(c *client.Client, method string, params, result any) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return c.Call(ctx, method, params, result)
 }
 
-func mustDial(t *testing.T, socket string) *apiclient.Client {
+func mustDial(t *testing.T, socket string) *client.Client {
 	t.Helper()
 	c, err := dial(socket)
 	if err != nil {
@@ -383,7 +383,7 @@ func submitting(name string, cmd state.Command) func(func(context.Context, strin
 	}
 }
 
-func repoStatus(t *testing.T, c *apiclient.Client) []string {
+func repoStatus(t *testing.T, c *client.Client) []string {
 	t.Helper()
 	var s Status
 	if err := call(c, "engine.status", &s); err != nil {

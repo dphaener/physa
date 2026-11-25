@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dphaener/physa/internal/apiclient"
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/engine"
 )
 
@@ -136,7 +136,7 @@ func (r *rig) spawned() []int {
 }
 
 // connect calls Connect and returns its client and engine.status.
-func (r *rig) connect() (*apiclient.Client, engine.Status) {
+func (r *rig) connect() (*client.Client, engine.Status) {
 	r.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

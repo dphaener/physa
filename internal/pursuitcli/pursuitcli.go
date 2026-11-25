@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/ideacli"
@@ -95,9 +96,9 @@ func (p pursuits) refuse(method, name string, stderr io.Writer) bool {
 	return ok
 }
 
-func (p pursuits) all(repo string) ([]workapi.PursuitOut, error) {
-	var out []workapi.PursuitOut
-	err := p.Call("pursuit.list", workapi.RepoIn{Repo: repo}, &out)
+func (p pursuits) all(repo string) ([]client.PursuitOut, error) {
+	var out []client.PursuitOut
+	err := p.Call("pursuit.list", client.RepoIn{Repo: repo}, &out)
 	return out, err
 }
 
@@ -138,7 +139,7 @@ func firstArg(args []string) string {
 
 // choose returns the pursuit slug given, or the one chosen from the
 // pursuits keep accepts.
-func (p pursuits) choose(repo string, given string, keep func(workapi.PursuitOut) bool) (string, error) {
+func (p pursuits) choose(repo string, given string, keep func(client.PursuitOut) bool) (string, error) {
 	if given != "" {
 		return given, nil
 	}
@@ -163,12 +164,12 @@ func (p pursuits) show(args []string, asJSON bool, stdout, stderr io.Writer) int
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit show", err)
 	}
-	slug, err := p.choose(repo, firstArg(args), func(workapi.PursuitOut) bool { return true })
+	slug, err := p.choose(repo, firstArg(args), func(client.PursuitOut) bool { return true })
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit show", err)
 	}
-	var o workapi.PursuitOut
-	if err := p.Call("pursuit.show", workapi.SlugIn{Repo: repo, Slug: slug}, &o); err != nil {
+	var o client.PursuitOut
+	if err := p.Call("pursuit.show", client.SlugIn{Repo: repo, Slug: slug}, &o); err != nil {
 		return ideacli.Failed(stderr, "pursuit show", err)
 	}
 	if asJSON {
@@ -180,7 +181,7 @@ func (p pursuits) show(args []string, asJSON bool, stdout, stderr io.Writer) int
 
 // showPursuit prints a pursuit: its facts, its signal, or that it has none,
 // then its progress.
-func showPursuit(v *ideacli.View, o workapi.PursuitOut) {
+func showPursuit(v *ideacli.View, o client.PursuitOut) {
 	v.Title(o.IdeaText)
 	pairs := [][2]string{
 		{"slug", o.Slug}, {"idea", o.Idea}, {"person", o.Person}, {"state", o.State},
@@ -203,7 +204,7 @@ func showPursuit(v *ideacli.View, o workapi.PursuitOut) {
 }
 
 // signalText is a line or more for each part of a signal.
-func signalText(s workapi.SignalOut) string {
+func signalText(s client.SignalOut) string {
 	var lines []string
 	for _, part := range [][2]string{{"claim", s.Claim}, {"for", s.For}, {"against", s.Against}, {"window", s.Window}, {"resolver", s.Resolver}} {
 		text := strings.ReplaceAll(strings.TrimSpace(part[1]), "\n", "\n"+strings.Repeat(" ", 10))
@@ -227,7 +228,7 @@ func (p pursuits) stop(args []string, reason string, yes, asJSON bool, stdout, s
 	if who == "" {
 		return 2
 	}
-	slug, err := p.choose(repo, firstArg(args), func(o workapi.PursuitOut) bool { return o.State == "active" })
+	slug, err := p.choose(repo, firstArg(args), func(o client.PursuitOut) bool { return o.State == "active" })
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit stop", err)
 	}
@@ -241,8 +242,8 @@ func (p pursuits) stop(args []string, reason string, yes, asJSON bool, stdout, s
 			return 2
 		}
 	}
-	var o workapi.PursuitOut
-	if err := p.Call("pursuit.stop", workapi.StopIn{Repo: repo, Slug: slug, Reason: reason, Person: who}, &o); err != nil {
+	var o client.PursuitOut
+	if err := p.Call("pursuit.stop", client.StopIn{Repo: repo, Slug: slug, Reason: reason, Person: who}, &o); err != nil {
 		return ideacli.Failed(stderr, "pursuit stop", err)
 	}
 	if asJSON {

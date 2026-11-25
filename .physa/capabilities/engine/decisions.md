@@ -13,6 +13,7 @@
 - [A change names its pursuit's plan through a hook trailer](#a-change-names-its-pursuits-plan-through-a-hook-trailer)
 - [The store's writers are split by table](#the-stores-writers-are-split-by-table)
 - [The local API is a WebSocket, like Rex](#the-local-api-is-a-websocket-like-rex)
+- [Plugins reach the engine through a public client](#plugins-reach-the-engine-through-a-public-client)
 - [A person is named by their forge login](#a-person-is-named-by-their-forge-login)
 
 ## Entries
@@ -87,6 +88,13 @@ The engine's local API, for the CLI, harness sessions and the Rex plugin, is a W
 Because: it matches Rex's own API, and following a live session and Needs you updates will need streaming.
 Rejected:
 - Plain HTTP for now: request and reply only, and streaming is needed soon after.
+
+### Plugins reach the engine through a public client
+`public-client` · decided by dphaener, choosing an option · 2026-11-25 · from docs/architecture/03-engine-and-store.md
+Programs outside Physa's module, such as view plugins and harnesses, call the engine's API through the public Go package `client`, which holds the dial, the calls and the methods' types. The engine types its methods with the same types.
+Because: the Rex plugin lives in its own repo and cannot import `internal/`, and one definition of each method cannot drift.
+Rejected:
+- Each plugin writes its own client from `physa api describe`: Physa stays unchanged, but every method is defined twice.
 
 ### A person is named by their forge login
 `person-forge-login` · decided by dphaener, choosing an option · 2026-11-21 · d98abe5

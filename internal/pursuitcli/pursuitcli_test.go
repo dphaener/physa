@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dphaener/physa/internal/apiclient"
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/engine"
 	"github.com/dphaener/physa/internal/enginestart"
@@ -88,7 +88,7 @@ func newTest(t *testing.T) *tenv {
 	}
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
 		dctx, dcancel := context.WithTimeout(context.Background(), time.Second)
-		c, err := apiclient.Dial(dctx, p.Socket)
+		c, err := client.Dial(dctx, p.Socket)
 		if err == nil {
 			err = c.Call(dctx, "engine.status", nil, nil)
 			c.Close()
@@ -203,14 +203,14 @@ func (te *tenv) idea(text, slug string) {
 	if err != nil {
 		te.t.Fatal(err)
 	}
-	if err := te.e.Call("idea.add", workapi.AddIn{Repo: repo, Text: text, Slug: slug, Person: "ann"}, nil); err != nil {
+	if err := te.e.Call("idea.add", client.AddIn{Repo: repo, Text: text, Slug: slug, Person: "ann"}, nil); err != nil {
 		te.t.Fatal(err)
 	}
 }
 
-func (te *tenv) list() []workapi.PursuitOut {
+func (te *tenv) list() []client.PursuitOut {
 	te.t.Helper()
-	var bs []workapi.PursuitOut
+	var bs []client.PursuitOut
 	if err := json.Unmarshal([]byte(te.must("list", "--json")), &bs); err != nil {
 		te.t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestPursueWithAndWithoutAppetite(t *testing.T) {
 	if out != "Pursuing \"Try a quiet mode\" as try-a-quiet-mode, appetite 1.5m, read on 2099-01-01\n" {
 		t.Errorf("pursue output %q", out)
 	}
-	var o workapi.PursuitOut
+	var o client.PursuitOut
 	if err := json.Unmarshal([]byte(te.pursue("phone-pursuits", "--json")), &o); err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +342,7 @@ func TestPursueInEditorAgainAfterProblems(t *testing.T) {
 	if code != 0 || asked != "Edit the signal again?" || !strings.Contains(errs, `missing part "Resolver"`) {
 		t.Fatalf("code %d, asked %q, stderr %q", code, asked, errs)
 	}
-	var o workapi.PursuitOut
+	var o client.PursuitOut
 	if err := json.Unmarshal([]byte(out), &o); err != nil || o.Signal == nil || o.Signal.Resolver != "ann" {
 		t.Errorf("pursue --json: %q, %v", out, err)
 	}
@@ -412,7 +412,7 @@ func TestListAndShow(t *testing.T) {
 	if show := te.must("show", "phone-pursuits"); !strings.Contains(show, "appetite  none") || !strings.Contains(show, "spent     0") {
 		t.Errorf("show with no appetite:\n%s", show)
 	}
-	var o workapi.PursuitOut
+	var o client.PursuitOut
 	if err := json.Unmarshal([]byte(te.must("show", "try-a-quiet-mode", "--json")), &o); err != nil || o.Signal == nil {
 		t.Errorf("show json %+v, %v", o, err)
 	}
@@ -421,7 +421,7 @@ func TestListAndShow(t *testing.T) {
 func TestShowAPursuitFromBeforeSignals(t *testing.T) {
 	te := newTest(t)
 	// The engine leaves signal out for a pursuit started before signals.
-	o := workapi.PursuitOut{Slug: "old", Idea: "old", IdeaText: "An old one", Appetite: 1000, State: "active", CreatedAt: "2026-11-01T10:00:00Z"}
+	o := client.PursuitOut{Slug: "old", Idea: "old", IdeaText: "An old one", Appetite: 1000, State: "active", CreatedAt: "2026-11-01T10:00:00Z"}
 	var out bytes.Buffer
 	showPursuit(te.e.View(&out), o)
 	if got := out.String(); !strings.Contains(got, "signal    none (started before signals)") || strings.Contains(got, "claim") {
@@ -575,7 +575,7 @@ func TestPlanSetFromFileAndStdinThenShow(t *testing.T) {
 		t.Errorf("replan: %q", out)
 	}
 	te.e.Stdin = strings.NewReader(twoChanges)
-	var po workapi.PlanOut
+	var po client.PlanOut
 	if err := json.Unmarshal([]byte(te.must("plan", "set", "try-a-quiet-mode", "--reason", "again", "--from", "-", "--json")), &po); err != nil || po.N != 3 || po.Replans != 2 {
 		t.Errorf("json plan set %+v, %v", po, err)
 	}
@@ -654,7 +654,7 @@ func TestWorkAndCurrent(t *testing.T) {
 	if out := te.must("work", "--current"); out != "try-a-quiet-mode/first-step\n" {
 		t.Errorf("--current: %q", out)
 	}
-	var wo workapi.WorkOut
+	var wo client.WorkOut
 	if err := json.Unmarshal([]byte(te.must("work", "try-a-quiet-mode/second-step", "--json")), &wo); err != nil || wo.Change != "second-step" {
 		t.Errorf("work json %+v, %v", wo, err)
 	}
@@ -725,7 +725,7 @@ func TestShowProgressAsFactsAndNeedsYou(t *testing.T) {
 	spend := func(change string, tokens int64) {
 		t.Helper()
 		repo, _ := te.e.Repo()
-		in := workapi.SpendIn{Repo: repo, Pursuit: "try-a-quiet-mode", Change: change, Session: "sess-1", Tokens: tokens}
+		in := client.SpendIn{Repo: repo, Pursuit: "try-a-quiet-mode", Change: change, Session: "sess-1", Tokens: tokens}
 		if err := te.e.Call("pursuit.spend", in, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -754,7 +754,7 @@ func TestShowProgressAsFactsAndNeedsYou(t *testing.T) {
 	if strings.Contains(out, "%") {
 		t.Errorf("a percentage in the output:\n%s", out)
 	}
-	var o workapi.PursuitOut
+	var o client.PursuitOut
 	if err := json.Unmarshal([]byte(te.must("show", "try-a-quiet-mode", "--json")), &o); err != nil || o.Progress == nil || len(o.NeedsYou) != 2 {
 		t.Errorf("show json %+v, %v", o, err)
 	}
@@ -775,13 +775,13 @@ func TestHelpListsPlanAndWork(t *testing.T) {
 func TestShowPrintsEvidenceAfterProgress(t *testing.T) {
 	te := newTest(t)
 	secs := int64(7500)
-	o := workapi.PursuitOut{
-		Progress: &workapi.ProgressOut{},
-		Evidence: []workapi.EvidenceOut{
+	o := client.PursuitOut{
+		Progress: &client.ProgressOut{},
+		Evidence: []client.EvidenceOut{
 			{Kind: "lead_time", PR: 12, Commit: "3f9a2c1d", Capability: "cli", At: "2026-11-22T10:00:00Z", Seconds: &secs},
 			{Kind: "landed", Commit: "3f9a2c1d", Capability: "cli", At: "2026-11-22T09:00:00Z"},
 		},
-		NeedsYou: []workapi.NeedOut{{Text: "ask"}},
+		NeedsYou: []client.NeedOut{{Text: "ask"}},
 	}
 	var out bytes.Buffer
 	showProgress(te.e.View(&out), o)
@@ -804,7 +804,7 @@ func TestShowPrintsEvidenceAfterProgress(t *testing.T) {
 
 func TestProgressWithNoAppetiteShowsSpendAlone(t *testing.T) {
 	te := newTest(t)
-	o := workapi.PursuitOut{Progress: &workapi.ProgressOut{Planned: []string{"a"}, Spent: 5000}}
+	o := client.PursuitOut{Progress: &client.ProgressOut{Planned: []string{"a"}, Spent: 5000}}
 	var out bytes.Buffer
 	showProgress(te.e.View(&out), o)
 	if got := out.String(); !strings.Contains(got, "spent         5k, no appetite") || strings.Contains(got, "5k of") {

@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/api"
-	"github.com/dphaener/physa/internal/apiclient"
 	"github.com/dphaener/physa/internal/state"
 	"github.com/dphaener/physa/internal/store"
 )
@@ -303,7 +303,7 @@ func TestKillAnyMoment(t *testing.T) {
 			cancel()
 			fail("respawn: %v", err)
 		}
-		cl, err := apiclient.Dial(ctx, filepath.Join(r.dir, "engine.sock"))
+		cl, err := client.Dial(ctx, filepath.Join(r.dir, "engine.sock"))
 		if err != nil {
 			cancel()
 			fail("dial the respawned engine: %v", err)
@@ -353,9 +353,9 @@ func killRound(ctx context.Context, r *crashRig, repo, storeDir string, next *at
 		fail("spawn: %v", err)
 	}
 	const writers, perWriter = 4, 50
-	conns := make([]*apiclient.Client, writers)
+	conns := make([]*client.Client, writers)
 	for i := range conns {
-		if conns[i], err = apiclient.Dial(ctx, filepath.Join(r.dir, "engine.sock")); err != nil {
+		if conns[i], err = client.Dial(ctx, filepath.Join(r.dir, "engine.sock")); err != nil {
 			fail("dial: %v", err)
 		}
 		defer conns[i].Close()

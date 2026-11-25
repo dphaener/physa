@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/api"
 	observe "github.com/dphaener/physa/internal/evidence"
 	"github.com/dphaener/physa/internal/forge"
@@ -31,17 +32,17 @@ func shortID(id string) string {
 	return id
 }
 
-func evidenceOut(fs []observe.Fact) []EvidenceOut {
-	out := make([]EvidenceOut, 0, len(fs))
+func evidenceOut(fs []observe.Fact) []client.EvidenceOut {
+	out := make([]client.EvidenceOut, 0, len(fs))
 	for _, f := range fs {
-		out = append(out, EvidenceOut{Kind: f.Kind, Commit: shortID(f.Commit), PR: f.PR, Capability: f.Capability, Pursuit: f.Pursuit,
+		out = append(out, client.EvidenceOut{Kind: f.Kind, Commit: shortID(f.Commit), PR: f.PR, Capability: f.Capability, Pursuit: f.Pursuit,
 			Change: f.Change, Idea: f.Idea, At: stamp(f.At), Source: f.Source, Seconds: f.Seconds, ByCommit: shortID(f.ByCommit)})
 	}
 	return out
 }
 
 // pursuitEvidence reads the facts for one pursuit, newest first, up to the cap.
-func pursuitEvidence(ctx context.Context, st work.Submitter, slug string) []EvidenceOut {
+func pursuitEvidence(ctx context.Context, st work.Submitter, slug string) []client.EvidenceOut {
 	fs, err := stateevidence.List(ctx, st, stateevidence.Filter{Pursuit: slug, Limit: pursuitEvidenceMax})
 	if err != nil {
 		log.Printf("pursuit.show %s: evidence: %v", slug, err)
@@ -57,7 +58,7 @@ func evidenceMethods(g getter) []api.Method {
 				"capability and pursuit narrow the list; limit is 50 by default and at most 500. Commits are shown as their first eight characters."},
 			`{"repo":"/home/me/code/shop","pursuit":"try-a-quiet-mode","limit":20}`,
 			`[{"kind":"landed","commit":"3f9a2c1d","capability":"cli","pursuit":"try-a-quiet-mode","change":"quiet-flag","at":"2026-11-22T10:00:00Z","source":"vcs"}]`,
-			func(ctx context.Context, _ *api.Conn, in EvidenceIn) ([]EvidenceOut, error) {
+			func(ctx context.Context, _ *api.Conn, in client.EvidenceIn) ([]client.EvidenceOut, error) {
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
 					return nil, err

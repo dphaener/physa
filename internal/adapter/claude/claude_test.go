@@ -84,11 +84,11 @@ func TestParseVeryLongLine(t *testing.T) {
 
 func TestArgs(t *testing.T) {
 	base := []string{"-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence"}
-	if got := args(adapter.Spec{}); !reflect.DeepEqual(got, base) {
+	if got := args(adapter.Spec{}, ""); !reflect.DeepEqual(got, base) {
 		t.Errorf("args = %q, want %q", got, base)
 	}
 	want := append(append([]string{}, base...), "--tools", "", "--strict-mcp-config")
-	if got := args(adapter.Spec{PromptOnly: true}); !reflect.DeepEqual(got, want) {
+	if got := args(adapter.Spec{PromptOnly: true}, ""); !reflect.DeepEqual(got, want) {
 		t.Errorf("prompt-only args = %q, want %q", got, want)
 	}
 }
@@ -107,7 +107,7 @@ func TestArgsReadOnly(t *testing.T) {
 		{"prompt-only", adapter.Spec{PromptOnly: true}, promptOnly},
 	}
 	for _, c := range cases {
-		if got := args(c.spec); !reflect.DeepEqual(got, c.want) {
+		if got := args(c.spec, ""); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: args = %q, want %q", c.name, got, c.want)
 		}
 	}
@@ -117,11 +117,11 @@ const testSessionID = "0f8e7d6c-5b4a-4392-8170-a1b2c3d4e5f6"
 
 func TestArgsWithSessionID(t *testing.T) {
 	want := []string{"-p", "--output-format", "stream-json", "--verbose", "--session-id", testSessionID}
-	if got := args(adapter.Spec{SessionID: testSessionID}); !reflect.DeepEqual(got, want) {
+	if got := args(adapter.Spec{SessionID: testSessionID}, ""); !reflect.DeepEqual(got, want) {
 		t.Errorf("args = %q, want %q", got, want)
 	}
 	want = append(want, "--tools", "", "--strict-mcp-config")
-	if got := args(adapter.Spec{SessionID: testSessionID, PromptOnly: true}); !reflect.DeepEqual(got, want) {
+	if got := args(adapter.Spec{SessionID: testSessionID, PromptOnly: true}, ""); !reflect.DeepEqual(got, want) {
 		t.Errorf("prompt-only args = %q, want %q", got, want)
 	}
 }
@@ -148,11 +148,11 @@ func TestSessionArgvWithSessionID(t *testing.T) {
 
 func TestArgsResume(t *testing.T) {
 	want := []string{"-p", "--output-format", "stream-json", "--verbose", "--resume", testSessionID}
-	if got := args(adapter.Spec{SessionID: testSessionID, Resume: true}); !reflect.DeepEqual(got, want) {
+	if got := args(adapter.Spec{SessionID: testSessionID, Resume: true}, ""); !reflect.DeepEqual(got, want) {
 		t.Errorf("resume args = %q, want %q", got, want)
 	}
 	want = append(want, "--tools", "", "--strict-mcp-config")
-	if got := args(adapter.Spec{SessionID: testSessionID, Resume: true, PromptOnly: true}); !reflect.DeepEqual(got, want) {
+	if got := args(adapter.Spec{SessionID: testSessionID, Resume: true, PromptOnly: true}, ""); !reflect.DeepEqual(got, want) {
 		t.Errorf("prompt-only resume args = %q, want %q", got, want)
 	}
 }
@@ -239,6 +239,7 @@ func fake(t *testing.T, stream, stderr string, code int) (string, string) {
 		"printf '%s\\n' \"$@\" > \"$d/rec/argv\"\n" +
 		"cat > \"$d/rec/stdin\"\n" +
 		"pwd > \"$d/rec/cwd\"\n" +
+		"prev=; for a in \"$@\"; do [ \"$prev\" = --append-system-prompt-file ] && cp \"$a\" \"$d/rec/system\"; prev=$a; done\n" +
 		"printf '%s' \"$PHYSA_FAKE_ENV\" > \"$d/rec/env\"\n" +
 		"cat \"$d/stream\"\n" +
 		"cat \"$d/stderr\" >&2\n" +
@@ -295,7 +296,7 @@ func TestSessionSuccess(t *testing.T) {
 	if got := read(t, filepath.Join(rec, "stdin")); got != prompt {
 		t.Errorf("stdin got %d bytes, want the %d-byte prompt", len(got), len(prompt))
 	}
-	wantArgv := strings.Join(args(adapter.Spec{PromptOnly: true}), "\n") + "\n"
+	wantArgv := strings.Join(args(adapter.Spec{PromptOnly: true}, ""), "\n") + "\n"
 	if got := read(t, filepath.Join(rec, "argv")); got != wantArgv {
 		t.Errorf("argv = %q, want %q", got, wantArgv)
 	}
@@ -314,7 +315,7 @@ func TestSessionArgvWithoutPromptOnly(t *testing.T) {
 	if _, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p"}); err != nil {
 		t.Fatal(err)
 	}
-	want := strings.Join(args(adapter.Spec{}), "\n") + "\n"
+	want := strings.Join(args(adapter.Spec{}, ""), "\n") + "\n"
 	if got := read(t, filepath.Join(rec, "argv")); got != want {
 		t.Errorf("argv = %q, want %q", got, want)
 	}
@@ -602,5 +603,39 @@ func TestSessionOtherFailureIsNotTooLong(t *testing.T) {
 	}
 	if errors.Is(err, adapter.ErrTooLong) {
 		t.Fatalf("err = %v, must not be ErrTooLong", err)
+	}
+}
+
+func TestSessionSystemGoesInAFileThatIsRemoved(t *testing.T) {
+	cmd, rec := fake(t, okResult+"\n", "", 0)
+	system := "the docs every capability reads " + strings.Repeat("s", 300<<10)
+	if _, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p", System: system, PromptOnly: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, filepath.Join(rec, "system")); got != system {
+		t.Fatalf("system file held %d bytes, want the %d-byte system text", len(got), len(system))
+	}
+	argv := strings.Split(strings.TrimSpace(read(t, filepath.Join(rec, "argv"))), "\n")
+	file := ""
+	for i, a := range argv {
+		if a == "--append-system-prompt-file" && i+1 < len(argv) {
+			file = argv[i+1]
+		}
+	}
+	if file == "" {
+		t.Fatalf("argv %q has no --append-system-prompt-file", argv)
+	}
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Errorf("system file %s left behind: %v", file, err)
+	}
+}
+
+func TestResumeSendsNoSystem(t *testing.T) {
+	cmd, rec := fake(t, okResult+"\n", "", 0)
+	if _, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p", System: "s", SessionID: testSessionID, Resume: true}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(read(t, filepath.Join(rec, "argv")), "--append-system-prompt-file") {
+		t.Error("a resume resent the system text")
 	}
 }

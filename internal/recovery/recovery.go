@@ -114,6 +114,7 @@ type Outcome struct {
 // job is one capability ready to run: its proposal and its prompt.
 type job struct {
 	capability mapping.Capability
+	system     string
 	prompt     string
 }
 
@@ -158,10 +159,10 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 
 	jobs := make([]job, len(chosen))
 	for i, c := range chosen {
-		prompt := recovering.Prompt(recovering.Input{
+		system, prompt := recovering.Split(recovering.Input{
 			Product: stored.Proposal.Product.Promise, Name: c.Name, Promise: c.Promise,
 			Questions: c.Questions, Date: date, Sources: reading.Of(sources(g, c), recovering.Reads)})
-		jobs[i] = job{capability: c, prompt: prompt}
+		jobs[i] = job{capability: c, system: system, prompt: prompt}
 	}
 	if s.Agent == nil {
 		return rep, errors.New("no agent to recover with")

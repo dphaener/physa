@@ -158,11 +158,15 @@ func Of(g store.Gather, o Options) Input {
 	return in.Recounted()
 }
 
-// Linked is the docs a capability's session reads: the agent docs, readme
-// and contributing guide always, the others only when linked names them.
+// Always says whether every capability's session reads a doc of this kind:
+// the agent docs, readme and contributing guide.
+func Always(kind string) bool { return kind == "agent" || kind == "readme" || kind == "contributing" }
+
+// Linked is the docs a capability's session reads: those Always names, and
+// the others only when linked names them.
 func Linked(docs []store.Doc, linked []string) (read []store.Doc) {
 	for _, d := range docs {
-		if d.Kind == "agent" || d.Kind == "readme" || d.Kind == "contributing" || slices.Contains(linked, d.Path) {
+		if Always(d.Kind) || slices.Contains(linked, d.Path) {
 			read = append(read, d)
 		}
 	}

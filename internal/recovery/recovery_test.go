@@ -309,8 +309,11 @@ func TestHappyPathStoresBothCapabilities(t *testing.T) {
 	if _, err := os.Stat(spec.Dir); !os.IsNotExist(err) {
 		t.Errorf("the session's directory %s is still there", spec.Dir)
 	}
-	if !strings.Contains(spec.Prompt, "#12, merged") || strings.Contains(spec.Prompt, "#7, merged") || !strings.Contains(spec.Prompt, "Today's date: 2026-11-21") {
-		t.Error("export's prompt should hold its own PR, not search's, and the run's date")
+	if !strings.Contains(spec.Prompt, "#12, merged") || strings.Contains(spec.Prompt, "#7, merged") || !strings.Contains(spec.System, "Today's date: 2026-11-21") {
+		t.Error("export's prompt should hold its own PR, not search's, and its system the run's date")
+	}
+	if other := h.agent.specs["search"][0]; other.System != spec.System || spec.System == "" {
+		t.Error("every capability of a run should share one system text, so it can be cached")
 	}
 
 	if len(h.store.puts) != 1 || len(h.store.puts[0]) != 2 {

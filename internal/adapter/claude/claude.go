@@ -66,11 +66,15 @@ func (a *Adapter) Name() string { return Name }
 // uuid is the form Claude Code takes a session id in: 8-4-4-4-12 hex.
 var uuid = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
-// args is the argv after the command for a session of s. A session with an
+// args is the argv after the command for a session of s, with system the
+// file holding s.System, or empty for none. A session with an
 // assigned id keeps its log, so it can be read later; one without leaves none.
 // A resumed session continues the one under SessionID.
-func args(s adapter.Spec) []string {
+func args(s adapter.Spec, system string) []string {
 	argv := []string{"-p", "--output-format", "stream-json", "--verbose"}
+	if system != "" {
+		argv = append(argv, "--append-system-prompt-file", system)
+	}
 	if s.Resume {
 		argv = append(argv, "--resume", s.SessionID)
 	} else if s.SessionID != "" {
@@ -106,7 +110,25 @@ func (a *Adapter) Start(ctx context.Context, s adapter.Spec) (adapter.Session, e
 		}
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, path, args(s)...)
+	// System goes in a file, since one argument holding a repo's docs would
+	// pass the kernel's limit on one argument's length.
+	system := ""
+	if s.System != "" && !s.Resume {
+		f, err := os.CreateTemp("", "physa-system-*.txt")
+		if err != nil {
+			return nil, err
+		}
+		system = f.Name()
+		_, err = f.WriteString(s.System)
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			os.Remove(system)
+			return nil, err
+		}
+	}
+	cmd := exec.CommandContext(ctx, path, args(s, system)...)
 	cmd.Dir = s.Dir
 	cmd.Env = append(os.Environ(), s.Env...)
 	cmd.Stdin = strings.NewReader(s.Prompt)
@@ -117,11 +139,17 @@ func (a *Adapter) Start(ctx context.Context, s adapter.Spec) (adapter.Session, e
 	tail := &tailWriter{max: stderrTail}
 	cmd.Stderr = tail
 	if err := cmd.Start(); err != nil {
+		if system != "" {
+			os.Remove(system)
+		}
 		return nil, fmt.Errorf("starting %s: %w", command, err)
 	}
 	done := make(chan error, 1)
 	go func() {
 		err := cmd.Wait()
+		if system != "" {
+			os.Remove(system)
+		}
 		pw.Close()
 		done <- err
 	}()

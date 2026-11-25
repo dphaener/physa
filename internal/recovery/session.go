@@ -96,7 +96,7 @@ func (r *runner) capability(ctx context.Context, j job) Outcome {
 	}
 	defer os.RemoveAll(dir)
 
-	spec := adapter.Spec{Prompt: j.prompt, Dir: dir, SessionID: out.SessionID, PromptOnly: true}
+	spec := adapter.Spec{Prompt: j.prompt, System: j.system, Dir: dir, SessionID: out.SessionID, PromptOnly: true}
 	var last *answer      // the last answer that was read and checked
 	var problems []string // what is wrong with the newest answer
 	for {

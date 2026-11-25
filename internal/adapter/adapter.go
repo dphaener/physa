@@ -65,6 +65,10 @@ func Window(a Adapter) int {
 type Spec struct {
 	// Prompt is the session's whole first message.
 	Prompt string
+	// System is text added to the agent's system prompt, kept the same across
+	// sessions so the agent can cache it; empty adds none. It is not resent
+	// on a resume.
+	System string
 	// Dir is the directory the session runs in; empty means the current one.
 	Dir string
 	// Env holds KEY=value entries added to the inherited environment; a key

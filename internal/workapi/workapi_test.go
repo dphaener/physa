@@ -465,3 +465,23 @@ func TestProductionRegistersThePoll(t *testing.T) {
 		t.Errorf("intents = %v", intents)
 	}
 }
+
+func TestIdeaAddNamesThePersonWhenLeftOut(t *testing.T) {
+	e := newEnv(t)
+	named := "cy"
+	old := namePerson
+	namePerson = func(string) string { return named }
+	t.Cleanup(func() { namePerson = old })
+
+	var idea client.IdeaOut
+	e.must("idea.add", map[string]any{"text": "Named by the engine"}, &idea)
+	if idea.Person != "cy" {
+		t.Fatalf("idea.add without a person = %+v, want it named cy", idea)
+	}
+	e.must("idea.add", map[string]any{"text": "Named by the caller", "person": "ann"}, &idea)
+	if idea.Person != "ann" {
+		t.Fatalf("a given person must win, got %+v", idea)
+	}
+	named = ""
+	e.badRequest("idea.add", map[string]any{"text": "Nobody to own it"}, "person")
+}

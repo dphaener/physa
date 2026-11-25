@@ -22,7 +22,7 @@ type AddIn struct {
 	Repo   string `json:"repo" desc:"The repo, as an absolute path to it or to a directory inside it."`
 	Text   string `json:"text" desc:"The idea, in a few plain words."`
 	Slug   string `json:"slug,omitempty" desc:"The slug to give it; made from the text when left out."`
-	Person string `json:"person" desc:"Who adds the idea; it belongs to them."`
+	Person string `json:"person,omitempty" desc:"Who adds the idea; it belongs to them. Left out, the engine names the person running Physa on its machine, as the CLI does."`
 }
 
 // StartIn is pursuit.start's input.

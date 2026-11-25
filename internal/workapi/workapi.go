@@ -4,11 +4,14 @@ package workapi
 import (
 	"context"
 	"errors"
+	"io"
 	"log"
 	"time"
 
 	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/api"
+	"github.com/dphaener/physa/internal/forge/github"
+	"github.com/dphaener/physa/internal/person"
 	"github.com/dphaener/physa/internal/repos"
 	"github.com/dphaener/physa/internal/signal"
 	"github.com/dphaener/physa/internal/state"
@@ -32,6 +35,11 @@ func Refusal(method, agent string) string {
 	}
 	return "A person must " + verb + " this pursuit: physa is running inside a " + agent + " session."
 }
+
+// namePerson names who adds an idea when idea.add leaves the person out:
+// the person running Physa on this machine, named as the CLI names them,
+// so a view or harness need not. "" when no name can be had.
+var namePerson = func(dir string) string { return person.ForRepo(dir, github.New(dir), io.Discard) }
 
 // open gets the repo's state; a repo the engine cannot serve is bad_request.
 func (g getter) open(ctx context.Context, repo string) (*state.State, error) {
@@ -98,6 +106,7 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 	return append(append(planMethods(g), evidenceMethods(g)...), []api.Method{
 		api.Define("idea.add", "Adds an idea, owned by the person who adds it.",
 			[]string{"The slug is made from the text (up to five words) and numbered when taken; a slug that is given and taken replies bad_request.",
+				"Left out, the person is named as the CLI names them: their setting, else their forge login, else their git email; when none can be had it replies bad_request.",
 				"An idea has no named states and cannot be deleted."},
 			`{`+repo+`,"text":"Try a quiet mode","person":"ann"}`, ideaJSON,
 			func(ctx context.Context, _ *api.Conn, in client.AddIn) (client.IdeaOut, error) {
@@ -105,7 +114,11 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 				if err != nil {
 					return client.IdeaOut{}, err
 				}
-				f, err := work.AddIdea(ctx, st, work.IdeaIn{Text: in.Text, Slug: in.Slug, Person: in.Person})
+				who := in.Person
+				if who == "" {
+					who = namePerson(in.Repo)
+				}
+				f, err := work.AddIdea(ctx, st, work.IdeaIn{Text: in.Text, Slug: in.Slug, Person: who})
 				return ideaOut(f), refused(err)
 			}),
 		api.Define("idea.list", "Lists the repo's ideas, newest first, each with its facts.",

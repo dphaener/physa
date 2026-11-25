@@ -72,3 +72,7 @@ The engine starts on its own when a command needs it. `physa engine` shows its s
 - `docs/plan.md`: what's built and what comes next.
 - `docs/development.md`: building, testing and changing Physa.
 - `AGENTS.md`: the rules an agent working in this repo follows. Most of them bind people too.
+
+## License
+
+Apache-2.0. See `LICENSE` and `NOTICE`.

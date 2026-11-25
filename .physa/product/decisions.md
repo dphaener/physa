@@ -8,6 +8,7 @@
 - [Strength replaces mode](#strength-replaces-mode)
 - [A core it defends, workflow beyond it](#a-core-it-defends-workflow-beyond-it)
 - [Grouped commands](#grouped-commands)
+- [Apache-2.0 for the core](#apache-20-for-the-core)
 
 ## Entries
 
@@ -58,3 +59,11 @@ Commands come in groups named by glossary nouns, with verbs as subcommands, and 
 Because: "Rather than having 100 commands, we should have grouped commands that have sub commands."
 Rejected:
 - A flat list of top-level commands: it grows with every feature and hides how commands relate.
+
+### Apache-2.0 for the core
+`core-license` · decided by dphaener, accepting a proposal · 2026-11-25 · from docs/vision.md
+The core is licensed under Apache-2.0, with the copyright held by Darin Haener in NOTICE. Files carry no license headers.
+Because: its patent grant and contribution terms cover outside PRs without a separate agreement, and its trademark clause keeps the name Physa for the hosted layer when the core is forked.
+Rejected:
+- MIT: shorter, but silent on patents, contributions and the name.
+- BSD-3-Clause: the same gaps as MIT.

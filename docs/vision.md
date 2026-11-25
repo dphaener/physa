@@ -205,6 +205,8 @@ The core never imports a plugin. Plugins use the same public interface as the ho
 | | Connections to existing analytics tools and warehouses |
 | | Identity, SSO, permissions, audit |
 
+**The license**: the core is under Apache-2.0, with the copyright held by Darin Haener. Its patent grant covers contributions without a separate agreement, and its trademark clause (§6) keeps the name Physa for us when the core is forked.
+
 Teams can already collaborate on the core through git: the map is in the repo and the PR check runs in CI. That is how one developer brings in their team.
 
 **How data reaches the hosted layer**: the map, PRs, reviews and CI through a GitHub App; flags and signal events straight from the SDK; local run records pushed by the engine, opt-in.

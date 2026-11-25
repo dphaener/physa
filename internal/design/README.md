@@ -24,10 +24,9 @@ Physa draws a product as a living network: capabilities and ideas are tubes, and
 
 ### Type
 
-- Headings in **Bricolage Grotesque** (`display-xl`, `display-l`, `title`): a grotesque with soft, organic terminals, used sparingly.
-- Running text and UI in **Instrument Sans** (`heading`, `body`, `body-s`, `label`).
+- Headings and running text in **Inter**: headings at 700 with tight tracking (`display-xl`, `display-l`, `title`), UI and prose at 400 to 600 (`heading`, `body`, `body-s`, `label`). One plain face, so the network carries the character.
 - Strength figures, appetites and counts in **JetBrains Mono** (`figure`, `figure-s`), tabular.
-- All three are vendored in `fonts/` (Latin, variable, under the SIL Open Font License, with each licence beside its font) and declared in `tokens.css`, so the views work offline and call no one. Keep the fallbacks in `--font-display`, `--font-sans`, `--font-mono`.
+- Both are vendored in `fonts/` (Latin, variable, under the SIL Open Font License, with each licence beside its font) and declared in `tokens.css`, so the views work offline and call no one. Keep the fallbacks in `--font-display`, `--font-sans`, `--font-mono`.
 
 ### Space, shape, depth
 
@@ -59,7 +58,7 @@ The network view is the signature, and every drawing of a tube anywhere follows 
 
 ## Iconography
 
-Physa has no icon font. Row glyphs are tiny drawings in the network's own vocabulary (a tube, a lesson knot, a ring for a question), drawn inline in SVG with the tube tokens. There is no logo yet: set "Physa" in Bricolage Grotesque.
+Physa has no icon font. Row glyphs are tiny drawings in the network's own vocabulary (a tube, a lesson knot, a ring for a question), drawn inline in SVG with the tube tokens. There is no logo yet: set "Physa" in Inter at 700.
 
 ## Components
 

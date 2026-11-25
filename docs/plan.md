@@ -12,7 +12,7 @@ Draft 0.3, 2026-11-23. Uses `.physa/glossary.md` terms only. Reset around the co
 
 ## What comes next
 
-Designed with the people now joining Physa, starting from the core (vision §5) and keeping to it: whatever a design adds beyond the core is workflow a team brings, not something Physa prescribes. Until ideas can be shared between clones, that design work happens in docs and PRs in this repo, not in Physa's own store.
+Designed in the open, starting from the core (vision §5) and keeping to it: whatever a design adds beyond the core is workflow a team brings, not something Physa prescribes. Until ideas can be shared between clones, that design work happens in docs and PRs in this repo, not in Physa's own store.
 
 The open parts, in no fixed order:
 

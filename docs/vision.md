@@ -1,8 +1,8 @@
-# Vision (draft 0.2)
+# Vision
 
-2026-11-19; reset 2026-11-23 around the core in §5. Product name: Physa, after Physarum, the slime mold whose networks inspired the model. Every concept is defined in `.physa/glossary.md`, and this document uses no other words for them.
+Physa is product management rebuilt for agents. It is named after Physarum, the slime mold whose networks gave Physa its model. Every concept here is defined in `.physa/glossary.md`, and this document uses no other words for them.
 
-Sections marked **(open)** are not yet settled with the owner. Everything here beyond the map, init and learning is a direction, not a design: the designs written for it before the reset are kept in `docs/archive/` as reference, and are being designed again with the people now joining.
+This is where Physa is going, not a description of what it does today. The map, init and learning work now, and the engine runs without agents; the README and `docs/plan.md` say exactly what is built. Everything else here is direction. We design each part in the open, in docs and PRs in this repo, starting from the core in §5.
 
 ---
 
@@ -21,9 +21,11 @@ Physa is product management rebuilt around those four. It replaces effort tracki
 
 ## 2. The model: a product is a network
 
-A slime mold (Physarum) builds efficient networks with no plan. It sends out many thin, cheap feelers. Tubes that carry food thicken; tubes that carry nothing wither. Its structure is a record of what worked.
+In 2010, researchers in Japan put oat flakes on a wet dish in the pattern of the cities around Tokyo, shone light where the mountains and the coast would be, and let a slime mold, *Physarum polycephalum*, grow between them. In about a day it had built a network close to Tokyo's rail system in efficiency, in cost and in how well it kept working when a link was cut (Tero et al., *Science*, 2010).
 
-Physa treats a product the same way.
+It had no plan and no map. It sent out many thin, cheap feelers. Tubes that carried food thickened; tubes that carried nothing withered. Its structure is a record of what worked. And it worked because food is an unmistakable signal: the mold always knows which tubes are carrying it.
+
+Physa treats a product the same way, and asks one thing the mold gets for free: every idea names its own signal (§5, item 10).
 
 - **An idea is a thin tube.** It begins the moment a person wants to try something: a PM's feature, a designer's layout, a developer's architecture. It belongs to that person.
 - **Flow thickens it.** Before code, the flow is attention: people weighing in and working it out. After code, the flow is evidence: real use measured against the idea's signal.
@@ -49,7 +51,7 @@ There are no role dashboards. Everyone sees the same views, filtered by what inv
 | Question | View |
 |---|---|
 | Does anything need me? | **Needs you**, the home screen |
-| What is changing right now? | Progress of current pursuits (how it is shown is still open); recent changes by capability |
+| What is changing right now? | Progress of current pursuits; recent changes by capability |
 | What is the product? | **The network**: capabilities and ideas drawn thicker the stronger they are |
 | Why is it like this? | A capability's page: promise, rules, decisions, history, ideas growing from it |
 | What is growing, what is withering? | Ideas and capabilities by strength trend; decay candidates |
@@ -57,15 +59,15 @@ There are no role dashboards. Everyone sees the same views, filtered by what inv
 
 **Needs you** lists only what waits on that person: sign-offs their stakes require, questions addressed to them, their ideas that are withering, their pursuits that hit a circuit breaker, guardrail trips and decay reviews on capabilities they steward, and map proposals on their PRs. Empty is the goal state, and it says so.
 
-**The network view** is the signature: established capabilities as thick lines, growing ideas as thin branches, fading parts dimmed. Nobody else can draw it, because nobody else measures strength.
+**The network view** is the signature: established capabilities as thick lines, growing ideas as thin branches, fading parts dimmed. It can only be drawn by something that measures strength.
 
 **Stewards**: teams name stewards for capabilities; with none named, whoever recently anchored changes is asked.
 
 **Notifications** come only from Needs you. No activity feeds, no digests.
 
-## 4. The wedge: a living map
+## 4. Where it starts: a living map
 
-The first thing a developer gets is a **map**: the product's knowledge, kept in the repo, that sets itself up on an existing codebase in minutes and gets better with every PR. A living AGENTS.md.
+The first thing a developer gets is a **map**: the product's knowledge, kept in the repo, that sets itself up on an existing codebase in minutes and gets better with every PR.
 
 ### 4.1 The map holds why, never what
 
@@ -78,6 +80,8 @@ Agents can read code and find files. What code can never tell them is why the pr
 - **terms**: the team's agreed vocabulary.
 
 It contains no file paths and no description of code. A rule that is about a place says so in plain words.
+
+That makes the map different from what it sits next to. It is not a wiki, because it holds only what is still true and decays the rest. It is not an agent's memory, because it belongs to the team and every entry cites its source. It is not a spec, because it records promises and reasons, not designs. And it is not a list of review preferences, though because it is plain markdown in the repo, its rules can be exported to the review bots a team already uses.
 
 ### 4.2 Anchored to changes, not files
 
@@ -98,7 +102,7 @@ Anchoring to changes gives:
 - The repo's own AGENTS.md stays the team's. Physa adds a two or three line pointer and nothing else.
 - The map has an **index**: every capability with its one-line promise. An agent reads it and chooses what it needs.
 - The CLI assembles a **slice** for those capabilities: their promises, rules, decisions, questions and terms, within a size budget, with sources. It does no matching and no ranking; choosing is the agent's job, assembling is Physa's.
-- In planned work the harness chooses the capabilities when the work is planned, and the builder receives the slice for its change, as the owner's current workflow already does.
+- In planned work, the capabilities are chosen when the work is planned, and each builder receives the slice for its change.
 - Agents without the CLI still get the AGENTS.md pointer and can read the map's markdown directly.
 
 Glossary terms travel in every slice, so agents use the team's words from the first line they write.
@@ -160,7 +164,7 @@ Physa measures **only what ideas claim**. It never becomes general analytics.
 - **Physa owns the meaning, not the switch.** It owns the link between an idea and its flag, the flag's lifetime, signals, the rollback ladder and the decisions. Flag evaluation goes through OpenFeature: teams already on LaunchDarkly, Statsig or PostHog keep them and Physa drives their flags.
 - The open-source core includes a small self-hosted flag service as the default OpenFeature provider, so instant rollback works without the hosted layer or any vendor.
 
-## 7a. Speed with confidence
+## 8. Speed with confidence
 
 Confidence costs most where mistakes cost most.
 
@@ -172,30 +176,30 @@ Confidence costs most where mistakes cost most.
 - **Calibration**: Physa tracks how each policy level performs (rollbacks, defects that reached users, guardrail trips) and proposes widening or tightening it. The team decides.
 - **Fewer, meaningful sign-offs.** People are asked to sign off only when the stakes require it. Physa never tracks how people review.
 
-## 8. The engine and harnesses
+## 9. The engine and harnesses
 
 - **The engine is dumb but durable.** It moves work through its lifecycle, enforces the gates and limits a team sets (an appetite and its circuit breaker among them), supervises runs, and keeps the record. It never makes judgments.
 - **The engine owns gates, identity and records**, so a harness can never grade its own work.
 - **Harnesses are pluggable.** A harness is a workflow of agent roles that builds and checks changes. Teams bring their own skills, workflows and agents.
-- **The first harness is the owner's**, descended from forge and shipit through afk: a conductor, builders and independent verifiers per change, isolated checks, a critic that can only remove or downgrade findings, and fixers. It builds Physa from day one and is the proof that harnesses are pluggable.
+- **The first harness is the one Physa is built with**: a conductor, builders and independent verifiers per change, isolated checks, a critic that can only remove or downgrade findings, and fixers. Building Physa with it is the proof that harnesses are pluggable.
 - **What the prompts promise, the engine enforces**: read-only checkouts for verifiers and checks, check briefs built by the engine rather than the conductor, explicit caps on retries and fix cycles.
 - **Supervision is built in**: stall detection, resource limits and session cleanup belong to the engine, not to scripts around it.
 - **"Needed a person" is counted** from the first run, so the claim that work keeps moving on its own is measured, not hoped.
 
-## 9. Extensibility
+## 10. Extensibility
 
-Two kinds of plugin, both built by the owner from the start:
+Two kinds of plugin, each with a first one built alongside the core:
 
-- **Harness plugins**: the owner's workflow is the first.
-- **View plugins**: a Rex layer for the owner and Rex power users is the first.
+- **Harness plugins**: the harness Physa is built with is the first.
+- **View plugins**: a view for the Rex terminal is the first.
 
 The core never imports a plugin. Plugins use the same public interface as the hosted layer.
 
-## 10. Open-source core and hosted team layer
+## 11. Open-source core and hosted team layer
 
 **The line**: the open-source core is everything one developer or one repo needs, fully working and self-hostable. The hosted layer is where several people, several repos or production data come together, plus infrastructure we run. The core is never a crippled demo; teams upgrade for more, not to unlock what was held back.
 
-| Open-source core (permissive license) | Hosted team layer (closed) |
+| Open-source core (Apache-2.0) | Hosted team layer |
 |---|---|
 | CLI, map, index, slices, glossary | Learning combined across everyone's slices and PRs |
 | PR check in the team's own CI | Product-level map spanning several repos |
@@ -215,18 +219,14 @@ Teams can already collaborate on the core through git: the map is in the repo an
 
 **Source code never leaves the customer.** The hosted layer receives the map, PR metadata, records and signal events, never source.
 
-Pricing is postponed until the product exists.
-
-## 10a. Technology
+## 12. Technology
 
 - **Open-source core in Go**: one binary holding two products, the map (init, map, check, learn), usable alone, and the engine (ideas, pursuits, evidence) on top of it. A single static binary that installs with one command anywhere and answers agents in milliseconds. Kept reviewable by rule: a size budget, plain Go with mostly the standard library, small packages each with one job, a CI check that the core imports nothing above it and that the map never imports the engine, and a short doc per package stating its promise in glossary terms. Its small web pieces (the flag service, single-user phone web) are server-rendered Go templates.
-- **Hosted layer in Rails**, where most of the product's screens live and the owner is strongest.
+- **Hosted layer in Rails**, in its own repo, where most of the product's screens live.
 - **One implementation of the map**: the hosted layer calls the core binary (JSON out) to read the map instead of reimplementing it.
-- **Two repos from day one**, which makes Physa itself a multi-repo product: building it dogfoods the hosted layer's product-level map across repos.
-- Reusable from v1: `canon`, `id`, `textref`, `adapter/claudecode`, `proctree`, `schedule`, `usage`.
+- Physa is itself a product across two repos, so building it uses the hosted layer's product-level map from the start.
 
-
-## 11. Principles
+## 13. Principles
 
 1. Opinionated about mechanisms; teams set the policy.
 2. Agents judge; the engine records and enforces. Nothing in the engine guesses.
@@ -240,24 +240,32 @@ Pricing is postponed until the product exists.
 10. Grow the surface only when real use asks for it.
 11. Bring your own workflow. Physa guards the core (§5) and prescribes nothing beyond it; a solo developer's path is idea, pursuit, changes, landed. Engineering evidence, strength and the count of spend are always on.
 
-## 12. Lessons carried from v1 (Rhiza)
+## 14. What the first attempt taught us
+
+Physa is our second attempt. The first, Rhiza, is public, and these are the lessons we carried over:
 
 - The knowledge core was sound; orchestration and its exhaust were not. Run records never become map entries.
 - "No orchestrator" was the goal six times and never reached. Count "needed a person" from day one.
-- The owner's watch, stall and cleanup scripts are the engine's requirements list.
+- The watch, stall and cleanup scripts written around Rhiza became the engine's requirements list.
 - A deterministic step-by-step workflow lost to one conductor agent on a dumb, durable engine.
-- Agreement turned into rubber-stamping (the recommended option was taken 88% of the time). Real decisions must stand out, and autonomy happens only when asked for.
+- Agreement turned into rubber-stamping: the recommended option was taken 88% of the time. Real decisions must stand out, and autonomy happens only when asked for.
 - There was no undo for 24 days. Rollback is designed first, not added later.
 - The UI settled on one question: does anything need me? Internal IDs never appear to people.
 - Breadth came before use: 214 operations, 10 node kinds, 14 constraints ever written. Start small.
 
-## 13. Non-goals
+## 15. Non-goals
 
 - Estimates, points, sprints, velocity, or anything that forecasts effort.
 - General product analytics.
 - Making decisions on anyone's behalf.
 - Replacing GitHub, CI or code review.
 
-## 14. Open questions
+## 16. Open questions
 
-5. **Architecture and build plan**: the layers below this vision.
+The parts of the core still to be designed, in no fixed order. `docs/plan.md` tracks them, and each is designed in a PR in this repo.
+
+- How strength is worked out, and from which evidence that means the same in any workflow (core item 1).
+- How a signal is read and resolved, and by what (core item 10), with and without earned release.
+- How a team plugs in its own workflow, and what Physa needs back from it to keep the core true.
+- Sharing ideas and pursuits between people.
+- How agents run the work through harnesses, and the views.

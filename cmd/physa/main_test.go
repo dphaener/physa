@@ -353,8 +353,8 @@ func TestIndexOwnMap(t *testing.T) {
 		t.Fatalf("code = %d, want 0; stderr %q", code, stderr.String())
 	}
 	lines := strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n")
-	if len(lines) != 13 {
-		t.Fatalf("got %d lines, want 13:\n%s", len(lines), stdout.String())
+	if len(lines) != 14 {
+		t.Fatalf("got %d lines, want 14:\n%s", len(lines), stdout.String())
 	}
 	var names []string
 	for _, l := range lines {

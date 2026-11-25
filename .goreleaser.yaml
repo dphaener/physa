@@ -1,0 +1,36 @@
+# GoReleaser builds Physa's release on every merge to main (docs/architecture/11-install.md).
+version: 2
+
+project_name: physa
+
+builds:
+  - id: physa
+    main: ./cmd/physa
+    binary: physa
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: physa
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - NOTICE
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github-native
+
+release:
+  github:
+    owner: dphaener
+    name: physa
+  make_latest: true

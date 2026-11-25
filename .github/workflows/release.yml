@@ -1,0 +1,50 @@
+name: release
+
+# Every merge to main releases the next v0.0.N (docs/architecture/11-install.md).
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test ./...
+
+      - name: Tag the next v0.0.N
+        id: tag
+        run: |
+          last=$(git tag --list 'v0.0.*' --sort=-v:refname | head -n 1)
+          next="v0.0.$(( ${last##*.} + 1 ))"
+          git tag "$next"
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+
+      - name: Release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push the tag
+        run: git push origin "${{ steps.tag.outputs.tag }}"

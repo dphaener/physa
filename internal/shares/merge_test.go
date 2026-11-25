@@ -70,6 +70,24 @@ func TestMergeSkillExampleParses(t *testing.T) {
 	}
 }
 
+// TestMergeSkillKeepsWhatOneShareSaw checks that the merge skill keeps a
+// capability only one share proposed, sizes by the rules, and never asks
+// for fewer capabilities.
+func TestMergeSkillKeepsWhatOneShareSaw(t *testing.T) {
+	for _, want := range []string{
+		"Keep it as its own capability unless another share's promise clearly contains it",
+		"Never merge capabilities, or drop one, to make the list shorter",
+		"unless its rules would then not fit in one `rules.md`",
+	} {
+		if !strings.Contains(merging, want) {
+			t.Errorf("the merge skill lacks %q", want)
+		}
+	}
+	if strings.Contains(merging, "fewer, larger") {
+		t.Error("the merge skill still asks for fewer, larger promises")
+	}
+}
+
 func TestCheckLinksKeepsWhatSharesGave(t *testing.T) {
 	ps := twoShares()
 	r := mapping.Reply{

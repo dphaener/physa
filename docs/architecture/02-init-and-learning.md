@@ -86,6 +86,8 @@ Nothing is cut, but no single session reads everything: a capability visible onl
 
 The estimate (§2.7) counts each share's prompt and the merge's; the "Read" section lists each share and what it read.
 
+**No pull toward a count** (2026-11-25, proposed by Myxo for the owner to review). On a large repo, three shares that read different parts of the sources each proposed about twenty capabilities, and the merge returned about the same number, dropping areas only one share saw. Both skills had pulled toward fewer, larger capabilities. Now they size a capability by its `rules.md` alone: a capability is too large when its rules wouldn't fit in one `rules.md`, and too small when a change or two would exhaust it. The propose skill asks the agent to account for every area the sources show, and never to merge or leave out a candidate to shorten the list. The merge skill keeps a capability only one share proposed, unless another share's promise clearly contains it and the same changes keep both.
+
 Settled with the owner (2026-11-24):
 
 1. **Docs in every share.** When the docs take no more than half a session, every share also reads all of them, so each share sees the product's frame and only PRs and changes are divided; otherwise the docs are divided too. It costs a share's worth of docs per share.

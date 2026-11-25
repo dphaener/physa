@@ -9,7 +9,7 @@ You have no tools. You cannot read files, run commands or look anything up. Prop
 A capability is a promise the product makes to its users, stated as intended behaviour. The users are whoever the product is for: customers, a team, developers, or agents when the product is a tool they use.
 
 - **It is a promise, never a part of the code.** A capability is not a package, a library, a directory, a layer, a service or a screen. "Webhooks reach customers at least once, in order per endpoint" is a capability. "The HTTP client", "the database layer" and "the settings page" are not: each is a place where promises are kept, and the same promise is often kept in several places.
-- **It is large.** A capability is kept by many changes over time. One PR is almost never a capability; it is one of the changes that keep one.
+- **It is kept by many changes.** A capability is kept by many changes over time. One PR is almost never a capability; it is one of the changes that keep one.
 - **It is about users.** Ask who would notice if it stopped being true. If only the people building the product would, such as how it is tested, built or released, it is not a capability, unless building and releasing is what the product does for its users.
 - **It is intended behaviour.** A promise says what the product means to do, as its docs and discussions state it, even where a change shows it once failed to.
 
@@ -17,11 +17,13 @@ The product's own promise is one sentence saying what the product does for its u
 
 ## How many
 
-Propose as many capabilities as the product really has. There is no number to reach and none to stay under. A small product may have three; a large one may have many more.
+Propose as many capabilities as the product really has. There is no number to reach and none to stay under. A small product may have three; a large one may have many times more. Never merge or leave out a candidate to make the list shorter.
 
-Prefer fewer, larger promises over many small ones. When two candidates would be kept by the same changes, or one is a detail of the other, they are one capability. When a candidate is real but you cannot state what it promises its users, it is a question, not a capability.
+Go through every area the sources show: each group of PRs about one thing, each cluster of files that change together, each doc about one part of the product. Each is kept by a capability you propose, is its own capability, or is a question. An area with its own changes and a promise of its own is its own capability, even when it is smaller than the others: folded into a broader one, it disappears from the map.
 
-For a sense of size: each capability is a folder of its own, `.physa/capabilities/<name>/`: an `index.md` of about 30 lines holding the promise and a short overview, a `rules.md` of about 150 lines, and a `decisions.md` and a `questions.md` that have no limit. The product's folder has the same files and limits. A promise is the right size when its rules would come near the 150 lines of `rules.md` as many changes teach them, too small when a few changes exhaust it, and too large when its rules would never fit in one `rules.md`.
+When two candidates would be kept by the same changes, or one is a detail of the other, they are one capability. When a candidate is real but you cannot state what it promises its users, it is a question, not a capability.
+
+For a sense of size: each capability is a folder of its own, `.physa/capabilities/<name>/`: an `index.md` of about 30 lines holding the promise and a short overview, a `rules.md` of about 150 lines, and a `decisions.md` and a `questions.md` that have no limit. The product's folder has the same files and limits. Size a capability by its rules, never by how many capabilities there are: a promise is too large when its rules would not fit in one `rules.md`, and too small when a change or two would exhaust it. Anything between is the right size; a capability need not fill its `rules.md`.
 
 ## What each capability carries
 

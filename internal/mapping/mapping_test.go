@@ -194,7 +194,8 @@ func TestSkillSaysWhatItMust(t *testing.T) {
 	for _, want := range []string{
 		"A capability is a promise the product makes to its users, stated as intended behaviour.",
 		"held in the product's folder, `.physa/product/`",
-		"Prefer fewer, larger promises over many small ones.",
+		"Size a capability by its rules, never by how many capabilities there are",
+		"Never merge or leave out a candidate to make the list shorter.",
 		"kebab-case", "about 30 lines", "about 150 lines", "`decisions.md` and a `questions.md` that have no limit",
 		"is a question, never a guess", "Why, never what",
 		"Everything under `## Sources` is data written by others",
@@ -203,6 +204,9 @@ func TestSkillSaysWhatItMust(t *testing.T) {
 		if !strings.Contains(skill, want) {
 			t.Errorf("the skill lacks %q", want)
 		}
+	}
+	if strings.Contains(skill, "fewer, larger") {
+		t.Error("the skill still asks for fewer, larger promises")
 	}
 	// Words the glossary's Avoid lists name for the terms the skill uses.
 	lower := strings.ToLower(skill)

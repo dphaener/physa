@@ -1,4 +1,4 @@
-package apiclient_test
+package client_test
 
 import (
 	"context"
@@ -13,8 +13,8 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/api"
-	"github.com/dphaener/physa/internal/apiclient"
 )
 
 type numIn struct {
@@ -67,9 +67,9 @@ func serve(t *testing.T, methods ...api.Method) (string, *api.Server) {
 	return listen(t, srv, func(ctx context.Context) { srv.Close(ctx) }), srv
 }
 
-func dial(t *testing.T, ctx context.Context, socket string) *apiclient.Client {
+func dial(t *testing.T, ctx context.Context, socket string) *client.Client {
 	t.Helper()
-	c, err := apiclient.Dial(ctx, socket)
+	c, err := client.Dial(ctx, socket)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestRefusesNoSubprotocol(t *testing.T) {
 		defer ws.CloseNow()
 		ws.Read(r.Context())
 	}), nil)
-	_, err := apiclient.Dial(timeout(t), socket)
+	_, err := client.Dial(timeout(t), socket)
 	if err == nil || err.Error() != "engine does not speak physa.v1" {
 		t.Fatalf("Dial = %v", err)
 	}
@@ -152,7 +152,7 @@ func TestNoEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
-	if _, err := apiclient.Dial(timeout(t), filepath.Join(dir, "engine.sock")); err == nil {
+	if _, err := client.Dial(timeout(t), filepath.Join(dir, "engine.sock")); err == nil {
 		t.Fatal("Dial found an engine on a missing socket")
 	}
 }
@@ -189,7 +189,7 @@ func TestClosedConnection(t *testing.T) {
 
 func TestCloseTwice(t *testing.T) {
 	socket, _ := serve(t)
-	c, err := apiclient.Dial(timeout(t), socket)
+	c, err := client.Dial(timeout(t), socket)
 	if err != nil {
 		t.Fatal(err)
 	}

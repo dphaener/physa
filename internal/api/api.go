@@ -8,30 +8,24 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/apischema"
 )
 
+// The wire's names are the public client's, so the two never part.
 const (
-	Subprotocol = "physa.v1" // the WebSocket subprotocol both sides require
-	Revision    = 1          // rises when a method changes in a way a client could notice
-	Path        = "/api"     // the only HTTP path the server answers, with GET
-)
+	Subprotocol = client.Subprotocol // the WebSocket subprotocol both sides require
+	Revision    = 1                  // rises when a method changes in a way a client could notice
+	Path        = client.Path        // the only HTTP path the server answers, with GET
 
-// The codes an error reply carries.
-const (
-	CodeBadRequest    = "bad_request"
-	CodeUnknownMethod = "unknown_method"
-	CodeInternal      = "internal"
+	CodeBadRequest    = client.CodeBadRequest
+	CodeUnknownMethod = client.CodeUnknownMethod
+	CodeInternal      = client.CodeInternal
 )
 
 // Error is the error a call replies with: a code from the list above and
 // a message for a person.
-type Error struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-func (e *Error) Error() string { return e.Code + ": " + e.Message }
+type Error = client.Error
 
 // Method is one method of the API: its name, what it does, the schemas of
 // its input and output, and an example of each. Build one with Define.

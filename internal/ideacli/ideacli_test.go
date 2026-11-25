@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dphaener/physa/internal/apiclient"
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/engine"
 	"github.com/dphaener/physa/internal/enginestart"
@@ -88,7 +88,7 @@ func newTest(t *testing.T) *tenv {
 	}
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
 		dctx, dcancel := context.WithTimeout(context.Background(), time.Second)
-		c, err := apiclient.Dial(dctx, p.Socket)
+		c, err := client.Dial(dctx, p.Socket)
 		if err == nil {
 			err = c.Call(dctx, "engine.status", nil, nil)
 			c.Close()
@@ -161,7 +161,7 @@ func TestAddShowsUniqueSlugs(t *testing.T) {
 	if out := te.must("idea", "add", "Try a quiet mode"); out != "Added idea try-a-quiet-mode-2\n" {
 		t.Errorf("second add: %q", out)
 	}
-	var o workapi.IdeaOut
+	var o client.IdeaOut
 	if err := json.Unmarshal([]byte(te.must("idea", "add", "Show pursuits on the phone", "--slug", "phone-pursuits", "--json")), &o); err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestListAndShow(t *testing.T) {
 	if bare := te.must("idea"); bare != out {
 		t.Errorf("bare idea %q, list %q", bare, out)
 	}
-	var ideas []workapi.IdeaOut
+	var ideas []client.IdeaOut
 	if err := json.Unmarshal([]byte(te.must("idea", "list", "--json")), &ideas); err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestListAndShow(t *testing.T) {
 	if strings.Contains(out, "\x1b") {
 		t.Errorf("plain show carries escapes: %q", out)
 	}
-	var o workapi.IdeaOut
+	var o client.IdeaOut
 	if err := json.Unmarshal([]byte(te.must("idea", "show", "try-a-quiet-mode", "--json")), &o); err != nil {
 		t.Fatal(err)
 	}

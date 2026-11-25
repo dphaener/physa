@@ -10,13 +10,13 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/evidencecli"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/plan"
 	"github.com/dphaener/physa/internal/tokens"
-	"github.com/dphaener/physa/internal/workapi"
 )
 
 // planGroup is the `physa pursuit plan` group: set and show a pursuit's plan.
@@ -92,7 +92,7 @@ func (p pursuits) planSet(args []string, reason, from string, asJSON bool, stdou
 	if who == "" {
 		return 2
 	}
-	slug, err := p.choose(repo, firstArg(args), func(o workapi.PursuitOut) bool { return o.State == "active" })
+	slug, err := p.choose(repo, firstArg(args), func(o client.PursuitOut) bool { return o.State == "active" })
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit plan set", err)
 	}
@@ -100,8 +100,8 @@ func (p pursuits) planSet(args []string, reason, from string, asJSON bool, stdou
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit plan set", err)
 	}
-	var out workapi.PlanOut
-	in := workapi.PlanSetIn{Repo: repo, Pursuit: slug, Reason: reason, Person: who, Plan: json.RawMessage(data)}
+	var out client.PlanOut
+	in := client.PlanSetIn{Repo: repo, Pursuit: slug, Reason: reason, Person: who, Plan: json.RawMessage(data)}
 	if err := p.Call("plan.set", in, &out); err != nil {
 		return ideacli.Failed(stderr, "pursuit plan set", err)
 	}
@@ -124,12 +124,12 @@ func (p pursuits) planShow(args []string, history, asJSON bool, stdout, stderr i
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit plan show", err)
 	}
-	slug, err := p.choose(repo, firstArg(args), func(workapi.PursuitOut) bool { return true })
+	slug, err := p.choose(repo, firstArg(args), func(client.PursuitOut) bool { return true })
 	if err != nil {
 		return ideacli.Failed(stderr, "pursuit plan show", err)
 	}
-	var out workapi.PlanOut
-	if err := p.Call("plan.show", workapi.PlanShowIn{Repo: repo, Pursuit: slug, History: history}, &out); err != nil {
+	var out client.PlanOut
+	if err := p.Call("plan.show", client.PlanShowIn{Repo: repo, Pursuit: slug, History: history}, &out); err != nil {
 		return ideacli.Failed(stderr, "pursuit plan show", err)
 	}
 	if asJSON {
@@ -178,7 +178,7 @@ func changeText(c plan.Change) string {
 
 // showProgress prints a pursuit's progress as facts, never a percentage, then
 // what needs its person. A pursuit with no plan says only that nothing is planned.
-func showProgress(v *ideacli.View, o workapi.PursuitOut) {
+func showProgress(v *ideacli.View, o client.PursuitOut) {
 	p := o.Progress
 	if p != nil {
 		if len(p.Planned) == 0 {

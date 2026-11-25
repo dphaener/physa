@@ -15,11 +15,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/output"
-	"github.com/dphaener/physa/internal/workapi"
 )
 
 const usage = "physa evidence [--capability <slug>] [--pursuit <slug>] [--limit N] [--json]"
@@ -32,7 +32,7 @@ func Command(newForge func(dir string) forge.Forge) *cobra.Command {
 
 func commandFor(env *ideacli.Env) *cobra.Command {
 	var (
-		in     workapi.EvidenceIn
+		in     client.EvidenceIn
 		limit  string
 		asJSON bool
 	)
@@ -53,7 +53,7 @@ func commandFor(env *ideacli.Env) *cobra.Command {
 			return run(env, in, asJSON, stdout, stderr)
 		}),
 		func(fs *pflag.FlagSet) {
-			in, limit = workapi.EvidenceIn{}, ""
+			in, limit = client.EvidenceIn{}, ""
 			ideacli.String(fs, "capability", &in.Capability)
 			ideacli.String(fs, "pursuit", &in.Pursuit)
 			ideacli.String(fs, "limit", &limit)
@@ -61,19 +61,19 @@ func commandFor(env *ideacli.Env) *cobra.Command {
 		})
 }
 
-func run(env *ideacli.Env, in workapi.EvidenceIn, asJSON bool, stdout, stderr io.Writer) int {
+func run(env *ideacli.Env, in client.EvidenceIn, asJSON bool, stdout, stderr io.Writer) int {
 	repo, err := env.Repo()
 	if err != nil {
 		return ideacli.Failed(stderr, "evidence", err)
 	}
 	in.Repo = repo
-	var facts []workapi.EvidenceOut
+	var facts []client.EvidenceOut
 	if err := env.Call("evidence.list", in, &facts); err != nil {
 		return ideacli.Failed(stderr, "evidence", err)
 	}
 	if asJSON {
 		if facts == nil {
-			facts = []workapi.EvidenceOut{}
+			facts = []client.EvidenceOut{}
 		}
 		return ideacli.Written(stderr, "evidence", output.JSON(stdout, facts))
 	}
@@ -92,7 +92,7 @@ func run(env *ideacli.Env, in workapi.EvidenceIn, asJSON bool, stdout, stderr io
 
 // Cells is a fact in plain words: its kind, the short commit or #<pr>, the
 // capability, when, and its detail (the lead time, or the revert).
-func Cells(f workapi.EvidenceOut) []string {
+func Cells(f client.EvidenceOut) []string {
 	ref := f.Commit
 	if f.PR > 0 {
 		ref = fmt.Sprintf("#%d", f.PR)
@@ -108,7 +108,7 @@ func Cells(f workapi.EvidenceOut) []string {
 }
 
 // Line is a fact as one line of plain words, for a pursuit's Evidence section.
-func Line(f workapi.EvidenceOut) string {
+func Line(f client.EvidenceOut) string {
 	return strings.TrimSpace(strings.Join(Cells(f), "  "))
 }
 

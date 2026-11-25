@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/dphaener/physa/internal/apiclient"
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/engine"
 )
 
@@ -37,7 +37,7 @@ type Options struct {
 // Connect returns a client connected to the engine on o.Dir, which has
 // answered engine.status. When no engine answers it starts one, and when
 // the engine it reached was just exiting idle it starts one again, once.
-func Connect(ctx context.Context, o Options) (*apiclient.Client, error) {
+func Connect(ctx context.Context, o Options) (*client.Client, error) {
 	p, err := engine.PathsIn(o.Dir)
 	if err != nil {
 		return nil, err
@@ -60,10 +60,10 @@ func Connect(ctx context.Context, o Options) (*apiclient.Client, error) {
 
 // probe dials the socket and calls engine.status, each within timeout.
 // On success the client stays open for the caller.
-func probe(ctx context.Context, socket string, timeout time.Duration) (*apiclient.Client, engine.Status, error) {
+func probe(ctx context.Context, socket string, timeout time.Duration) (*client.Client, engine.Status, error) {
 	var s engine.Status
 	dctx, cancel := context.WithTimeout(ctx, timeout)
-	c, err := apiclient.Dial(dctx, socket)
+	c, err := client.Dial(dctx, socket)
 	cancel()
 	if err != nil {
 		return nil, s, err

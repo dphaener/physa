@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/api"
 	"github.com/dphaener/physa/internal/repos"
 	"github.com/dphaener/physa/internal/signal"
@@ -54,23 +55,23 @@ func stamp(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-func signalOut(sig *signal.Signal) *SignalOut {
+func signalOut(sig *signal.Signal) *client.SignalOut {
 	if sig == nil {
 		return nil
 	}
-	return &SignalOut{sig.Claim, sig.For, sig.Against, sig.Window, sig.Resolver}
+	return &client.SignalOut{Claim: sig.Claim, For: sig.For, Against: sig.Against, Window: sig.Window, Resolver: sig.Resolver}
 }
 
-func ideaOut(f work.IdeaFacts) IdeaOut {
-	return IdeaOut{Slug: f.Slug, Text: f.Text, Person: f.Person, CreatedAt: stamp(f.CreatedAt), Pursuit: f.Pursuit, PursuitState: f.PursuitState}
+func ideaOut(f work.IdeaFacts) client.IdeaOut {
+	return client.IdeaOut{Slug: f.Slug, Text: f.Text, Person: f.Person, CreatedAt: stamp(f.CreatedAt), Pursuit: f.Pursuit, PursuitState: f.PursuitState}
 }
 
-func pursuitOut(f work.PursuitFacts) PursuitOut {
-	return PursuitOut{Slug: f.Slug, Idea: f.Idea, IdeaText: f.IdeaText, Person: f.Person, Appetite: f.Appetite, Spent: f.Spent, State: f.State,
+func pursuitOut(f work.PursuitFacts) client.PursuitOut {
+	return client.PursuitOut{Slug: f.Slug, Idea: f.Idea, IdeaText: f.IdeaText, Person: f.Person, Appetite: f.Appetite, Spent: f.Spent, State: f.State,
 		StopReason: f.StopReason, CreatedAt: stamp(f.CreatedAt), StartedAt: stamp(f.StartedAt), EndedAt: stamp(f.EndedAt)}
 }
 
-func ideaDetailOut(d work.IdeaDetail) IdeaOut {
+func ideaDetailOut(d work.IdeaDetail) client.IdeaOut {
 	o := ideaOut(d.IdeaFacts)
 	for _, b := range d.Pursuits {
 		o.Pursuits = append(o.Pursuits, pursuitOut(b))
@@ -78,7 +79,7 @@ func ideaDetailOut(d work.IdeaDetail) IdeaOut {
 	return o
 }
 
-func pursuitDetailOut(d work.PursuitDetail) PursuitOut {
+func pursuitDetailOut(d work.PursuitDetail) client.PursuitOut {
 	o := pursuitOut(d.PursuitFacts)
 	o.Signal = signalOut(d.Signal)
 	return o
@@ -99,10 +100,10 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 			[]string{"The slug is made from the text (up to five words) and numbered when taken; a slug that is given and taken replies bad_request.",
 				"An idea has no named states and cannot be deleted."},
 			`{`+repo+`,"text":"Try a quiet mode","person":"ann"}`, ideaJSON,
-			func(ctx context.Context, _ *api.Conn, in AddIn) (IdeaOut, error) {
+			func(ctx context.Context, _ *api.Conn, in client.AddIn) (client.IdeaOut, error) {
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
-					return IdeaOut{}, err
+					return client.IdeaOut{}, err
 				}
 				f, err := work.AddIdea(ctx, st, work.IdeaIn{Text: in.Text, Slug: in.Slug, Person: in.Person})
 				return ideaOut(f), refused(err)
@@ -110,13 +111,13 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 		api.Define("idea.list", "Lists the repo's ideas, newest first, each with its facts.",
 			[]string{"The result is [] when there are none."},
 			`{`+repo+`}`, `[`+ideaJSON+`]`,
-			func(ctx context.Context, _ *api.Conn, in RepoIn) ([]IdeaOut, error) {
+			func(ctx context.Context, _ *api.Conn, in client.RepoIn) ([]client.IdeaOut, error) {
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
 					return nil, err
 				}
 				fs, err := work.Ideas(ctx, st)
-				out := make([]IdeaOut, 0, len(fs))
+				out := make([]client.IdeaOut, 0, len(fs))
 				for _, f := range fs {
 					out = append(out, ideaOut(f))
 				}
@@ -125,10 +126,10 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 		api.Define("idea.show", "Shows an idea with its pursuits.",
 			[]string{slugNotes, "pursuits is left out when the idea was never pursued."},
 			`{`+repo+`,"slug":"try-a-quiet-mode"}`, ideaJSON,
-			func(ctx context.Context, _ *api.Conn, in SlugIn) (IdeaOut, error) {
+			func(ctx context.Context, _ *api.Conn, in client.SlugIn) (client.IdeaOut, error) {
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
-					return IdeaOut{}, err
+					return client.IdeaOut{}, err
 				}
 				d, err := work.Idea(ctx, st, in.Slug)
 				return ideaDetailOut(d), refused(err)
@@ -138,17 +139,17 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 				"The appetite is optional. With none there is no circuit breaker; spend is still counted.",
 				"An idea with an active pursuit replies bad_request. Only people pursue: the CLI refuses inside an agent's session.", slugNotes},
 			`{`+repo+`,"slug":"try-a-quiet-mode","appetite":"200k","signal":{"claim":"People turn on quiet mode in their first week.","for":"most new users turn it on","against":"few find it","window":"2026-12-15","resolver":"ann"},"person":"ann"}`, pursuitJSON,
-			func(ctx context.Context, _ *api.Conn, in StartIn) (PursuitOut, error) {
+			func(ctx context.Context, _ *api.Conn, in client.StartIn) (client.PursuitOut, error) {
 				var appetite int64
 				if in.Appetite != "" {
 					var err error
 					if appetite, err = tokens.Parse(in.Appetite); err != nil {
-						return PursuitOut{}, &api.Error{Code: api.CodeBadRequest, Message: err.Error()}
+						return client.PursuitOut{}, &api.Error{Code: api.CodeBadRequest, Message: err.Error()}
 					}
 				}
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
-					return PursuitOut{}, err
+					return client.PursuitOut{}, err
 				}
 				sig := signal.Signal{Claim: in.Signal.Claim, For: in.Signal.For, Against: in.Signal.Against, Window: in.Signal.Window, Resolver: in.Signal.Resolver}
 				d, err := work.StartPursuit(ctx, st, work.PursueIn{Slug: in.Slug, Appetite: appetite, Signal: sig, Person: in.Person})
@@ -162,13 +163,13 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 		api.Define("pursuit.list", "Lists the repo's pursuits, newest first.",
 			[]string{"The result is [] when there are none."},
 			`{`+repo+`}`, `[`+pursuitJSON+`]`,
-			func(ctx context.Context, _ *api.Conn, in RepoIn) ([]PursuitOut, error) {
+			func(ctx context.Context, _ *api.Conn, in client.RepoIn) ([]client.PursuitOut, error) {
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
 					return nil, err
 				}
 				fs, err := work.Pursuits(ctx, st)
-				out := make([]PursuitOut, 0, len(fs))
+				out := make([]client.PursuitOut, 0, len(fs))
 				for _, f := range fs {
 					out = append(out, pursuitOut(f))
 				}
@@ -178,10 +179,10 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 			[]string{slugNotes, "signal is left out for a pursuit started before signals were recorded.", "progress holds facts, never a percentage: planned, landed, in work, asks open, spent against the appetite, replans and spend per change.",
 				"It reads the default branch for the pursuit's Change: trailers and records what landed; the pursuit is done when every planned change has. A version-control error leaves progress as the store holds it."},
 			`{`+repo+`,"slug":"try-a-quiet-mode"}`, pursuitJSON,
-			func(ctx context.Context, _ *api.Conn, in SlugIn) (PursuitOut, error) {
+			func(ctx context.Context, _ *api.Conn, in client.SlugIn) (client.PursuitOut, error) {
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
-					return PursuitOut{}, err
+					return client.PursuitOut{}, err
 				}
 				o, err := showPursuit(ctx, st, in.Repo, in.Slug)
 				return o, refused(err)
@@ -189,10 +190,10 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 		api.Define("pursuit.stop", "Stops an active pursuit.",
 			[]string{"Only an active pursuit stops; any other replies bad_request.", slugNotes},
 			`{`+repo+`,"slug":"try-a-quiet-mode","reason":"not worth it","person":"ann"}`, pursuitJSON,
-			func(ctx context.Context, _ *api.Conn, in StopIn) (PursuitOut, error) {
+			func(ctx context.Context, _ *api.Conn, in client.StopIn) (client.PursuitOut, error) {
 				st, err := g.open(ctx, in.Repo)
 				if err != nil {
-					return PursuitOut{}, err
+					return client.PursuitOut{}, err
 				}
 				d, err := work.StopPursuit(ctx, st, work.StopIn{Slug: in.Slug, Reason: in.Reason, Person: in.Person})
 				return pursuitDetailOut(d), refused(err)

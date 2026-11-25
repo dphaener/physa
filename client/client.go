@@ -1,5 +1,4 @@
-// Package apiclient connects a command to the engine's local API: it dials the socket under the physa.v1 subprotocol, calls methods by name, and receives the messages the engine sends of its own.
-package apiclient
+package client
 
 import (
 	"context"
@@ -11,8 +10,6 @@ import (
 	"sync"
 
 	"github.com/coder/websocket"
-
-	"github.com/dphaener/physa/internal/api"
 )
 
 // readLimit is the largest message the client accepts: 1 MiB, as the
@@ -42,7 +39,7 @@ type Client struct {
 
 type reply struct {
 	Result json.RawMessage
-	Error  *api.Error
+	Error  *Error
 }
 
 // Dial connects to the engine listening on socketPath. ctx bounds the
@@ -55,16 +52,16 @@ func Dial(ctx context.Context, socketPath string) (*Client, error) {
 			return d.DialContext(ctx, "unix", socketPath)
 		},
 	}}
-	ws, _, err := websocket.Dial(ctx, "ws://physa"+api.Path, &websocket.DialOptions{
+	ws, _, err := websocket.Dial(ctx, "ws://physa"+Path, &websocket.DialOptions{
 		HTTPClient:   hc,
-		Subprotocols: []string{api.Subprotocol},
+		Subprotocols: []string{Subprotocol},
 	})
 	if err != nil {
 		return nil, err
 	}
-	if ws.Subprotocol() != api.Subprotocol {
-		ws.Close(websocket.StatusPolicyViolation, "the "+api.Subprotocol+" subprotocol is required")
-		return nil, errors.New("engine does not speak " + api.Subprotocol)
+	if ws.Subprotocol() != Subprotocol {
+		ws.Close(websocket.StatusPolicyViolation, "the "+Subprotocol+" subprotocol is required")
+		return nil, errors.New("engine does not speak " + Subprotocol)
 	}
 	ws.SetReadLimit(readLimit)
 	c := &Client{
@@ -91,7 +88,7 @@ func (c *Client) read() {
 		var m struct {
 			ID     *int64          `json:"id"`
 			Result json.RawMessage `json:"result"`
-			Error  *api.Error      `json:"error"`
+			Error  *Error          `json:"error"`
 			Event  string          `json:"event"`
 			Data   json.RawMessage `json:"data"`
 		}
@@ -124,7 +121,7 @@ func (c *Client) read() {
 }
 
 // Call calls method with params (nil means {}) and decodes its result into
-// result (nil discards it). An error reply returns *api.Error. A closed
+// result (nil discards it). An error reply returns *Error. A closed
 // connection returns an error wrapping the WebSocket close, so
 // websocket.CloseStatus tells why it closed.
 func (c *Client) Call(ctx context.Context, method string, params, result any) error {

@@ -39,7 +39,7 @@ var packageBudgets = map[string]int{
 	"internal/apischema":   400,
 	"internal/enginestart": 400,
 	"internal/enginecli":   400,
-	"internal/apiclient":   300,
+	"client":               500,
 	"internal/output":      200,
 	"internal/configdir":   200,
 	"internal/state":       700,
@@ -61,7 +61,7 @@ var aboveCore = []string{"plugins", "cmd"}
 // the engine is reported.
 var engineSide = []string{
 	"internal/api",
-	"internal/apiclient",
+	"client",
 	"internal/apischema",
 	"internal/engine",
 	"internal/enginecli",

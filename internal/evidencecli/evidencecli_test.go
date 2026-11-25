@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dphaener/physa/internal/apiclient"
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/engine"
 	"github.com/dphaener/physa/internal/enginestart"
@@ -88,7 +88,7 @@ func newTest(t *testing.T, messages ...string) *ideacli.Env {
 	}
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
 		dctx, dcancel := context.WithTimeout(context.Background(), time.Second)
-		c, err := apiclient.Dial(dctx, p.Socket)
+		c, err := client.Dial(dctx, p.Socket)
 		if err == nil {
 			err = c.Call(dctx, "engine.status", nil, nil)
 			c.Close()
@@ -164,7 +164,7 @@ func TestListsFactsPlainAndFiltered(t *testing.T) {
 	if !strings.Contains(out, "alpha") || strings.Contains(out, "beta") {
 		t.Errorf("--capability alpha:\n%s", out)
 	}
-	var facts []workapi.EvidenceOut
+	var facts []client.EvidenceOut
 	_, out, _ = evidence(e, "--limit=1", "--json")
 	if err := json.Unmarshal([]byte(out), &facts); err != nil || len(facts) != 1 {
 		t.Errorf("--limit 1 --json: %v, %q", err, out)
@@ -194,14 +194,14 @@ func TestRepeatedFlagLastWins(t *testing.T) {
 func TestCellsAndDuration(t *testing.T) {
 	secs := int64(3*3600 + 5*60)
 	cases := []struct {
-		f    workapi.EvidenceOut
+		f    client.EvidenceOut
 		want string
 	}{
-		{workapi.EvidenceOut{Kind: "lead_time", PR: 12, Commit: "3f9a2c1d", Capability: "cli", At: "2026-11-22T10:00:00Z", Seconds: &secs},
+		{client.EvidenceOut{Kind: "lead_time", PR: 12, Commit: "3f9a2c1d", Capability: "cli", At: "2026-11-22T10:00:00Z", Seconds: &secs},
 			"lead time  #12  cli  2026-11-22 10:00 UTC  lead time 3h 5m"},
-		{workapi.EvidenceOut{Kind: "reverted", Commit: "3f9a2c1d", ByCommit: "aabbccdd", At: "2026-11-22T10:00:00Z"},
+		{client.EvidenceOut{Kind: "reverted", Commit: "3f9a2c1d", ByCommit: "aabbccdd", At: "2026-11-22T10:00:00Z"},
 			"reverted  3f9a2c1d  -  2026-11-22 10:00 UTC  by aabbccdd"},
-		{workapi.EvidenceOut{Kind: "ci_passed_after_failing", PR: 3, At: "2026-11-22T10:00:00Z"},
+		{client.EvidenceOut{Kind: "ci_passed_after_failing", PR: 3, At: "2026-11-22T10:00:00Z"},
 			"CI passed after failing  #3  -  2026-11-22 10:00 UTC"},
 	}
 	for _, c := range cases {

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/api"
-	"github.com/dphaener/physa/internal/apiclient"
 	"github.com/dphaener/physa/internal/engine"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/state"
@@ -25,7 +25,7 @@ var goodSignal = map[string]any{"claim": "Fewer complaints.", "for": "complaints
 
 type env struct {
 	t    *testing.T
-	c    *apiclient.Client
+	c    *client.Client
 	repo string
 }
 
@@ -80,10 +80,10 @@ func newEnvWith(t *testing.T, ff forge.Forge) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var c *apiclient.Client
+	var c *client.Client
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
 		dctx, dcancel := context.WithTimeout(context.Background(), time.Second)
-		c, err = apiclient.Dial(dctx, p.Socket)
+		c, err = client.Dial(dctx, p.Socket)
 		dcancel()
 		if err == nil {
 			break
@@ -132,18 +132,18 @@ func (e *env) badRequest(method string, params map[string]any, want ...string) {
 
 func TestMethodsHappyPath(t *testing.T) {
 	e := newEnv(t)
-	var idea IdeaOut
+	var idea client.IdeaOut
 	e.must("idea.add", map[string]any{"text": "Try a quiet mode", "person": "ann"}, &idea)
 	if idea.Slug != "try-a-quiet-mode" || idea.Person != "ann" || idea.Pursuit != "" || !strings.HasSuffix(idea.CreatedAt, "Z") {
 		t.Fatalf("idea.add = %+v", idea)
 	}
 	e.must("idea.add", map[string]any{"text": "Second", "slug": "second", "person": "bo"}, &idea)
-	var list []IdeaOut
+	var list []client.IdeaOut
 	e.must("idea.list", nil, &list)
 	if len(list) != 2 || list[0].Slug != "second" || list[1].Slug != "try-a-quiet-mode" {
 		t.Fatalf("idea.list = %+v", list)
 	}
-	var pursuit PursuitOut
+	var pursuit client.PursuitOut
 	e.must("pursuit.start", map[string]any{"slug": "try-a-quiet-mode", "appetite": "200k", "signal": goodSignal, "person": "ann"}, &pursuit)
 	if pursuit.State != "active" || pursuit.Appetite != 200000 || pursuit.Idea != "try-a-quiet-mode" || pursuit.Signal == nil ||
 		pursuit.Signal.Window != "2099-01-01" || pursuit.Signal.Against != "complaints stay" || pursuit.StartedAt == "" || pursuit.EndedAt != "" {
@@ -153,7 +153,7 @@ func TestMethodsHappyPath(t *testing.T) {
 	if idea.Pursuit != pursuit.Slug || idea.PursuitState != "active" || len(idea.Pursuits) != 1 {
 		t.Fatalf("idea.show = %+v", idea)
 	}
-	var pursuits []PursuitOut
+	var pursuits []client.PursuitOut
 	e.must("pursuit.list", nil, &pursuits)
 	if len(pursuits) != 1 || pursuits[0].Slug != pursuit.Slug {
 		t.Fatalf("pursuit.list = %+v", pursuits)
@@ -288,9 +288,9 @@ func (e *env) git(args ...string) {
 	}
 }
 
-func (e *env) setPlan() PlanOut {
+func (e *env) setPlan() client.PlanOut {
 	e.t.Helper()
-	var out PlanOut
+	var out client.PlanOut
 	e.must("plan.set", map[string]any{"pursuit": "try-a-quiet-mode", "person": "ann", "plan": jsonRaw(twoChanges)}, &out)
 	return out
 }
@@ -301,7 +301,7 @@ func TestPlanSetAndShow(t *testing.T) {
 	if got.N != 1 || got.Replans != 0 || len(got.Changes) != 2 || got.Changes[1].After[0] != "first-step" {
 		t.Fatalf("plan.set = %+v", got)
 	}
-	var shown PlanOut
+	var shown client.PlanOut
 	e.must("plan.show", map[string]any{"pursuit": "try-a-quiet-mode", "history": true}, &shown)
 	if shown.N != 1 || len(shown.History) != 1 || strings.Join(shown.History[0].Changes, ",") != "first-step,second-step" {
 		t.Fatalf("plan.show = %+v", shown)
@@ -318,7 +318,7 @@ func TestBadPlanAndReason(t *testing.T) {
 		"the plan has problems:", "names two capabilities", "a -> b -> a")
 	e.setPlan()
 	e.badRequest("plan.set", map[string]any{"pursuit": "try-a-quiet-mode", "person": "ann", "plan": jsonRaw(twoChanges)}, "needs a reason")
-	var out PlanOut
+	var out client.PlanOut
 	e.must("plan.set", map[string]any{"pursuit": "try-a-quiet-mode", "person": "ann", "reason": "missed a step", "plan": jsonRaw(twoChanges)}, &out)
 	if out.N != 2 || out.Replans != 1 || out.Reason != "missed a step" {
 		t.Fatalf("second revision = %+v", out)
@@ -329,7 +329,7 @@ func TestSpendBreakerAndNeeds(t *testing.T) {
 	e := planEnv(t)
 	e.setPlan()
 	e.must("pursuit.work", map[string]any{"pursuit": "try-a-quiet-mode", "change": "first-step", "session": "s-1"}, nil)
-	var sp SpendOut
+	var sp client.SpendOut
 	e.must("pursuit.spend", map[string]any{"pursuit": "try-a-quiet-mode", "change": "first-step", "session": "s-1", "tokens": 79000}, &sp)
 	if sp.Warned || sp.Broke || sp.Spent != 79000 {
 		t.Fatalf("79k = %+v", sp)
@@ -346,7 +346,7 @@ func TestSpendBreakerAndNeeds(t *testing.T) {
 	if !sp.Broke || sp.State != "stopped" || sp.Appetite != 100000 {
 		t.Fatalf("100k = %+v", sp)
 	}
-	var pursuit PursuitOut
+	var pursuit client.PursuitOut
 	e.must("pursuit.show", map[string]any{"slug": "try-a-quiet-mode"}, &pursuit)
 	if pursuit.State != "stopped" || !strings.HasPrefix(pursuit.StopReason, "circuit breaker: spent") || len(pursuit.NeedsYou) != 2 || pursuit.Appetite != 100000 {
 		t.Fatalf("pursuit.show = %+v", pursuit)
@@ -361,7 +361,7 @@ func TestShowLandsChangesAndFinishesPursuit(t *testing.T) {
 	e := planEnv(t)
 	e.setPlan()
 	e.git("commit", "-q", "--allow-empty", "-m", "feat: first\n\nChange: try-a-quiet-mode/first-step")
-	var pursuit PursuitOut
+	var pursuit client.PursuitOut
 	e.must("pursuit.show", map[string]any{"slug": "try-a-quiet-mode"}, &pursuit)
 	if pursuit.State != "active" || len(pursuit.Progress.Landed) != 1 || pursuit.Progress.Landed[0].Change != "first-step" || len(pursuit.Progress.Landed[0].Commit) != 40 {
 		t.Fatalf("one landed = %+v", pursuit)
@@ -387,9 +387,9 @@ func (e *env) commitFile(name, message string) {
 
 // facts calls evidence.list until it returns want facts: the engine polls
 // on its own, so the facts arrive a moment after the commits.
-func (e *env) facts(want int, params map[string]any) []EvidenceOut {
+func (e *env) facts(want int, params map[string]any) []client.EvidenceOut {
 	e.t.Helper()
-	var out []EvidenceOut
+	var out []client.EvidenceOut
 	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
 		out = nil
 		e.must("evidence.list", params, &out)
@@ -425,7 +425,7 @@ func TestEvidenceListAndShow(t *testing.T) {
 	if got := e.facts(4, nil); len(got) != 4 {
 		t.Fatalf("after a revert: %+v", got)
 	}
-	var pursuit PursuitOut
+	var pursuit client.PursuitOut
 	e.must("pursuit.show", map[string]any{"slug": "try-a-quiet-mode"}, &pursuit)
 	if len(pursuit.Evidence) == 0 {
 		t.Fatalf("pursuit.show carries no evidence: %+v", pursuit)

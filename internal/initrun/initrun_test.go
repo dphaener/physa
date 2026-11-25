@@ -264,6 +264,9 @@ func TestProposeStoresAndPrintsMarkdown(t *testing.T) {
 	if strings.HasPrefix(strings.TrimSpace(out), "{") {
 		t.Errorf("stdout is JSON, not markdown:\n%s", out)
 	}
+	if !strings.Contains(out, "Coverage: the capabilities cite 1 of 1 gathered PRs;") || strings.Contains(errOut, "coverage is low") {
+		t.Errorf("the proposal's coverage:\n%s\n%s", out, errOut)
+	}
 	st, err := env.Store(".")
 	if err != nil {
 		t.Fatal(err)

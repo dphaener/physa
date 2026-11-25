@@ -1,7 +1,9 @@
-// Package coverage places every gathered PR and change with its nearest
+// Package coverage places each gathered PR and change with its nearest
 // proposed capability, by the files it touches against the files and
-// clusters the capability's own citations touch, so recovery reads all of
-// them and not only what propose cited. It also says what no capability
+// clusters the capability's own citations touch, so recovery reads them and
+// not only what propose cited. An item is placed only when at least half its
+// files are near the capability, and chores (dependency bumps, CI,
+// formatting) are never placed. It also says what no capability
 // got: the gathered PRs placed nowhere, and the clusters of files no
 // capability's citations touch. It is deterministic and starts no session.
 package coverage
@@ -24,6 +26,11 @@ import (
 // tuned from real runs.
 const Low = 20
 
+// MinShare is the share of an item's files, in percent, that must be in a
+// capability's footprint or its directories for the item to be placed with
+// it. A first guess, to be tuned from real runs.
+const MinShare = 50
+
 // Placement is what each capability reads beyond its citations, by name:
 // the PRs and changes placed with it.
 type Placement struct {
@@ -33,8 +40,9 @@ type Placement struct {
 
 // Report is how far the proposal reaches into the gather. Cited counts the
 // gathered PRs some capability cites, Placed those placed by their files,
-// and Unplaced those neither, Unfiled of them because no gathered change
-// names the PR, so it has no files to place it by. Clusters counts the
+// and Unplaced those neither: Unfiled of them because no gathered change
+// names the PR, so it has no files to place it by, and Chores of them
+// because they are chores, which are never placed. Clusters counts the
 // clusters of files that change together, and Uncovered lists those no
 // capability's citations touch, each with its first reading.ClusterPaths
 // paths.
@@ -44,6 +52,7 @@ type Report struct {
 	Placed    int               `json:"placed"`
 	Unplaced  int               `json:"unplaced"`
 	Unfiled   int               `json:"unfiled"`
+	Chores    int               `json:"chores"`
 	Clusters  int               `json:"clusters"`
 	Uncovered []reading.Cluster `json:"uncovered"`
 	Low       bool              `json:"low"`
@@ -63,6 +72,34 @@ func PROf(ch store.GatheredChange) int {
 	return n
 }
 
+// choreSubject is a subject that names a chore: a Conventional Commits
+// chore, ci, build or style type, or a dependency bot's "Bump x from y".
+var choreSubject = regexp.MustCompile(`(?i)^((chore|ci|build|style)(\([^)]*\))?!?:|bump \S+ from )`)
+
+// choreFiles are files only chores touch: dependency manifests and
+// lockfiles, and the configuration of CI, formatters and linters.
+var choreFiles = map[string]bool{
+	"go.mod": true, "go.sum": true, "Gemfile": true, "Gemfile.lock": true, "package.json": true, "package-lock.json": true,
+	"yarn.lock": true, "pnpm-lock.yaml": true, "Cargo.toml": true, "Cargo.lock": true, "poetry.lock": true, "requirements.txt": true,
+	"composer.lock": true, "mix.lock": true, ".gitlab-ci.yml": true, ".travis.yml": true, ".editorconfig": true,
+	".rubocop.yml": true, ".golangci.yml": true, ".prettierrc": true, ".eslintrc.json": true, ".pre-commit-config.yaml": true,
+}
+
+// Chore reports whether an item with this subject or title and these
+// files is a chore: its subject says so, or every file it touches is a
+// dependency file or CI, formatter or linter configuration.
+func Chore(subject string, files []string) bool {
+	if choreSubject.MatchString(strings.TrimSpace(subject)) {
+		return true
+	}
+	for _, f := range files {
+		if !choreFiles[path.Base(f)] && !strings.HasPrefix(f, ".github/") && !strings.HasPrefix(f, ".circleci/") && !strings.HasPrefix(f, ".buildkite/") {
+			return false
+		}
+	}
+	return len(files) > 0
+}
+
 // footprint is the files a capability's citations touch, with every
 // cluster they reach in full, and the directories of those files.
 type footprint struct {
@@ -70,14 +107,15 @@ type footprint struct {
 }
 
 // score is how near files are to f: how many are in it, then how many are
-// in one of its directories.
+// in it or in one of its directories. The repo's root is no directory of a
+// footprint, so files there are near only when the footprint holds them.
 func (f footprint) score(files []string) [2]int {
 	var s [2]int
 	for _, p := range files {
 		if f.files[p] {
 			s[0]++
 		}
-		if f.dirs[path.Dir(p)] {
+		if d := path.Dir(p); f.files[p] || d != "." && f.dirs[d] {
 			s[1]++
 		}
 	}
@@ -86,17 +124,23 @@ func (f footprint) score(files []string) [2]int {
 
 // Place places each gathered PR and change no capability cites with the
 // capability whose footprint holds the most of its files, then the most of
-// its files' directories; a tie goes to the capability proposed first, and
-// one that touches none is placed nowhere. A PR's files are those of the
+// its files' directories; a tie goes to the capability proposed first. An
+// item is placed nowhere when fewer than MinShare percent of its files are
+// near that capability, or when it is a Chore. A PR's files are those of the
 // changes that name it. It returns the placement and the report.
 func Place(g store.Gather, caps []mapping.Capability) (Placement, Report) {
 	pl := Placement{PRs: map[string][]int{}, Changes: map[string][]string{}}
-	byPR := map[int][]string{}
+	byPR, choreOnly := map[int][]string{}, map[int]bool{}
 	for _, ch := range g.Changes {
 		if n := PROf(ch); n > 0 {
+			_, seen := choreOnly[n]
+			choreOnly[n] = (!seen || choreOnly[n]) && Chore(ch.Subject, ch.Files)
 			byPR[n] = append(byPR[n], ch.Files...)
 		}
 	}
+	// prChore is whether PR n is a chore: by its title, its files, or every
+	// change that names it.
+	prChore := func(p store.GatheredPR) bool { return choreOnly[p.Number] || Chore(p.Title, byPR[p.Number]) }
 	citedPR, citedChange := map[int]bool{}, map[string]bool{}
 	feet := make([]footprint, len(caps))
 	all := reading.Clusters(g.Changes)
@@ -140,14 +184,17 @@ func Place(g store.Gather, caps []mapping.Capability) (Placement, Report) {
 		}
 		feet[i] = fp
 	}
-	nearest := func(files []string) (string, bool) {
+	nearest := func(subject string, files []string) (string, bool) {
+		if Chore(subject, files) {
+			return "", false
+		}
 		best, at := [2]int{}, -1
 		for i, fp := range feet {
 			if s := fp.score(files); s[0] > best[0] || s[0] == best[0] && s[1] > best[1] {
 				best, at = s, i
 			}
 		}
-		if at < 0 {
+		if at < 0 || best[1]*100 < len(files)*MinShare {
 			return "", false
 		}
 		return caps[at].Name, true
@@ -155,14 +202,17 @@ func Place(g store.Gather, caps []mapping.Capability) (Placement, Report) {
 	var rep Report
 	for _, ch := range g.Changes {
 		if !citedChange[ch.ID] {
-			if name, ok := nearest(ch.Files); ok {
+			if name, ok := nearest(ch.Subject, ch.Files); ok {
 				pl.Changes[name] = append(pl.Changes[name], ch.ID)
 			}
 		}
 	}
 	for _, p := range g.PRs {
 		rep.PRs++
-		name, ok := nearest(byPR[p.Number])
+		name, ok := "", false
+		if !prChore(p) {
+			name, ok = nearest(p.Title, byPR[p.Number])
+		}
 		switch {
 		case citedPR[p.Number]:
 			rep.Cited++
@@ -171,7 +221,10 @@ func Place(g store.Gather, caps []mapping.Capability) (Placement, Report) {
 			pl.PRs[name] = append(pl.PRs[name], p.Number)
 		default:
 			rep.Unplaced++
-			if len(byPR[p.Number]) == 0 {
+			switch {
+			case prChore(p):
+				rep.Chores++
+			case len(byPR[p.Number]) == 0:
 				rep.Unfiled++
 			}
 		}
@@ -183,7 +236,8 @@ func Place(g store.Gather, caps []mapping.Capability) (Placement, Report) {
 			rep.Uncovered = append(rep.Uncovered, cl)
 		}
 	}
-	rep.Low = rep.Unplaced*100 > rep.PRs*Low || len(rep.Uncovered)*100 > rep.Clusters*Low
+	// Chores reach no capability by design, so they do not lower coverage.
+	rep.Low = (rep.Unplaced-rep.Chores)*100 > (rep.PRs-rep.Chores)*Low || len(rep.Uncovered)*100 > rep.Clusters*Low
 	return pl, rep
 }
 
@@ -218,8 +272,15 @@ const shown = 10
 func Text(r Report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Coverage: the capabilities cite %d of %d gathered PRs; %d more are placed with the nearest by their files, so recovery reads them, and %d reach none", r.Cited, r.PRs, r.Placed, r.Unplaced)
+	var why []string
+	if r.Chores > 0 {
+		why = append(why, fmt.Sprintf("%d %s, such as dependency bumps, CI and formatting, which are never placed", r.Chores, map[bool]string{true: "chore", false: "chores"}[r.Chores == 1]))
+	}
 	if r.Unfiled > 0 {
-		fmt.Fprintf(&b, " (%d with no change naming them, so no files to place them by)", r.Unfiled)
+		why = append(why, fmt.Sprintf("%d with no change naming them, so no files to place them by", r.Unfiled))
+	}
+	if len(why) > 0 {
+		fmt.Fprintf(&b, " (%s)", strings.Join(why, "; "))
 	}
 	fmt.Fprintf(&b, ".\nClusters: %d of %d touch no capability.\n", len(r.Uncovered), r.Clusters)
 	for i, c := range r.Uncovered {

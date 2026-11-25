@@ -4,7 +4,8 @@
 // read a session's log for what learning needs from it (answered asks,
 // interventions and checks' reports), redacted. One package per agent implements it; nothing
 // here is particular to one agent. An agent may also state its window, the
-// most one session holds, and name a refusal as too long.
+// most one session holds, name a refusal as too long, and warn before any
+// session of what in the machine's setup may fail them.
 package adapter
 
 import (
@@ -59,6 +60,24 @@ func Window(a Adapter) int {
 		return w.Window()
 	}
 	return 0
+}
+
+// Warner is an Adapter that can say, before any session starts, what in the
+// machine's setup may fail its sessions or bill them to someone the person
+// does not expect. An adapter that does not implement it warns of nothing.
+type Warner interface {
+	// Warnings are the agent's own sentences, one per thing to fix; none
+	// means nothing to say.
+	Warnings() []string
+}
+
+// Warnings is what a warns of before its sessions start, or nil when a is
+// nil or does not implement Warner.
+func Warnings(a Adapter) []string {
+	if w, ok := a.(Warner); ok {
+		return w.Warnings()
+	}
+	return nil
 }
 
 // Spec is what a session starts with.

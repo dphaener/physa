@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -463,4 +464,57 @@ func TestStoredMapGivesOneSessionPerShareAndTheMerge(t *testing.T) {
 	if m, err = storedMap(st, "repo", env); err != nil || !reflect.DeepEqual(m.Sessions, s.Sessions) {
 		t.Errorf("in shares: %v, %v; want %v", m.Sessions, err, s.Sessions)
 	}
+}
+
+// downForge is a forge that cannot list PRs, as one without auth.
+type downForge struct{ mergedFake }
+
+func (downForge) MergedPRs(time.Time, int) ([]forge.PR, bool, error) {
+	return nil, false, errors.New("gh is not logged in")
+}
+
+// TestGatherWarnsWhenThePRsAreMissing checks that a gather the forge gave
+// no PRs says on stderr that the map will be thin, and still gathers.
+func TestGatherWarnsWhenThePRsAreMissing(t *testing.T) {
+	newRepo(t)
+	code, _, errOut := runInit(testEnv(t, downForge{}, nil), "--gather")
+	if code != 0 || !strings.Contains(errOut, "physa init: warning: no PRs were gathered (gh is not logged in), so the map comes from history and docs alone and will be thin.") {
+		t.Errorf("code %d, stderr %q", code, errOut)
+	}
+}
+
+// warnAgent is a fake agent that warns of its setup.
+type warnAgent struct{ *fakeAgent }
+
+func (warnAgent) Warnings() []string { return []string{"KEY is set"} }
+
+// TestAgentWarningsComeBeforeAnySession checks that what the agent warns
+// of is said before its first session starts, and that init goes on.
+func TestAgentWarningsComeBeforeAnySession(t *testing.T) {
+	newRepo(t)
+	a := warnAgent{oneAgent()}
+	var stderr bytes.Buffer
+	env := testEnv(t, onePR(), a)
+	starts := 0
+	env.Agent = func(string) (adapter.Adapter, error) {
+		return startSpy{warnAgent: a, before: func() {
+			if starts++; starts == 1 && !strings.Contains(stderr.String(), "physa init: warning: KEY is set\n") {
+				t.Errorf("a session started before the warning: %q", stderr.String())
+			}
+		}}, nil
+	}
+	if code := runInitTo(io.Discard, &stderr, env, "--gather"); code != 0 || starts == 0 {
+		t.Errorf("code %d, %d sessions, stderr %q", code, starts, stderr.String())
+	}
+}
+
+// startSpy calls before as each session starts.
+type startSpy struct {
+	warnAgent
+	before func()
+}
+
+func (s startSpy) Start(ctx context.Context, spec adapter.Spec) (adapter.Session, error) {
+	s.before()
+	return s.warnAgent.Start(ctx, spec)
 }

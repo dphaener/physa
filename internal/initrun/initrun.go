@@ -18,6 +18,7 @@ import (
 	"github.com/dphaener/physa/internal/initbranch"
 	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/preflight"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/shares"
 	"github.com/dphaener/physa/internal/spend"
@@ -103,6 +104,7 @@ func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 			return failed(stderr, err)
 		}
 		r.p.gather(sum)
+		preflight.Warn(stderr, preflight.Gather(sum))
 	}
 	return r.p.done(code, stderr)
 }
@@ -130,6 +132,9 @@ func (r *run) agent() (adapter.Adapter, error) {
 	r.once.Do(func() {
 		a, err := r.env.Agent(r.o.Agent)
 		r.meter, r.err = &spend.Meter{Adapter: a, Cache: r.cache, Now: r.env.Now}, err
+		if err == nil { // said before the first session, so nothing is spent on a setup that fails
+			preflight.Warn(r.stderr, adapter.Warnings(a))
+		}
 	})
 	if r.err != nil {
 		return nil, r.err

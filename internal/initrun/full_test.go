@@ -285,7 +285,7 @@ func TestFullPlanLineComesFirst(t *testing.T) {
 	after := strings.TrimPrefix(stderr.String(), seen)
 	for _, want := range []string{"physa init: discovery spent 1k tokens. The rest of the run should spend about ",
 		" tokens: propose's prompt of about ", " tokens plus 16k for its reply, at 2.05 times as weighed, and recovering at 6.25 to 18.75 times the sources' ",
-		" tokens (nebari's measured ratio of 12.5, until two runs are recorded on this machine). An estimate, not a limit.\n",
+		" tokens (nebari's measured ratio of 12.5, until a run is recorded on this machine). An estimate, not a limit.\n",
 		"physa init: this run spent "} {
 		if !strings.Contains(after, want) {
 			t.Errorf("after gathering, stderr lacks %q:\n%s", want, after)

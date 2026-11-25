@@ -81,9 +81,12 @@ func (e Estimate) Range() string { return spend.Range(e.Lo, e.Hi) }
 
 // Line is the estimate as init prints it.
 func (e Estimate) Line() string {
-	from := "nebari's measured ratio of 12.5, until two runs are recorded on this machine"
-	if e.Ratios.Measured > 0 {
-		from = fmt.Sprintf("the smallest and largest of %d runs recorded on this machine", e.Ratios.Measured)
+	from := "nebari's measured ratio of 12.5, until a run is recorded on this machine"
+	switch r := e.Ratios; {
+	case r.Measured == 1:
+		from = fmt.Sprintf("the one run recorded on this machine measured %s; half to one and a half times that, until two are recorded", times((r.RecoverLo+r.RecoverHi)/2))
+	case r.Measured > 1:
+		from = fmt.Sprintf("the smallest and largest of %d runs recorded on this machine", r.Measured)
 	}
 	r := e.Ratios
 	propose := fmt.Sprintf("propose's prompt of about %s tokens plus %s for its reply", spend.Tokens(int64(e.Prompt)), spend.Tokens(int64(e.Reply)))

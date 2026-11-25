@@ -79,8 +79,8 @@ func TestRatioRangeDefaultThenMeasured(t *testing.T) {
 	c.RecordRatio(1250, 100, 205, 100, day)
 	c.RecordRatio(0, 100, 205, 100, day)  // nothing recovered: not a ratio
 	c.RecordRatio(1250, 100, 0, 100, day) // nothing proposed: not a ratio
-	if got := c.RatioRange(); got != defaults {
-		t.Errorf("with one run: %+v", got)
+	if got, want := c.RatioRange(), (Ratios{RecoverLo: 6250, RecoverHi: 18750, ProposeLo: 2050, ProposeHi: 2050, Measured: 1}); got != want {
+		t.Errorf("with one run: %+v, want its own ratios %+v", got, want)
 	}
 	if err := c.Save(); err != nil {
 		t.Fatal(err)

@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// The defaults init estimates with before two runs are recorded, in
+// The defaults init estimates with before a run is recorded, in
 // thousandths, measured in weighted tokens on nebari's run 9 (design 10 §3):
 // recovery spent 12.5M weighted tokens for sources estimated at 998k, about
 // 12.5 times, and propose 1.4M weighted for 682,510 raw, about 2.05 times,
@@ -48,13 +48,19 @@ func (c *Cache) RecordRatio(recovered, sources, proposed, proposeRaw int64, at t
 }
 
 // RatioRange is the range init estimates with: the smallest and the largest
-// of each recorded ratio once two runs are recorded; else the recovery
-// default × 0.5 to × 1.5 and propose's default factor.
+// of each recorded ratio once two runs are recorded; with one, its recovery
+// ratio × 0.5 to × 1.5 and its propose factor, since one run measured on
+// this machine is nearer than nebari's; with none, the recovery default ×
+// 0.5 to × 1.5 and propose's default factor.
 func (c *Cache) RatioRange() Ratios {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.Ratios) < 2 {
+	switch len(c.Ratios) {
+	case 0:
 		return Ratios{RecoverLo: DefaultRecoverRatio / 2, RecoverHi: DefaultRecoverRatio * 3 / 2, ProposeLo: DefaultProposeRatio, ProposeHi: DefaultProposeRatio}
+	case 1:
+		one := c.Ratios[0]
+		return Ratios{RecoverLo: one.Recover / 2, RecoverHi: one.Recover * 3 / 2, ProposeLo: one.Propose, ProposeHi: one.Propose, Measured: 1}
 	}
 	first := c.Ratios[0]
 	r := Ratios{RecoverLo: first.Recover, RecoverHi: first.Recover, ProposeLo: first.Propose, ProposeHi: first.Propose, Measured: len(c.Ratios)}

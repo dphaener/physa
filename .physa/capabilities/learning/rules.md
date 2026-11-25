@@ -25,6 +25,6 @@ Everything learned after merge is batched into one map update PR that stewards r
 Because: nothing changes silently.
 
 ### Every learn commit says what it learned through
-`learned-through-every-commit` · 10aa3d3
+`learned-through-every-commit` · 9730220
 Every commit learning makes records the change it has learned through, even on a first run with no forge, and the next run starts from that record rather than from the ids it learned.
 Because: the ids alone get lost when the learn PR is squash-merged.

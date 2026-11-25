@@ -32,11 +32,11 @@ Init adds only the map and two or three marked lines in AGENTS.md.
 Because: teams with existing agent docs must not find Physa rewriting them.
 
 ### Init refuses a mapped repo before spending
-`refuse-mapped-repo` · 71bd819
+`refuse-mapped-repo` · 4b122b1
 Init refuses a repo that already holds a map before it gathers or starts an agent, and points to learning instead. When no default branch can be found, it looks for a map in the working tree.
 Because: a repo with a map grows through learning, and init must not spend the customer's tokens to find that out.
 
 ### Installing a hook never disables the repo's own
-`keep-existing-hooks` · 0989e23
+`keep-existing-hooks` · f45a6b6
 Installing the Session hook never changes where the repo's hooks are run from, and never silently disables a hook the repo already keeps.
 Because: moving the hooks location bypasses the hooks a team already runs, without anyone noticing.

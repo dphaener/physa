@@ -9,7 +9,7 @@
 ## Entries
 
 ### Pursuits replace bets and pitches
-`pursue-against-signal` · decided by dphaener, choosing an option · 2026-11-23 · #68
+`pursue-against-signal` · decided by dphaener, choosing an option · 2026-11-23 · c7487ef
 A pursuit is the moment a person puts their name on building an idea, against a signal. It needs only the signal: an idea's text is the only write-up. A signal has four parts, all required when the pursuit starts: the claim (what should change, in the team's words), the direction (what counts as for and what counts as against), the window (the day it is read, today or later) and the resolver (a named person or a named check). The appetite is optional: with none there is no circuit breaker, and spend is still counted and shown. Appetites are tokens, and hills and countable scopes stay gone.
 Because: "I feel like we are potentially being too prescriptive by forcing people down a shape up path" (the owner); a pursuit naming its signal is the part of the flow that belongs to the core (vision §5).
 Rejected:
@@ -25,7 +25,7 @@ Rejected:
 - "Probe" as the name for an idea in use.
 
 ### Ideas live only in the local store for now
-`ideas-local-store` · decided by dphaener, choosing an option · 2026-11-21 · 319dc9d
+`ideas-local-store` · decided by dphaener, choosing an option · 2026-11-21 · d98abe5
 Ideas and pursuits live only in the repo's local store, which is never committed. Until the hosted layer exists they are gone on a re-clone and invisible on a second machine or to a teammate.
 Because: it is the simplest place, and enough while Physa is built from one machine; mirroring comes with team digests and the hosted layer.
 Rejected:

@@ -17,7 +17,7 @@ Init and the PR check read PRs and reviews through `gh`. Other hosts come later.
 Because: one host done well before several done badly.
 
 ### Changes before the map are exempt from the Capability trailer
-`pre-map-changes-exempt` · decided by Claude as arbiter, choosing an option · 2026-11-21 · 0989e23
+`pre-map-changes-exempt` · decided by Claude as arbiter, choosing an option · 2026-11-21 · f45a6b6
 The change check skips changes made before the map existed, including the commit that adds the map.
 Because: on a new codebase the commit that adds the map has no capability it could name.
 Rejected:
@@ -25,7 +25,7 @@ Rejected:
 - No trailer, accepting the finding: every first map would arrive with a finding.
 
 ### The Session hook stays local
-`session-hook-local` · decided by Claude as arbiter, choosing an option · 2026-11-21 · 0989e23
+`session-hook-local` · decided by Claude as arbiter, choosing an option · 2026-11-21 · f45a6b6
 In a repo that doesn't ship one, the Session hook is kept locally with Physa's own store and is never committed by init.
 Because: init adds only the map and the AGENTS.md lines, and a hook committed on the init branch isn't checked out until its PR merges, so it couldn't be installed yet.
 Rejected:
@@ -33,16 +33,16 @@ Rejected:
 - Commit the hook inside the map's folder: likewise unavailable until merge.
 
 ### Teams can't replace Physa's skills
-`skills-not-replaceable` · decided by dphaener, in their words · 2026-11-21 · d219c03
+`skills-not-replaceable` · decided by dphaener, in their words · 2026-11-21 · fa99ba5
 Physa's skills (mapping, recovering, learning, slice) ship embedded in the binary, and a team can't replace them with its own.
 Because: "That steps on our core functionality that we own and could end up with loss of trust in the product due to users making bad decisions."
 Rejected:
 - A flag naming a replacement skill file, or a replacement kept in the map's folder: either hands the core of the product to the team.
 
 ### Discovery is led by an agent, beside fixed rules
-`discovery-led-by-agent` · decided by dphaener, in their words · 2026-11-22 · fefed32
+`discovery-led-by-agent` · decided by dphaener, in their words · 2026-11-22 · 44677c6
 Gather keeps its fixed rules and adds one read-only agent session that names more sources beside them, each with a kind and a reason. Every named file passes guardrails before it is read.
-Because: From the pitch of bet llm-init-discovery, made at fefed32: "Because every codebase can vary greatly and docs and prior knowledge can literally live anywhere, this is too limited to give the agent a fighting chance for creating a well defined map."
+Because: From the pitch of bet llm-init-discovery, made at 44677c6: "Because every codebase can vary greatly and docs and prior knowledge can literally live anywhere, this is too limited to give the agent a fighting chance for creating a well defined map."
 Rejected:
 - Rules only: the fixed rules keep missing the reference, architecture and design docs a repo points to.
 

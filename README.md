@@ -28,13 +28,21 @@ Designs set aside at the reset of 2026-11-23 are in `docs/archive/`. They're ref
 
 ## Install
 
-There's no release yet. Build from source with Go 1.26 or newer:
+On macOS or Linux, install the latest release to `~/.local/bin`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/dphaener/physa/main/install.sh | sh
+physa version
+```
+
+The script checks the download against the release's checksums and never uses sudo. Set `PHYSA_INSTALL_DIR` to install somewhere else. Every merge to main is released, so this is always what's on main.
+
+To build from source instead, with Go 1.26 or newer:
 
 ```sh
 git clone https://github.com/dphaener/physa.git
 cd physa
-go build -o ~/.local/bin/physa ./cmd/physa   # or anywhere on your PATH
-physa version
+go build -o ~/.local/bin/physa ./cmd/physa
 ```
 
 The map commands need only git. `init` and `map learn` run agent sessions through [Claude Code](https://claude.com/claude-code), so its `claude` command must be on your PATH and signed in. Anything that reads or opens PRs (`--pr`, learning's PR signals, the evidence of merged PRs) goes through the [`gh`](https://cli.github.com) CLI, signed in to GitHub.

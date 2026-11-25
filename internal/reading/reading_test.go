@@ -221,3 +221,14 @@ func TestRecounted(t *testing.T) {
 		t.Fatalf("an Input with no report names = %+v", bare.Report)
 	}
 }
+
+func TestGatherTokensCountsWhatIsRead(t *testing.T) {
+	g := store.Gather{
+		Docs:    []store.Doc{{Path: "AGENTS.md", Body: "1234567"}},
+		Changes: []store.GatheredChange{{Message: "Add it", Files: []string{"a.go"}}},
+		PRs:     []store.GatheredPR{{Title: "T", Body: "B", Issues: []string{"#1"}, Comments: []store.GatheredComment{{Body: "ok"}}}},
+	}
+	if got, want := GatherTokens(g), BytesTokens(7+6+4+1+1+2+2); got != want {
+		t.Errorf("GatherTokens = %d, want %d", got, want)
+	}
+}

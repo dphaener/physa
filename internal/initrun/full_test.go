@@ -396,6 +396,50 @@ func TestFullOverrunWarnsOnceAndGoesOn(t *testing.T) {
 	}
 }
 
+// TestPhasesRecordTheRatioToo checks that --recover over every capability
+// records the ratio, with propose's spend from the earlier --propose, and
+// that --recover --only records nothing.
+func TestPhasesRecordTheRatioToo(t *testing.T) {
+	remoteRepo(t)
+	a := newRoutedAgent()
+	a.priced, a.writes1h = true, true
+	env := fullEnv(t, onePR(), a)
+	for _, args := range [][]string{{"--gather"}, {"--propose"}, {"--recover", "--only", "search"}} {
+		if code, _, errOut := runInit(env, args...); code != 0 || len(spend.Open(env.Spend).Ratios) != 0 {
+			t.Fatalf("%v: code %d, ratios %+v\n%s", args, code, spend.Open(env.Spend).Ratios, errOut)
+		}
+	}
+	if code, _, errOut := runInit(env, "--recover"); code != 0 {
+		t.Fatalf("--recover: code %d\n%s", code, errOut)
+	}
+	st, err := env.Store(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := st.Spending()
+	st.Close()
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("spent %+v, %v", rows, err)
+	}
+	got := spend.Open(env.Spend).Ratios
+	if prop := rows[1]; len(got) != 1 || got[0].Recover <= 0 || got[0].Propose != prop.Spend.Tokens*1000/(prop.Raw.Input+prop.Raw.Output) {
+		t.Errorf("ratios %+v from propose's %+v", got, prop)
+	}
+}
+
+// TestAFailedCapabilityStillRecordsTheRatio checks that a run where one
+// capability fails records the ratio from what the others spent.
+func TestAFailedCapabilityStillRecordsTheRatio(t *testing.T) {
+	remoteRepo(t)
+	a := newRoutedAgent()
+	a.priced, a.writes1h = true, true
+	a.replies["search"] = "not a capability's text"
+	env := fullEnv(t, onePR(), a)
+	if code, _, errOut := runInit(env, "--yes"); code == 0 || len(spend.Open(env.Spend).Ratios) != 1 {
+		t.Fatalf("code %d, ratios %+v\n%s", code, spend.Open(env.Spend).Ratios, errOut)
+	}
+}
+
 // TestFullRecordsTheRatioForTheNextRun checks that a finished run records
 // its ratio of recovered input to sources in the machine's spend cache, and
 // that once two are recorded the next estimate uses their range.

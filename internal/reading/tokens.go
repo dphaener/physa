@@ -1,6 +1,10 @@
 package reading
 
-import "strconv"
+import (
+	"strconv"
+
+	"github.com/dphaener/physa/internal/store"
+)
 
 // Each cluster number below is a first guess, to be tuned from real runs
 // (measure-before-budget).
@@ -43,4 +47,31 @@ func Thousands(n int64) string {
 		s = s[:i] + "," + s[i:]
 	}
 	return neg + s
+}
+
+// GatherTokens estimates the tokens of everything g holds to read: its
+// docs, its changes' messages and files, and its PRs' titles, bodies,
+// linked issues and comments. It is the gather's estimate, and what
+// recovery's ratio is measured against.
+func GatherTokens(g store.Gather) int {
+	n := 0
+	for _, d := range g.Docs {
+		n += len(d.Body)
+	}
+	for _, c := range g.Changes {
+		n += len(c.Message)
+		for _, p := range c.Files {
+			n += len(p)
+		}
+	}
+	for _, p := range g.PRs {
+		n += len(p.Title) + len(p.Body)
+		for _, is := range p.Issues {
+			n += len(is)
+		}
+		for _, c := range p.Comments {
+			n += len(c.Body)
+		}
+	}
+	return BytesTokens(n)
 }

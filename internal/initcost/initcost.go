@@ -2,9 +2,10 @@
 // bounded (design 10 Q6, Q10, Q10a): what a token of its spend is worth, the
 // estimate of the rest of a run once it has gathered, with propose in one
 // session or in shares (design 02 §2.3.1), the yes it waits for, the one
-// warning when the spend passes the estimate's top, and the table of what
-// each phase spent. Spend reads in weighted tokens first, with the cost
-// estimate beside it when prices are known.
+// warning when the spend passes the estimate's top, the table of what each
+// phase spent, and what a run measured, kept for the next estimate. Spend
+// reads in weighted tokens first, with the cost estimate beside it when
+// prices are known.
 package initcost
 
 import (

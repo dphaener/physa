@@ -163,7 +163,7 @@ func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now ti
 	useLogins(f, g.Changes)
 	s.History = summariseHistory(g.Changes)
 	s.History.Shallow = repo.Partial()
-	s.EstimatedTokens = reading.BytesTokens(s.Docs.Bytes + s.History.Bytes + s.PRs.Bytes)
+	s.EstimatedTokens = reading.GatherTokens(g)
 	return g, s, nil
 }
 

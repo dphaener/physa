@@ -18,7 +18,7 @@ import (
 // the run and asks to go on (initcost), or stops, before spending on propose, when a source is
 // larger than one share of it (shares.TooLarge); with a yes it proposes, recovers, saying once if
 // the spend passes the top of the estimate, records what proposing and recovering spent, weighed,
-// against their prompt and sources for the next estimate, and with --write writes physa/init.
+// against their prompt and sources for the next estimate (record), and with --write writes physa/init.
 // Every run starts fresh: it replaces the stored gather, proposal and recoveries.
 func (r *run) full() int {
 	r.agent() // resolved here so the first line can say what a token is worth; gather reports a failure
@@ -51,12 +51,17 @@ func (r *run) full() int {
 	if code := r.propose(); code != 0 {
 		return code
 	}
-	return r.recoverPhase(nil, func(recovery.Report) {
-		if p, rc := r.counts["propose"], r.counts["recover"]; !p.Spend.Unpriced && !rc.Spend.Unpriced { // raw tokens would mix units
-			r.cache.RecordRatio(rc.Spend.Tokens, int64(sum.EstimatedTokens), p.Spend.Tokens, p.Raw.Input+p.Raw.Output, r.env.Now())
-		}
+	return r.recoverPhase(nil, func(rep recovery.Report) {
+		r.record(rep)
 		fmt.Fprintf(r.stderr, "physa init: this run spent %s.\n", r.meter.Spent())
 	})
+}
+
+// record keeps the ratio of a recovery of every capability (initcost.Record).
+func (r *run) record(rep recovery.Report) {
+	if len(r.o.Only) == 0 && rep.Whole() { // some capabilities say nothing of the whole
+		initcost.Record(r.cache, r.st, r.counts["recover"], r.env.Now())
+	}
 }
 
 // recoverySession is how recovering runs: on the capabilities of only (none

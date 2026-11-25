@@ -3,8 +3,9 @@
 // them (--session-id, so the session keeps its log) or continuing one
 // (--resume <id>, which works with -p, as claude --help shows, in the same
 // directory the session ran in), and reads the result, the
-// tokens and what the session cost from the stream. Its sessions' logs are
-// read by claudelog.
+// tokens and what the session cost from the stream. It warns when
+// ANTHROPIC_API_KEY would take over the login, and names it when claude
+// reports an invalid key. Its sessions' logs are read by claudelog.
 package claude
 
 import (
@@ -46,10 +47,15 @@ const waitDelay = 5 * time.Second
 // session, and one of about 1.2M was refused as too long.
 const window = 1_000_000
 
+// apiKey is the variable claude takes an API key from, over its login.
+const apiKey = "ANTHROPIC_API_KEY"
+
 // Adapter runs sessions with the Claude Code command.
 type Adapter struct {
 	// Command is the claude command to run; empty means "claude" on PATH.
 	Command string
+	// Getenv reads the environment sessions inherit; nil means os.Getenv.
+	Getenv func(string) string
 }
 
 var _ adapter.Adapter = (*Adapter)(nil)
@@ -62,6 +68,31 @@ func (a *Adapter) Window() int { return window }
 
 // Name returns "claude-code".
 func (a *Adapter) Name() string { return Name }
+
+// Warnings warns when ANTHROPIC_API_KEY is set: claude then uses that key
+// over the person's login, bills it, and fails every session if it is
+// invalid.
+func (a *Adapter) Warnings() []string {
+	if !a.keySet(nil) {
+		return nil
+	}
+	return []string{apiKey + " is set, so claude uses that key instead of your login, bills it, and fails if it is invalid. To use your login, unset it for this run: env -u " + apiKey + " physa init"}
+}
+
+// keySet is whether a session with env added to what it inherits has
+// ANTHROPIC_API_KEY set.
+func (a *Adapter) keySet(env []string) bool {
+	for _, e := range slices.Backward(env) {
+		if k, v, ok := strings.Cut(e, "="); ok && k == apiKey {
+			return v != ""
+		}
+	}
+	getenv := a.Getenv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	return getenv(apiKey) != ""
+}
 
 // uuid is the form Claude Code takes a session id in: 8-4-4-4-12 hex.
 var uuid = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -153,7 +184,7 @@ func (a *Adapter) Start(ctx context.Context, s adapter.Spec) (adapter.Session, e
 		pw.Close()
 		done <- err
 	}()
-	return &session{ctx: ctx, out: pr, done: done, stderr: tail, usage: s.Usage}, nil
+	return &session{ctx: ctx, out: pr, done: done, stderr: tail, usage: s.Usage, keySet: a.keySet(s.Env)}, nil
 }
 
 // session is one running claude -p process.
@@ -163,6 +194,7 @@ type session struct {
 	done   chan error
 	stderr *tailWriter
 	usage  func(adapter.Tokens)
+	keySet bool // ANTHROPIC_API_KEY was set for the session
 }
 
 // Wait reads the stream to its end, then waits for the process.
@@ -224,7 +256,11 @@ func (s *session) message(r *resultLine, exitErr error) string {
 	default:
 		parts = append(parts, "error result")
 	}
-	return strings.Join(parts, ": ")
+	msg := strings.Join(parts, ": ")
+	if s.keySet && strings.Contains(strings.ToLower(msg), "invalid api key") {
+		msg += " (" + apiKey + " is set in the environment, and claude uses it over your login: fix the key, or unset it with env -u " + apiKey + ")"
+	}
+	return msg
 }
 
 // stream is what Physa reads from one session's streamed JSON.

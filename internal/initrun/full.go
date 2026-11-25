@@ -7,6 +7,7 @@ import (
 
 	"github.com/dphaener/physa/internal/initcost"
 	"github.com/dphaener/physa/internal/newcodebase"
+	"github.com/dphaener/physa/internal/preflight"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/store"
 )
@@ -30,6 +31,7 @@ func (r *run) full() int {
 	if newcodebase.New(g) {
 		return r.newCodebase(g)
 	}
+	preflight.Warn(r.stderr, preflight.Gather(sum))
 	if _, err := r.agent(); err != nil {
 		return failed(r.stderr, err)
 	}

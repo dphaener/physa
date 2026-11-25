@@ -639,3 +639,29 @@ func TestResumeSendsNoSystem(t *testing.T) {
 		t.Error("a resume resent the system text")
 	}
 }
+
+func TestWarningsNameASetAPIKey(t *testing.T) {
+	env := func(v string) func(string) string {
+		return func(k string) string { return map[string]string{apiKey: v}[k] }
+	}
+	if w := (&Adapter{Getenv: env("")}).Warnings(); w != nil {
+		t.Errorf("no key set, warnings %q", w)
+	}
+	if w := (&Adapter{Getenv: env("sk-x")}).Warnings(); len(w) != 1 || !strings.Contains(w[0], "env -u ANTHROPIC_API_KEY physa init") {
+		t.Errorf("key set, warnings %q", w)
+	}
+}
+
+func TestInvalidAPIKeyNamesTheVariable(t *testing.T) {
+	stream := initLine + "\n" + `{"type":"result","subtype":"success","is_error":true,"result":"Invalid API key · Fix external API key"}` + "\n"
+	cmd, _ := fake(t, stream, "", 1)
+	none := func(string) string { return "" }
+	_, err := run(t, &Adapter{Command: cmd, Getenv: none}, adapter.Spec{Prompt: "p", Env: []string{apiKey + "=sk-bad"}})
+	if err == nil || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY is set in the environment") {
+		t.Errorf("key set: err = %v", err)
+	}
+	_, err = run(t, &Adapter{Command: cmd, Getenv: none}, adapter.Spec{Prompt: "p"})
+	if err == nil || strings.Contains(err.Error(), apiKey) {
+		t.Errorf("no key set: err = %v", err)
+	}
+}

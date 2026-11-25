@@ -111,3 +111,68 @@ func TestTextAndWarnSayWhenCoverageIsLow(t *testing.T) {
 		t.Errorf("Warn on good coverage wrote %q", w.String())
 	}
 }
+
+func TestChore(t *testing.T) {
+	for _, c := range []struct {
+		subject string
+		files   []string
+		want    bool
+	}{
+		{"chore(deps): Bump rack", []string{"app/x.rb"}, true},
+		{"ci: Cache the module download", nil, true},
+		{"style: Format every file", []string{"app/notes/model.rb"}, true},
+		{"Bump lodash from 4.17.20 to 4.17.21", nil, true},
+		{"Update the lockfile", []string{"Gemfile.lock", "web/yarn.lock"}, true},
+		{"Run the linter on PRs", []string{".github/workflows/lint.yml"}, true},
+		{"feat: Export every note", []string{"app/notes/export.rb", "go.mod"}, false},
+		{"Bump the build number in the footer", []string{"app/footer.rb"}, false},
+		{"Something with no files", nil, false},
+	} {
+		if got := Chore(c.subject, c.files); got != c.want {
+			t.Errorf("Chore(%q, %v) = %v, want %v", c.subject, c.files, got, c.want)
+		}
+	}
+}
+
+// TestPlaceHoldsABar checks that chores and items only a few of whose
+// files are near a capability are left reaching none, and that chores do
+// not make coverage low.
+func TestPlaceHoldsABar(t *testing.T) {
+	g := garden()
+	g.Changes, g.PRs = g.Changes[:6], g.PRs[:6]
+	// notes' cited change touched go.mod too, which a bump then shares.
+	g.Changes[0].Files = append(g.Changes[0].Files, "go.mod")
+	g.Changes = append(g.Changes,
+		change("m1", "Bump golang.org/x/net from 0.1 to 0.2 (#50)", "go.mod", "go.sum"),
+		change("n1", "style: Format every file (#51)", "app/notes/model.rb", "app/billing/model.rb"),
+		change("o1", "Add a reports page (#52)", "app/notes/view.rb", "app/reports/page.rb", "app/reports/query.rb", "app/reports/chart.rb"),
+		change("p1", "Reword the readme (#53)", "README.md"),
+	)
+	for _, n := range []int{50, 51, 52, 53} {
+		g.PRs = append(g.PRs, store.GatheredPR{Number: n})
+	}
+	g.PRs[6].Title = "Bump golang.org/x/net from 0.1 to 0.2"
+	pl, rep := Place(g, caps())
+	for _, placed := range pl.PRs {
+		for _, n := range placed {
+			if n >= 50 {
+				t.Errorf("#%d was placed: %v", n, pl.PRs)
+			}
+		}
+	}
+	if rep.Unplaced != 4 || rep.Chores != 2 || rep.Placed != 5 {
+		t.Errorf("report %+v", rep)
+	}
+	// 2 of 8 PRs that are not chores reach none: 25%, low. Without the
+	// chores counted out it would be 4 of 10.
+	if !rep.Low {
+		t.Errorf("coverage should be low: %+v", rep)
+	}
+	g.Changes, g.PRs = g.Changes[:8], g.PRs[:8] // only the chores left out
+	if _, rep := Place(g, caps()); rep.Low || rep.Chores != 2 {
+		t.Errorf("chores alone made coverage low: %+v", rep)
+	}
+	if !strings.Contains(Text(rep), "2 chores, such as dependency bumps, CI and formatting, which are never placed") {
+		t.Errorf("text:\n%s", Text(rep))
+	}
+}

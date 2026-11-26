@@ -38,6 +38,9 @@ func WriteText(w io.Writer, s Summary) error {
 	if s.Bound.PRLimitReached {
 		p("The PR limit was reached first; history starts at %s.", s.Bound.HistorySince)
 	}
+	if q := s.Quiet; q != nil {
+		p("Quiet areas: %s of files changed before then and not since, with %s of their newest changes gathered too%s.", plural(q.Clusters, "cluster", "clusters"), plural(q.PRs, "PR", "PRs"), map[bool]string{true: ", until the forge stopped answering (" + q.Why + ")"}[q.Why != ""])
+	}
 	p("Docs: %s", plural(s.Docs.Count, "file", "files"))
 	groups := map[string]int{}
 	for _, f := range s.Docs.Files {

@@ -480,3 +480,39 @@ func TestRunSaysWhenTheCloneIsShallow(t *testing.T) {
 		t.Fatalf("text does not say the clone is shallow:\n%s", b.String())
 	}
 }
+
+// changeForge is mergedForge that knows which PR each change came from.
+type changeForge struct {
+	mergedForge
+	byID map[string]int
+}
+
+func (c changeForge) ChangePR(id string) (forge.PR, bool, error) {
+	n, ok := c.byID[id]
+	return forge.PR{Number: n}, ok, nil
+}
+
+func TestRunGathersPRsForAreasThePRsMiss(t *testing.T) {
+	r := newTestRepo(t)
+	byID := map[string]int{}
+	for i := 1; i <= 3; i++ {
+		byID[r.commit(fmt.Sprintf("Keep the ledger %d (#%d)", i, i), "ledger/entry.rb", "ledger/book.rb")] = i
+	}
+	r.commit("Add notes (#4)", "notes/model.rb")
+	r.commit("Edit notes (#5)", "notes/model.rb")
+	f := changeForge{mergedForge{more: true, prs: []forge.PR{{Number: 5, MergedAt: r.at(5)}, {Number: 4, MergedAt: r.at(4)}}}, byID}
+	g, s, err := Run(r.dir, r.open(), f, bounds(t, func(b *Bounds) { b.MaxPRs = 2 }), Discover{}, gatherNow(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Quiet == nil || s.Quiet.Clusters != 1 || s.Quiet.PRs != 3 || len(g.PRs) != 5 || len(g.Changes) != 5 || s.PRs.Count != 5 {
+		t.Fatalf("quiet %+v, %d PRs, %d changes, summary %+v", s.Quiet, len(g.PRs), len(g.Changes), s.PRs)
+	}
+	if g.PRs[2].Title != "Keep the ledger 3" {
+		t.Errorf("PR %+v", g.PRs[2])
+	}
+	var buf bytes.Buffer
+	if err := WriteText(&buf, s); err != nil || !strings.Contains(buf.String(), "Quiet areas: 1 cluster of files changed before then and not since, with 3 PRs of their newest changes gathered too.") {
+		t.Errorf("%v\n%s", err, buf.String())
+	}
+}

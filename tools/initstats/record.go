@@ -89,6 +89,12 @@ type Gather struct {
 		Model   string `json:"model"`
 		Tokens  Tokens `json:"tokens"`
 	} `json:"discovery"`
+	// Quiet counts the areas the PRs missed and the PRs gathered for them;
+	// the forge's reason for stopping is free text, so it is left out.
+	Quiet *struct {
+		Clusters int `json:"clusters"`
+		PRs      int `json:"prs"`
+	} `json:"quiet,omitempty"`
 }
 
 // Proposal is the propose phase's counts.

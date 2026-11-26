@@ -10,14 +10,15 @@ import (
 )
 
 // readHistory returns the changes committed after since on the default
-// branch, falling back to HEAD, each with its trailers, the change it
-// reverts and the files it altered.
+// branch, falling back to HEAD, with the merges of PRs on its first-parent
+// line, each with its trailers, the change it reverts and the files it
+// altered, a merge's against its first parent.
 func readHistory(repo vcs.Repo, since time.Time) ([]store.GatheredChange, error) {
 	ref, err := repo.DefaultBranch()
 	if err != nil {
 		ref = "HEAD"
 	}
-	changes, err := repo.Since(ref, since)
+	changes, err := vcs.SinceWithPRMerges(repo, ref, since)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the history: %w", err)
 	}

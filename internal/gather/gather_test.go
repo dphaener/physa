@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/coverage"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
@@ -514,5 +516,34 @@ func TestRunGathersPRsForAreasThePRsMiss(t *testing.T) {
 	var buf bytes.Buffer
 	if err := WriteText(&buf, s); err != nil || !strings.Contains(buf.String(), "Quiet areas: 1 cluster of files changed before then and not since, with 3 PRs of their newest changes gathered too.") {
 		t.Errorf("%v\n%s", err, buf.String())
+	}
+}
+
+// TestRunTiesPRsLandedAsMergesToTheirFiles checks that in a repo that lands
+// PRs as merge commits, whose own changes do not name them, each PR is tied
+// to its files by its merge.
+func TestRunTiesPRsLandedAsMergesToTheirFiles(t *testing.T) {
+	r := newTestRepo(t)
+	r.commit("Start", "README.md")
+	for n, area := range map[int]string{7: "ledger", 8: "notes"} {
+		r.git("checkout", "-q", "-b", area)
+		r.commit("Add the model", area+"/model.rb")
+		r.commit("Add the view", area+"/view.rb")
+		r.git("checkout", "-q", "main")
+		r.git("merge", "-q", "--no-ff", "-m", fmt.Sprintf("Merge pull request #%d from dana/%s", n, area), area)
+	}
+	f := mergedForge{prs: []forge.PR{{Number: 8}, {Number: 7}}}
+	g, _, err := Run(r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[int][]string{}
+	for _, c := range g.Changes {
+		if n := coverage.PROf(c); n > 0 {
+			files[n] = append(files[n], c.Files...)
+		}
+	}
+	if want := map[int][]string{7: {"ledger/model.rb", "ledger/view.rb"}, 8: {"notes/model.rb", "notes/view.rb"}}; !reflect.DeepEqual(files, want) {
+		t.Errorf("PRs' files %v, want %v", files, want)
 	}
 }

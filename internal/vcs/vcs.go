@@ -34,6 +34,8 @@ package vcs
 
 import (
 	"errors"
+	"regexp"
+	"slices"
 	"time"
 )
 
@@ -69,8 +71,8 @@ type Repo interface {
 	// is the error when ref is not valid.
 	Since(ref string, t time.Time) ([]Change, error)
 	// Altered returns the paths change id altered, relative to the repo root
-	// and sorted. A change with no paths, such as an empty one, gives an
-	// empty list. The adapter's own message is the error when id is not valid.
+	// and sorted; a merge's are against its first parent. A change with no
+	// paths, such as an empty one, gives an empty list. The adapter's own message is the error when id is not valid.
 	Altered(id string) ([]string, error)
 	// Latest returns the newest n non-merge changes reachable from ref, newest
 	// first. The adapter's own message is the error when ref is not valid.
@@ -161,4 +163,39 @@ type Copy interface {
 	Commit(message string) (Change, error)
 	// Remove deletes the copy and forgets it.
 	Remove() error
+}
+
+// Merges is a Repo that also lists merges. It is separate from Repo because
+// an adapter may not offer it.
+type Merges interface {
+	// Merges returns the merges on ref's first-parent line committed after
+	// t, newest first. A zero t means all of them.
+	Merges(ref string, t time.Time) ([]Change, error)
+}
+
+// prMerge is the subject a forge gives the merge of a PR, "Merge pull
+// request #12 from …".
+var prMerge = regexp.MustCompile(`^Merge pull request #\d+\b`)
+
+// SinceWithPRMerges is r.Since(ref, t) with, when r lists merges, the
+// merges of PRs on ref's first-parent line, newest first. In a repo that
+// lands PRs as merge commits a PR's own changes rarely name it, so only its
+// merge ties the PR to its files.
+func SinceWithPRMerges(r Repo, ref string, t time.Time) ([]Change, error) {
+	changes, err := r.Since(ref, t)
+	m, ok := r.(Merges)
+	if err != nil || !ok {
+		return changes, err
+	}
+	merges, err := m.Merges(ref, t)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range merges {
+		if prMerge.MatchString(c.Subject) {
+			changes = append(changes, c)
+		}
+	}
+	slices.SortStableFunc(changes, func(a, b Change) int { return b.Time.Compare(a.Time) })
+	return changes, nil
 }

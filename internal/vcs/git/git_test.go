@@ -2,6 +2,7 @@ package git
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -489,5 +490,86 @@ func TestEmail(t *testing.T) {
 	}
 	if got, err = Email(dir); err != nil || got != "Darin.H@example.com" {
 		t.Errorf("set: %q, %v", got, err)
+	}
+}
+
+// mergeHistory is a made-up repo that lands PRs as merge commits: PR #3
+// adds two notes files on a branch, PR #4 adds a tag file on a branch that
+// first merges main into itself, and a stable branch is merged without a PR.
+// It returns the repo, its dir and the merge of each PR.
+func mergeHistory(t *testing.T) (vcs.Repo, string, map[int]string) {
+	t.Helper()
+	r, dir := newRepo(t)
+	day := 0
+	at := func() { day++; t.Setenv("GIT_COMMITTER_DATE", fmt.Sprintf("2024-01-%02dT00:00:00Z", day)) }
+	file := func(p string) {
+		full := filepath.Join(dir, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(p), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		run(t, dir, "add", ".")
+		at()
+		commit(t, dir, "Add "+p)
+	}
+	merge := func(branch, message string) string {
+		at()
+		run(t, dir, "merge", "-q", "--no-ff", "-m", message, branch)
+		return run(t, dir, "rev-parse", "HEAD")
+	}
+	file("README.md")
+	run(t, dir, "checkout", "-q", "-b", "notes")
+	file("notes/model.rb")
+	file("notes/view.rb")
+	run(t, dir, "checkout", "-q", "main")
+	file("CHANGELOG.md")
+	prs := map[int]string{3: merge("notes", "Merge pull request #3 from dana/notes\n\nKeep notes")}
+	run(t, dir, "checkout", "-q", "-b", "tags")
+	file("tags/tag.rb")
+	merge("main", "Merge branch 'main' into tags")
+	run(t, dir, "checkout", "-q", "-b", "stable", "main")
+	file("stable.txt")
+	run(t, dir, "checkout", "-q", "main")
+	prs[4] = merge("tags", "Merge pull request #4 from sam/tags")
+	merge("stable", "Merge branch 'stable'")
+	return r, dir, prs
+}
+
+func TestMergesFollowTheFirstParent(t *testing.T) {
+	r, _, prs := mergeHistory(t)
+	got, err := r.(vcs.Merges).Merges("main", time.Time{})
+	var subjects []string
+	for _, c := range got {
+		subjects = append(subjects, c.Subject)
+	}
+	if want := []string{"Merge branch 'stable'", "Merge pull request #4 from sam/tags", "Merge pull request #3 from dana/notes"}; err != nil || !reflect.DeepEqual(subjects, want) {
+		t.Fatalf("merges %v, %v", subjects, err)
+	}
+	for n, files := range map[int][]string{3: {"notes/model.rb", "notes/view.rb"}, 4: {"tags/tag.rb"}} {
+		if got, err := r.Altered(prs[n]); err != nil || !reflect.DeepEqual(got, files) {
+			t.Errorf("#%d's merge altered %v, %v; want %v", n, got, err, files)
+		}
+	}
+}
+
+func TestSinceWithPRMergesAddsOnlyPRMerges(t *testing.T) {
+	r, _, prs := mergeHistory(t)
+	got, err := vcs.SinceWithPRMerges(r, "main", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var subjects []string
+	for i, c := range got {
+		subjects = append(subjects, c.Subject)
+		if i > 0 && c.Time.After(got[i-1].Time) {
+			t.Errorf("not newest first at %d: %v", i, subjects)
+		}
+	}
+	want := []string{"Merge pull request #4 from sam/tags", "Add stable.txt", "Add tags/tag.rb", "Merge pull request #3 from dana/notes",
+		"Add CHANGELOG.md", "Add notes/view.rb", "Add notes/model.rb", "Add README.md"}
+	if !reflect.DeepEqual(subjects, want) || got[3].ID != prs[3] {
+		t.Errorf("got %v\nwant %v", subjects, want)
 	}
 }

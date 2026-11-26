@@ -55,7 +55,7 @@ Each command:
 - changes the working tree only. The person reviews the diff and commits, on init's branch or after, as with any change to the map;
 - updates init's record in `.git/physa` of the files, PRs and changes each capability covers, so learning keeps placing new changes on the right capability.
 
-An agent can run the same commands, and Physa ships a skill for it, `reviewing` (02 §4). It reads `physa map review --json` and works through the candidates with the person: it proposes each merge, split, rename or drop with its reason, the person accepts or rejects it, and the agent runs the command. Like Physa's other skills it is embedded in the binary and uses glossary terms only. Unlike mapping, recovering and learning, which Physa's own steps run, it is for the person's agent; how Physa gives skills to people's agents is its own design (§6.7).
+An agent can run the same commands, and Physa's skill has a recipe for it, `reviewing` (architecture 13 §3). It reads `physa map review --json` and works through the candidates with the person: it proposes each merge, split, rename or drop with its reason, the person accepts or rejects it, and the agent runs the command. The skill comes from the binary and uses glossary terms only; how it reaches a person's agent is architecture 13.
 
 ## 4. After changes name a capability
 
@@ -77,4 +77,4 @@ The owner answered "Yes to all seven", accepting each recommendation:
 4. **The full guide is `physa map review`**, styled on a terminal, with `--json` and `--format md`. Init's PR body gets only an overview, and nothing is checked in.
 5. **Following a capability after a rename or merge** (§4) is decided when a real map first needs it. Until then, `rename`, `merge` and `drop` warn when changes already name the capability, and go ahead.
 6. **Size limits stay hard.** A merge that would put `rules.md` over 150 lines fails and names what to prune or split, though a capability "can be large".
-7. **A `reviewing` skill ships with this**, for the person's agent. How Physa ships skills to people's agents is designed on its own, with this as the first: the owner's idea `ship-core-skills`.
+7. **A `reviewing` skill ships with this**, for the person's agent. How Physa ships skills to people's agents is designed on its own, with this as the first: the owner's idea `ship-core-skills`. Since settled in architecture 13 §7.4: it is a recipe in Physa's one skill.

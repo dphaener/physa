@@ -1,6 +1,6 @@
 # Architecture 14: the brief
 
-Draft 0.1, 2026-11-26; proposed by Myxo for the owner to review. Settled so far: design comes before pursuing, teams bring their own design workflow, what it hands Physa is a brief, Brief is a glossary term, and the plan is optional in it. The rest is open (§8). Uses `.physa/glossary.md` terms only. Serves the owner's idea `design-brief`.
+Draft 0.1, 2026-11-26; settled with the owner, who answered yes to every question in §8. Uses `.physa/glossary.md` terms only. Serves the owner's idea `design-brief`.
 
 The owner, on where design sits: "design before pursue. We may abandon an idea during design." Then: "design may include spiking/grilling/etc. And the outcome of that, if pursuit is decided, should flow into pursue. The tricky part is that teams will bring their own design workflow and the output needs to be constrained in some form that can flow into pursue."
 
@@ -65,13 +65,13 @@ Pursuit's entry ends "How the team got from idea to pursuit is its own workflow,
 
 The vision changes in three places: §5 says the write-up before a pursuit is workflow a team may add, and what it hands Physa is a brief; §9's "check briefs built by the engine" become "check prompts", so the word has one meaning; and the flow from idea to landed change gains the brief.
 
-## 8. Questions for the owner
+## 8. Settled with the owner (2026-11-26)
 
-Each has a recommended answer, worded so "yes" accepts it.
+The owner approved with "Yes to all questions", answering "Yes" on each:
 
-1. **Only the signal is required**, and the rest is optional, so a pursuit still needs only a signal. Yes?
-2. **Decisions and questions use the map's entry format**, checked by `physa check` in the brief. Yes?
-3. **`physa idea brief <idea> --from`**, agents allowed, revisions kept, refused with every problem listed. Yes?
-4. **Pursuing from a brief** shows its signal to confirm or edit, and sets its changes as the plan. Yes?
-5. **Decisions reach the map through learning** when the changes that make them true land, as proposals a steward accepts. Yes?
-6. **This idea's signal**: claim, ideas that are designed reach their pursuit and the map without anyone retyping them; for, pursuits started from a brief, and decisions in the map anchored to changes that came from one; against, pursuits typed by hand after design, or brief decisions that never reach the map; window 2027-03-01; resolver, Darin, reading the store and the map's decisions. Yes?
+1. **Only the signal is required**, and the rest is optional, so a pursuit still needs only a signal.
+2. **Decisions and questions use the map's entry format**, checked by `physa check` in the brief.
+3. **`physa idea brief <idea> --from`**, agents allowed, revisions kept, refused with every problem listed.
+4. **Pursuing from a brief** shows its signal to confirm or edit, and sets its changes as the plan.
+5. **Decisions reach the map through learning** when the changes that make them true land, as proposals a steward accepts.
+6. **This idea's signal**: claim, ideas that are designed reach their pursuit and the map without anyone retyping them; for, pursuits started from a brief, and decisions in the map anchored to changes that came from one; against, pursuits typed by hand after design, or brief decisions that never reach the map; window 2027-03-01; resolver, Darin, reading the store and the map's decisions.

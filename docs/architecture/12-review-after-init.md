@@ -1,6 +1,6 @@
 # Architecture 12: review after init
 
-Draft 0.1, 2026-11-26; proposed by Myxo for the owner to review. Nothing here is settled. Uses `.physa/glossary.md` terms only. Serves the idea `review-after-init`, the owner's: "for init, we clearly can't be striving for perfection. We should be striving for a good starting point. … Make it easy for users to review and update capabilities after the first init so they can have a clean map to start with."
+Draft 0.2, 2026-11-26, after the owner's first review; proposed by Myxo for the owner to review. Nothing here is settled. Uses `.physa/glossary.md` terms only. Serves the idea `review-after-init`, the owner's: "for init, we clearly can't be striving for perfection. We should be striving for a good starting point. … Make it easy for users to review and update capabilities after the first init so they can have a clean map to start with."
 
 Today a person reviews init's map by editing its PR by hand (02 §2.6). That works for rewording a promise or deleting a rule. It breaks down on the reshaping a first map most often needs: merging two capabilities that are one promise, splitting one that is two, renaming, dropping. Each moves entries between folders, has to keep slugs unique and contents and links right, and leaves init's record of which files and PRs each capability covers out of date. By hand, that is where the map breaks, and why a person gives up and keeps the map init wrote.
 
@@ -10,14 +10,25 @@ This design gives the core what one person needs to reshape a first map safely, 
 
 Vision §11: the core is "everything one developer or one repo needs, fully working". One developer reviewing their first map is that, so the core has:
 
-- a review guide in init's PR, saying where to look first (§2);
-- commands that reshape the map and keep it valid (§3).
+- a review guide, `physa map review`, saying where to look first, with an overview in init's PR (§2);
+- commands that reshape the map and keep it valid (§3);
+- a skill that lets a person's agent work through the review with them (§3).
 
 The hosted layer adds review as a team (§5).
 
 ## 2. Where to look first
 
-Init's PR body gets a section, *Where to look*, built from what init already knows. It names candidates with their reasons and decides nothing.
+`physa map review` lists where to look first, built from the map and init's record in `.git/physa`. It names candidates with their reasons and decides nothing. It reads the map as it stands, so after each merge or split the list is current again.
+
+On a large repo the full list is long: Discourse's 2,335 capabilities would give hundreds of candidates. So the full guide is a command, not the PR body:
+
+- on a terminal, a styled list grouped by kind, where choosing a candidate shows its reasons and offers the command that acts on it;
+- `--json` for agents and the skill (§3);
+- `--format md` for a person who wants to read it somewhere else.
+
+Init's PR body gets only an overview, *Where to look*: the count of each kind of candidate, the top few of each, and the line to run for the rest. It is not checked in: the map holds only what is still true (vision §4), and a review report is out of date after the first merge.
+
+The kinds of candidate:
 
 - **Capabilities that change together.** Pairs that the gathered PRs often touch together, with the count. A change belongs to exactly one capability (vision §4), so a pair most changes need is probably one promise: a merge candidate.
 - **PRs that land in one capability**, as one share for the whole map. On three public repos it was 73%, 57% and 39%; a low share says the capabilities are cut too fine or along the wrong lines.
@@ -28,6 +39,8 @@ Init's PR body gets a section, *Where to look*, built from what init already kno
 ## 3. Commands
 
 Under `physa map`, as verbs on the map (01 §8: groups are nouns, subcommands verbs, one way to do each thing).
+
+On a terminal every command is built with Charm's libraries (03 §16), as the owner asked: "No unstyled text and easy to use pickers and forms and confirmations." A capability left out is chosen from a filterable picker; names and promises are typed into forms; anything that removes or moves entries shows what will change and asks to confirm. In a pipe, in CI or for an agent the commands take flags and print plain text or `--json`, and a missing argument is an error listing the choices.
 
 - `physa map merge <capability> <capability>... --into <name>` makes one capability of several. Their rules, decisions, questions and terms are kept, each kind in its file. The promise is written by the person: in `$VISUAL` or `$EDITOR` on a terminal, seeded with the old promises, or with `--promise`. Slugs that collide are renamed and listed. Stewards are combined.
 - `physa map split <capability>` makes two. On a terminal a picker lists the entries and the person chooses which go to the new capability, then names it and writes its promise. Off a terminal, or for an agent, `--from <file>` lists the slugs that move, with the name and promise.
@@ -42,7 +55,7 @@ Each command:
 - changes the working tree only. The person reviews the diff and commits, on init's branch or after, as with any change to the map;
 - updates init's record in `.git/physa` of the files, PRs and changes each capability covers, so learning keeps placing new changes on the right capability.
 
-An agent can run the same commands. A person can ask their agent to work through *Where to look* and propose each merge or split with its reason, then accept or reject them one by one.
+An agent can run the same commands, and Physa ships a skill for it, `reviewing` (02 §4). It reads `physa map review --json` and works through the candidates with the person: it proposes each merge, split, rename or drop with its reason, the person accepts or rejects it, and the agent runs the command. Like Physa's other skills it is embedded in the binary and uses glossary terms only. Unlike mapping, recovering and learning, which Physa's own steps run, it is for the person's agent; how Physa gives skills to people's agents is its own design (Q7).
 
 ## 4. After changes name a capability
 
@@ -61,6 +74,7 @@ Each has a recommended answer, worded so "yes" accepts it.
 1. **The line.** The guide and the commands are core; review as a team is hosted. Yes?
 2. **Four commands under `physa map`**: `merge`, `split`, `rename`, `drop`, with promise rewording left to the editor. Yes?
 3. **Working tree only.** The commands never commit; the person does. Yes?
-4. **The guide in init's PR body**, with the five kinds of candidate in §2. Yes?
+4. **The full guide is `physa map review`**, styled on a terminal, with `--json` and `--format md`; init's PR body gets only an overview, and nothing is checked in. Yes?
 5. **Following a capability after a rename or merge** (§4). Recommended: decide it when a real map first needs it. Until then, `rename`, `merge` and `drop` warn when changes already name the capability, and go ahead. Yes?
 6. **Size limits stay hard.** A merge that would put `rules.md` over 150 lines fails and names what to prune or split, though a capability "can be large". Yes?
+7. **A `reviewing` skill ships with this**, for the person's agent. The owner also asked for skills for all of Physa's core elements; recommended: design how Physa ships skills to people's agents on their own, with this as the first. Yes?

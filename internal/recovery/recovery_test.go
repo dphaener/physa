@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -581,6 +582,22 @@ func TestAgentErrorFailsOnlyItsCapability(t *testing.T) {
 	var d Outcome
 	if err := json.Unmarshal(h.store.puts[0][0].Details, &d); err != nil || d.Error != o.Error {
 		t.Errorf("details %s: %v", h.store.puts[0][0].Details, err)
+	}
+}
+
+// TestTooLongSaysHowBigThePromptWas checks that a session refused as too
+// long fails with physa's own estimate of its system prompt and message.
+func TestTooLongSaysHowBigThePromptWas(t *testing.T) {
+	h := newHarness(t, map[string][]step{
+		"export": {{err: fmt.Errorf("%w: %w: Prompt is too long", adapter.ErrFailed, adapter.ErrTooLong)}},
+	})
+	h.session.Only = []string{"export"}
+	o := h.run(t).Capabilities[0]
+	for _, want := range []string{"Prompt is too long (by physa's estimate, the system prompt, the recovering skill and the docs every capability reads, came to about ",
+		"and the message, with this capability's own sources, to about ", "; its sources: docs: ", "changes: "} {
+		if o.Status != StatusFailed || !strings.Contains(o.Error, want) {
+			t.Errorf("error lacks %q: %+v", want, o)
+		}
 	}
 }
 

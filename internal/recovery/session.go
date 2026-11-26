@@ -2,6 +2,7 @@ package recovery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -108,6 +109,9 @@ func (r *runner) capability(ctx context.Context, j job) Outcome {
 		}
 		if res.SessionID != "" {
 			out.SessionID = res.SessionID
+		}
+		if errors.Is(err, adapter.ErrTooLong) {
+			return fail(j.tooLong(err))
 		}
 		if err != nil {
 			return fail(err)

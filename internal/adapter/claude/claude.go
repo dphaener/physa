@@ -421,3 +421,10 @@ func (w *tailWriter) String() string { return string(w.buf) }
 func SkillFile(home, name string) string {
 	return filepath.Join(home, ".claude", "skills", name, "SKILL.md")
 }
+
+// SettingsFile is where Claude Code reads a person's own settings, under the
+// person's home, including the hooks it runs at the start of every session.
+// Like SkillFile, it does not follow CLAUDE_CONFIG_DIR.
+func SettingsFile(home string) string {
+	return filepath.Join(home, ".claude", "settings.json")
+}

@@ -673,3 +673,11 @@ func TestSkillFile(t *testing.T) {
 		t.Errorf("SkillFile = %q, want %q", got, want)
 	}
 }
+
+func TestSettingsFile(t *testing.T) {
+	got := SettingsFile("/h")
+	want := filepath.Join("/h", ".claude", "settings.json")
+	if got != want {
+		t.Errorf("SettingsFile = %q, want %q", got, want)
+	}
+}

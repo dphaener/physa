@@ -7,12 +7,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/dphaener/physa/internal/adapter/claude"
 	"github.com/dphaener/physa/internal/command"
+	"github.com/dphaener/physa/internal/skillhook"
 	"github.com/dphaener/physa/internal/skillstub"
 )
 
@@ -111,6 +113,13 @@ func TestSetupStatusRemoveRoundTrip(t *testing.T) {
 	}
 	if code, out, _ := h.run("remove", "--yes"); code != 0 || !strings.Contains(out, "removed") {
 		t.Fatalf("remove: %d %q", code, out)
+	}
+	// Remove leaves the settings file in place, emptied of Physa's entry.
+	if b, err := os.ReadFile(h.settings()); err != nil || strings.TrimSpace(string(b)) != "{}" {
+		t.Fatalf("settings after remove: %q, %v", b, err)
+	}
+	if err := os.Remove(h.settings()); err != nil {
+		t.Fatal(err)
 	}
 	if after := listing(t, h.home); after != before {
 		t.Fatalf("skills directory changed:\nbefore:\n%s\nafter:\n%s", before, after)
@@ -272,5 +281,169 @@ func TestPositionalArgumentsAreBadUsage(t *testing.T) {
 		if code, _, _ := h.run(v, "extra"); code != 2 {
 			t.Errorf("%s extra: %d", v, code)
 		}
+	}
+}
+
+const prior = `{
+  "model": "x",
+  "hooks": {
+    "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "echo hi"}]}],
+    "SessionStart": [{"hooks": [{"type": "command", "command": "echo other"}]}]
+  },
+  "permissions": {"allow": ["Bash(ls)"]},
+  "zeta": [1, 2]
+}
+`
+
+func (h *harness) settings() string { return claude.SettingsFile(h.home) }
+
+func (h *harness) seed(t *testing.T, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(h.settings()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(h.settings(), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (h *harness) read(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(h.settings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func (h *harness) hookState(t *testing.T) string {
+	t.Helper()
+	_, out, _ := h.run("status", "--json")
+	var o struct{ Agents []agentJSON }
+	if err := json.Unmarshal([]byte(out), &o); err != nil || len(o.Agents) != 1 || o.Agents[0].Hook == nil {
+		t.Fatalf("no hook object: %q, %v", out, err)
+	}
+	return o.Agents[0].Hook.State
+}
+
+func TestSetupAddsOneHookKeepingEverythingElse(t *testing.T) {
+	h := newHarness(t)
+	h.seed(t, prior)
+	if code, _, errs := h.run("setup", "--yes"); code != 0 {
+		t.Fatalf("setup: %d %q", code, errs)
+	}
+	got := h.read(t)
+	if n := strings.Count(got, skillhook.Command); n != 1 {
+		t.Fatalf("%d physa entries in %s", n, got)
+	}
+	for _, want := range []string{`"model": "x"`, `"echo hi"`, `"echo other"`, `"Bash(ls)"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("lost %s in %s", want, got)
+		}
+	}
+	if m, p, z := strings.Index(got, `"model"`), strings.Index(got, `"permissions"`), strings.Index(got, `"zeta"`); !(m < p && p < z) {
+		t.Errorf("key order changed: %s", got)
+	}
+	if strings.Index(got, "echo other") > strings.Index(got, skillhook.Command) {
+		t.Errorf("physa's entry should come after the other SessionStart entry: %s", got)
+	}
+	if h.hookState(t) != "current" {
+		t.Fatal("hook not current")
+	}
+	if b, _ := os.ReadFile(h.path()); string(b) != skillstub.Text() {
+		t.Fatal("stub not written")
+	}
+	// Twice: nothing to do, and the bytes stay.
+	code, out, _ := h.run("setup", "--yes")
+	if code != 0 || strings.Count(out, "already current") != 2 || h.read(t) != got {
+		t.Fatalf("second setup: %d %q", code, out)
+	}
+}
+
+func TestRemoveLeavesTheOthers(t *testing.T) {
+	h := newHarness(t)
+	h.seed(t, prior)
+	var want any
+	if err := json.Unmarshal([]byte(prior), &want); err != nil {
+		t.Fatal(err)
+	}
+	h.run("setup", "--yes")
+	if code, _, errs := h.run("remove", "--yes"); code != 0 {
+		t.Fatalf("remove: %d %q", code, errs)
+	}
+	got := h.read(t)
+	var back any
+	if err := json.Unmarshal([]byte(got), &back); err != nil || !reflect.DeepEqual(want, back) {
+		t.Fatalf("not the original: %s (%v)", got, err)
+	}
+	if strings.Contains(got, skillhook.Command) {
+		t.Fatalf("still there: %s", got)
+	}
+	if strings.Index(got, `"model"`) > strings.Index(got, `"zeta"`) {
+		t.Fatalf("order: %s", got)
+	}
+	if h.hookState(t) != "missing" {
+		t.Fatal("hook still reported")
+	}
+	if _, err := os.Stat(h.path()); err == nil {
+		t.Fatal("stub still there")
+	}
+}
+
+func TestStatusShowsTheHookCurrentStaleAndMissing(t *testing.T) {
+	h := newHarness(t)
+	if h.hookState(t) != "missing" {
+		t.Fatal("not missing")
+	}
+	h.run("setup", "--yes")
+	if h.hookState(t) != "current" {
+		t.Fatal("not current")
+	}
+	h.seed(t, strings.Replace(h.read(t), `"timeout": 5`, `"timeout": 9`, 1))
+	if h.hookState(t) != "stale" {
+		t.Fatalf("not stale: %s", h.read(t))
+	}
+	_, out, _ := h.run("status")
+	if !strings.Contains(out, "hook") || !strings.Contains(out, "stale") || !strings.Contains(out, "part") {
+		t.Fatalf("table: %q", out)
+	}
+	if code, _, _ := h.run("setup", "--yes"); code != 0 || h.hookState(t) != "current" {
+		t.Fatal("stale not replaced")
+	}
+}
+
+func TestInvalidSettingsRefusesTheHookButWritesTheStub(t *testing.T) {
+	h := newHarness(t)
+	h.seed(t, "{not json")
+	code, _, errs := h.run("setup", "--yes")
+	if code != 2 || !strings.Contains(errs, h.settings()) || !strings.Contains(errs, "left as it is") {
+		t.Fatalf("setup: %d %q", code, errs)
+	}
+	if h.read(t) != "{not json" {
+		t.Fatal("settings changed")
+	}
+	if b, _ := os.ReadFile(h.path()); string(b) != skillstub.Text() {
+		t.Fatal("stub not written")
+	}
+	if code, _, _ := h.run("remove", "--yes"); code != 2 || h.read(t) != "{not json" {
+		t.Fatalf("remove: %d", code)
+	}
+	if _, out, _ := h.run("status"); !strings.Contains(out, "not editable by Physa") {
+		t.Fatalf("status: %q", out)
+	}
+	if h.hookState(t) != "other" {
+		t.Fatal("state")
+	}
+}
+
+func TestStatusJSONCarriesTheHookObject(t *testing.T) {
+	h := newHarness(t)
+	_, out, _ := h.run("status", "--json")
+	if !strings.Contains(out, `"hook": {`) || !strings.Contains(out, h.settings()) {
+		t.Fatalf("%q", out)
+	}
+	_, out, _ = h.run("setup", "--yes", "--json")
+	if !strings.Contains(out, `"action": "written"`) {
+		t.Fatalf("%q", out)
 	}
 }

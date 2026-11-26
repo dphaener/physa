@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -14,6 +15,7 @@ import (
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/picker"
+	"github.com/dphaener/physa/internal/skillhook"
 	"github.com/dphaener/physa/internal/skillstub"
 )
 
@@ -30,11 +32,25 @@ type env struct {
 	home        func() (string, error)
 	interactive func() bool
 	confirm     func(question string) (bool, error)
+
+	// What the session command reaches outside itself for.
+	current         CurrentFunc
+	getwd           func() (string, error)
+	getenv          func(string) string
+	stdin           io.Reader
+	stdinIsTerminal func() bool
+	deadline        time.Duration
 }
 
-func defaultEnv() env {
+func defaultEnv(current CurrentFunc) env {
 	return env{
-		home: os.UserHomeDir,
+		current:         current,
+		getwd:           os.Getwd,
+		getenv:          os.Getenv,
+		stdin:           os.Stdin,
+		stdinIsTerminal: func() bool { return isTerminal(os.Stdin) },
+		deadline:        defaultDeadline,
+		home:            os.UserHomeDir,
 		interactive: func() bool {
 			_, agent := agentenv.Detect(os.Getenv)
 			return output.Interactive(os.Stdin, os.Stdout, agent)
@@ -44,32 +60,65 @@ func defaultEnv() env {
 	}
 }
 
-// target is an agent whose skills directory holds Physa's stub.
+// target is an agent whose skills directory holds Physa's stub and whose
+// settings file holds the session hook.
 type target struct {
-	name  string // as --json names it
-	label string // as people read it
-	path  func(home string) string
+	name     string // as --json names it
+	label    string // as people read it
+	path     func(home string) string
+	hookPath func(home string) string
 }
 
-// targets lists the agents the stub is written for; today only Claude Code.
+// targets lists the agents Physa sets up; today only Claude Code.
 var targets = []target{
-	{claude.Name, "Claude Code", func(home string) string { return claude.SkillFile(home, "physa") }},
+	{claude.Name, "Claude Code", func(home string) string { return claude.SkillFile(home, "physa") }, claude.SettingsFile},
 }
 
-// entry is one agent's stub: where it is, what it was, and what the command did.
-type entry struct {
-	t      target
+// part is one thing setup writes for an agent: the stub or the hook. States
+// are the words both packages use: missing, current, stale and other.
+type part struct {
+	name   string // "skill" or "hook"
 	path   string
-	before skillstub.State
-	state  skillstub.State
+	before string
+	state  string
 	action string
+	other  string // how people read the other state
+	read   func(path string) (string, error)
+	write  func(path string) error
+	remove func(path string) error
 }
 
-type agentJSON struct {
-	Agent  string `json:"agent"`
+func stubPart(path string) *part {
+	return &part{name: "skill", path: path, other: "not written by Physa",
+		read:  func(p string) (string, error) { s, err := skillstub.Read(p); return s.String(), err },
+		write: skillstub.Write, remove: skillstub.Remove}
+}
+
+func hookPart(path string) *part {
+	return &part{name: "hook", path: path, other: "not editable by Physa",
+		read:  func(p string) (string, error) { s, err := skillhook.Read(p); return s.String(), err },
+		write: skillhook.Write, remove: skillhook.Remove}
+}
+
+// entry is one agent's parts, the stub then the hook: where they are, what
+// they were, and what the command did.
+type entry struct {
+	t     target
+	parts []*part
+}
+
+type hookJSON struct {
 	Path   string `json:"path"`
 	State  string `json:"state"`
 	Action string `json:"action,omitempty"`
+}
+
+type agentJSON struct {
+	Agent  string    `json:"agent"`
+	Path   string    `json:"path"`
+	State  string    `json:"state"`
+	Action string    `json:"action,omitempty"`
+	Hook   *hookJSON `json:"hook,omitempty"`
 }
 
 func newCommand(e env) *cobra.Command {
@@ -80,23 +129,25 @@ func newCommand(e env) *cobra.Command {
 	}
 	return command.Declare(command.New("skill",
 		"Set up, check, print and remove Physa's skill, the guide a person's agent loads to use Physa's commands and terms. "+
-			"setup writes a short stub into Claude Code's skills directory (~/.claude/skills/physa) that tells the agent to run `physa skill show`; "+
-			"status says whether it is current, stale or missing; remove deletes it. setup and remove ask on a terminal and need --yes off one, "+
-			"and never touch a SKILL.md Physa did not write. A bare skill is status.",
+			"setup writes a short stub into Claude Code's skills directory (~/.claude/skills/physa) that tells the agent to run `physa skill show`, "+
+			"and adds a session hook to ~/.claude/settings.json that runs Physa when a session starts; "+
+			"status says whether the stub and the hook are current, stale or missing; remove deletes the stub and takes out only Physa's hook entry. "+
+			"setup and remove ask on a terminal and need --yes off one, and never touch a SKILL.md Physa did not write or a settings.json Physa cannot edit. A bare skill is status.",
 		[]string{groupUsage, setupUsage, statusUsage, "physa skill show", removeUsage}, status(&groupJSON),
 		command.Declare(command.New("setup",
-			"Write Physa's stub to ~/.claude/skills/physa/SKILL.md, replacing a stale one; a SKILL.md Physa did not write is left as it is.",
+			"Write Physa's stub to ~/.claude/skills/physa/SKILL.md and its session hook to ~/.claude/settings.json, replacing stale ones; a SKILL.md Physa did not write, or a settings.json Physa cannot edit, is left as it is.",
 			[]string{setupUsage}, func(args []string, stdout, stderr io.Writer) int {
 				return e.change(verbs[0], args, setupYes, setupJSON, stdout, stderr)
 			}), func(fs *pflag.FlagSet) {
 			command.Switch(fs, "yes", &setupYes, "")
 			jsonFlag(fs, &setupJSON)
 		}),
-		command.Declare(command.New("status", "Say whether Physa's stub is current, stale or missing for each agent.",
+		command.Declare(command.New("status", "Say whether Physa's stub and session hook are current, stale or missing for each agent.",
 			[]string{statusUsage}, status(&statusJSON)), func(fs *pflag.FlagSet) { jsonFlag(fs, &statusJSON) }),
 		command.New("show", "Print the guide, as it is, on any output.", []string{showUsage}, show),
+		hidden(e.sessionCommand()),
 		command.Declare(command.New("remove",
-			"Delete Physa's stub; a SKILL.md Physa did not write is left as it is.",
+			"Delete Physa's stub and take Physa's session hook out of ~/.claude/settings.json, leaving every other entry; a SKILL.md Physa did not write, or a settings.json Physa cannot edit, is left as it is.",
 			[]string{removeUsage}, func(args []string, stdout, stderr io.Writer) int {
 				return e.change(verbs[1], args, removeYes, removeJSON, stdout, stderr)
 			}), func(fs *pflag.FlagSet) {
@@ -106,7 +157,7 @@ func newCommand(e env) *cobra.Command {
 	), func(fs *pflag.FlagSet) { jsonFlag(fs, &groupJSON) })
 }
 
-// load reads every agent's stub under the home directory.
+// load reads every agent's stub and hook under the home directory.
 func (e env) load(verb string, stderr io.Writer) ([]entry, bool) {
 	home, err := e.home()
 	if err == nil && home == "" {
@@ -117,10 +168,14 @@ func (e env) load(verb string, stderr io.Writer) ([]entry, bool) {
 		if err != nil {
 			break
 		}
-		p := t.path(home)
-		var st skillstub.State
-		st, err = skillstub.Read(p)
-		all = append(all, entry{t: t, path: p, before: st, state: st})
+		en := entry{t: t, parts: []*part{stubPart(t.path(home)), hookPart(t.hookPath(home))}}
+		for _, p := range en.parts {
+			if p.before, err = p.read(p.path); err != nil {
+				break
+			}
+			p.state = p.before
+		}
+		all = append(all, en)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "physa skill %s: %v\n", verb, err)
@@ -129,11 +184,11 @@ func (e env) load(verb string, stderr io.Writer) ([]entry, bool) {
 	return all, true
 }
 
-func shown(s skillstub.State) string {
-	if s == skillstub.Other {
-		return "not written by Physa"
+func (p *part) shown() string {
+	if p.state == "other" {
+		return p.other
 	}
-	return s.String()
+	return p.state
 }
 
 func (e env) status(args []string, asJSON bool, stdout, stderr io.Writer) int {
@@ -147,11 +202,13 @@ func (e env) status(args []string, asJSON bool, stdout, stderr io.Writer) int {
 	if asJSON {
 		return emit("status", all, stdout, stderr)
 	}
-	rows := make([][]string, 0, len(all))
+	var rows [][]string
 	for _, a := range all {
-		rows = append(rows, []string{a.t.label, shown(a.state), a.path})
+		for _, p := range a.parts {
+			rows = append(rows, []string{a.t.label, p.name, p.shown(), p.path})
+		}
 	}
-	output.For(stdout).Table([]string{"agent", "state", "path"}, rows)
+	output.For(stdout).Table([]string{"agent", "part", "state", "path"}, rows)
 	return 0
 }
 
@@ -160,7 +217,8 @@ func emit(verb string, all []entry, stdout, stderr io.Writer) int {
 		Agents []agentJSON `json:"agents"`
 	}{Agents: []agentJSON{}}
 	for _, a := range all {
-		out.Agents = append(out.Agents, agentJSON{a.t.name, a.path, a.state.String(), a.action})
+		s, h := a.parts[0], a.parts[1]
+		out.Agents = append(out.Agents, agentJSON{a.t.name, s.path, s.state, s.action, &hookJSON{h.path, h.state, h.action}})
 	}
 	if err := output.JSON(stdout, out); err != nil {
 		fmt.Fprintf(stderr, "physa skill %s: %v\n", verb, err)
@@ -169,22 +227,37 @@ func emit(verb string, all []entry, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// verb is what setup or remove does: the state it acts on, how it words
-// itself, and the stub call that does it.
+// verb is what setup or remove does: the state it acts on and how it words
+// itself.
 type verb struct {
 	name     string
 	doneWord string // the action it reports
 	question string
-	noop     skillstub.State // the state that needs nothing
+	noop     string // the state that needs nothing
 	noopText string
 	nothing  string // said when the person declines
-	do       func(path string) error
 }
 
 var verbs = [2]verb{
-	{"setup", "written", "Write Physa's skill?", skillstub.Current, "already current", "nothing written", skillstub.Write},
-	{"remove", "removed", "Remove Physa's skill?", skillstub.Missing, "nothing to remove", "nothing removed", skillstub.Remove},
+	{"setup", "written", "Write Physa's skill?", "current", "already current", "nothing written"},
+	{"remove", "removed", "Remove Physa's skill?", "missing", "nothing to remove", "nothing removed"},
 }
+
+// do writes or removes the part, as the verb says.
+func (v verb) do(p *part) error {
+	if v.name == "setup" {
+		return p.write(p.path)
+	}
+	return p.remove(p.path)
+}
+
+// item is a part to change and the agent it belongs to.
+type item struct {
+	t target
+	p *part
+}
+
+func (i item) label() string { return i.t.label + " " + i.p.name }
 
 // change is setup or remove: refuse what Physa did not write, skip what
 // needs nothing, and do the rest once told to, by --yes or a person's yes.
@@ -196,19 +269,20 @@ func (e env) change(v verb, args []string, yes, asJSON bool, stdout, stderr io.W
 	if !ok {
 		return 1
 	}
-	var todo []*entry
+	var todo []item
 	refused := false
-	for i := range all {
-		a := &all[i]
-		switch {
-		case a.before == skillstub.Other:
-			a.action = "refused"
-			refused = true
-			fmt.Fprintf(stderr, "physa skill %s: %s was not written by Physa; left as it is\n", v.name, a.path)
-		case a.before == v.noop:
-			a.action = "none"
-		default:
-			todo = append(todo, a)
+	for _, a := range all {
+		for _, p := range a.parts {
+			switch {
+			case p.before == "other":
+				p.action = "refused"
+				refused = true
+				fmt.Fprintf(stderr, "physa skill %s: %s is %s; left as it is\n", v.name, p.path, p.other)
+			case p.before == v.noop:
+				p.action = "none"
+			default:
+				todo = append(todo, item{a.t, p})
+			}
 		}
 	}
 	code := 0
@@ -221,8 +295,8 @@ func (e env) change(v verb, args []string, yes, asJSON bool, stdout, stderr io.W
 				v.name, v.name, v.nothing, v.name)
 			return finish(v, all, todo, 2, asJSON, stdout, stderr)
 		}
-		for _, a := range todo {
-			fmt.Fprintf(stdout, "%s: %s, %s -> %s\n", a.t.label, a.path, a.before, afterState(v))
+		for _, it := range todo {
+			fmt.Fprintf(stdout, "%s: %s, %s -> %s\n", it.label(), it.p.path, it.p.before, afterState(v))
 		}
 		yes, err := e.confirm(v.question)
 		if err != nil && !errors.Is(err, picker.ErrAborted) {
@@ -234,29 +308,29 @@ func (e env) change(v verb, args []string, yes, asJSON bool, stdout, stderr io.W
 			return finish(v, all, todo, 2, asJSON, stdout, stderr)
 		}
 	}
-	for _, a := range todo {
-		if err := v.do(a.path); err != nil {
+	for _, it := range todo {
+		if err := v.do(it.p); err != nil {
 			fmt.Fprintf(stderr, "physa skill %s: %v\n", v.name, err)
 			return 1
 		}
-		a.action = v.doneWord
-		a.state, _ = skillstub.Read(a.path)
+		it.p.action = v.doneWord
+		it.p.state, _ = it.p.read(it.p.path)
 	}
 	return finish(v, all, nil, code, asJSON, stdout, stderr)
 }
 
 func afterState(v verb) string {
 	if v.name == "setup" {
-		return skillstub.Current.String()
+		return "current"
 	}
-	return skillstub.Missing.String()
+	return "missing"
 }
 
-// finish reports what each agent came to. Agents left undone for want of a
+// finish reports what each part came to. Parts left undone for want of a
 // yes (undone) are reported as refused.
-func finish(v verb, all []entry, undone []*entry, code int, asJSON bool, stdout, stderr io.Writer) int {
-	for _, a := range undone {
-		a.action = "refused"
+func finish(v verb, all []entry, undone []item, code int, asJSON bool, stdout, stderr io.Writer) int {
+	for _, it := range undone {
+		it.p.action = "refused"
 	}
 	if asJSON {
 		if c := emit(v.name, all, stdout, stderr); c != 0 {
@@ -265,12 +339,21 @@ func finish(v verb, all []entry, undone []*entry, code int, asJSON bool, stdout,
 		return code
 	}
 	for _, a := range all {
-		switch a.action {
-		case v.doneWord:
-			fmt.Fprintf(stdout, "%s: %s %s\n", a.t.label, v.doneWord, a.path)
-		case "none":
-			fmt.Fprintf(stdout, "%s: %s (%s)\n", a.t.label, v.noopText, a.path)
+		for _, p := range a.parts {
+			it := item{a.t, p}
+			switch p.action {
+			case v.doneWord:
+				fmt.Fprintf(stdout, "%s: %s %s\n", it.label(), v.doneWord, p.path)
+			case "none":
+				fmt.Fprintf(stdout, "%s: %s (%s)\n", it.label(), v.noopText, p.path)
+			}
 		}
 	}
 	return code
+}
+
+// hidden keeps a command a hook runs out of help.
+func hidden(c *cobra.Command) *cobra.Command {
+	c.Hidden = true
+	return c
 }

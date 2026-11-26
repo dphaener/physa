@@ -1,7 +1,8 @@
-// Package shares reads propose's sources in shares when they are more than
-// one session holds (design 02 §2.3.1). It lays the sources, in the order
-// reading gives them, into shares that each read their sources whole, and
-// merges what the shares proposed. It never splits, cuts or skips a source
+// Package shares reads init's sources in shares when they are more than
+// one session holds: propose's (design 02 §2.3.1), and one capability's in
+// recovery (§2.4). It lays the sources, in the order reading gives them,
+// into shares that each read their sources whole, and merges what propose's
+// shares proposed. It never splits, cuts or skips a source
 // (init-no-cut): a source larger than one share stops init, named, before
 // anything is spent on propose. When the whole prompt fits one session,
 // propose runs as before, unchanged.

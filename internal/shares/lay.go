@@ -41,9 +41,16 @@ type unit struct {
 // Each share's Report counts only what it reads. The same input and room
 // always give the same shares.
 func Lay(in reading.Input, room int) ([]reading.Input, error) {
+	return LayFor(in, room, mapping.Prompt)
+}
+
+// LayFor is Lay for a session whose prompt for an input is prompt's: room
+// is then the most estimated tokens prompt's text for each share may take.
+// Recovery lays a capability's own sources with it (design 02 §2.4).
+func LayFor(in reading.Input, room int, prompt func(reading.Input) string) ([]reading.Input, error) {
 	limit := max(room, 0) * reading.BytesPerTokenTenths / 10
-	base := len(mapping.Prompt(reading.Input{}))
-	units, err := measure(in, room, base, limit)
+	base := len(prompt(reading.Input{}))
+	units, err := measure(in, room, base, limit, prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +59,7 @@ func Lay(in reading.Input, room int) ([]reading.Input, error) {
 	}
 	nDocs := len(in.Docs)
 	if nDocs > 0 {
-		docs := len(mapping.Prompt(reading.Input{Docs: in.Docs})) - base
+		docs := len(prompt(reading.Input{Docs: in.Docs})) - base
 		shared := reading.BytesTokens(docs) <= room/2
 		for _, u := range units[nDocs:] {
 			if !shared {
@@ -61,12 +68,12 @@ func Lay(in reading.Input, room int) ([]reading.Input, error) {
 			shared = u.alone+docs+slack <= limit
 		}
 		if shared {
-			if out, _ := lay(in, units[nDocs:], base+docs, limit, true); out != nil {
+			if out, _ := lay(in, units[nDocs:], base+docs, limit, true, prompt); out != nil {
 				return out, nil
 			}
 		}
 	}
-	out, u := lay(in, units, base, limit, false)
+	out, u := lay(in, units, base, limit, false, prompt)
 	if out == nil {
 		return nil, tooLarge(in, u.kind, u.i, reading.BytesTokens(u.alone-base), room)
 	}
@@ -76,14 +83,14 @@ func Lay(in reading.Input, room int) ([]reading.Input, error) {
 // measure gives each source its unit, in order, rendering it alone and
 // twice to learn what it costs; a source whose prompt alone is over limit
 // bytes is a *TooLarge.
-func measure(in reading.Input, room, base, limit int) ([]unit, error) {
+func measure(in reading.Input, room, base, limit int, prompt func(reading.Input) string) ([]unit, error) {
 	var units []unit
 	add := func(k, i int, one, two reading.Input) error {
-		alone := len(mapping.Prompt(one))
+		alone := len(prompt(one))
 		if alone > limit {
 			return tooLarge(in, k, i, reading.BytesTokens(alone-base), room)
 		}
-		units = append(units, unit{kind: k, i: i, cost: len(mapping.Prompt(two)) - alone, alone: alone})
+		units = append(units, unit{kind: k, i: i, cost: len(prompt(two)) - alone, alone: alone})
 		return nil
 	}
 	for i, d := range in.Docs {
@@ -114,7 +121,7 @@ func measure(in reading.Input, room, base, limit int) ([]unit, error) {
 // to the next share. With shared, every share reads all of in's docs. A
 // share of one source that is still over limit ends it: lay returns no
 // shares and that source.
-func lay(in reading.Input, units []unit, start, limit int, shared bool) ([]reading.Input, unit) {
+func lay(in reading.Input, units []unit, start, limit int, shared bool, prompt func(reading.Input) string) ([]reading.Input, unit) {
 	var groups [][]unit
 	var g []unit
 	cur := start + slack
@@ -130,7 +137,7 @@ func lay(in reading.Input, units []unit, start, limit int, shared bool) ([]readi
 	for i := 0; i < len(groups); i++ {
 		for {
 			share := build(in, groups[i], shared)
-			over := len(mapping.Prompt(share)) - limit
+			over := len(prompt(share)) - limit
 			if over <= 0 {
 				out = append(out, share.Recounted())
 				break

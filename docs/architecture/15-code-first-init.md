@@ -1,6 +1,6 @@
 # Architecture 15: code-first init
 
-Draft 0.1, 2026-11-26; proposed by Myxo for the owner to review, from five runs on three public repos. Settled so far, in the owner's words below: capabilities come from the code and the PRs give the why; a capability is cut by promise, across layers; areas are init's own scaffolding; init is capped, not estimated. The rest is open (§10). Uses `.physa/glossary.md` terms only. It replaces 02 §2.3 (propose), §2.4's sources, §2.7 (the estimate) and the coverage placement built on them; gather (§2.2), check (§2.5) and review as a PR (§2.6) stay.
+Draft 0.2, 2026-11-26; settled with the owner, question by question (§10). Uses `.physa/glossary.md` terms only. Serves the owner's idea `code-first-init`. It replaces 02 §2.3 (propose), §2.4's sources, §2.7 (the estimate) and the coverage placement built on them; gather (§2.2), check (§2.5) and review as a PR (§2.6) stay.
 
 ## 1. Why
 
@@ -31,24 +31,25 @@ A blind judge graded 40 entries of the Rails map against the PR-first map's: as 
 ## 3. The phases
 
 ```
-gather ─▶ areas ─▶ walk each area ─▶ place ─▶ recover each capability ─▶ check ─▶ review as a PR
- (02 §2.2)  1 session   1 session per area   no session  1 session per capability   (02 §2.5)  (02 §2.6, 12)
+gather ─▶ areas ─▶ walk each area ─▶ place ─▶ recover each capability ─▶ consolidate ─▶ check ─▶ review as a PR
+ (02 §2.2)  1 session   1 session per area   no session  1 session per capability   1 per area      (02 §2.5)  (02 §2.6, 12)
 ```
 
 1. **Gather**, as today (02 §2.2), with a larger PR window (§7).
-2. **Areas.** One session reads the list of every source file and divides the repo into areas, each a group of promises with the files that serve them, by promise and across layers. Every source file falls in exactly one area. An area is init's own scaffolding: it never appears in the map and needs no glossary term (owner: "area is a temporary grouping that drops off after we're done initializing").
+2. **Areas.** One session reads the list of every source file and divides the repo into areas, each a group of promises with the files that serve them, by promise and across layers. Every source file falls in exactly one area. When the listing is more than one session holds, the session gets it in parts and groups by promise across all of them, never one area set per framework (Q8; Discourse is the first repo run this way, before this is built). An area is init's own scaffolding: it never appears in the map and needs no glossary term (owner: "area is a temporary grouping that drops off after we're done initializing").
 3. **Walk.** One session per area, with read-only tools over the area's code, tests and docs, names its capabilities, each a promise with a footprint: the source files it owns, and the tests and docs that bear on it. Every source file of the area is owned by one capability or named shared with a reason; none is left unclaimed. A session may split its area once into smaller ones, each walked on its own.
 4. **Place.** No session. Each gathered PR and change goes to the capabilities that own most of its files: a source file counts whole, a test or doc shared by k capabilities counts 1/k, and the largest are taken until half the weight is covered, at most three. Placement is a fact of the footprint, not a judgment.
 5. **Recover.** One session per capability, with read-only tools, is given its placed PRs and changes whole and reads its tests, docs and code comments, and writes its rules, decisions, questions and terms (§6).
-6. **Check** and **review**, as today; review gains architecture 12's guide.
+6. **Consolidate** (Q10, the owner's: "we may need another pass at the end that de-dupes or merges rules that are similar. We may end up with noise."). Exact duplicates are found without a session. Then one session per area, given only its capabilities' entries, merges near-duplicates keeping every anchor, moves a rule to the capability it belongs to, and drops a question another entry answers. Rules repeated across areas are lifted to the product's rules. It never writes a new entry, and init's report says what it merged, moved, dropped and lifted.
+7. **Check** and **review**, as today; review gains architecture 12's guide.
 
 ## 4. What a capability is
 
-The walk works from the capability definition the owner has accepted for now ("sounds good for now but I'm not fully settled yet"):
+The walk works from the capability definition, settled by the owner ("I think that definition sounds right") and taken into the glossary's Capability entry:
 
 > A promise the product makes to its users, stated as intended behaviour: something a user can rely on and would name, true however the code is arranged, and whose breaking someone would report. A capability can be large and is kept by many changes over time; a change that needs two capabilities usually means they are one.
 
-With four tests: a user would name it; it survives a rewrite, so it never follows layers or folders; breaking it is a bug someone reports; a well-made change can belong to it alone. No prompt gives a count. The owner, on promises that cut across layers: "For ME personally, I probably wouldn't architect a capability that way, but we can't put people into a box like that." So init assumes nothing about how a codebase is organized: in a codebase arranged by capability the walk finds promises and folders agree, and in a layered one it gathers each promise from every layer.
+With four tests: a user would name it; it survives a rewrite, so it never follows layers or folders; breaking it is a bug someone reports; a well-made change can belong to it alone. No prompt gives a count. The definition lives in the code, in the walk's skill, and a test fails when the glossary's Capability entry stops matching it (Q2, the owner: "code as source with a drift test"), so a change to the definition is one code PR that touches both, and is run before it ships. The glossary is never read into a prompt: Physa's map does not drive the binary. The owner, on promises that cut across layers: "For ME personally, I probably wouldn't architect a capability that way, but we can't put people into a box like that." So init assumes nothing about how a codebase is organized: in a codebase arranged by capability the walk finds promises and folders agree, and in a layered one it gathers each promise from every layer.
 
 ## 5. Init's record
 
@@ -56,11 +57,15 @@ The map holds no file paths (vision §4.1), so footprints and placement stay in 
 
 ## 6. The why
 
-A rule needs a reason. Recovery takes reasons from PRs, changes, docs and code comments that say why. A rule whose only anchors are tests or comments that say what, not why, becomes a question asking why **only when the agent judges the reason matters and a person could answer it**; otherwise it is dropped, since the code and tests already hold the what (vision §4.1). The owner agreed: "Your recommendation seems sound to me". Run 2's rule turned every such rule into a question, and left 1,601 questions for 752 rules.
+A rule needs a reason where its sources give one. Recovery takes reasons from PRs, changes, docs and code comments that say why. Legacy code won't always say why, and the owner: "I don't know that we will ALWAYS get a why on legacy codebases, that is a lot to ask." So (Q4):
+
+- **A rule backed only by tests or comments stays a rule when its source shows intent**: a test named for a regression, a comment saying what would break, a test tied to a PR. Its `Because:` says what the source shows. A test is strong evidence a rule holds; the owner: "a rule backed by a test or comment is pretty defensible because of where it came from".
+- **It is dropped when it only restates the code**, since the code and tests already hold the what (vision §4.1).
+- **A question is only for an important gap a person could fill**, never for every rule without a PR. Mastodon run 2 turned every such rule into a question and left 1,601 questions for 752 rules.
 
 ## 7. The PR window
 
-A window of 1,000 PRs reached back one month on Discourse and two and a half on Mastodon, leaving 31% to 47% of capabilities with no PR. Mastodon run 2 gathered 3,000 and held them within the cap. The default becomes a window of time, reaching back far enough for most capabilities to have history, with `--max-prs` and `--since` as today.
+A window of 1,000 PRs reached back one month on Discourse and two and a half on Mastodon, leaving 31% to 47% of capabilities with no PR. Mastodon run 2 gathered 3,000 and held them within the cap. The default becomes twelve months of history (Q5), with `--max-prs` and `--since` as today and gather's top-up for quiet areas kept.
 
 ## 8. The cap
 
@@ -68,25 +73,26 @@ No estimate. A person may give a run a cap, as the owner asked, and the run stop
 
 - **none**, the default: init runs to the end;
 - **an amount of money**, for people who pay by the token;
-- **a share of their plan's usage**, for people on a subscription, where the agent's adapter can report it;
+- **a share of their plan's usage**, for people on a subscription, written as a ceiling (`--cap 80%`: start nothing that would take the plan's usage past 80%). Claude Code reports it: `claude -p /usage --output-format stream-json --verbose` prints a `usage_report` whose rate limits give each window's percent spent and reset time, which the owner's afk reads to pause its runs near the limit;
 - **tokens**, weighted by price as every spend in Physa is.
 
-Whatever the unit, init counts spend as it always does and shows it in the unit the cap was given in. Recovery goes in a seeded random order across areas, so a run stopped by the cap leaves a fair sample of the map rather than some areas whole and others untouched, and `physa init --recover` continues where it stopped. Init still says before it starts what a token is worth (02 §2.7) and after it ends what it spent. This replaces 02 §2.7's estimate, its ratio records and its "past the estimate" message.
+Whatever the unit, init counts spend as it always does and shows it in the unit the cap was given in. A bare run never asks for a cap (Q6): `--cap` is there for whoever wants one. Recovery goes in a seeded random order across areas, so a run stopped by the cap leaves a fair sample of the map rather than some areas whole and others untouched, and `physa init --recover` continues where it stopped. Init still says before it starts what a token is worth (02 §2.7) and after it ends what it spent. This replaces 02 §2.7's estimate, its ratio records and its "past the estimate" message.
 
 ## 9. What init reports
 
 Its output and PR body report the measures the runs used: files in a capability, shared and unclaimed; PRs and changes placed; PRs in one capability (the change tenet, vision §4.2: "a change belongs to exactly one capability"); capabilities with no PR or change; where the rules' reasons came from; and spend per phase.
 
-## 10. Questions for the owner
+## 10. Settled with the owner (2026-11-26)
 
-Each has a recommended answer, worded so "yes" accepts it.
+Walked through one by one; sources in the owner's words.
 
-1. **The phases** of §3 replace propose and the coverage placement, and their code goes. Yes?
-2. **The definition and its four tests** go into the walk's skill as written, and into the glossary's Capability entry when you settle the wording. Yes?
-3. **Init's record stays in `.git/physa`**, and a clone without it rebuilds it from areas, walk and place, without recovering. Yes?
-4. **The why**, as §6. Yes?
-5. **The default PR window is 12 months**, with `--max-prs` and `--since` kept. Yes?
-6. **The cap is the person's choice of unit**: none by default, an amount of money, a share of their plan's usage where the adapter reports it, or weighted tokens, given with `--cap`; spend is shown in the cap's unit. Yes?
-7. **Flat folders**: the map stays one folder per capability, with no area level. Yes?
-8. **Untested yet**: a repo too big for one areas session (Discourse needed one per framework, which cuts by layer). Recommended: the areas session gets the listing in parts and is told to group by promise across them, and the first such repo is a run before this is built. Yes?
-9. **The signal**, for the idea this serves: claim, init on an existing codebase gives a map a person keeps; for, first maps merged with their capabilities mostly kept, and PRs in one capability at 60% or more; against, first maps reshaped heavily or abandoned; window 2027-03-01; resolver, Darin, reading init PRs and the review commands' commits. Yes?
+1. **The phases** of §3 replace propose and the coverage placement, and their code goes. "Yes to Q1".
+2. **The definition** of §4 is settled, goes into the glossary's Capability entry now, lives in the walk's skill as the source, and a drift test holds the glossary to it. "Yes, code as source with a drift test".
+3. **Init's record stays in `.git/physa`**, and a clone without it rebuilds it from areas, walk and place, without recovering. "Yes to Q3". The hosted layer may later keep it for a team.
+4. **The why**, as §6, revised from the draft with the owner. "Your recommendation on 1 is probably good enough. 2. Yes 3. Yes".
+5. **Twelve months of PRs by default.** "Yes to Q5".
+6. **The cap is the person's choice of unit**, none by default and never asked for, as §8. "Yes to Q6".
+7. **Flat folders**: one folder per capability, with no area level. "Q7 - Yes".
+8. **A repo too big for one areas session** gets its listing in parts, grouped by promise across them, and is run before this is built. "Q8 - Yes".
+9. **The signal** for `code-first-init`: claim, init on an existing codebase gives a map a person keeps; for, first maps merged with most of their capabilities kept; against, first maps reshaped heavily or abandoned; window 2027-03-01; resolver, Darin, reading init PRs and the review commands' commits. "Yes to Q9, drop the 60%": PRs in one capability stays a measure init reports (§9), not the signal.
+10. **Consolidation** before check, as §3 step 6, added from the owner's ask. "It can be a new question, but we can also just answer it now."

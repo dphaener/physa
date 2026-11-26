@@ -717,6 +717,16 @@ func TestRerunKeepsEarlierRecoveredFile(t *testing.T) {
 	}
 }
 
+func TestWhole(t *testing.T) {
+	r := Report{Capabilities: []Outcome{{Status: StatusRecovered}, {Status: StatusFailed}}}
+	if !r.Whole() {
+		t.Error("a failed capability got its session; the report is whole")
+	}
+	if r.Capabilities = append(r.Capabilities, Outcome{Status: StatusNotYet}); r.Whole() {
+		t.Error("a capability not yet recovered left the report whole")
+	}
+}
+
 func TestPluralCountsSingularAndPlural(t *testing.T) {
 	for _, c := range []struct {
 		n    int

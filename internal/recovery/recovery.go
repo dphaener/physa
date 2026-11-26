@@ -257,3 +257,9 @@ func add(sum *adapter.Tokens, t adapter.Tokens) {
 	sum.CachedInput += t.CachedInput
 	sum.Output += t.Output
 }
+
+// Whole reports whether every capability r holds got its session: none is
+// left not yet recovered by a run cut short.
+func (r Report) Whole() bool {
+	return !slices.ContainsFunc(r.Capabilities, func(o Outcome) bool { return o.Status == StatusNotYet })
+}

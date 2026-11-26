@@ -91,7 +91,7 @@ func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 	case o.Propose:
 		code = r.propose()
 	case o.Recover:
-		code = r.recoverPhase(r.o.Only, nil)
+		code = r.recoverPhase(r.o.Only, r.record)
 	case o.Full():
 		code = r.full()
 	default:

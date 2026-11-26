@@ -1,5 +1,7 @@
 // Package recovery is init's recover and check phases: one prompt-only
-// session per capability, at most Concurrency at once, reading what it cites
+// session per capability, or one per share, one after another, when its
+// sources are more than one session holds, at most Concurrency
+// capabilities at once, reading what it cites
 // and what coverage places with it by files; each capability's
 // text, split into its folder, goes through the map check and back to the
 // same session with the problems, up to MaxRetries times, before failing
@@ -94,7 +96,9 @@ type Report struct {
 // failed the capability: what the check found outside any entry, or why the
 // answer could not be read. Error is any other reason it failed:
 // the agent's error, or the check's. Attempts counts the session's turns,
-// the first and each retry, and Tokens is what they used together.
+// the first and each retry, and Tokens is what they used together. Shares
+// is how many shares its sources were read in, one session each, when they
+// were more than one session holds; 0 is one session.
 // SessionID is the id assigned to the session, empty when none started.
 // Without its File and Terms, it is the JSON form of store.Recovered's
 // Details.
@@ -107,29 +111,36 @@ type Outcome struct {
 	Dropped   []recovering.Dropped `json:"dropped"`
 	Problems  []string             `json:"problems"`
 	Attempts  int                  `json:"attempts"`
+	Shares    int                  `json:"shares,omitempty"`
 	SessionID string               `json:"session_id"`
 	Model     string               `json:"model"`
 	Tokens    adapter.Tokens       `json:"tokens"`
 	Error     string               `json:"error,omitempty"`
 }
 
-// job is one capability ready to run: its proposal, its prompt and what
-// its sources hold.
+// job is one capability ready to run: its proposal, its prompt and the
+// input the prompt was written from. When the prompt is more than one
+// session holds, parts are its sources laid into shares of room estimated
+// tokens each, or err says why they could not be.
 type job struct {
 	capability mapping.Capability
 	system     string
 	prompt     string
-	read       reading.Report
+	rec        recovering.Input
+	parts      []reading.Input
+	room       int
+	err        error
 }
 
 // tooLong is err, a session refused as too long, with how big physa made
-// its prompt, by its own estimate. An agent's own account may count
-// everything physa passes outside the message as its system prompt, which
-// here holds only the skill and the docs every capability reads; the
-// capability's own sources are in the message.
-func (j job) tooLong(err error) error {
+// its prompt, system and message, by its own estimate, and what read, its
+// sources, counts. An agent's own account may count everything physa
+// passes outside the message as its system prompt, which here holds only
+// the skill and the docs every capability reads; the capability's own
+// sources are in the message.
+func tooLong(err error, system, message string, read reading.Report) error {
 	return fmt.Errorf("%w (by physa's estimate, the system prompt, the recovering skill and the docs every capability reads, came to about %s tokens, and the message, with this capability's own sources, to about %s; its sources: %s)",
-		err, reading.Thousands(int64(reading.Tokens(j.system))), reading.Thousands(int64(reading.Tokens(j.prompt))), strings.Join(j.read.Lines(), "; "))
+		err, reading.Thousands(int64(reading.Tokens(system))), reading.Thousands(int64(reading.Tokens(message))), strings.Join(read.Lines(), "; "))
 }
 
 // Run is init's recover and check phases end to end. For each capability
@@ -175,11 +186,11 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	pl, _ := coverage.Place(g, stored.Proposal.Capabilities)
 	jobs := make([]job, len(chosen))
 	for i, c := range chosen {
-		in := reading.Of(sources(g, c, pl), recovering.Reads)
-		system, prompt := recovering.Split(recovering.Input{
+		rec := recovering.Input{
 			Product: stored.Proposal.Product.Promise, Name: c.Name, Promise: c.Promise,
-			Questions: c.Questions, Date: date, Sources: in})
-		jobs[i] = job{capability: c, system: system, prompt: prompt, read: in.Report}
+			Questions: c.Questions, Date: date, Sources: reading.Of(sources(g, c, pl), recovering.Reads)}
+		system, prompt := recovering.Split(rec)
+		jobs[i] = job{capability: c, system: system, prompt: prompt, rec: rec}
 	}
 	if s.Agent == nil {
 		return rep, errors.New("no agent to recover with")
@@ -187,6 +198,16 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	a, err := s.Agent()
 	if err != nil {
 		return rep, err
+	}
+	window := adapter.Window(a)
+	for i := range jobs {
+		if j := &jobs[i]; !recovering.Fits(j.system, j.prompt, window) { // shares, laid before any session starts
+			j.room = window - reading.Tokens(j.system) - recovering.Reserve
+			j.parts, j.err = j.rec.Lay(j.rec.Sources, j.room)
+			if s.Progress != nil && j.err == nil {
+				fmt.Fprintf(s.Progress, "physa init: %s: its sources are more than one session holds, so it is recovered in %d shares, one session after another, each writing the capability again from what the shares before it recovered\n", j.capability.Name, len(j.parts))
+			}
+		}
 	}
 	r := &runner{
 		agent: a, progress: s.Progress,

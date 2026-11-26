@@ -1,5 +1,6 @@
 // Package recovering holds the recovering skill and what surrounds one
-// session of it: the prompt for one capability, reading the capability's
+// session of it: the prompt for one capability, or for one share of its
+// sources when they are more than one session holds, reading the capability's
 // single text (which Physa splits into its folder) and the terms the session
 // writes, and dropping the entries, overview and terms the map check fails.
 // It runs no session and writes nothing.
@@ -26,8 +27,15 @@ type Input struct {
 	Questions []mapping.Question
 	// Date is the day of recovery: the date its questions are raised on.
 	Date time.Time
-	// Sources are the capability's linked sources, whole.
+	// Sources are the capability's linked sources, whole, or one share of
+	// them.
 	Sources reading.Input
+	// Share and Shares say which share of the capability's sources this
+	// session reads when they are more than one session holds; Shares below
+	// 2 is one session. Earlier and EarlierTerms are the text and terms the
+	// sessions on the shares before it recovered.
+	Share, Shares         int
+	Earlier, EarlierTerms string
 }
 
 // Reply is what the session wrote, in shape only: the capability's single

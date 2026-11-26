@@ -850,3 +850,116 @@ func TestSourcesHoldOnlyTheCapabilitysDocs(t *testing.T) {
 		t.Errorf("docs = %v, want %v", got, want)
 	}
 }
+
+// windowed is the fake with a window, as the claude adapter states one.
+type windowed struct {
+	*fakeAdapter
+	window int
+}
+
+func (w windowed) Window() int { return w.window }
+
+// bigExport gives export three more PRs of about 26k estimated tokens each,
+// so its sources are more than a small window holds, and recovers it alone.
+func bigExport(t *testing.T, h *harness) {
+	t.Helper()
+	for _, n := range []int{21, 22, 23} {
+		h.store.gather.PRs = append(h.store.gather.PRs, store.GatheredPR{Number: n, Title: fmt.Sprintf("Export part %d", n),
+			Body: fmt.Sprintf("marker-%d ", n) + strings.Repeat("Exports hold every note. ", 2400), MergedAt: gatherAt.Add(-time.Duration(n) * time.Minute)})
+	}
+	var stored mapping.Stored
+	if err := json.Unmarshal(h.store.proposal.Body, &stored); err != nil {
+		t.Fatal(err)
+	}
+	stored.Proposal.Capabilities[0].ShownBy = []string{"#12", "#21", "#22", "#23"}
+	body, err := json.Marshal(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.store.proposal.Body = body
+	h.session.Only = []string{"export"}
+}
+
+// readOnce checks that each big PR reached exactly one of the sessions' first
+// prompts, and returns those prompts.
+func readOnce(t *testing.T, specs []adapter.Spec) []string {
+	t.Helper()
+	var firsts []string
+	for _, s := range specs {
+		if !s.Resume {
+			firsts = append(firsts, s.Prompt)
+		}
+	}
+	for _, n := range []int{21, 22, 23} {
+		seen := 0
+		for _, p := range firsts {
+			seen += strings.Count(p, fmt.Sprintf("marker-%d ", n))
+		}
+		if seen != 1 {
+			t.Errorf("#%d was read %d times", n, seen)
+		}
+	}
+	return firsts
+}
+
+func TestSourcesMoreThanAWindowAreRecoveredInShares(t *testing.T) {
+	steps := []step{{text: reply(good("export-first"), "")}, {text: reply(good("export-first", "export-more"), "")},
+		{text: reply(good("export-first", "export-more", "export-last"), "")}, {text: reply(good("export-first", "export-more", "export-last"), "")}}
+	h := newHarness(t, map[string][]step{"export": steps})
+	bigExport(t, h)
+	h.session.Agent = func() (adapter.Adapter, error) {
+		return windowed{h.agent, reading.Tokens(recoveringSystem(t, h)) + recovering.Reserve + 40_000}, nil
+	}
+	o := h.run(t).Capabilities[0]
+	if o.Status != StatusRecovered || o.Shares < 3 || o.Attempts != o.Shares || o.Counts.Rules < 3 {
+		t.Fatalf("outcome %+v", o)
+	}
+	firsts := readOnce(t, h.agent.specs["export"])
+	if len(firsts) != o.Shares || !strings.Contains(firsts[0], "this session reads share 1") || strings.Contains(firsts[0], "The text recovered so far") {
+		t.Fatalf("%d sessions for %d shares; the first:\n%.600s", len(firsts), o.Shares, firsts[0])
+	}
+	if !strings.Contains(firsts[1], "The text recovered so far") || !strings.Contains(firsts[1], "export-first") {
+		t.Errorf("the second share does not carry the first's text:\n%.2000s", firsts[1])
+	}
+	if !strings.Contains(h.progress.String(), fmt.Sprintf("export: its sources are more than one session holds, so it is recovered in %d shares", o.Shares)) {
+		t.Errorf("progress:\n%s", h.progress)
+	}
+}
+
+func TestARefusalAsTooLongLaysTheSourcesIntoShares(t *testing.T) {
+	tooLong := fmt.Errorf("%w: %w: Prompt is too long", adapter.ErrFailed, adapter.ErrTooLong)
+	steps := []step{{err: tooLong}}
+	for range 6 {
+		steps = append(steps, step{text: reply(good("export-rule"), "")})
+	}
+	h := newHarness(t, map[string][]step{"export": steps})
+	bigExport(t, h)
+	o := h.run(t).Capabilities[0]
+	if o.Status != StatusRecovered || o.Shares < 2 {
+		t.Fatalf("outcome %+v\n%s", o, h.progress)
+	}
+	readOnce(t, h.agent.specs["export"][1:])
+	if !strings.Contains(h.progress.String(), "export: a session was refused as too long; the room for a share is halved") {
+		t.Errorf("progress:\n%s", h.progress)
+	}
+}
+
+// recoveringSystem is the system prompt every capability of h's run shares.
+func recoveringSystem(t *testing.T, h *harness) string {
+	t.Helper()
+	system, _ := recovering.Split(recovering.Input{Product: "People keep their notes and find them again.", Date: runAt,
+		Sources: reading.Of(h.store.gather, recovering.Reads)})
+	return system
+}
+
+func TestASourceLargerThanAShareFailsItsCapabilityNamed(t *testing.T) {
+	h := newHarness(t, map[string][]step{"export": {{text: reply(good("export-rule"), "")}}})
+	bigExport(t, h)
+	h.session.Agent = func() (adapter.Adapter, error) {
+		return windowed{h.agent, reading.Tokens(recoveringSystem(t, h)) + recovering.Reserve + 5_000}, nil
+	}
+	o := h.run(t).Capabilities[0]
+	if o.Status != StatusFailed || !strings.HasPrefix(o.Error, "PR #2") || !strings.Contains(o.Error, "nothing is cut") || h.agent.starts() != 0 {
+		t.Errorf("outcome %+v, %d sessions", o, h.agent.starts())
+	}
+}

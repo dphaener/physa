@@ -10,7 +10,10 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/draft"
+	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/recovering"
+	"github.com/dphaener/physa/internal/shares"
 )
 
 // runner holds what every capability's session shares.
@@ -59,6 +62,16 @@ func (r *runner) all(ctx context.Context, jobs []job) []Outcome {
 	return outcomes
 }
 
+// sayf writes a progress line.
+func (r *runner) sayf(format string, a ...any) {
+	if r.progress == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	fmt.Fprintf(r.progress, format, a...)
+}
+
 // say writes the progress line of a capability that ended.
 func (r *runner) say(o Outcome) {
 	if r.progress == nil {
@@ -68,7 +81,11 @@ func (r *runner) say(o Outcome) {
 	defer r.mu.Unlock()
 	line := fmt.Sprintf("physa init: %s: %s", o.Name, o.Status)
 	if o.Attempts > 0 {
-		line += fmt.Sprintf(" (%s; %s; %s)", kept(o.Counts), plural(o.Attempts, "attempt", "attempts"), o.Tokens)
+		in := ""
+		if o.Shares > 0 {
+			in = fmt.Sprintf(" in %d shares", o.Shares)
+		}
+		line += fmt.Sprintf(" (%s; %s%s; %s)", kept(o.Counts), plural(o.Attempts, "attempt", "attempts"), in, o.Tokens)
 	}
 	fmt.Fprintln(r.progress, line)
 }
@@ -79,28 +96,78 @@ func kept(c recovering.Counts) string {
 		plural(c.Questions, "question", "questions") + ", " + plural(c.Terms, "term", "terms")
 }
 
-// capability runs one capability's session to its end: the first attempt,
-// then a resumed attempt on the same
-// session for each answer with problems, up to MaxRetries. Every attempt runs
-// in one fresh directory, removed afterwards, since an agent finds a session
-// to resume by its directory.
+// capability runs one capability to its end: in one session, or, when its
+// sources are more than one session holds, in shares, one session after
+// another (shares.go), then settles its last answer.
 func (r *runner) capability(ctx context.Context, j job) Outcome {
 	c := j.capability
-	out := Outcome{Name: c.Name, SessionID: draft.NewSessionID()}
+	out := Outcome{Name: c.Name, Shares: len(j.parts)}
 	fail := func(err error) Outcome {
 		out.Status, out.Error = StatusFailed, err.Error()
 		return out
 	}
-	dir, err := os.MkdirTemp("", "physa-recover-")
-	if err != nil {
+	if j.err != nil {
+		return fail(j.err)
+	}
+	var last *answer
+	parts, room := j.parts, j.room
+	for k := 0; k < max(1, len(parts)); k++ {
+		system, prompt, read := j.system, j.prompt, j.rec.Sources.Report
+		if len(parts) > 0 {
+			read = parts[k].Report
+			var earlier, terms string
+			if last != nil {
+				earlier, terms = last.file, last.terms
+			}
+			system, prompt = recovering.Split(j.rec.InShare(parts, k, earlier, terms))
+		}
+		a, problems, err := r.turns(ctx, c, adapter.Spec{Prompt: prompt, System: system, PromptOnly: true}, &out)
+		if errors.Is(err, adapter.ErrTooLong) {
+			if room = recovering.Half(room, prompt); room < recovering.MinRoom {
+				return fail(fmt.Errorf("%w; with the room for a share halved to about %s tokens it still did not fit", tooLong(err, system, prompt, read), reading.Thousands(int64(room*2))))
+			}
+			laid, lerr := j.rec.Lay(shares.JoinCapability(parts[min(k, len(parts)):], j.rec.Sources), room)
+			if lerr != nil {
+				return fail(lerr)
+			}
+			r.sayf("physa init: %s: a session was refused as too long; the room for a share is halved, to about %s tokens, and its sources not yet read are laid again, into %d shares\n", c.Name, reading.Thousands(int64(room)), len(laid))
+			parts, k = append(parts[:min(k, len(parts))], laid...), k-1
+			out.Shares = len(parts)
+			continue
+		}
+		if err != nil {
+			return fail(err)
+		}
+		if a == nil {
+			out.Status, out.Problems = StatusFailed, problems
+			return out
+		}
+		last = a
+	}
+	if err := r.check.settle(c.Name, *last, &out); err != nil {
 		return fail(err)
 	}
-	defer os.RemoveAll(dir)
+	return out
+}
 
-	spec := adapter.Spec{Prompt: j.prompt, System: j.system, Dir: dir, SessionID: out.SessionID, PromptOnly: true}
+// turns runs one session on spec to its end: the first attempt, then a
+// resumed attempt on the same session for each answer with problems, up to
+// MaxRetries. It adds its attempts, tokens, model and session id to out and
+// returns its last answer that was read and checked, nil when none was, and
+// what is wrong with the newest. Every attempt runs in one fresh directory,
+// removed afterwards, since an agent finds a session to resume by its
+// directory.
+func (r *runner) turns(ctx context.Context, c mapping.Capability, spec adapter.Spec, out *Outcome) (*answer, []string, error) {
+	dir, err := os.MkdirTemp("", "physa-recover-")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer os.RemoveAll(dir)
+	spec.Dir, spec.SessionID = dir, draft.NewSessionID()
+	out.SessionID = spec.SessionID
 	var last *answer      // the last answer that was read and checked
 	var problems []string // what is wrong with the newest answer
-	for {
+	for tries := 0; ; tries++ {
 		res, err := attempt(ctx, r.agent, spec)
 		out.Attempts++
 		add(&out.Tokens, res.Tokens)
@@ -110,11 +177,8 @@ func (r *runner) capability(ctx context.Context, j job) Outcome {
 		if res.SessionID != "" {
 			out.SessionID = res.SessionID
 		}
-		if errors.Is(err, adapter.ErrTooLong) {
-			return fail(j.tooLong(err))
-		}
 		if err != nil {
-			return fail(err)
+			return last, problems, err
 		}
 		reply, err := recovering.Parse(res.Text)
 		if err != nil {
@@ -122,27 +186,19 @@ func (r *runner) capability(ctx context.Context, j job) Outcome {
 		} else {
 			a := answer{file: recovering.File(c.Name, c.Promise, reply.File), terms: reply.Terms}
 			if a.problems, err = r.check.run(c.Name, a.file, a.terms); err != nil {
-				return fail(err)
+				return last, problems, err
 			}
 			last = &a
 			if len(a.problems) == 0 {
-				break
+				return last, nil, nil
 			}
 			problems = describe(a)
 		}
-		if out.Attempts > MaxRetries {
-			break
+		if tries >= MaxRetries {
+			return last, problems, nil
 		}
 		spec.Prompt, spec.Resume = recovering.Retry(problems), true
 	}
-	if last == nil {
-		out.Status, out.Problems = StatusFailed, problems
-		return out
-	}
-	if err := r.check.settle(c.Name, *last, &out); err != nil {
-		return fail(err)
-	}
-	return out
 }
 
 // attempt runs one turn of a session and waits for it, with no circuit

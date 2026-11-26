@@ -94,6 +94,29 @@ func writeCapability(w *strings.Builder, in Input) {
 		fmt.Fprintf(w, "Question %d of %d:\n\n", i+1, len(in.Questions))
 		draft.Fence(w, "question: "+draft.OneLine(q.Question)+"\nsuggested by: "+draft.OneLine(strings.Join(q.SuggestedBy, " ")))
 	}
+	writeShare(w, in)
+}
+
+// writeShare says, when the sources are read in shares, which one this
+// session reads, and from the second on what the shares before recovered.
+func writeShare(w *strings.Builder, in Input) {
+	if in.Shares < 2 {
+		return
+	}
+	fmt.Fprintf(w, "\nThis capability's sources are more than one session holds, so they are read in %d shares, one session after another, and this session reads share %d. ", in.Shares, in.Share)
+	if in.Share <= 1 {
+		w.WriteString("Recover the capability from this share's sources; the sessions after it add what theirs show.\n")
+		return
+	}
+	w.WriteString("Below are the capability text and the glossary terms the sessions on the shares before this one recovered. " +
+		"Keep each of its entries, with its anchors, unless this share's sources contradict it, add what this share's sources show, and write the whole capability and its terms again.\n\nThe text recovered so far:\n\n")
+	draft.Fence(w, in.Earlier)
+	w.WriteString("\nThe terms recovered so far:\n\n")
+	if strings.TrimSpace(in.EarlierTerms) == "" {
+		w.WriteString(none)
+		return
+	}
+	draft.Fence(w, in.EarlierTerms)
 }
 
 // writeDocs writes docs, each fenced, numbered within the list.

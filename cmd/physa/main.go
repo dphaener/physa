@@ -5,6 +5,7 @@
 // and shows ideas; pursue starts a pursuit of an idea against a signal;
 // pursuit lists, shows and stops pursuits and holds their plans; evidence
 // lists the facts observed in version control and the forge;
+// skill prints Physa's skill guide for a person's agent;
 // engine starts, checks and stops the machine's engine; api calls the
 // engine's API by name; sync is not built yet; version prints the build's
 // version and help the commands.
@@ -23,6 +24,7 @@ import (
 	"github.com/dphaener/physa/internal/evidencecli"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/pursuitcli"
+	"github.com/dphaener/physa/internal/skillcli"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -43,6 +45,7 @@ func rootCommand() *cobra.Command {
 		checkCommand(), mapCommand(), initCommand(), ideacli.Command(newForge))
 	root.AddCommand(pursuitcli.Commands(newForge)...)
 	root.AddCommand(evidencecli.Command(newForge))
+	root.AddCommand(skillcli.Command())
 	root.AddCommand(enginecli.Commands(version)...)
 	root.AddCommand(
 		command.New("sync", "Not built yet: it returns with digests, after the engine.", []string{"physa sync"},

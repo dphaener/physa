@@ -29,6 +29,9 @@ _Avoid_: catalog
 **Slice**: The part of the map assembled for one task: the chosen capabilities with their rules, decisions, questions and terms.
 _Avoid_: context pack, context dump
 
+**Skill**: A guide Physa ships in its binary to teach an agent its part: the one a person's agent loads to use Physa's commands and terms as Physa means them, and one for each of Physa's own agent steps (mapping, recovering, learning).
+_Avoid_: plugin, prompt pack
+
 ## Work
 
 **Idea**: A person's intent to try something with the product: a PM's feature, a designer's layout, a developer's architecture. It is the thinnest tube in the network from the moment it exists, and it belongs to that person. It thickens as attention and then evidence flow into it, and withers when nothing does. An idea has no named states: its strength and a few facts (pursued, built, flagged to whom) say where it stands. When it withers, its code and flag are removed and its lesson stays in the map as a decision with the idea as a rejected option.

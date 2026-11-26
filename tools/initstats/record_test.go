@@ -11,6 +11,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/gather"
+	"github.com/dphaener/physa/internal/quiet"
 	"github.com/dphaener/physa/internal/recovering"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/recoveryreport"
@@ -40,7 +41,8 @@ func keep(t *testing.T) string {
 		Docs:      gather.DocsSummary{Count: 3, Bytes: 900, Files: []gather.DocFile{{Path: canary, Kind: canary, Reason: canary}}, Skipped: []gather.Skip{{Path: canary, Why: canary}}},
 		History:   gather.HistorySummary{Changes: 800, DistinctFiles: 4000, Shallow: true},
 		PRs:       gather.PRsSummary{Available: true, Reason: canary, Count: 200},
-		Discovery: gather.Discovery{Started: true, Why: canary, Named: 4, Added: 2, Model: canary, Tokens: tok}}
+		Discovery: gather.Discovery{Started: true, Why: canary, Named: 4, Added: 2, Model: canary, Tokens: tok},
+		Quiet:     &quiet.Summary{Clusters: 7, PRs: 12, Why: canary}}
 	var b bytes.Buffer
 	if err := gather.WriteJSON(&b, s); err != nil {
 		t.Fatal(err)
@@ -108,7 +110,7 @@ func TestRecordKeepsTheNumbers(t *testing.T) {
 		t.Fatalf("meta %+v", rec)
 	}
 	if g := rec.Gather; g == nil || g.EstimatedTokens != 470000 || g.Docs.Count != 3 || g.Docs.Skipped != 1 || g.History.Changes != 800 || !g.History.Shallow || g.Discovery.Model != "other" || g.Discovery.Tokens.Input != 1000 ||
-		g.Bound.Since != "" || g.Bound.HistorySince != "2026-01-02" || g.Bound.MaxPRs != 50 || !g.Bound.PRLimitReached {
+		g.Bound.Since != "" || g.Bound.HistorySince != "2026-01-02" || g.Bound.MaxPRs != 50 || !g.Bound.PRLimitReached || g.Quiet == nil || g.Quiet.Clusters != 7 || g.Quiet.PRs != 12 {
 		t.Fatalf("gather %+v", rec.Gather)
 	}
 	p := rec.Proposal

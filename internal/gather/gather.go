@@ -4,7 +4,8 @@
 // merged PRs through the forge when there is one. A forge that is missing,
 // cannot list merged PRs or cannot answer makes PRs unavailable, which is
 // reported and never a failure. The bound is a date and a most number of
-// PRs: when the PR limit is reached first, history starts where the PRs do.
+// PRs: when the PR limit is reached first, history starts where the PRs do,
+// and each area the PRs miss gets a few PRs of its own (quiet).
 // Gather reads the working tree and never writes to it; the caller keeps the
 // result in the store.
 package gather
@@ -15,6 +16,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/quiet"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
@@ -32,6 +34,7 @@ type Summary struct {
 	History         HistorySummary `json:"history"`
 	PRs             PRsSummary     `json:"prs"`
 	Discovery       Discovery      `json:"discovery"`
+	Quiet           *quiet.Summary `json:"quiet,omitempty"`
 	EstimatedTokens int            `json:"estimated_tokens"`
 }
 
@@ -154,12 +157,18 @@ func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now ti
 		s.Bound.PRLimitReached = true
 		s.Bound.HistorySince = oldest.UTC().Format(time.DateOnly)
 	}
-	s.PRs = summarisePRs(prs, reason)
-
-	g.Changes, err = readHistory(repo, histSince)
+	from := histSince
+	if g.Run.PRsLimited {
+		from = o.Since // to find the areas the PRs miss (quiet)
+	}
+	g.Changes, err = readHistory(repo, from)
 	if err != nil {
 		return store.Gather{}, Summary{}, err
 	}
+	if g.Run.PRsLimited {
+		s.Quiet = quiet.Add(&g, histSince, f)
+	}
+	s.PRs = summarisePRs(g.PRs, reason)
 	useLogins(f, g.Changes)
 	s.History = summariseHistory(g.Changes)
 	s.History.Shallow = repo.Partial()
@@ -182,20 +191,7 @@ func readPRs(f forge.Forge, o Bounds) (prs []store.GatheredPR, more bool, reason
 		return nil, false, forge.Reason(err)
 	}
 	for _, p := range listed {
-		g := store.GatheredPR{Number: p.Number, Title: p.Title, Body: p.Body, Author: p.Author, MergedBy: p.MergedBy, MergedAt: p.MergedAt, Issues: []string{}}
-		for _, is := range p.Issues {
-			text := fmt.Sprintf("#%d %s", is.Number, is.Title)
-			if is.Body != "" {
-				text += "\n\n" + is.Body
-			}
-			g.Issues = append(g.Issues, text)
-		}
-		for _, c := range p.Comments {
-			g.Comments = append(g.Comments, store.GatheredComment{
-				Author: c.Author, At: c.At, Kind: c.Kind, RequestsChanges: c.RequestsChanges, Body: c.Body,
-			})
-		}
-		prs = append(prs, g)
+		prs = append(prs, quiet.PR(p))
 	}
 	return prs, more, ""
 }

@@ -103,6 +103,7 @@ Anchoring to changes gives:
 - The map has an **index**: every capability with its one-line promise. An agent reads it and chooses what it needs.
 - The CLI assembles a **slice** for those capabilities: their promises, rules, decisions, questions and terms, within a size budget, with sources. It does no matching and no ranking; choosing is the agent's job, assembling is Physa's.
 - In planned work, the capabilities are chosen when the work is planned, and each builder receives the slice for its change.
+- Physa ships one **skill** for a person's agent, installed once per account. It teaches the agent Physa's commands and terms, comes from the installed binary so it never goes stale, and a hook at the start of each session says which pursuit and change the session works on.
 - Agents without the CLI still get the AGENTS.md pointer and can read the map's markdown directly.
 
 Glossary terms travel in every slice, so agents use the team's words from the first line they write.

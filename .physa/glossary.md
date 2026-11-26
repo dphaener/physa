@@ -7,7 +7,7 @@ The words agents use when they talk with people about this product, write commit
 **Map**: The product's knowledge, kept in the repo: capabilities, rules, decisions, questions and this glossary. It describes why the product is the way it is, never what the code does.
 _Avoid_: model, graph, wiki
 
-**Capability**: A promise the product makes to its users, stated as intended behaviour. A capability can be large and is kept by many changes over time. Established ideas become part of a capability, extending one or creating a new one, and keep their history. Capabilities have strength too: one whose use fades becomes a candidate for removal.
+**Capability**: A promise the product makes to its users, stated as intended behaviour: something a user can rely on and would name, true however the code is arranged, and whose breaking someone would report. A capability can be large and is kept by many changes over time; a change that needs two capabilities usually means they are one. Established ideas become part of a capability, extending one or creating a new one, and keep their history. Capabilities have strength too: one whose use fades becomes a candidate for removal.
 _Avoid_: feature, module, epic
 
 **Rule**: Something that must always or never be true, with its reason.

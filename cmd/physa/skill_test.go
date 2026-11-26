@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -30,10 +32,37 @@ func TestSkillShowWithAnArgumentIsBadUsage(t *testing.T) {
 	}
 }
 
-func TestBareSkillPrintsUsage(t *testing.T) {
+func TestBareSkillPrintsStatus(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	code, stdout, stderr := runSkill("skill")
-	if code != 2 || stdout != "" || !strings.Contains(stderr, "physa skill show") {
+	if code != 0 || !strings.Contains(stdout, "Claude Code") || !strings.Contains(stdout, "missing") || stderr != "" {
 		t.Errorf("skill: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+}
+
+func TestSkillSetupStatusRemoveEndToEnd(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	stub := filepath.Join(home, ".claude", "skills", "physa", "SKILL.md")
+	// The tests have no terminal, so setup needs --yes.
+	code, _, stderr := runSkill("skill", "setup")
+	if _, err := os.Stat(filepath.Join(home, ".claude")); code != 2 || !strings.Contains(stderr, "--yes") || err == nil {
+		t.Fatalf("setup without --yes: exit %d, stderr %q, stat err %v", code, stderr, err)
+	}
+	if code, _, stderr := runSkill("skill", "setup", "--yes"); code != 0 {
+		t.Fatalf("setup --yes: exit %d, stderr %q", code, stderr)
+	}
+	if b, err := os.ReadFile(stub); err != nil || !strings.Contains(string(b), "physa skill show") {
+		t.Fatalf("stub: %q, %v", b, err)
+	}
+	if code, stdout, _ := runSkill("skill", "status", "--json"); code != 0 || !strings.Contains(stdout, `"state": "current"`) {
+		t.Fatalf("status --json: exit %d, stdout %q", code, stdout)
+	}
+	if code, _, stderr := runSkill("skill", "remove", "--yes"); code != 0 {
+		t.Fatalf("remove --yes: exit %d, stderr %q", code, stderr)
+	}
+	if _, err := os.Stat(stub); err == nil {
+		t.Error("the stub is still there")
 	}
 }
 

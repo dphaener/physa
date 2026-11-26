@@ -14,7 +14,7 @@ Commands:
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   evidence  List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. It reads what the engine stored and polls nothing.
-  skill     Print Physa's skill, the guide a person's agent loads to use Physa's commands and terms: a bare skill prints this usage.
+  skill     Set up, check, print and remove Physa's skill, the guide a person's agent loads to use Physa's commands and terms. setup writes a short stub into Claude Code's skills directory (~/.claude/skills/physa) that tells the agent to run `physa skill show`; status says whether it is current, stale or missing; remove deletes it. setup and remove ask on a terminal and need --yes off one, and never touch a SKILL.md Physa did not write. A bare skill is status.
   engine    Start, check and stop the machine's one engine: a bare engine prints its status. status and the api commands start the engine when it is not running; stop never does.
   api       Call the engine's API by name, for debugging: a bare api lists its methods. Each command starts the engine when it is not running.
   sync      Not built yet: it returns with digests, after the engine.
@@ -37,7 +37,7 @@ Commands:
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   evidence  List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. It reads what the engine stored and polls nothing.
-  skill     Print Physa's skill, the guide a person's agent loads to use Physa's commands and terms: a bare skill prints this usage.
+  skill     Set up, check, print and remove Physa's skill, the guide a person's agent loads to use Physa's commands and terms. setup writes a short stub into Claude Code's skills directory (~/.claude/skills/physa) that tells the agent to run `physa skill show`; status says whether it is current, stale or missing; remove deletes it. setup and remove ask on a terminal and need --yes off one, and never touch a SKILL.md Physa did not write. A bare skill is status.
   engine    Start, check and stop the machine's one engine: a bare engine prints its status. status and the api commands start the engine when it is not running; stop never does.
   api       Call the engine's API by name, for debugging: a bare api lists its methods. Each command starts the engine when it is not running.
   sync      Not built yet: it returns with digests, after the engine.
@@ -60,7 +60,7 @@ Commands:
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   evidence  List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. It reads what the engine stored and polls nothing.
-  skill     Print Physa's skill, the guide a person's agent loads to use Physa's commands and terms: a bare skill prints this usage.
+  skill     Set up, check, print and remove Physa's skill, the guide a person's agent loads to use Physa's commands and terms. setup writes a short stub into Claude Code's skills directory (~/.claude/skills/physa) that tells the agent to run `physa skill show`; status says whether it is current, stale or missing; remove deletes it. setup and remove ask on a terminal and need --yes off one, and never touch a SKILL.md Physa did not write. A bare skill is status.
   engine    Start, check and stop the machine's one engine: a bare engine prints its status. status and the api commands start the engine when it is not running; stop never does.
   api       Call the engine's API by name, for debugging: a bare api lists its methods. Each command starts the engine when it is not running.
   sync      Not built yet: it returns with digests, after the engine.
@@ -82,7 +82,7 @@ Commands:
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   evidence  List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. It reads what the engine stored and polls nothing.
-  skill     Print Physa's skill, the guide a person's agent loads to use Physa's commands and terms: a bare skill prints this usage.
+  skill     Set up, check, print and remove Physa's skill, the guide a person's agent loads to use Physa's commands and terms. setup writes a short stub into Claude Code's skills directory (~/.claude/skills/physa) that tells the agent to run `physa skill show`; status says whether it is current, stale or missing; remove deletes it. setup and remove ask on a terminal and need --yes off one, and never touch a SKILL.md Physa did not write. A bare skill is status.
   engine    Start, check and stop the machine's one engine: a bare engine prints its status. status and the api commands start the engine when it is not running; stop never does.
   api       Call the engine's API by name, for debugging: a bare api lists its methods. Each command starts the engine when it is not running.
   sync      Not built yet: it returns with digests, after the engine.
@@ -105,7 +105,7 @@ Commands:
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   evidence  List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. It reads what the engine stored and polls nothing.
-  skill     Print Physa's skill, the guide a person's agent loads to use Physa's commands and terms: a bare skill prints this usage.
+  skill     Set up, check, print and remove Physa's skill, the guide a person's agent loads to use Physa's commands and terms. setup writes a short stub into Claude Code's skills directory (~/.claude/skills/physa) that tells the agent to run `physa skill show`; status says whether it is current, stale or missing; remove deletes it. setup and remove ask on a terminal and need --yes off one, and never touch a SKILL.md Physa did not write. A bare skill is status.
   engine    Start, check and stop the machine's one engine: a bare engine prints its status. status and the api commands start the engine when it is not running; stop never does.
   api       Call the engine's API by name, for debugging: a bare api lists its methods. Each command starts the engine when it is not running.
   sync      Not built yet: it returns with digests, after the engine.
@@ -396,26 +396,38 @@ usage: physa evidence [--capability <slug>] [--pursuit <slug>] [--limit N] [--js
 List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. It reads what the engine stored and polls nothing.
 --- stderr
 
-$ physa skill
-exit 2
---- stdout
---- stderr
-usage: physa skill show
-
-Print Physa's skill, the guide a person's agent loads to use Physa's commands and terms: a bare skill prints this usage.
-
-Commands:
-  show  Print the guide, as it is, on any output.
-
 $ physa skill --help
 exit 0
 --- stdout
-usage: physa skill show
+usage: physa skill [--json]
+       physa skill setup [--yes] [--json]
+       physa skill status [--json]
+       physa skill show
+       physa skill remove [--yes] [--json]
 
-Print Physa's skill, the guide a person's agent loads to use Physa's commands and terms: a bare skill prints this usage.
+Set up, check, print and remove Physa's skill, the guide a person's agent loads to use Physa's commands and terms. setup writes a short stub into Claude Code's skills directory (~/.claude/skills/physa) that tells the agent to run `physa skill show`; status says whether it is current, stale or missing; remove deletes it. setup and remove ask on a terminal and need --yes off one, and never touch a SKILL.md Physa did not write. A bare skill is status.
 
 Commands:
-  show  Print the guide, as it is, on any output.
+  setup   Write Physa's stub to ~/.claude/skills/physa/SKILL.md, replacing a stale one; a SKILL.md Physa did not write is left as it is.
+  status  Say whether Physa's stub is current, stale or missing for each agent.
+  show    Print the guide, as it is, on any output.
+  remove  Delete Physa's stub; a SKILL.md Physa did not write is left as it is.
+--- stderr
+
+$ physa skill setup --help
+exit 0
+--- stdout
+usage: physa skill setup [--yes] [--json]
+
+Write Physa's stub to ~/.claude/skills/physa/SKILL.md, replacing a stale one; a SKILL.md Physa did not write is left as it is.
+--- stderr
+
+$ physa skill status --help
+exit 0
+--- stdout
+usage: physa skill status [--json]
+
+Say whether Physa's stub is current, stale or missing for each agent.
 --- stderr
 
 $ physa skill show --help
@@ -425,6 +437,22 @@ usage: physa skill show
 
 Print the guide, as it is, on any output.
 --- stderr
+
+$ physa skill remove --help
+exit 0
+--- stdout
+usage: physa skill remove [--yes] [--json]
+
+Delete Physa's stub; a SKILL.md Physa did not write is left as it is.
+--- stderr
+
+$ physa skill setup extra
+exit 2
+--- stdout
+--- stderr
+usage: physa skill setup [--yes] [--json]
+
+Write Physa's stub to ~/.claude/skills/physa/SKILL.md, replacing a stale one; a SKILL.md Physa did not write is left as it is.
 
 $ physa skill show extra
 exit 2
@@ -1095,7 +1123,7 @@ Commands:
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   evidence  List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. It reads what the engine stored and polls nothing.
-  skill     Print Physa's skill, the guide a person's agent loads to use Physa's commands and terms: a bare skill prints this usage.
+  skill     Set up, check, print and remove Physa's skill, the guide a person's agent loads to use Physa's commands and terms. setup writes a short stub into Claude Code's skills directory (~/.claude/skills/physa) that tells the agent to run `physa skill show`; status says whether it is current, stale or missing; remove deletes it. setup and remove ask on a terminal and need --yes off one, and never touch a SKILL.md Physa did not write. A bare skill is status.
   engine    Start, check and stop the machine's one engine: a bare engine prints its status. status and the api commands start the engine when it is not running; stop never does.
   api       Call the engine's API by name, for debugging: a bare api lists its methods. Each command starts the engine when it is not running.
   sync      Not built yet: it returns with digests, after the engine.

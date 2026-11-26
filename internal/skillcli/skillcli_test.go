@@ -32,13 +32,6 @@ func TestShowWithAnArgumentIsBadUsage(t *testing.T) {
 	}
 }
 
-func TestBareSkillPrintsUsage(t *testing.T) {
-	code, out, errs := run("skill")
-	if code != 2 || out != "" || !strings.Contains(errs, showUsage) {
-		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errs)
-	}
-}
-
 // termLines are the guide's "- **Term**: ..." lines under its terms section.
 func termLines(g string) []string {
 	_, rest, _ := strings.Cut(g, "## Physa's terms\n")

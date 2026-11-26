@@ -1,6 +1,6 @@
 # Architecture 12: review after init
 
-Draft 0.2, 2026-11-26, after the owner's first review; proposed by Myxo for the owner to review. Nothing here is settled. Uses `.physa/glossary.md` terms only. Serves the idea `review-after-init`, the owner's: "for init, we clearly can't be striving for perfection. We should be striving for a good starting point. … Make it easy for users to review and update capabilities after the first init so they can have a clean map to start with."
+Draft 0.2, 2026-11-26; settled with the owner, who accepted every recommendation in §6. Uses `.physa/glossary.md` terms only. Serves the idea `review-after-init`, the owner's: "for init, we clearly can't be striving for perfection. We should be striving for a good starting point. … Make it easy for users to review and update capabilities after the first init so they can have a clean map to start with."
 
 Today a person reviews init's map by editing its PR by hand (02 §2.6). That works for rewording a promise or deleting a rule. It breaks down on the reshaping a first map most often needs: merging two capabilities that are one promise, splitting one that is two, renaming, dropping. Each moves entries between folders, has to keep slugs unique and contents and links right, and leaves init's record of which files and PRs each capability covers out of date. By hand, that is where the map breaks, and why a person gives up and keeps the map init wrote.
 
@@ -55,26 +55,26 @@ Each command:
 - changes the working tree only. The person reviews the diff and commits, on init's branch or after, as with any change to the map;
 - updates init's record in `.git/physa` of the files, PRs and changes each capability covers, so learning keeps placing new changes on the right capability.
 
-An agent can run the same commands, and Physa ships a skill for it, `reviewing` (02 §4). It reads `physa map review --json` and works through the candidates with the person: it proposes each merge, split, rename or drop with its reason, the person accepts or rejects it, and the agent runs the command. Like Physa's other skills it is embedded in the binary and uses glossary terms only. Unlike mapping, recovering and learning, which Physa's own steps run, it is for the person's agent; how Physa gives skills to people's agents is its own design (Q7).
+An agent can run the same commands, and Physa ships a skill for it, `reviewing` (02 §4). It reads `physa map review --json` and works through the candidates with the person: it proposes each merge, split, rename or drop with its reason, the person accepts or rejects it, and the agent runs the command. Like Physa's other skills it is embedded in the binary and uses glossary terms only. Unlike mapping, recovering and learning, which Physa's own steps run, it is for the person's agent; how Physa gives skills to people's agents is its own design (§6.7).
 
 ## 4. After changes name a capability
 
 Right after init no change names a capability: changes made before the map are exempt from the change check (02 §2.6). So renaming, merging and dropping during the first review break nothing.
 
-Later they would. Older commits' `Capability:` trailers would name a capability that no longer exists, and `physa map changes` would report them. That needs a way to follow a capability through a rename or merge, which this draft leaves open (Q5).
+Later they would. Older commits' `Capability:` trailers would name a capability that no longer exists, and `physa map changes` would report them. That needs a way to follow a capability through a rename or merge, which waits until a real map needs it (§6.5).
 
 ## 5. Hosted
 
 The web app for people who don't live in git (vision §11) holds the team's review: the index and each capability's page, comments on a capability or an entry, the *Where to look* candidates, and each reviewer's sign-off. A merge, split, rename or drop chosen there becomes a commit on init's branch through the GitHub App, made with the same rules as §3. Agents run on the team's side, never in the hosted layer.
 
-## 6. Questions for the owner
+## 6. Settled with the owner (2026-11-26)
 
-Each has a recommended answer, worded so "yes" accepts it.
+The owner answered "Yes to all seven", accepting each recommendation:
 
-1. **The line.** The guide and the commands are core; review as a team is hosted. Yes?
-2. **Four commands under `physa map`**: `merge`, `split`, `rename`, `drop`, with promise rewording left to the editor. Yes?
-3. **Working tree only.** The commands never commit; the person does. Yes?
-4. **The full guide is `physa map review`**, styled on a terminal, with `--json` and `--format md`; init's PR body gets only an overview, and nothing is checked in. Yes?
-5. **Following a capability after a rename or merge** (§4). Recommended: decide it when a real map first needs it. Until then, `rename`, `merge` and `drop` warn when changes already name the capability, and go ahead. Yes?
-6. **Size limits stay hard.** A merge that would put `rules.md` over 150 lines fails and names what to prune or split, though a capability "can be large". Yes?
-7. **A `reviewing` skill ships with this**, for the person's agent. The owner also asked for skills for all of Physa's core elements; recommended: design how Physa ships skills to people's agents on their own, with this as the first. Yes?
+1. **The line.** The guide and the commands are core; review as a team is hosted.
+2. **Four commands under `physa map`**: `merge`, `split`, `rename`, `drop`, with promise rewording left to the editor.
+3. **Working tree only.** The commands never commit; the person does.
+4. **The full guide is `physa map review`**, styled on a terminal, with `--json` and `--format md`. Init's PR body gets only an overview, and nothing is checked in.
+5. **Following a capability after a rename or merge** (§4) is decided when a real map first needs it. Until then, `rename`, `merge` and `drop` warn when changes already name the capability, and go ahead.
+6. **Size limits stay hard.** A merge that would put `rules.md` over 150 lines fails and names what to prune or split, though a capability "can be large".
+7. **A `reviewing` skill ships with this**, for the person's agent. How Physa ships skills to people's agents is designed on its own, with this as the first: the owner's idea `ship-core-skills`.

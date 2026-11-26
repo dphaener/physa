@@ -56,6 +56,8 @@ var goldenLines = []string{
 	"skill remove --help",
 	"skill setup extra",
 	"skill show extra",
+	"skill session --help",
+	"skill session extra",
 	"engine --help",
 	"engine run --help",
 	"engine start --help",

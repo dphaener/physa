@@ -87,27 +87,7 @@ func (p pursuits) current(stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "physa pursuit work: %v\n", err)
 		return 0
 	}
-	r, err := git.Open(wd)
-	if err != nil {
-		if !errors.Is(err, vcs.ErrNotRepo) {
-			fmt.Fprintf(stderr, "physa pursuit work: %v\n", err)
-		}
-		return 0
-	}
-	dir, err := r.StoreDir()
-	if err != nil {
-		fmt.Fprintf(stderr, "physa pursuit work: %v\n", err)
-		return 0
-	}
-	db, err := store.OpenReadOnly(filepath.Join(dir, "physa.db"))
-	if err != nil {
-		if !errors.Is(err, fs.ErrNotExist) {
-			fmt.Fprintf(stderr, "physa pursuit work: %v\n", err)
-		}
-		return 0
-	}
-	defer db.Close()
-	pursuit, change, err := plan.Current(db, session)
+	pursuit, change, err := Current(wd, session)
 	if err != nil {
 		fmt.Fprintf(stderr, "physa pursuit work: %v\n", err)
 		return 0
@@ -116,4 +96,35 @@ func (p pursuits) current(stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "%s/%s\n", pursuit, change)
 	}
 	return 0
+}
+
+// Current returns the pursuit and change the session works on in the repo that
+// holds wd, read from the store and never from the engine. A directory outside
+// a repo, a store that does not exist yet, an empty session and a session with
+// no change give empty names and no error. A failing git, a store that cannot
+// be read and a failing query give an error.
+func Current(wd, session string) (pursuit, change string, err error) {
+	if session == "" {
+		return "", "", nil
+	}
+	r, err := git.Open(wd)
+	if err != nil {
+		if errors.Is(err, vcs.ErrNotRepo) {
+			return "", "", nil
+		}
+		return "", "", err
+	}
+	dir, err := r.StoreDir()
+	if err != nil {
+		return "", "", err
+	}
+	db, err := store.OpenReadOnly(filepath.Join(dir, "physa.db"))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", "", nil
+		}
+		return "", "", err
+	}
+	defer db.Close()
+	return plan.Current(db, session)
 }

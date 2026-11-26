@@ -4,9 +4,12 @@
 // every agent is told. The skill command group puts it in reach: show writes
 // the guide exactly as it is, on any output, with no styling; setup writes a
 // short stub into Claude Code's skills directory that tells the agent to run
-// show, status says whether the stub is current, stale or missing, and remove
-// deletes it. Setup and remove ask on a terminal and need --yes off one, and
-// never overwrite, remove or follow a SKILL.md Physa did not write.
+// show, and adds a session hook to Claude Code's settings.json that runs the
+// hidden session command when a session starts; status says whether the stub
+// and the hook are current, stale or missing, and remove deletes the stub and
+// takes out only Physa's hook entry. Setup and remove ask on a terminal and
+// need --yes off one, and never overwrite, remove or follow a SKILL.md Physa
+// did not write, or edit a settings.json Physa cannot read as JSON.
 package skillcli
 
 import (
@@ -29,8 +32,9 @@ const showUsage = "physa skill show"
 func Guide() string { return guide }
 
 // Command returns the skill group, reading the person's home directory and
-// asking on the terminal.
-func Command() *cobra.Command { return newCommand(defaultEnv()) }
+// asking on the terminal. current reads the pursuit and change a session works
+// on, for the hidden session command the session hook runs.
+func Command(current CurrentFunc) *cobra.Command { return newCommand(defaultEnv(current)) }
 
 func show(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 {

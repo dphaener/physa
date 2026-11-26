@@ -45,7 +45,7 @@ func rootCommand() *cobra.Command {
 		checkCommand(), mapCommand(), initCommand(), ideacli.Command(newForge))
 	root.AddCommand(pursuitcli.Commands(newForge)...)
 	root.AddCommand(evidencecli.Command(newForge))
-	root.AddCommand(skillcli.Command())
+	root.AddCommand(skillcli.Command(pursuitcli.Current))
 	root.AddCommand(enginecli.Commands(version)...)
 	root.AddCommand(
 		command.New("sync", "Not built yet: it returns with digests, after the engine.", []string{"physa sync"},

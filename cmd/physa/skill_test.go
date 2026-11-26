@@ -43,6 +43,8 @@ func TestBareSkillPrintsStatus(t *testing.T) {
 func TestSkillSetupStatusRemoveEndToEnd(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	settings := filepath.Join(home, ".claude", "settings.json")
 	stub := filepath.Join(home, ".claude", "skills", "physa", "SKILL.md")
 	// The tests have no terminal, so setup needs --yes.
 	code, _, stderr := runSkill("skill", "setup")
@@ -58,11 +60,24 @@ func TestSkillSetupStatusRemoveEndToEnd(t *testing.T) {
 	if code, stdout, _ := runSkill("skill", "status", "--json"); code != 0 || !strings.Contains(stdout, `"state": "current"`) {
 		t.Fatalf("status --json: exit %d, stdout %q", code, stdout)
 	}
+	afterSetup, err := os.ReadFile(settings)
+	if err != nil || strings.Count(string(afterSetup), "physa skill session") != 1 || !strings.Contains(string(afterSetup), `"SessionStart"`) {
+		t.Fatalf("settings.json after setup: %q, %v", afterSetup, err)
+	}
+	if code, stdout, stderr := runSkill("skill", "setup", "--yes"); code != 0 || strings.Count(stdout, "already current") != 2 {
+		t.Fatalf("second setup: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	if again, _ := os.ReadFile(settings); !bytes.Equal(again, afterSetup) {
+		t.Fatalf("a second setup changed settings.json: %q", again)
+	}
 	if code, _, stderr := runSkill("skill", "remove", "--yes"); code != 0 {
 		t.Fatalf("remove --yes: exit %d, stderr %q", code, stderr)
 	}
 	if _, err := os.Stat(stub); err == nil {
 		t.Error("the stub is still there")
+	}
+	if b, err := os.ReadFile(settings); err != nil || strings.Contains(string(b), "physa skill session") || strings.Contains(string(b), "SessionStart") {
+		t.Errorf("settings.json after remove: %q, %v", b, err)
 	}
 }
 

@@ -73,8 +73,11 @@ _Avoid_: inbox, activity feed
 **Appetite**: How many tokens a person is willing to spend on a pursuit, counted from when it starts. A budget, never an estimate. Time plays no part. Optional: a pursuit with no appetite has no circuit breaker, and its spend is still counted and shown.
 _Avoid_: estimate, points, story points, time box
 
-**Pursuit**: A person's decision to build an idea, with their name on its signal. Only people pursue; agents can draft a signal. An appetite is optional. How the team got from idea to pursuit is its own workflow, not Physa's.
+**Pursuit**: A person's decision to build an idea, with their name on its signal. Only people pursue; agents can draft a signal. An appetite is optional. How the team got from idea to pursuit is its own workflow, not Physa's; what that workflow hands Physa is a brief.
 _Avoid_: bet, sprint, commitment
+
+**Brief**: What a team's design work hands Physa for an idea, in one shape whatever the workflow: the signal it would be pursued against, and optionally an appetite, the decisions made and the questions still open, and the planned changes. A pursuit started from a brief takes its signal, and its changes as the plan.
+_Avoid_: pitch, spec, PRD, design doc
 
 **Change**: One small, atomic change to the product, usually a single commit in its own PR, anchored to exactly one capability. A change that touches two capabilities should have been split.
 _Avoid_: change set, ticket, leaf, work item

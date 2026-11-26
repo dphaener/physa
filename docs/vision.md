@@ -144,7 +144,7 @@ The core, what must hold whatever workflow a team uses:
 9. **Spend is always counted**, whether or not an appetite limits it.
 10. **A person pursues an idea by naming its signal.** A pursuit is the explicit moment a person puts their name on building an idea, distinct from having it. Its signal has four parts: a claim, its direction (what counts as for and against), a window and a resolver. What the claim is and how it is read are the team's.
 
-An appetite, a circuit breaker, spikes and any write-up before a pursuit are workflow a team may add, not the core.
+An appetite, a circuit breaker, spikes and any design before a pursuit are workflow a team may add, not the core. What a team's design hands Physa is a **brief**, in one shape whatever the workflow: the signal it would be pursued against, which is all a pursuit requires, and optionally the decisions made, the questions still open and the planned changes. Pursuing from a brief confirms its signal instead of retyping it, and its decisions reach the map when the changes that make them true land.
 
 ## 6. Evidence and signals
 
@@ -183,7 +183,7 @@ Confidence costs most where mistakes cost most.
 - **The engine owns gates, identity and records**, so a harness can never grade its own work.
 - **Harnesses are pluggable.** A harness is a workflow of agent roles that builds and checks changes. Teams bring their own skills, workflows and agents.
 - **The first harness is the one Physa is built with**: a conductor, builders and independent verifiers per change, isolated checks, a critic that can only remove or downgrade findings, and fixers. Building Physa with it is the proof that harnesses are pluggable.
-- **What the prompts promise, the engine enforces**: read-only checkouts for verifiers and checks, check briefs built by the engine rather than the conductor, explicit caps on retries and fix cycles.
+- **What the prompts promise, the engine enforces**: read-only checkouts for verifiers and checks, check prompts built by the engine rather than the conductor, explicit caps on retries and fix cycles.
 - **Supervision is built in**: stall detection, resource limits and session cleanup belong to the engine, not to scripts around it.
 - **"Needed a person" is counted** from the first run, so the claim that work keeps moving on its own is measured, not hoped.
 
@@ -239,7 +239,7 @@ Teams can already collaborate on the core through git: the map is in the repo an
 8. Every change can be undone, cheapest first.
 9. One word for one thing, enforced by the glossary.
 10. Grow the surface only when real use asks for it.
-11. Bring your own workflow. Physa guards the core (§5) and prescribes nothing beyond it; a solo developer's path is idea, pursuit, changes, landed. Engineering evidence, strength and the count of spend are always on.
+11. Bring your own workflow. Physa guards the core (§5) and prescribes nothing beyond it; a solo developer's path is idea, pursuit, changes, landed, and a team's may add design and a brief before the pursuit. Engineering evidence, strength and the count of spend are always on.
 
 ## 14. What the first attempt taught us
 

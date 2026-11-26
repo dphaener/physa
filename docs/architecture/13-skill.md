@@ -1,6 +1,6 @@
 # Architecture 13: Physa's skill
 
-Draft 0.1, 2026-11-26; proposed by Myxo for the owner to review. Settled so far: one skill, shipped the way Rex ships its own, and Skill added to the glossary; the rest is open (§7). Uses `.physa/glossary.md` terms only. Serves the owner's idea `ship-core-skills`: "Ship skills for all of Physa's core elements, so a person's agent can drive each one."
+Draft 0.1, 2026-11-26; settled with the owner, who chose one skill shipped the way Rex ships its own, added Skill to the glossary, and accepted every recommendation in §7. Uses `.physa/glossary.md` terms only. Serves the owner's idea `ship-core-skills`: "Ship skills for all of Physa's core elements, so a person's agent can drive each one."
 
 Today a person's agent learns about Physa from the pointer init writes into `AGENTS.md` (01 §7): two lines saying to read the index and a slice. Everything else (anchoring a change, the trailers, what only a person may do, reviewing init's map, adding an idea) it has to find in `--help` or get wrong. Physa's own steps have skills (02 §4); a person's agent has none.
 
@@ -67,13 +67,13 @@ Added with this draft, as the owner chose (2026-11-26):
 
 01 §8 makes command groups glossary nouns, so `physa skill` needs the word.
 
-## 7. Questions for the owner
+## 7. Settled with the owner (2026-11-26)
 
-Each has a recommended answer, worded so "yes" accepts it.
+The owner answered "Yes to all of these", accepting each recommendation:
 
-1. **Setup is per account**, and the `AGENTS.md` pointer stays as the fallback. Yes?
-2. **Claude Code first**, then the agents that read `~/.agents/skills`. Yes?
-3. **The session hook** as §4: a few lines in a repo with a map, silent elsewhere, never failing. Yes?
-4. **Architecture 12's `reviewing` skill becomes a recipe** in the one guide. Yes?
-5. **The slice skill stays in the slice's output**, and the guide points to it. Yes?
-6. **Init says when the skill is missing** and never installs it. Yes?
+1. **Setup is per account**, and the `AGENTS.md` pointer stays as the fallback.
+2. **Claude Code first**, then the agents that read `~/.agents/skills`.
+3. **The session hook** as §4: a few lines in a repo with a map, silent elsewhere, never failing.
+4. **Architecture 12's `reviewing` skill becomes a recipe** in the one guide.
+5. **The slice skill stays in the slice's output**, and the guide points to it.
+6. **Init says when the skill is missing** and never installs it.

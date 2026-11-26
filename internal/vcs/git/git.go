@@ -70,10 +70,24 @@ func (r *repo) Since(ref string, t time.Time) ([]vcs.Change, error) {
 	return parseLog(out)
 }
 
+// Merges returns the merge commits on ref's first-parent line committed
+// after t, newest first. A zero t means all of them.
+func (r *repo) Merges(ref string, t time.Time) ([]vcs.Change, error) {
+	args := []string{"log", "--merges", "--first-parent"}
+	if !t.IsZero() {
+		args = append(args, "--since="+t.UTC().Format(time.RFC3339))
+	}
+	out, stderr, err := r.git(append(args, logFormat, "--end-of-options", ref, "--")...)
+	if err != nil {
+		return nil, gitError(err, stderr)
+	}
+	return parseLog(out)
+}
+
 // Altered returns the paths commit id altered, relative to the repo root and
 // sorted. A merge gives its paths against the first parent.
 func (r *repo) Altered(id string) ([]string, error) {
-	out, stderr, err := r.git("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", "--root", "--end-of-options", id)
+	out, stderr, err := r.git("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", "--root", "--diff-merges=first-parent", "--end-of-options", id)
 	if err != nil {
 		return nil, gitError(err, stderr)
 	}

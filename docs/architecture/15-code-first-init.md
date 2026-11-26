@@ -64,7 +64,14 @@ A window of 1,000 PRs reached back one month on Discourse and two and a half on 
 
 ## 8. The cap
 
-No estimate. A run has a cap, as the owner asked, and the run stops cleanly when the next session's budget would pass it. Recovery goes in a seeded random order across areas, so a run stopped by the cap leaves a fair sample of the map rather than some areas whole and others untouched, and `physa init --recover` continues where it stopped. Init still says before it starts what a token is worth (02 §2.7) and after it ends what it spent. This replaces 02 §2.7's estimate, its ratio records and its "past the estimate" message.
+No estimate. A person may give a run a cap, as the owner asked, and the run stops cleanly when the next session's budget would pass it. The cap is the person's to define, in the terms they pay in. The owner: "Subscription users probably don't care about a dollar amount but rather a percentage of their usage, or they may not want a cap at all, same goes for API users. This should be flexible." So a cap is one of:
+
+- **none**, the default: init runs to the end;
+- **an amount of money**, for people who pay by the token;
+- **a share of their plan's usage**, for people on a subscription, where the agent's adapter can report it;
+- **tokens**, weighted by price as every spend in Physa is.
+
+Whatever the unit, init counts spend as it always does and shows it in the unit the cap was given in. Recovery goes in a seeded random order across areas, so a run stopped by the cap leaves a fair sample of the map rather than some areas whole and others untouched, and `physa init --recover` continues where it stopped. Init still says before it starts what a token is worth (02 §2.7) and after it ends what it spent. This replaces 02 §2.7's estimate, its ratio records and its "past the estimate" message.
 
 ## 9. What init reports
 
@@ -79,7 +86,7 @@ Each has a recommended answer, worded so "yes" accepts it.
 3. **Init's record stays in `.git/physa`**, and a clone without it rebuilds it from areas, walk and place, without recovering. Yes?
 4. **The why**, as §6. Yes?
 5. **The default PR window is 12 months**, with `--max-prs` and `--since` kept. Yes?
-6. **The cap is in tokens weighted by price, shown with its cost** like every spend in Physa, given with `--cap`, with none meaning no cap; on a terminal a bare run asks for one. Yes?
+6. **The cap is the person's choice of unit**: none by default, an amount of money, a share of their plan's usage where the adapter reports it, or weighted tokens, given with `--cap`; spend is shown in the cap's unit. Yes?
 7. **Flat folders**: the map stays one folder per capability, with no area level. Yes?
 8. **Untested yet**: a repo too big for one areas session (Discourse needed one per framework, which cuts by layer). Recommended: the areas session gets the listing in parts and is told to group by promise across them, and the first such repo is a run before this is built. Yes?
 9. **The signal**, for the idea this serves: claim, init on an existing codebase gives a map a person keeps; for, first maps merged with their capabilities mostly kept, and PRs in one capability at 60% or more; against, first maps reshaped heavily or abandoned; window 2027-03-01; resolver, Darin, reading init PRs and the review commands' commits. Yes?

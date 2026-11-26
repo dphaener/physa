@@ -176,3 +176,28 @@ func TestPlaceHoldsABar(t *testing.T) {
 		t.Errorf("text:\n%s", Text(rep))
 	}
 }
+
+// TestCommonFilesCountForLittle checks that files most capabilities touch,
+// such as a schema dump and the routes, neither pull a feature into the
+// capability proposed first nor place an item made only of them.
+func TestCommonFilesCountForLittle(t *testing.T) {
+	shared := []string{"db/schema.sql", "config/routes.rb"}
+	var g store.Gather
+	for _, c := range []struct{ id, file string }{{"a1", "app/access/policy.rb"}, {"b1", "app/notes/model.rb"}, {"c1", "app/billing/model.rb"}, {"d1", "app/reports/model.rb"}} {
+		g.Changes = append(g.Changes, change(c.id, "Start "+c.file, append([]string{c.file}, shared...)...))
+	}
+	g.Changes[2].Files = []string{"app/billing/model.rb", "app/access/policy.rb"} // billing touches the policy too
+	g.Changes = append(g.Changes,
+		change("e1", "Share a note (#60)", append([]string{"app/access/policy.rb", "app/notes/model.rb"}, shared...)...),
+		change("f1", "Add a column (#61)", shared...),
+	)
+	g.PRs = []store.GatheredPR{{Number: 60}, {Number: 61}}
+	caps := []mapping.Capability{{Name: "access", ShownBy: []string{"a1"}}, {Name: "notes", ShownBy: []string{"b1"}}, {Name: "billing", ShownBy: []string{"c1"}}, {Name: "reports", ShownBy: []string{"d1"}}}
+	pl, rep := Place(g, caps)
+	if want := map[string][]int{"notes": {60}}; !reflect.DeepEqual(pl.PRs, want) {
+		t.Errorf("PRs placed %v, want %v", pl.PRs, want)
+	}
+	if rep.Placed != 1 || rep.Unplaced != 1 {
+		t.Errorf("report %+v", rep)
+	}
+}

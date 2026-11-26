@@ -1,8 +1,9 @@
 // Package coverage places each gathered PR and change with its nearest
 // proposed capability, by the files it touches against the files and
 // clusters the capability's own citations touch, so recovery reads them and
-// not only what propose cited. An item is placed only when at least half its
-// files are near the capability, and chores (dependency bumps, CI,
+// not only what propose cited. A file many capabilities touch counts for
+// little. An item is placed only when at least half its files, by weight,
+// are near the capability, and chores (dependency bumps, CI,
 // formatting) are never placed. It also says what no capability
 // got: the gathered PRs placed nowhere, and the clusters of files no
 // capability's citations touch. It is deterministic and starts no session.
@@ -106,17 +107,34 @@ type footprint struct {
 	files, dirs map[string]bool
 }
 
-// score is how near files are to f: how many are in it, then how many are
-// in it or in one of its directories. The repo's root is no directory of a
+// unit is the weight of a file no other footprint holds.
+const unit = 1_000_000
+
+// weights is what each file counts for when placing: unit divided by the
+// number of footprints that hold it, so a file many capabilities touch, such
+// as a schema dump or the routes, says little about which one an item
+// belongs to; a file no footprint holds counts unit. A file held by most
+// footprints, more than half and more than two, counts nothing.
+type weights map[string]int
+
+func (w weights) of(file string) int {
+	if n, ok := w[file]; ok {
+		return n
+	}
+	return unit
+}
+
+// score is how near files are to f, weighed: those in it, then those in it
+// or in one of its directories. The repo's root is no directory of a
 // footprint, so files there are near only when the footprint holds them.
-func (f footprint) score(files []string) [2]int {
+func (f footprint) score(files []string, w weights) [2]int {
 	var s [2]int
 	for _, p := range files {
 		if f.files[p] {
-			s[0]++
+			s[0] += w.of(p)
 		}
 		if d := path.Dir(p); f.files[p] || d != "." && f.dirs[d] {
-			s[1]++
+			s[1] += w.of(p)
 		}
 	}
 	return s
@@ -124,9 +142,11 @@ func (f footprint) score(files []string) [2]int {
 
 // Place places each gathered PR and change no capability cites with the
 // capability whose footprint holds the most of its files, then the most of
-// its files' directories; a tie goes to the capability proposed first. An
-// item is placed nowhere when fewer than MinShare percent of its files are
-// near that capability, or when it is a Chore. A PR's files are those of the
+// its files' directories, each file weighed by how many footprints hold it
+// (weights); a tie goes to the capability proposed first. An item is placed
+// nowhere when less than MinShare percent of its files' weight is near that
+// capability, when all its files are held by most footprints, or when it is
+// a Chore. A PR's files are those of the
 // changes that name it. It returns the placement and the report.
 func Place(g store.Gather, caps []mapping.Capability) (Placement, Report) {
 	pl := Placement{PRs: map[string][]int{}, Changes: map[string][]string{}}
@@ -184,17 +204,32 @@ func Place(g store.Gather, caps []mapping.Capability) (Placement, Report) {
 		}
 		feet[i] = fp
 	}
+	held := map[string]int{}
+	for _, fp := range feet {
+		for f := range fp.files {
+			held[f]++
+		}
+	}
+	w := weights{}
+	for f, n := range held {
+		if w[f] = unit / n; n*2 > len(feet) && n > 2 {
+			w[f] = 0
+		}
+	}
 	nearest := func(subject string, files []string) (string, bool) {
 		if Chore(subject, files) {
 			return "", false
 		}
-		best, at := [2]int{}, -1
+		best, at, total := [2]int{}, -1, 0
+		for _, f := range files {
+			total += w.of(f)
+		}
 		for i, fp := range feet {
-			if s := fp.score(files); s[0] > best[0] || s[0] == best[0] && s[1] > best[1] {
+			if s := fp.score(files, w); s[0] > best[0] || s[0] == best[0] && s[1] > best[1] {
 				best, at = s, i
 			}
 		}
-		if at < 0 || best[1]*100 < len(files)*MinShare {
+		if at < 0 || total == 0 || best[1]*100 < total*MinShare {
 			return "", false
 		}
 		return caps[at].Name, true

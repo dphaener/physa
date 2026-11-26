@@ -21,6 +21,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -413,3 +414,10 @@ func (w *tailWriter) Write(p []byte) (int, error) {
 }
 
 func (w *tailWriter) String() string { return string(w.buf) }
+
+// SkillFile is where Claude Code reads a person's skill of that name, under
+// the person's home: one SKILL.md in a directory named for the skill, per
+// account.
+func SkillFile(home, name string) string {
+	return filepath.Join(home, ".claude", "skills", name, "SKILL.md")
+}

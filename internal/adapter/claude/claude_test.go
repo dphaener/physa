@@ -665,3 +665,11 @@ func TestInvalidAPIKeyNamesTheVariable(t *testing.T) {
 		t.Errorf("no key set: err = %v", err)
 	}
 }
+
+func TestSkillFile(t *testing.T) {
+	got := SkillFile("/h", "physa")
+	want := filepath.Join("/h", ".claude", "skills", "physa", "SKILL.md")
+	if got != want {
+		t.Errorf("SkillFile = %q, want %q", got, want)
+	}
+}

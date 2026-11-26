@@ -1,8 +1,12 @@
 // Package skillcli holds Physa's skill for a person's agent: the guide that
 // teaches it to use Physa's commands and terms as Physa means them, embedded
 // in the binary and never read from the repo, so upgrading Physa updates what
-// every agent is told. The skill command group prints it: show writes the
-// guide exactly as it is, on any output, with no styling.
+// every agent is told. The skill command group puts it in reach: show writes
+// the guide exactly as it is, on any output, with no styling; setup writes a
+// short stub into Claude Code's skills directory that tells the agent to run
+// show, status says whether the stub is current, stale or missing, and remove
+// deletes it. Setup and remove ask on a terminal and need --yes off one, and
+// never overwrite, remove or follow a SKILL.md Physa did not write.
 package skillcli
 
 import (
@@ -24,14 +28,9 @@ const showUsage = "physa skill show"
 // Guide is the guide a person's agent loads, as show prints it.
 func Guide() string { return guide }
 
-// Command returns the skill group. It has no bare job: a bare skill prints
-// the group's usage.
-func Command() *cobra.Command {
-	return command.New("skill",
-		"Print Physa's skill, the guide a person's agent loads to use Physa's commands and terms: a bare skill prints this usage.",
-		[]string{showUsage}, nil,
-		command.New("show", "Print the guide, as it is, on any output.", []string{showUsage}, show))
-}
+// Command returns the skill group, reading the person's home directory and
+// asking on the terminal.
+func Command() *cobra.Command { return newCommand(defaultEnv()) }
 
 func show(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 {

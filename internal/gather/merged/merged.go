@@ -40,27 +40,12 @@ type Wait struct {
 	Progress io.Writer
 }
 
-// Defaults stands in for the zero fields of every Wait, before the package's
-// own defaults. It is a seam for the tests of callers that make their own
-// Wait, as init does: they set a short Limit and a Sleep and Now that do not
-// wait. Nothing else sets it.
-var Defaults Wait
-
 func (w Wait) defaults() Wait {
-	if w.Limit <= 0 {
-		w.Limit = Defaults.Limit
-	}
 	if w.Limit <= 0 {
 		w.Limit = DefaultLimit
 	}
 	if w.Sleep == nil {
-		w.Sleep = Defaults.Sleep
-	}
-	if w.Sleep == nil {
 		w.Sleep = time.Sleep
-	}
-	if w.Now == nil {
-		w.Now = Defaults.Now
 	}
 	if w.Now == nil {
 		w.Now = time.Now

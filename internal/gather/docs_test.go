@@ -20,6 +20,7 @@ func write(t *testing.T, root, rel, body string) {
 }
 
 func TestDocs(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	for rel, kind := range map[string]string{
 		"AGENTS.md": KindAgent, "CLAUDE.md": KindAgent, ".claude/CLAUDE.md": KindAgent, ".cursorrules": KindAgent,
@@ -96,6 +97,7 @@ func sortedStrings(s []string) bool {
 }
 
 func TestDocsEmpty(t *testing.T) {
+	t.Parallel()
 	docs, skipped, err := Docs(t.TempDir())
 	if err != nil || len(docs) != 0 || len(skipped) != 0 {
 		t.Fatalf("%v %v %v", docs, skipped, err)
@@ -103,6 +105,7 @@ func TestDocsEmpty(t *testing.T) {
 }
 
 func TestDocsContextAndOverviews(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	for _, rel := range []string{
 		"CONTEXT.md", "docs/PLAN.md", "docs/roadmap.md", "docs/Architecture.MD", "docs/overview.md", "docs/context.md",
@@ -129,6 +132,7 @@ func TestDocsContextAndOverviews(t *testing.T) {
 }
 
 func TestDocsOverviewOverCapSkipped(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	write(t, root, "docs/PLAN.md", strings.Repeat("a", MaxDocBytes+1))
 	docs, skipped, err := Docs(root)
@@ -138,6 +142,7 @@ func TestDocsOverviewOverCapSkipped(t *testing.T) {
 }
 
 func TestDocsReasons(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	want := map[string]string{
 		"AGENTS.md":           "an agent instructions file",
@@ -169,6 +174,7 @@ func TestDocsReasons(t *testing.T) {
 }
 
 func TestDocsMissingOrIrregularIsSilent(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "README.md"), 0o755); err != nil {
 		t.Fatal(err)

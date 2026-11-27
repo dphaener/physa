@@ -84,6 +84,7 @@ func numbers(prs []forge.PR) string {
 }
 
 func TestListSecondaryLimitAfterTwoPages(t *testing.T) {
+	t.Parallel()
 	f := &fakeForge{answers: []answer{
 		page("c1", pr(1, 1), pr(2, 2)),
 		page("c2", pr(3, 3)),
@@ -114,6 +115,7 @@ func TestListSecondaryLimitAfterTwoPages(t *testing.T) {
 }
 
 func TestListDoublesWithNoHints(t *testing.T) {
+	t.Parallel()
 	f := &fakeForge{answers: []answer{
 		page("c1", pr(1, 1)),
 		limited(&forge.RateLimit{Secondary: true}),
@@ -138,6 +140,7 @@ func TestListDoublesWithNoHints(t *testing.T) {
 }
 
 func TestListWaitsForPrimaryReset(t *testing.T) {
+	t.Parallel()
 	reset := start.Add(17 * time.Minute)
 	f := &fakeForge{answers: []answer{
 		limited(&forge.RateLimit{Reset: reset}),
@@ -161,6 +164,7 @@ func TestListWaitsForPrimaryReset(t *testing.T) {
 }
 
 func TestListRetryAfterBeforeReset(t *testing.T) {
+	t.Parallel()
 	f := &fakeForge{answers: []answer{
 		limited(&forge.RateLimit{RetryAfter: 30 * time.Second, Reset: start.Add(time.Hour)}),
 		page(""),
@@ -175,6 +179,7 @@ func TestListRetryAfterBeforeReset(t *testing.T) {
 }
 
 func TestListRefusesPastLimit(t *testing.T) {
+	t.Parallel()
 	rl := &forge.RateLimit{Secondary: true}
 	f := &fakeForge{answers: []answer{
 		page("c1", pr(1, 1)),
@@ -207,6 +212,7 @@ func TestListRefusesPastLimit(t *testing.T) {
 }
 
 func TestListMax(t *testing.T) {
+	t.Parallel()
 	pages := func() *fakeForge {
 		return &fakeForge{answers: []answer{
 			page("c1", pr(1, 1), pr(2, 2)),
@@ -238,6 +244,7 @@ func TestListMax(t *testing.T) {
 }
 
 func TestListPlainError(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("GitHub GraphQL: something broke")
 	f := &fakeForge{answers: []answer{{err: boom}}}
 	c := &clock{now: start}
@@ -254,6 +261,7 @@ func TestListPlainError(t *testing.T) {
 }
 
 func TestListPlainErrorKeepsPages(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("boom")
 	f := &fakeForge{answers: []answer{page("c1", pr(1, 1)), {err: boom}}}
 	prs, _, err := List(t.Context(), f, since, 0, Wait{})
@@ -263,6 +271,7 @@ func TestListPlainErrorKeepsPages(t *testing.T) {
 }
 
 func TestOldest(t *testing.T) {
+	t.Parallel()
 	if !Oldest(nil).IsZero() {
 		t.Error("Oldest(nil) not zero")
 	}

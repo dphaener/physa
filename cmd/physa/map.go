@@ -19,8 +19,8 @@ import (
 	"github.com/dphaener/physa/internal/vcs/git"
 )
 
-// mapCommand builds the map group.
-func mapCommand() *cobra.Command {
+// mapCommand builds the map group on d.
+func mapCommand(d deps) *cobra.Command {
 	const learnUsage = "physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]"
 	sliceUsage := []string{
 		"physa map slice <capability>... [--with decisions|questions|all] [--format md|json]",
@@ -61,7 +61,7 @@ func mapCommand() *cobra.Command {
 				if !ok {
 					return command.BadUsage
 				}
-				return slice(ctx, ".", opts, stdout, stderr)
+				return d.slice(ctx, ".", opts, stdout, stderr)
 			}), sl.Declare),
 		command.Declare(command.New("changes", "List the capability each change of a range names, with the findings.", []string{"physa map changes [<range>] [--json] [--strict]"},
 			func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -75,7 +75,7 @@ func mapCommand() *cobra.Command {
 				if len(args) > 0 {
 					return command.BadUsage
 				}
-				return records(ctx, ".", asJSON, stdout, stderr)
+				return d.records(ctx, ".", asJSON, stdout, stderr)
 			}), func(fs *pflag.FlagSet) { command.Switch(fs, "json", &asJSON, "") }),
 		command.Declare(command.New("fmt", "Rewrite the map's folders to their format: contents, index links and spacing (--check writes nothing and exits 1 when a file would change).", []string{"physa map fmt [--check] [dir]"},
 			func(_ context.Context, args []string, stdout, stderr io.Writer) int {
@@ -93,7 +93,7 @@ func mapCommand() *cobra.Command {
 				if len(args) > 0 || !lf.Valid() {
 					return command.BadUsage
 				}
-				return learnMap(ctx, ".", lf, stdout, stderr)
+				return d.learnMap(ctx, ".", lf, stdout, stderr)
 			}), lf.Declare),
 		command.Declare(command.New("hooks", "Point the repo's hooks at the one that stamps Session: on commits made in Claude Code, so learning can join a change to its session.", []string{"physa map hooks"},
 			func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -123,7 +123,7 @@ func index(dir string, stdout, stderr io.Writer) int {
 // 0 when it printed, and 2 when the map has a problem physa check map would
 // report, a capability or slug is unknown, or the slice cannot be written.
 // Nothing is printed or recorded on a failure.
-func slice(ctx context.Context, dir string, o mapslice.Flags, stdout, stderr io.Writer) int {
+func (d deps) slice(ctx context.Context, dir string, o mapslice.Flags, stdout, stderr io.Writer) int {
 	m, err := mapslice.Read(ctx, dir)
 	if err != nil {
 		return failed(stderr, "slice", err)
@@ -135,7 +135,7 @@ func slice(ctx context.Context, dir string, o mapslice.Flags, stdout, stderr io.
 	if _, err := out.WriteTo(stdout); err != nil {
 		return failed(stderr, "slice", err)
 	}
-	recordSlice(ctx, dir, o.Req, stderr)
+	d.recordSlice(ctx, dir, o.Req, stderr)
 	return 0
 }
 

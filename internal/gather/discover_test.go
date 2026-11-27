@@ -75,6 +75,7 @@ func discoverRepo(t *testing.T) *testRepo {
 }
 
 func TestDiscoverMergesNamedDocs(t *testing.T) {
+	t.Parallel()
 	r := discoverRepo(t)
 	f := &fakeAgent{t: t, tokens: adapter.Tokens{Input: 900, Output: 100}, text: reply(
 		source("docs/design/index.md", "overview", "the design docs' index"),
@@ -120,6 +121,7 @@ func TestDiscoverMergesNamedDocs(t *testing.T) {
 }
 
 func TestDiscoverKeepsFindsWhenNoSourcesNamed(t *testing.T) {
+	t.Parallel()
 	r := discoverRepo(t)
 	f := &fakeAgent{t: t, text: reply()}
 	g, s, err := Run(t.Context(), r.dir, r.open(), nil, bounds(t), f.discover(), gatherNow(t))
@@ -132,6 +134,7 @@ func TestDiscoverKeepsFindsWhenNoSourcesNamed(t *testing.T) {
 }
 
 func TestDiscoverNotInstalledKeepsFinds(t *testing.T) {
+	t.Parallel()
 	r := discoverRepo(t)
 	d := Discover{Session: discovery.Session{
 		Agent: func() (adapter.Adapter, error) { return nil, fmt.Errorf("claude: %w", adapter.ErrNotInstalled) },
@@ -149,6 +152,7 @@ func TestDiscoverNotInstalledKeepsFinds(t *testing.T) {
 }
 
 func TestDiscoverFailingSessionKeepsFinds(t *testing.T) {
+	t.Parallel()
 	r := discoverRepo(t)
 	f := &fakeAgent{t: t, err: errors.New("boom"), tokens: adapter.Tokens{Input: 5}}
 	g, s, err := Run(t.Context(), r.dir, r.open(), nil, bounds(t), f.discover(), gatherNow(t))
@@ -166,6 +170,7 @@ func TestDiscoverFailingSessionKeepsFinds(t *testing.T) {
 // TestDiscoverIsNeverStopped checks that a discovery session spending far
 // more than the old cap still adds what it names: init is never bounded.
 func TestDiscoverIsNeverStopped(t *testing.T) {
+	t.Parallel()
 	r := discoverRepo(t)
 	f := &fakeAgent{t: t, text: reply(source("docs/design/api.md", "overview", "x")),
 		reports: []adapter.Tokens{{Input: 4_000_000, Output: 500}}, tokens: adapter.Tokens{Input: 4_000_000, Output: 500}}
@@ -179,6 +184,7 @@ func TestDiscoverIsNeverStopped(t *testing.T) {
 }
 
 func TestDiscoverOffStartsNothing(t *testing.T) {
+	t.Parallel()
 	r := discoverRepo(t)
 	f := &fakeAgent{t: t, noStart: true}
 	d := f.discover()
@@ -193,6 +199,7 @@ func TestDiscoverOffStartsNothing(t *testing.T) {
 }
 
 func TestDiscoverZeroValueIsNotAsked(t *testing.T) {
+	t.Parallel()
 	r := discoverRepo(t)
 	_, s, err := Run(t.Context(), r.dir, r.open(), nil, bounds(t), Discover{}, gatherNow(t))
 	if err != nil || s.Discovery.Started || s.Discovery.Why != "discovery not asked" {
@@ -201,6 +208,7 @@ func TestDiscoverZeroValueIsNotAsked(t *testing.T) {
 }
 
 func TestDiscoverRefusesWhatTheListerDoesNotList(t *testing.T) {
+	t.Parallel()
 	r := discoverRepo(t)
 	f := &fakeAgent{t: t, text: reply(source("docs/design/api.md", "overview", "x"))}
 	repo := listerRepo{Repo: r.open(), paths: []string{"README.md", "listed-only.go", "docs/design/index.md"}}
@@ -215,6 +223,7 @@ func TestDiscoverRefusesWhatTheListerDoesNotList(t *testing.T) {
 }
 
 func TestDiscoverWithoutAListerReadsTheWorkingTree(t *testing.T) {
+	t.Parallel()
 	r := discoverRepo(t)
 	write(t, r.dir, "node_modules/dep/index.js", "x")
 	f := &fakeAgent{t: t, text: reply(source("docs/design/api.md", "overview", "the api"))}
@@ -228,6 +237,7 @@ func TestDiscoverWithoutAListerReadsTheWorkingTree(t *testing.T) {
 }
 
 func TestDiscoverPromptListsNoPaths(t *testing.T) {
+	t.Parallel()
 	r := discoverRepo(t)
 	f := &fakeAgent{t: t, text: reply()}
 	if _, _, err := Run(t.Context(), r.dir, r.open(), nil, bounds(t), f.discover(), gatherNow(t)); err != nil {

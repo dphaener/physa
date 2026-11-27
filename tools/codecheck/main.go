@@ -8,6 +8,9 @@
 // exec.CommandContext with the literal program "git" is reported. It also
 // checks that a non-test file on the map's side never makes a fresh context
 // with context.Background or context.TODO: the command's context comes down.
+// It also checks that no test file assigns a package variable of a non-test
+// file, its own package's or another package's of the module through its
+// import: a test passes its fake in instead of swapping one.
 package main
 
 import (
@@ -83,13 +86,14 @@ var engineSide = []string{
 
 // Rule names reported in violations.
 const (
-	ruleImports = "no-plugin-imports"
-	ruleEngine  = "map-below-engine"
-	ruleSize    = "size-budget"
-	ruleDoc     = "package-doc"
-	ruleGit     = "git-adapter-only"
-	ruleTables  = "engine-tables-writer"
-	ruleContext = "context-from-command"
+	ruleImports  = "no-plugin-imports"
+	ruleEngine   = "map-below-engine"
+	ruleSize     = "size-budget"
+	ruleDoc      = "package-doc"
+	ruleGit      = "git-adapter-only"
+	ruleTables   = "engine-tables-writer"
+	ruleContext  = "context-from-command"
+	ruleTestSwap = "tests-inject-fakes"
 )
 
 // stateDir is the one package, with its subdirectories, that may write the
@@ -215,6 +219,11 @@ func scan(root string, budgets map[string]int) ([]Violation, int, error) {
 		}
 		out = append(out, vs...)
 	}
+	swaps, err := testSwaps(root, module, pkgs)
+	if err != nil {
+		return nil, 0, err
+	}
+	out = append(out, swaps...)
 	sort.Slice(out, func(i, j int) bool {
 		a, b := out[i], out[j]
 		if a.Dir != b.Dir {
@@ -309,6 +318,203 @@ func checkPackage(root, module string, pk *pkg, budgets map[string]int) ([]Viola
 		out = append(out, Violation{pk.dir, ruleDoc, msg})
 	}
 	return out, nil
+}
+
+// pkgVars is what a package's non-test files declare: its name and the names
+// of its package-level variables.
+type pkgVars struct {
+	name string
+	vars map[string]bool
+}
+
+// testSwaps reports every assignment in a test file to a package variable of
+// a non-test file: the test's own package (when the test is in that package)
+// or a package of the module it imports. A name the enclosing function
+// declares shadows the package variable. It reads syntax only, so it is a
+// check, not a proof.
+func testSwaps(root, module string, pkgs map[string]*pkg) ([]Violation, error) {
+	fset := token.NewFileSet()
+	parse := func(dir, name string) (*ast.File, error) {
+		return parser.ParseFile(fset, filepath.Join(root, filepath.FromSlash(dir), name), nil, parser.SkipObjectResolution)
+	}
+	decls := map[string]pkgVars{}
+	for dir, pk := range pkgs {
+		pv := pkgVars{vars: map[string]bool{}}
+		for _, name := range pk.files {
+			if strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			f, err := parse(dir, name)
+			if err != nil {
+				return nil, err
+			}
+			pv.name = f.Name.Name
+			for _, d := range f.Decls {
+				if gd, ok := d.(*ast.GenDecl); ok && gd.Tok == token.VAR {
+					for _, spec := range gd.Specs {
+						for _, id := range spec.(*ast.ValueSpec).Names {
+							if id.Name != "_" {
+								pv.vars[id.Name] = true
+							}
+						}
+					}
+				}
+			}
+		}
+		decls[dir] = pv
+	}
+	var out []Violation
+	for dir, pk := range pkgs {
+		for _, name := range pk.files {
+			if !strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			f, err := parse(dir, name)
+			if err != nil {
+				return nil, err
+			}
+			imports := map[string]pkgVars{}
+			for _, imp := range f.Imports {
+				ip, err := strconv.Unquote(imp.Path.Value)
+				if err != nil {
+					return nil, err
+				}
+				rel, ok := strings.CutPrefix(ip, module+"/")
+				if ip == module {
+					rel, ok = ".", true
+				}
+				pv, found := decls[rel]
+				if !ok || !found {
+					continue
+				}
+				local := pv.name
+				if imp.Name != nil {
+					local = imp.Name.Name
+				}
+				if local != "_" && local != "." {
+					imports[local] = pv
+				}
+			}
+			own := pkgVars{}
+			if pv := decls[dir]; pv.name == f.Name.Name {
+				own = pv
+			}
+			for _, d := range f.Decls {
+				fn, ok := d.(*ast.FuncDecl)
+				if !ok || fn.Body == nil {
+					continue
+				}
+				declared := declaredNames(fn)
+				for _, e := range assignedTargets(fn) {
+					if target, ok := swapTarget(e, own, imports, declared); ok {
+						out = append(out, Violation{dir, ruleTestSwap, fmt.Sprintf("%s:%d assigns package variable %s; pass the fake in instead", name, fset.Position(e.Pos()).Line, target)})
+					}
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+// swapTarget returns the package variable the assignment target e writes
+// through, if any, stripping index, star, paren and field selectors.
+func swapTarget(e ast.Expr, own pkgVars, imports map[string]pkgVars, declared map[string]bool) (string, bool) {
+	for {
+		switch x := e.(type) {
+		case *ast.Ident:
+			return x.Name, own.vars[x.Name] && !declared[x.Name]
+		case *ast.SelectorExpr:
+			if id, ok := x.X.(*ast.Ident); ok && !declared[id.Name] {
+				if pv, ok := imports[id.Name]; ok && pv.vars[x.Sel.Name] {
+					return id.Name + "." + x.Sel.Name, true
+				}
+			}
+			e = x.X
+		case *ast.IndexExpr:
+			e = x.X
+		case *ast.StarExpr:
+			e = x.X
+		case *ast.ParenExpr:
+			e = x.X
+		default:
+			return "", false
+		}
+	}
+}
+
+// assignedTargets returns the targets of every `=`, op-assign, inc/dec and
+// range-with-`=` in fn, closures included; `:=` declares and is left out.
+func assignedTargets(fn *ast.FuncDecl) []ast.Expr {
+	var out []ast.Expr
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.AssignStmt:
+			if s.Tok != token.DEFINE {
+				out = append(out, s.Lhs...)
+			}
+		case *ast.IncDecStmt:
+			out = append(out, s.X)
+		case *ast.RangeStmt:
+			if s.Tok == token.ASSIGN {
+				for _, e := range []ast.Expr{s.Key, s.Value} {
+					if e != nil {
+						out = append(out, e)
+					}
+				}
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// declaredNames returns every name fn declares anywhere in it, closures
+// included: receiver, parameters, results, `:=`, var, const, type and range
+// names. Such a name shadows a package variable of the same name.
+func declaredNames(fn *ast.FuncDecl) map[string]bool {
+	names := map[string]bool{}
+	fields := func(fl *ast.FieldList) {
+		if fl == nil {
+			return
+		}
+		for _, f := range fl.List {
+			for _, id := range f.Names {
+				names[id.Name] = true
+			}
+		}
+	}
+	fields(fn.Recv)
+	ast.Inspect(fn, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.FuncType:
+			fields(x.Params)
+			fields(x.Results)
+		case *ast.AssignStmt:
+			if x.Tok == token.DEFINE {
+				for _, e := range x.Lhs {
+					if id, ok := e.(*ast.Ident); ok {
+						names[id.Name] = true
+					}
+				}
+			}
+		case *ast.RangeStmt:
+			if x.Tok == token.DEFINE {
+				for _, e := range []ast.Expr{x.Key, x.Value} {
+					if id, ok := e.(*ast.Ident); ok {
+						names[id.Name] = true
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			for _, id := range x.Names {
+				names[id.Name] = true
+			}
+		case *ast.TypeSpec:
+			names[x.Name.Name] = true
+		}
+		return true
+	})
+	return names
 }
 
 // gitCalls returns the positions of calls to os/exec's Command or

@@ -138,21 +138,22 @@ var goldenLines = []string{
 	"--bogus",
 }
 
-// renderGolden runs every golden line and renders the results as blocks.
-func renderGolden() string {
+// renderGolden runs every golden line on d and renders the results as blocks.
+func renderGolden(d deps) string {
 	var out strings.Builder
 	for _, line := range goldenLines {
 		args := strings.Fields(line)
 		var stdout, stderr bytes.Buffer
-		code := run(context.Background(), args, &stdout, &stderr)
+		code := run(context.Background(), d, args, &stdout, &stderr)
 		fmt.Fprintf(&out, "$ physa %s\nexit %d\n--- stdout\n%s--- stderr\n%s\n", line, code, stdout.String(), stderr.String())
 	}
 	return out.String()
 }
 
 func TestCommandLineGolden(t *testing.T) {
+	t.Parallel()
 	const path = "testdata/cli.golden"
-	got := renderGolden()
+	got := renderGolden(testDeps(t))
 	if *update {
 		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
 			t.Fatal(err)

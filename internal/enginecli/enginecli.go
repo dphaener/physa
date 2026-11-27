@@ -20,7 +20,9 @@ import (
 	"github.com/dphaener/physa/internal/configdir"
 	"github.com/dphaener/physa/internal/engine"
 	"github.com/dphaener/physa/internal/enginestart"
+	"github.com/dphaener/physa/internal/forge/github"
 	"github.com/dphaener/physa/internal/output"
+	"github.com/dphaener/physa/internal/person"
 	"github.com/dphaener/physa/internal/workapi"
 )
 
@@ -36,21 +38,23 @@ const alreadyRunning = 3
 // Commands returns the engine and api groups. version is what a foreground
 // engine reports in engine.status.
 func Commands(version string) []*cobra.Command {
-	return commands(version, enginestart.Options{})
+	return commands(version, enginestart.Options{}, os.Getenv)
 }
 
 // commands builds the groups, starting engines with start's Command, so
-// tests can make sure nothing is spawned.
-func commands(version string, start enginestart.Options) []*cobra.Command {
-	g := group{version, start}
+// tests can make sure nothing is spawned, and finding an agent's session
+// through getenv.
+func commands(version string, start enginestart.Options, getenv func(string) string) []*cobra.Command {
+	g := group{version, start, getenv}
 	return []*cobra.Command{g.engineCommand(), g.apiCommand()}
 }
 
 // group is what the commands share: the version a foreground engine
-// reports, and how an engine is started.
+// reports, how an engine is started, and how an agent's session is found.
 type group struct {
 	version string
 	start   enginestart.Options
+	getenv  func(string) string
 }
 
 func (g group) engineCommand() *cobra.Command {
@@ -79,6 +83,12 @@ func (g group) engineCommand() *cobra.Command {
 			"Stop the engine and wait until it is gone. No engine running is not an error.", engineStop, "json"))
 }
 
+// namePerson names who adds an idea when idea.add leaves the person out:
+// the person running Physa on this machine, named as the CLI names them.
+func namePerson(ctx context.Context, dir string) string {
+	return person.ForRepo(ctx, dir, github.New(dir), io.Discard)
+}
+
 // engineRun serves in the foreground until SIGINT or SIGTERM, engine.stop
 // or the idle time.
 func (g group) engineRun(f *flags, args []string, _, stderr io.Writer) int {
@@ -97,7 +107,7 @@ func (g group) engineRun(f *flags, args []string, _, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	err = engine.Run(ctx, engine.Options{Dir: dir, Idle: idle, Version: g.version, Methods: workapi.Methods, State: workapi.StateOptions()})
+	err = engine.Run(ctx, engine.Options{Dir: dir, Idle: idle, Version: g.version, Methods: workapi.Methods(namePerson), State: workapi.StateOptions()})
 	var running *engine.RunningError
 	if errors.As(err, &running) {
 		failed(stderr, "engine run", err)

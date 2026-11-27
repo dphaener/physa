@@ -4,14 +4,11 @@ package workapi
 import (
 	"context"
 	"errors"
-	"io"
 	"log"
 	"time"
 
 	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/api"
-	"github.com/dphaener/physa/internal/forge/github"
-	"github.com/dphaener/physa/internal/person"
 	"github.com/dphaener/physa/internal/repos"
 	"github.com/dphaener/physa/internal/signal"
 	"github.com/dphaener/physa/internal/state"
@@ -34,13 +31,6 @@ func Refusal(method, agent string) string {
 		verb = "stop"
 	}
 	return "A person must " + verb + " this pursuit: physa is running inside a " + agent + " session."
-}
-
-// namePerson names who adds an idea when idea.add leaves the person out:
-// the person running Physa on this machine, named as the CLI names them,
-// so a view or harness need not. "" when no name can be had.
-var namePerson = func(ctx context.Context, dir string) string {
-	return person.ForRepo(ctx, dir, github.New(dir), io.Discard)
 }
 
 // open gets the repo's state; a repo the engine cannot serve is bad_request.
@@ -95,9 +85,19 @@ func pursuitDetailOut(d work.PursuitDetail) client.PursuitOut {
 	return o
 }
 
-// Methods returns the twelve methods, reading and changing the state get
+// Methods returns what the engine calls with its state opener to get the
+// twelve methods. name names who adds an idea when idea.add leaves the
+// person out: the person running Physa on this machine, named as the CLI
+// names them; "" when no name can be had.
+func Methods(name func(ctx context.Context, dir string) string) func(get func(ctx context.Context, repo string) (*state.State, error)) []api.Method {
+	return func(get func(ctx context.Context, repo string) (*state.State, error)) []api.Method {
+		return methods(get, name)
+	}
+}
+
+// methods returns the twelve methods, reading and changing the state get
 // opens for the repo each call names.
-func Methods(get func(ctx context.Context, repo string) (*state.State, error)) []api.Method {
+func methods(get func(ctx context.Context, repo string) (*state.State, error), name func(context.Context, string) string) []api.Method {
 	g := getter(get)
 	const (
 		repo        = `"repo":"/home/me/code/shop"`
@@ -118,7 +118,7 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 				}
 				who := in.Person
 				if who == "" {
-					who = namePerson(ctx, in.Repo)
+					who = name(ctx, in.Repo)
 				}
 				f, err := work.AddIdea(ctx, st, work.IdeaIn{Text: in.Text, Slug: in.Slug, Person: who})
 				return ideaOut(f), refused(err)

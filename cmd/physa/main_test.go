@@ -22,24 +22,17 @@ import (
 	"github.com/dphaener/physa/internal/store"
 )
 
-// TestMain keeps every test off GitHub: unless a test installs its own fake,
-// GitHub knows no PRs and no change came from one.
+// TestMain refuses to run the test binary as an engine, and points the
+// process environment every test inherits away from the real ~/.claude,
+// the running session and the real person setting. What a test reaches
+// beyond the process it reaches through the deps it builds with testDeps.
 func TestMain(m *testing.M) {
 	// The test binary never acts as an engine.
 	if i := slices.Index(os.Args, "engine"); i >= 0 && i+1 < len(os.Args) && os.Args[i+1] == "run" {
 		fmt.Fprintln(os.Stderr, "physa test binary: refusing to run as an engine")
 		os.Exit(3)
 	}
-	newForge = func(dir string) forge.Forge { return fakeGitHub(dir, nil) }
-	// No test starts a real agent: an unexpected start stops the binary.
-	agents["claude"] = func() adapter.Adapter { return unexpectedAgent{} }
-	// Safety net: no test reaches the store of this repository.
-	dir, err := os.MkdirTemp("", "physa-test-store")
-	if err != nil {
-		panic(err)
-	}
-	openStore = func(context.Context, string) (*store.Store, error) { return store.Open(context.Background(), dir) }
-	// Nor the real ~/.claude, nor the running session's id.
+	// Not the real ~/.claude, nor the running session's id.
 	claudeDir, err := os.MkdirTemp("", "physa-test-claude")
 	if err != nil {
 		panic(err)
@@ -61,7 +54,6 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	code := m.Run()
-	os.RemoveAll(dir)
 	os.RemoveAll(claudeDir)
 	os.RemoveAll(configDir)
 	os.Exit(code)
@@ -87,21 +79,33 @@ func fakeGitHub(dir string, known map[int]bool) *github.Client {
 	})
 }
 
-// useGitHub installs a fake GitHub that knows the PRs in known for one test.
-func useGitHub(t *testing.T, known ...int) {
+// testDeps are the deps of one test, which keep it off GitHub, off the store
+// of this repository and off a real agent: GitHub knows no PRs and no change
+// came from one, the store is a fresh one in a temp dir, and starting claude
+// stops the binary. A test that wants another fake changes its own copy.
+func testDeps(t *testing.T) deps {
 	t.Helper()
+	dir := t.TempDir()
+	return deps{
+		newForge:  func(dir string) forge.Forge { return fakeGitHub(dir, nil) },
+		openStore: func(ctx context.Context, _ string) (*store.Store, error) { return store.Open(ctx, dir) },
+		agents:    map[string]func() adapter.Adapter{"claude": func() adapter.Adapter { return unexpectedAgent{} }},
+	}
+}
+
+// useGitHub makes the GitHub of d know the PRs in known.
+func useGitHub(d *deps, known ...int) {
 	set := map[int]bool{}
 	for _, n := range known {
 		set[n] = true
 	}
-	old := newForge
-	newForge = func(dir string) forge.Forge { return fakeGitHub(dir, set) }
-	t.Cleanup(func() { newForge = old })
+	d.newForge = func(dir string) forge.Forge { return fakeGitHub(dir, set) }
 }
 
 func TestVersion(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	if code := run(t.Context(), []string{"version"}, &stdout, &stderr); code != 0 {
+	if code := run(t.Context(), testDeps(t), []string{"version"}, &stdout, &stderr); code != 0 {
 		t.Errorf("code = %d, want 0", code)
 	}
 	if got, want := stdout.String(), "physa dev\n"; got != want {
@@ -113,14 +117,16 @@ func TestVersion(t *testing.T) {
 }
 
 // rootHelp is the root help text.
-func rootHelp() string {
+func rootHelp(t *testing.T) string {
+	t.Helper()
 	var b bytes.Buffer
-	command.Help(rootCommand(), &b)
+	command.Help(rootCommand(testDeps(t)), &b)
 	return b.String()
 }
 
 func TestRootHelpListsTheCommands(t *testing.T) {
-	help := rootHelp()
+	t.Parallel()
+	help := rootHelp(t)
 	for _, name := range []string{"check ", "map ", "init ", "idea ", "pursue ", "pursuit ", "evidence ", "engine ", "api ", "sync ", "version ", "help "} {
 		if !strings.Contains(help, "\n  "+name) {
 			t.Errorf("root help lacks %q:\n%s", name, help)
@@ -129,8 +135,9 @@ func TestRootHelpListsTheCommands(t *testing.T) {
 }
 
 func TestHelpListsEngineAndAPI(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	if code := run(t.Context(), []string{"help"}, &stdout, &stderr); code != 0 {
+	if code := run(t.Context(), testDeps(t), []string{"help"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("code %d, stderr %q", code, stderr.String())
 	}
 	help, last := stdout.String(), -1
@@ -144,18 +151,20 @@ func TestHelpListsEngineAndAPI(t *testing.T) {
 }
 
 func TestHelpPrintsRootHelp(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"help"}, {"--help"}} {
 		var stdout, stderr bytes.Buffer
-		if code := run(t.Context(), args, &stdout, &stderr); code != 0 {
-			t.Errorf("run(t.Context(), %v) = %d, want 0", args, code)
+		if code := run(t.Context(), testDeps(t), args, &stdout, &stderr); code != 0 {
+			t.Errorf("run(t.Context(), testDeps(t), %v) = %d, want 0", args, code)
 		}
-		if stdout.String() != rootHelp() || stderr.Len() != 0 {
-			t.Errorf("run(t.Context(), %v) stdout %q, stderr %q", args, stdout.String(), stderr.String())
+		if stdout.String() != rootHelp(t) || stderr.Len() != 0 {
+			t.Errorf("run(t.Context(), testDeps(t), %v) stdout %q, stderr %q", args, stdout.String(), stderr.String())
 		}
 	}
 }
 
 func TestHelpOnGroupsAndLeaves(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"check", "--help"}, {"check", "map", "--help"}, {"check", "changes", "--help"},
 		{"map", "--help"}, {"map", "index", "--help"}, {"map", "slice", "--help"},
@@ -166,23 +175,24 @@ func TestHelpOnGroupsAndLeaves(t *testing.T) {
 		{"pursuit", "--help"}, {"pursuit", "list", "--help"}, {"pursuit", "stop", "--help"},
 	} {
 		var stdout, stderr bytes.Buffer
-		if code := run(t.Context(), args, &stdout, &stderr); code != 0 {
-			t.Errorf("run(t.Context(), %v) = %d, want 0", args, code)
+		if code := run(t.Context(), testDeps(t), args, &stdout, &stderr); code != 0 {
+			t.Errorf("run(t.Context(), testDeps(t), %v) = %d, want 0", args, code)
 		}
 		if !strings.HasPrefix(stdout.String(), "usage: physa "+args[0]) || stderr.Len() != 0 {
-			t.Errorf("run(t.Context(), %v) stdout %q, stderr %q", args, stdout.String(), stderr.String())
+			t.Errorf("run(t.Context(), testDeps(t), %v) stdout %q, stderr %q", args, stdout.String(), stderr.String())
 		}
 	}
 }
 
 func TestNoArgsAndUnknownPrintRootHelp(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{nil, {"bogus"}, {"bet"}, {"bet", "list"}} {
 		var stdout, stderr bytes.Buffer
-		if code := run(t.Context(), args, &stdout, &stderr); code != 2 {
-			t.Errorf("run(t.Context(), %v) = %d, want 2", args, code)
+		if code := run(t.Context(), testDeps(t), args, &stdout, &stderr); code != 2 {
+			t.Errorf("run(t.Context(), testDeps(t), %v) = %d, want 2", args, code)
 		}
-		if stderr.String() != rootHelp() || stdout.Len() != 0 {
-			t.Errorf("run(t.Context(), %v) stdout %q, stderr %q", args, stdout.String(), stderr.String())
+		if stderr.String() != rootHelp(t) || stdout.Len() != 0 {
+			t.Errorf("run(t.Context(), testDeps(t), %v) stdout %q, stderr %q", args, stdout.String(), stderr.String())
 		}
 	}
 }
@@ -225,8 +235,9 @@ func tempMap(t *testing.T, rule string) string {
 }
 
 func TestCheckGoodMap(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"check", "map", tempMap(t, "`r` · from docs/d.md")}, &stdout, &stderr)
+	code := run(t.Context(), testDeps(t), []string{"check", "map", tempMap(t, "`r` · from docs/d.md")}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, stderr.String())
 	}
@@ -239,8 +250,9 @@ func TestCheckGoodMap(t *testing.T) {
 }
 
 func TestCheckBrokenMap(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"check", "map", tempMap(t, "r from docs/d.md")}, &stdout, &stderr)
+	code := run(t.Context(), testDeps(t), []string{"check", "map", tempMap(t, "r from docs/d.md")}, &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
@@ -253,8 +265,9 @@ func TestCheckBrokenMap(t *testing.T) {
 }
 
 func TestCheckNoMapIsError(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"check", "map", t.TempDir()}, &stdout, &stderr)
+	code := run(t.Context(), testDeps(t), []string{"check", "map", t.TempDir()}, &stdout, &stderr)
 	if code != 2 {
 		t.Errorf("code = %d, want 2", code)
 	}
@@ -264,8 +277,9 @@ func TestCheckNoMapIsError(t *testing.T) {
 }
 
 func TestCheckMapTooManyArgsPrintsUsage(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"check", "map", "a", "b"}, &stdout, &stderr)
+	code := run(t.Context(), testDeps(t), []string{"check", "map", "a", "b"}, &stdout, &stderr)
 	if code != 2 {
 		t.Errorf("code = %d, want 2", code)
 	}
@@ -275,8 +289,9 @@ func TestCheckMapTooManyArgsPrintsUsage(t *testing.T) {
 }
 
 func TestIndexGoodMap(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"map", "index", tempMap(t, "`r` · from docs/d.md")}, &stdout, &stderr)
+	code := run(t.Context(), testDeps(t), []string{"map", "index", tempMap(t, "`r` · from docs/d.md")}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, stderr.String())
 	}
@@ -289,8 +304,9 @@ func TestIndexGoodMap(t *testing.T) {
 }
 
 func TestIndexMapWithProblem(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"map", "index", tempMap(t, "r from docs/d.md")}, &stdout, &stderr)
+	code := run(t.Context(), testDeps(t), []string{"map", "index", tempMap(t, "r from docs/d.md")}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -303,8 +319,9 @@ func TestIndexMapWithProblem(t *testing.T) {
 }
 
 func TestIndexNoMapIsError(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"map", "index", t.TempDir()}, &stdout, &stderr)
+	code := run(t.Context(), testDeps(t), []string{"map", "index", t.TempDir()}, &stdout, &stderr)
 	if code != 2 {
 		t.Errorf("code = %d, want 2", code)
 	}
@@ -317,8 +334,9 @@ func TestIndexNoMapIsError(t *testing.T) {
 }
 
 func TestIndexTooManyArgsPrintsUsage(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"map", "index", "a", "b"}, &stdout, &stderr)
+	code := run(t.Context(), testDeps(t), []string{"map", "index", "a", "b"}, &stdout, &stderr)
 	if code != 2 {
 		t.Errorf("code = %d, want 2", code)
 	}
@@ -330,16 +348,17 @@ func TestIndexTooManyArgsPrintsUsage(t *testing.T) {
 func TestBareMapEqualsMapIndex(t *testing.T) {
 	t.Chdir("../..")
 	var a, b, errA, errB bytes.Buffer
-	codeA := run(t.Context(), []string{"map"}, &a, &errA)
-	codeB := run(t.Context(), []string{"map", "index"}, &b, &errB)
+	codeA := run(t.Context(), testDeps(t), []string{"map"}, &a, &errA)
+	codeB := run(t.Context(), testDeps(t), []string{"map", "index"}, &b, &errB)
 	if codeA != 0 || codeB != 0 || a.Len() == 0 || a.String() != b.String() || errA.String() != errB.String() {
 		t.Errorf("map: %d %q %q; map index: %d %q %q", codeA, a.String(), errA.String(), codeB, b.String(), errB.String())
 	}
 }
 
 func TestMapBadArgumentPrintsMapHelp(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	if code := run(t.Context(), []string{"map", "nonsense"}, &stdout, &stderr); code != 2 {
+	if code := run(t.Context(), testDeps(t), []string{"map", "nonsense"}, &stdout, &stderr); code != 2 {
 		t.Errorf("code = %d, want 2", code)
 	}
 	if stderr.String() != helpOf(t, "map") || stdout.Len() != 0 {
@@ -348,8 +367,9 @@ func TestMapBadArgumentPrintsMapHelp(t *testing.T) {
 }
 
 func TestIndexOwnMap(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"map", "index", "../.."}, &stdout, &stderr)
+	code := run(t.Context(), testDeps(t), []string{"map", "index", "../.."}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, stderr.String())
 	}
@@ -385,13 +405,14 @@ const (
 func helpOf(t *testing.T, path ...string) string {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	if code := run(t.Context(), append(path, "--help"), &stdout, &stderr); code != 0 {
-		t.Fatalf("run(t.Context(), %v --help) = %d", path, code)
+	if code := run(t.Context(), testDeps(t), append(path, "--help"), &stdout, &stderr); code != 0 {
+		t.Fatalf("run(t.Context(), testDeps(t), %v --help) = %d", path, code)
 	}
 	return stdout.String()
 }
 
 func TestHelpNamesSlice(t *testing.T) {
+	t.Parallel()
 	help := helpOf(t, "map", "slice")
 	for _, u := range []string{sliceUsage, sliceEntryUsage} {
 		if !strings.Contains(help, u) {
@@ -402,9 +423,9 @@ func TestHelpNamesSlice(t *testing.T) {
 
 func TestSliceGoodMap(t *testing.T) {
 	t.Chdir(tempMap(t, "`r` · from docs/d.md"))
-	useStore(t)
+	d := testDeps(t)
 	var stdout, stderr bytes.Buffer
-	if code := run(t.Context(), []string{"map", "slice", "a"}, &stdout, &stderr); code != 0 {
+	if code := run(t.Context(), d, []string{"map", "slice", "a"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, stderr.String())
 	}
 	if !strings.HasPrefix(stdout.String(), "# Slice: a\n") {
@@ -417,9 +438,9 @@ func TestSliceGoodMap(t *testing.T) {
 
 func TestSliceOwnMap(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
+	d := testDeps(t)
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"map", "slice", "slices", "map"}, &stdout, &stderr)
+	code := run(t.Context(), d, []string{"map", "slice", "slices", "map"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, stderr.String())
 	}
@@ -433,9 +454,9 @@ func TestSliceOwnMap(t *testing.T) {
 
 func TestSliceJSON(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
+	d := testDeps(t)
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"map", "slice", "map", "--format", "json", "--with", "all"}, &stdout, &stderr)
+	code := run(t.Context(), d, []string{"map", "slice", "map", "--format", "json", "--with", "all"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, stderr.String())
 	}
@@ -450,9 +471,9 @@ func TestSliceJSON(t *testing.T) {
 
 func TestSliceFlagForms(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
+	d := testDeps(t)
 	var want bytes.Buffer
-	if code := run(t.Context(), []string{"map", "slice", "slices", "map", "--format", "json", "--with", "all"}, &want, &bytes.Buffer{}); code != 0 {
+	if code := run(t.Context(), d, []string{"map", "slice", "slices", "map", "--format", "json", "--with", "all"}, &want, &bytes.Buffer{}); code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
 	for _, args := range [][]string{
@@ -461,21 +482,21 @@ func TestSliceFlagForms(t *testing.T) {
 		{"map", "slices", "map", "--with=all", "--format=json"},
 	} {
 		var got, stderr bytes.Buffer
-		if code := run(t.Context(), append([]string{"map", "slice"}, args...), &got, &stderr); code != 0 {
-			t.Fatalf("run(t.Context(), %v) = %d; stderr %q", args, code, stderr.String())
+		if code := run(t.Context(), d, append([]string{"map", "slice"}, args...), &got, &stderr); code != 0 {
+			t.Fatalf("run(t.Context(), d, %v) = %d; stderr %q", args, code, stderr.String())
 		}
 		if got.String() != want.String() {
-			t.Errorf("run(t.Context(), %v) differs from the reference output", args)
+			t.Errorf("run(t.Context(), d, %v) differs from the reference output", args)
 		}
 	}
 }
 
 func TestSliceWithKinds(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
+	d := testDeps(t)
 	for _, w := range []string{"decisions", "questions", "all"} {
 		var stdout, stderr bytes.Buffer
-		if code := run(t.Context(), []string{"map", "slice", "slices", "--with", w}, &stdout, &stderr); code != 0 {
+		if code := run(t.Context(), d, []string{"map", "slice", "slices", "--with", w}, &stdout, &stderr); code != 0 {
 			t.Errorf("--with %s: code = %d; stderr %q", w, code, stderr.String())
 		}
 	}
@@ -483,7 +504,7 @@ func TestSliceWithKinds(t *testing.T) {
 
 func TestSliceBadUsage(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
+	d := testDeps(t)
 	for _, args := range [][]string{
 		{"map", "slice"},
 		{"map", "slice", "--format", "json"},
@@ -497,23 +518,23 @@ func TestSliceBadUsage(t *testing.T) {
 		{"map", "slice", "slices", "--change", "x"},
 	} {
 		var stdout, stderr bytes.Buffer
-		if code := run(t.Context(), args, &stdout, &stderr); code != 2 {
-			t.Errorf("run(t.Context(), %v) = %d, want 2", args, code)
+		if code := run(t.Context(), d, args, &stdout, &stderr); code != 2 {
+			t.Errorf("run(t.Context(), d, %v) = %d, want 2", args, code)
 		}
 		if !strings.Contains(stderr.String(), sliceUsage) || !strings.Contains(stderr.String(), sliceEntryUsage) {
-			t.Errorf("run(t.Context(), %v) stderr = %q, want both usages", args, stderr.String())
+			t.Errorf("run(t.Context(), d, %v) stderr = %q, want both usages", args, stderr.String())
 		}
 		if stdout.Len() != 0 {
-			t.Errorf("run(t.Context(), %v) stdout = %q, want empty", args, stdout.String())
+			t.Errorf("run(t.Context(), d, %v) stdout = %q, want empty", args, stdout.String())
 		}
 	}
 }
 
 func TestSliceUnknownCapability(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
+	d := testDeps(t)
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"map", "slice", "nope"}, &stdout, &stderr)
+	code := run(t.Context(), d, []string{"map", "slice", "nope"}, &stdout, &stderr)
 	if code != 2 {
 		t.Errorf("code = %d, want 2", code)
 	}
@@ -527,9 +548,9 @@ func TestSliceUnknownCapability(t *testing.T) {
 
 func TestSliceNoMapIsError(t *testing.T) {
 	t.Chdir(t.TempDir())
-	useStore(t)
+	d := testDeps(t)
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"map", "slice", "slices"}, &stdout, &stderr)
+	code := run(t.Context(), d, []string{"map", "slice", "slices"}, &stdout, &stderr)
 	if code != 2 {
 		t.Errorf("code = %d, want 2", code)
 	}
@@ -543,39 +564,39 @@ func TestSliceNoMapIsError(t *testing.T) {
 
 func TestSliceMapWithProblemFails(t *testing.T) {
 	t.Chdir(tempMap(t, "r from docs/d.md"))
-	useStore(t)
+	d := testDeps(t)
 	for _, args := range [][]string{{"map", "slice", "a"}, {"map", "slice", "--entry", "r"}} {
 		var stdout, stderr bytes.Buffer
-		if code := run(t.Context(), args, &stdout, &stderr); code != 2 {
-			t.Fatalf("run(t.Context(), %v) = %d, want 2; stderr %q", args, code, stderr.String())
+		if code := run(t.Context(), d, args, &stdout, &stderr); code != 2 {
+			t.Fatalf("run(t.Context(), d, %v) = %d, want 2; stderr %q", args, code, stderr.String())
 		}
 		if stdout.Len() != 0 {
-			t.Errorf("run(t.Context(), %v) stdout = %q, want empty", args, stdout.String())
+			t.Errorf("run(t.Context(), d, %v) stdout = %q, want empty", args, stdout.String())
 		}
 		if got := stderr.String(); !strings.HasPrefix(got, "physa map slice: the map has ") ||
 			!strings.Contains(got, ".physa/capabilities/a/rules.md:") {
-			t.Errorf("run(t.Context(), %v) stderr = %q, want the problem named by file and line", args, got)
+			t.Errorf("run(t.Context(), d, %v) stderr = %q, want the problem named by file and line", args, got)
 		}
 	}
-	if recs := listed(t); len(recs) != 0 {
+	if recs := listed(t, d); len(recs) != 0 {
 		t.Errorf("records = %+v, want none", recs)
 	}
 }
 
 // entryText returns the stdout of physa map slice --entry with args, failing the test on a non-zero code.
-func entryText(t *testing.T, args ...string) string {
+func entryText(t *testing.T, d deps, args ...string) string {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	if code := run(t.Context(), append([]string{"map", "slice", "--entry"}, args...), &stdout, &stderr); code != 0 {
-		t.Fatalf("run(t.Context(), %v) = %d; stderr %q", args, code, stderr.String())
+	if code := run(t.Context(), d, append([]string{"map", "slice", "--entry"}, args...), &stdout, &stderr); code != 0 {
+		t.Fatalf("run(t.Context(), testDeps(t), %v) = %d; stderr %q", args, code, stderr.String())
 	}
 	return stdout.String()
 }
 
 func TestSliceEntriesInOrderFromTwoCapabilities(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
-	out := entryText(t, "no-adr", "github-first")
+	d := testDeps(t)
+	out := entryText(t, d, "no-adr", "github-first")
 	i, j := strings.Index(out, "`no-adr`"), strings.Index(out, "`github-first`")
 	if i < 0 || j < i {
 		t.Errorf("stdout = %q, want no-adr then github-first", out)
@@ -583,24 +604,24 @@ func TestSliceEntriesInOrderFromTwoCapabilities(t *testing.T) {
 	if strings.Contains(out, "# Slice") {
 		t.Errorf("stdout = %q, want entries only", out)
 	}
-	if rev := entryText(t, "github-first", "no-adr"); strings.Index(rev, "`github-first`") > strings.Index(rev, "`no-adr`") {
+	if rev := entryText(t, d, "github-first", "no-adr"); strings.Index(rev, "`github-first`") > strings.Index(rev, "`no-adr`") {
 		t.Errorf("reversed ask comes back in the old order: %q", rev)
 	}
 }
 
 func TestSliceEntryProductSlug(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
-	if out := entryText(t, "no-adr"); !strings.HasPrefix(out, "### Never write \"ADR\"\n`no-adr`") {
+	d := testDeps(t)
+	if out := entryText(t, d, "no-adr"); !strings.HasPrefix(out, "### Never write \"ADR\"\n`no-adr`") {
 		t.Errorf("stdout = %q, want the product entry", out)
 	}
 }
 
 func TestSliceEntryUnknownSlugsNamed(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
+	d := testDeps(t)
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"map", "slice", "--entry", "no-adr", "nope-one", "nope-two"}, &stdout, &stderr)
+	code := run(t.Context(), d, []string{"map", "slice", "--entry", "no-adr", "nope-one", "nope-two"}, &stdout, &stderr)
 	if code != 2 {
 		t.Errorf("code = %d, want 2", code)
 	}
@@ -612,16 +633,16 @@ func TestSliceEntryUnknownSlugsNamed(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Errorf("stdout = %q, want empty", stdout.String())
 	}
-	if recs := listed(t); len(recs) != 0 {
+	if recs := listed(t, d); len(recs) != 0 {
 		t.Errorf("records = %+v, want none", recs)
 	}
 }
 
 func TestSliceEntryJSON(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
+	d := testDeps(t)
 	var stdout, stderr bytes.Buffer
-	if code := run(t.Context(), []string{"map", "slice", "--entry", "no-adr", "github-first", "--format", "json"}, &stdout, &stderr); code != 0 {
+	if code := run(t.Context(), d, []string{"map", "slice", "--entry", "no-adr", "github-first", "--format", "json"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("code = %d; stderr %q", code, stderr.String())
 	}
 	var v struct {
@@ -640,6 +661,7 @@ func TestSliceEntryJSON(t *testing.T) {
 const changesUsage = "physa map changes [<range>] [--json] [--strict]"
 
 func TestHelpNamesMapChanges(t *testing.T) {
+	t.Parallel()
 	if help := helpOf(t, "map", "changes"); !strings.Contains(help, changesUsage) {
 		t.Errorf("help = %q, want it to name %q", help, changesUsage)
 	}
@@ -686,7 +708,7 @@ func trailersRepo(t *testing.T) string {
 func runTrailers(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), append([]string{"map", "changes"}, args...), &stdout, &stderr)
+	code := run(t.Context(), testDeps(t), append([]string{"map", "changes"}, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -795,9 +817,10 @@ func TestTrailersNoMapIsError(t *testing.T) {
 }
 
 func TestTrailersBadUsage(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"a", "b"}, {"--bogus"}, {"--json=maybe"}} {
 		var stdout, stderr bytes.Buffer
-		code := run(t.Context(), append([]string{"map", "changes"}, args...), &stdout, &stderr)
+		code := run(t.Context(), testDeps(t), append([]string{"map", "changes"}, args...), &stdout, &stderr)
 		if code != 2 || stderr.String() != helpOf(t, "map", "changes") || stdout.Len() != 0 {
 			t.Errorf("%v: code = %d, stderr = %q, want 2 and usage", args, code, stderr.String())
 		}
@@ -805,23 +828,25 @@ func TestTrailersBadUsage(t *testing.T) {
 }
 
 func TestOldCommandsPrintRootHelp(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"index"}, {"slice", "map"}, {"trailers"}, {"pr-check"}, {"records"},
 		{"review"}, {"review", "--json"}, {"--version"}, {"-version"},
 	} {
 		var stdout, stderr bytes.Buffer
-		if code := run(t.Context(), args, &stdout, &stderr); code != 2 {
-			t.Errorf("run(t.Context(), %v) = %d, want 2", args, code)
+		if code := run(t.Context(), testDeps(t), args, &stdout, &stderr); code != 2 {
+			t.Errorf("run(t.Context(), testDeps(t), %v) = %d, want 2", args, code)
 		}
-		if stderr.String() != rootHelp() || stdout.Len() != 0 {
-			t.Errorf("run(t.Context(), %v) stdout %q, stderr %q", args, stdout.String(), stderr.String())
+		if stderr.String() != rootHelp(t) || stdout.Len() != 0 {
+			t.Errorf("run(t.Context(), testDeps(t), %v) stdout %q, stderr %q", args, stdout.String(), stderr.String())
 		}
 	}
 }
 
 func TestSyncIsNotBuilt(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"sync"}, &stdout, &stderr)
+	code := run(t.Context(), testDeps(t), []string{"sync"}, &stdout, &stderr)
 	want := "physa sync: not yet; it returns with digests, after the engine (design 07 \u00a77)\n"
 	if code != 2 || stderr.String() != want || stdout.Len() != 0 {
 		t.Errorf("code %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
@@ -833,7 +858,7 @@ func TestMapHooksWritesEmbeddedHook(t *testing.T) {
 	t.Chdir(dir)
 	var stdout, stderr bytes.Buffer
 	file := filepath.Join(dir, ".git", "hooks", "prepare-commit-msg")
-	if code := run(t.Context(), []string{"map", "hooks"}, &stdout, &stderr); code != 0 || stderr.Len() != 0 ||
+	if code := run(t.Context(), testDeps(t), []string{"map", "hooks"}, &stdout, &stderr); code != 0 || stderr.Len() != 0 ||
 		!strings.HasPrefix(stdout.String(), "prepare-commit-msg written to ") ||
 		!strings.HasSuffix(stdout.String(), "/.git/hooks/prepare-commit-msg: commits made in Claude Code now carry Session:.\n") {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
@@ -847,6 +872,7 @@ func TestMapHooksWritesEmbeddedHook(t *testing.T) {
 }
 
 func TestNoteProblemsSingularAndPlural(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		n    int
 		want string
@@ -864,13 +890,15 @@ func TestNoteProblemsSingularAndPlural(t *testing.T) {
 }
 
 // fmtRun runs physa map fmt with args and returns the code and both outputs.
-func fmtRun(args ...string) (int, string, string) {
+func fmtRun(t *testing.T, args ...string) (int, string, string) {
+	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), append([]string{"map", "fmt"}, args...), &stdout, &stderr)
+	code := run(t.Context(), testDeps(t), append([]string{"map", "fmt"}, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
 func TestFmtCheckThenFix(t *testing.T) {
+	t.Parallel()
 	root := tempMap(t, "`r` · from docs/d.md")
 	rules := filepath.Join(root, ".physa/capabilities/a/rules.md")
 	b, err := os.ReadFile(rules)
@@ -885,28 +913,29 @@ func TestFmtCheckThenFix(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := ".physa/capabilities/a/rules.md: contents or spacing differ; run physa map fmt\n"
-	if code, out, _ := fmtRun("--check", root); code != 1 || out != want {
+	if code, out, _ := fmtRun(t, "--check", root); code != 1 || out != want {
 		t.Errorf("--check = %d, %q; want 1, %q", code, out, want)
 	}
 	if got, _ := os.ReadFile(rules); string(got) != stale {
 		t.Errorf("--check changed the file: %q", got)
 	}
-	if code, out, _ := fmtRun(root); code != 0 || out != "formatted .physa/capabilities/a/rules.md\n" {
+	if code, out, _ := fmtRun(t, root); code != 0 || out != "formatted .physa/capabilities/a/rules.md\n" {
 		t.Errorf("fmt = %d, %q", code, out)
 	}
 	if got, _ := os.ReadFile(rules); string(got) != string(b) {
 		t.Errorf("fmt wrote %q, want %q", got, b)
 	}
-	if code, out, errOut := fmtRun("--check", root); code != 0 || out != "" || errOut != "" {
+	if code, out, errOut := fmtRun(t, "--check", root); code != 0 || out != "" || errOut != "" {
 		t.Errorf("--check after fmt = %d, %q, %q", code, out, errOut)
 	}
 }
 
 func TestFmtOldLayoutExitsTwo(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	write(t, root, ".physa/product.md", "---\npromise: x\n---\n# T\n")
 	for _, args := range [][]string{{root}, {"--check", root}} {
-		code, out, errOut := fmtRun(args...)
+		code, out, errOut := fmtRun(t, args...)
 		if code != 2 || out != "" || !strings.Contains(errOut, "old single-file layout; convert") {
 			t.Errorf("fmt %v = %d, %q, %q; want 2 and the convert message", args, code, out, errOut)
 		}
@@ -914,8 +943,9 @@ func TestFmtOldLayoutExitsTwo(t *testing.T) {
 }
 
 func TestFmtBadUsage(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"a", "b"}, {"--fix"}, {"a", "--check"}} {
-		if code, _, _ := fmtRun(args...); code != 2 {
+		if code, _, _ := fmtRun(t, args...); code != 2 {
 			t.Errorf("fmt %v = %d, want 2", args, code)
 		}
 	}

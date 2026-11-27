@@ -15,16 +15,16 @@ import (
 	"github.com/dphaener/physa/internal/prcheck"
 )
 
-func runPRCheck(t *testing.T, args ...string) (int, string, string) {
+func runPRCheck(t *testing.T, d deps, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), append([]string{"check", "changes"}, args...), &stdout, &stderr)
+	code := run(t.Context(), d, append([]string{"check", "changes"}, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
 func TestPRCheckMarkdown(t *testing.T) {
 	t.Chdir(trailersRepo(t))
-	code, out, errOut := runPRCheck(t, "HEAD~4..HEAD")
+	code, out, errOut := runPRCheck(t, testDeps(t), "HEAD~4..HEAD")
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, errOut)
 	}
@@ -37,7 +37,7 @@ func TestPRCheckMarkdown(t *testing.T) {
 
 func TestPRCheckJSON(t *testing.T) {
 	t.Chdir(trailersRepo(t))
-	code, out, errOut := runPRCheck(t, "HEAD~4..HEAD", "--json")
+	code, out, errOut := runPRCheck(t, testDeps(t), "HEAD~4..HEAD", "--json")
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, errOut)
 	}
@@ -62,7 +62,7 @@ func TestPRCheckMapProblemsStillExitZero(t *testing.T) {
 	root := trailersRepo(t)
 	folder(t, root, mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md · #99\nBecause: y.\n")
 	t.Chdir(root)
-	code, out, errOut := runPRCheck(t, "HEAD~4..HEAD", "--json")
+	code, out, errOut := runPRCheck(t, testDeps(t), "HEAD~4..HEAD", "--json")
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, errOut)
 	}
@@ -73,17 +73,19 @@ func TestPRCheckMapProblemsStillExitZero(t *testing.T) {
 
 func TestPRCheckNoGHFallsBack(t *testing.T) {
 	t.Chdir(trailersRepo(t))
-	useNoGH(t)
+	d := testDeps(t)
+	useNoGH(&d)
 	folder(t, ".", mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md · #10\nBecause: y.\n")
-	code, out, _ := runPRCheck(t, "HEAD~4..HEAD", "--json")
+	code, out, _ := runPRCheck(t, d, "HEAD~4..HEAD", "--json")
 	if code != 0 || !strings.Contains(out, `"pr_anchors":"form-only"`) || !strings.Contains(out, "gh is not installed") {
 		t.Errorf("code %d, out %s", code, out)
 	}
 }
 
 func TestCheckHelpNamesChanges(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	if code := run(t.Context(), []string{"check", "--help"}, &stdout, &stderr); code != 0 {
+	if code := run(t.Context(), testDeps(t), []string{"check", "--help"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
 	if want := "physa check changes [<range>] [--json] [--strict]"; !strings.Contains(stdout.String(), want) {
@@ -93,16 +95,16 @@ func TestCheckHelpNamesChanges(t *testing.T) {
 
 func TestPRCheckStrict(t *testing.T) {
 	t.Chdir(trailersRepo(t))
-	if code, out, errOut := runPRCheck(t, "HEAD~4..HEAD", "--strict"); code != 1 || !strings.Contains(out, "nosuch") {
+	if code, out, errOut := runPRCheck(t, testDeps(t), "HEAD~4..HEAD", "--strict"); code != 1 || !strings.Contains(out, "nosuch") {
 		t.Errorf("strict with findings: code %d, stdout %q, stderr %q, want 1", code, out, errOut)
 	}
 	folder(t, ".", mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md\nBecause: y.\n")
-	code, out, errOut := runPRCheck(t, "--strict", "HEAD~4..HEAD~3", "--json")
+	code, out, errOut := runPRCheck(t, testDeps(t), "--strict", "HEAD~4..HEAD~3", "--json")
 	if code != 0 {
 		t.Errorf("strict and clean: code %d, stdout %q, stderr %q, want 0", code, out, errOut)
 	}
 	folder(t, ".", mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/nope.md\nBecause: y.\n")
-	if code, out, _ := runPRCheck(t, "HEAD~4..HEAD~3", "--strict"); code != 1 || !strings.Contains(out, "docs/nope.md") {
+	if code, out, _ := runPRCheck(t, testDeps(t), "HEAD~4..HEAD~3", "--strict"); code != 1 || !strings.Contains(out, "docs/nope.md") {
 		t.Errorf("strict with a map problem: code %d, stdout %q, want 1", code, out)
 	}
 }
@@ -116,7 +118,7 @@ func TestPRCheckMapAsEachChangeLeavesIt(t *testing.T) {
 	gitIn(t, root, "add", ".")
 	gitIn(t, root, "commit", "-q", "-m", "feat: add c\n\nCapability: c")
 	t.Chdir(root)
-	code, out, errOut := runPRCheck(t, "HEAD~2..HEAD", "--json")
+	code, out, errOut := runPRCheck(t, testDeps(t), "HEAD~2..HEAD", "--json")
 	if code != 0 {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -132,7 +134,7 @@ func TestPRCheckMapAsEachChangeLeavesIt(t *testing.T) {
 func TestPRCheckNotARepo(t *testing.T) {
 	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(t.TempDir()))
 	t.Chdir(tempMap(t, "r from docs/d.md"))
-	code, _, errOut := runPRCheck(t, "HEAD~1..HEAD")
+	code, _, errOut := runPRCheck(t, testDeps(t), "HEAD~1..HEAD")
 	if code != 2 || errOut != "physa check changes: not a repository under version control\n" {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
@@ -143,7 +145,7 @@ func TestPRCheckUsageErrors(t *testing.T) {
 	for _, args := range [][]string{
 		{"--check-run"}, {"--pr", "7"}, {"--review"}, {"--skip-review", "x"}, {"--bogus"}, {"a..b", "c..d"}, {"--json=1"},
 	} {
-		code, _, errOut := runPRCheck(t, args...)
+		code, _, errOut := runPRCheck(t, testDeps(t), args...)
 		if code != 2 || !strings.HasPrefix(errOut, "usage: physa check changes") {
 			t.Errorf("%v: code %d, stderr %q", args, code, errOut)
 		}
@@ -152,34 +154,38 @@ func TestPRCheckUsageErrors(t *testing.T) {
 
 func TestPRCheckBadRange(t *testing.T) {
 	t.Chdir(trailersRepo(t))
-	code, _, errOut := runPRCheck(t, "not-a-ref..HEAD")
+	code, _, errOut := runPRCheck(t, testDeps(t), "not-a-ref..HEAD")
 	if code != 2 || !strings.HasPrefix(errOut, "physa check changes: ") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
-func checkWithAnchor(t *testing.T, anchor string) (int, string, string) {
+func checkWithAnchor(t *testing.T, d deps, anchor string) (int, string, string) {
 	t.Helper()
 	root := tempMap(t, "`r` · from docs/d.md · "+anchor)
 	var stdout, stderr bytes.Buffer
-	code := checkMap(t.Context(), root, "physa check map", &stdout, &stderr)
+	code := d.checkMap(t.Context(), root, "physa check map", &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
 func TestCheckResolvesPRAnchors(t *testing.T) {
-	useGitHub(t, 10)
-	if code, _, errOut := checkWithAnchor(t, "#10"); code != 0 || errOut != "" {
+	t.Parallel()
+	d := testDeps(t)
+	useGitHub(&d, 10)
+	if code, _, errOut := checkWithAnchor(t, d, "#10"); code != 0 || errOut != "" {
 		t.Errorf("known: code %d, stderr %q", code, errOut)
 	}
-	code, _, errOut := checkWithAnchor(t, "#11")
+	code, _, errOut := checkWithAnchor(t, d, "#11")
 	if code != 1 || !strings.Contains(errOut, "#11") {
 		t.Errorf("unknown: code %d, stderr %q", code, errOut)
 	}
 }
 
 func TestCheckFormOnlyWithoutGH(t *testing.T) {
-	useNoGH(t)
-	code, _, errOut := checkWithAnchor(t, "#10")
+	t.Parallel()
+	d := testDeps(t)
+	useNoGH(&d)
+	code, _, errOut := checkWithAnchor(t, d, "#10")
 	if code != 0 || !strings.Contains(errOut, "physa check map: PR anchors checked for form only: gh is not installed") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
@@ -188,25 +194,22 @@ func TestCheckFormOnlyWithoutGH(t *testing.T) {
 // errNoGH is what the real runner returns when gh is not on PATH.
 var errNoGH = &exec.Error{Name: "gh", Err: exec.ErrNotFound}
 
-// useNoGH installs, for one test, a GitHub whose gh is not installed.
-func useNoGH(t *testing.T) {
-	t.Helper()
-	old := newForge
-	newForge = func(dir string) forge.Forge {
+// useNoGH makes the GitHub of d one whose gh is not installed.
+func useNoGH(d *deps) {
+	d.newForge = func(dir string) forge.Forge {
 		return github.NewWithRunner(dir, func(context.Context, string, ...string) ([]byte, error) { return nil, errNoGH })
 	}
-	t.Cleanup(func() { newForge = old })
 }
 
 func TestCheckFormOnlyUnauthenticated(t *testing.T) {
-	old := newForge
-	newForge = func(dir string) forge.Forge {
+	t.Parallel()
+	d := testDeps(t)
+	d.newForge = func(dir string) forge.Forge {
 		return github.NewWithRunner(dir, func(_ context.Context, _ string, args ...string) ([]byte, error) {
 			return nil, &github.Error{Args: args, Stderr: "HTTP 401: Bad credentials", ExitCode: 1}
 		})
 	}
-	t.Cleanup(func() { newForge = old })
-	code, _, errOut := checkWithAnchor(t, "#10")
+	code, _, errOut := checkWithAnchor(t, d, "#10")
 	if code != 0 || !strings.Contains(errOut, "physa check map: PR anchors checked for form only: gh is not authenticated\n") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
@@ -215,7 +218,7 @@ func TestCheckFormOnlyUnauthenticated(t *testing.T) {
 func runCheck(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), append([]string{"check"}, args...), &stdout, &stderr)
+	code := run(t.Context(), testDeps(t), append([]string{"check"}, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -270,7 +273,8 @@ func TestBareCheckBadRangeAndUsage(t *testing.T) {
 }
 
 func TestDefaultFakeForgeKnowsNoPR(t *testing.T) {
-	f := newForge(t.TempDir())
+	t.Parallel()
+	f := testDeps(t).newForge(t.TempDir())
 	if ok, err := f.PRExists(t.Context(), 1); ok || err != nil {
 		t.Errorf("PRExists: %v, %v", ok, err)
 	}

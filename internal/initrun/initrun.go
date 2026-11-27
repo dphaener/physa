@@ -58,6 +58,8 @@ type Env struct {
 	IsTerminal func() bool
 	Spend      string
 	Skill      func(agent string) string
+	// Wait is how init waits out the forge's rate limit; its zero fields are merged's defaults.
+	Wait merged.Wait
 }
 
 // Run runs physa init on the repo in the current directory: the phase named, or every phase in
@@ -221,7 +223,9 @@ func (r *run) gatherInto(ctx context.Context, off string) (store.Gather, gather.
 	if err != nil {
 		return store.Gather{}, gather.Summary{}, err
 	}
-	bounds := gather.Bounds{Since: r.o.Since, SinceSet: r.o.SinceSet, MaxPRs: r.o.MaxPRs, Wait: merged.Wait{Progress: r.stderr}}
+	wait := r.env.Wait
+	wait.Progress = r.stderr
+	bounds := gather.Bounds{Since: r.o.Since, SinceSet: r.o.SinceSet, MaxPRs: r.o.MaxPRs, Wait: wait}
 	g, sum, err := gather.Run(ctx, ".", repo, r.env.Forge("."), bounds, d, r.env.Now())
 	if stop := (*gather.Stopped)(nil); r.guard.Stopped() || err != nil && !errors.As(err, &stop) { // the cap refused discovery: nothing is stored
 		return g, sum, cmp.Or(err, adapter.ErrCapped)

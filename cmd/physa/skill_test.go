@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,9 +12,10 @@ import (
 	"github.com/dphaener/physa/internal/skillcli"
 )
 
-func runSkill(args ...string) (int, string, string) {
+func runSkill(t *testing.T, args ...string) (int, string, string) {
+	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), args, &stdout, &stderr)
+	code := run(t.Context(), testDeps(t), args, &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -35,14 +35,16 @@ func isolate(t *testing.T) string {
 }
 
 func TestSkillShowPrintsTheGuide(t *testing.T) {
-	code, stdout, stderr := runSkill("skill", "show")
+	t.Parallel()
+	code, stdout, stderr := runSkill(t, "skill", "show")
 	if code != 0 || stdout != skillcli.Guide() || stderr != "" {
 		t.Errorf("skill show: exit %d, guide equal %v, stderr %q", code, stdout == skillcli.Guide(), stderr)
 	}
 }
 
 func TestSkillShowWithAnArgumentIsBadUsage(t *testing.T) {
-	code, stdout, stderr := runSkill("skill", "show", "extra")
+	t.Parallel()
+	code, stdout, stderr := runSkill(t, "skill", "show", "extra")
 	if code != 2 || stdout != "" || !strings.Contains(stderr, "physa skill show") {
 		t.Errorf("skill show extra: exit %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
@@ -50,7 +52,7 @@ func TestSkillShowWithAnArgumentIsBadUsage(t *testing.T) {
 
 func TestBareSkillPrintsStatus(t *testing.T) {
 	isolate(t)
-	code, stdout, stderr := runSkill("skill")
+	code, stdout, stderr := runSkill(t, "skill")
 	if code != 0 || !strings.Contains(stdout, "Claude Code") || !strings.Contains(stdout, "missing") || stderr != "" {
 		t.Errorf("skill: exit %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
@@ -61,30 +63,30 @@ func TestSkillSetupStatusRemoveEndToEnd(t *testing.T) {
 	settings := filepath.Join(home, ".claude", "settings.json")
 	stub := filepath.Join(home, ".claude", "skills", "physa", "SKILL.md")
 	// The tests have no terminal, so setup needs --yes.
-	code, _, stderr := runSkill("skill", "setup")
+	code, _, stderr := runSkill(t, "skill", "setup")
 	if _, err := os.Stat(filepath.Join(home, ".claude")); code != 2 || !strings.Contains(stderr, "--yes") || err == nil {
 		t.Fatalf("setup without --yes: exit %d, stderr %q, stat err %v", code, stderr, err)
 	}
-	if code, _, stderr := runSkill("skill", "setup", "--yes"); code != 0 {
+	if code, _, stderr := runSkill(t, "skill", "setup", "--yes"); code != 0 {
 		t.Fatalf("setup --yes: exit %d, stderr %q", code, stderr)
 	}
 	if b, err := os.ReadFile(stub); err != nil || !strings.Contains(string(b), "physa skill show") {
 		t.Fatalf("stub: %q, %v", b, err)
 	}
-	if code, stdout, _ := runSkill("skill", "status", "--json"); code != 0 || !strings.Contains(stdout, `"state": "current"`) {
+	if code, stdout, _ := runSkill(t, "skill", "status", "--json"); code != 0 || !strings.Contains(stdout, `"state": "current"`) {
 		t.Fatalf("status --json: exit %d, stdout %q", code, stdout)
 	}
 	afterSetup, err := os.ReadFile(settings)
 	if err != nil || strings.Count(string(afterSetup), "physa skill session") != 1 || !strings.Contains(string(afterSetup), `"SessionStart"`) {
 		t.Fatalf("settings.json after setup: %q, %v", afterSetup, err)
 	}
-	if code, stdout, stderr := runSkill("skill", "setup", "--yes"); code != 0 || strings.Count(stdout, "already current") != 2 {
+	if code, stdout, stderr := runSkill(t, "skill", "setup", "--yes"); code != 0 || strings.Count(stdout, "already current") != 2 {
 		t.Fatalf("second setup: exit %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 	if again, _ := os.ReadFile(settings); !bytes.Equal(again, afterSetup) {
 		t.Fatalf("a second setup changed settings.json: %q", again)
 	}
-	if code, _, stderr := runSkill("skill", "remove", "--yes"); code != 0 {
+	if code, _, stderr := runSkill(t, "skill", "remove", "--yes"); code != 0 {
 		t.Fatalf("remove --yes: exit %d, stderr %q", code, stderr)
 	}
 	if _, err := os.Stat(stub); err == nil {
@@ -102,7 +104,7 @@ func TestSkillSetupWithCodexFoundEndToEnd(t *testing.T) {
 	}
 	shared := filepath.Join(home, ".agents", "skills", "physa", "SKILL.md")
 	hooks := filepath.Join(home, ".codex", "hooks.json")
-	code, stdout, stderr := runSkill("skill", "setup", "--yes")
+	code, stdout, stderr := runSkill(t, "skill", "setup", "--yes")
 	if code != 0 || !strings.Contains(stdout, "/hooks") {
 		t.Fatalf("setup --yes: exit %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
@@ -112,10 +114,10 @@ func TestSkillSetupWithCodexFoundEndToEnd(t *testing.T) {
 	if b, err := os.ReadFile(hooks); err != nil || strings.Count(string(b), "physa skill session") != 1 {
 		t.Fatalf("hooks.json: %q, %v", b, err)
 	}
-	if code, stdout, _ := runSkill("skill", "status"); code != 0 || !strings.Contains(stdout, "unsupported") || !strings.Contains(stdout, "not found") {
+	if code, stdout, _ := runSkill(t, "skill", "status"); code != 0 || !strings.Contains(stdout, "unsupported") || !strings.Contains(stdout, "not found") {
 		t.Fatalf("status: exit %d, stdout %q", code, stdout)
 	}
-	if code, _, stderr := runSkill("skill", "remove", "--yes"); code != 0 {
+	if code, _, stderr := runSkill(t, "skill", "remove", "--yes"); code != 0 {
 		t.Fatalf("remove --yes: exit %d, stderr %q", code, stderr)
 	}
 	if _, err := os.Stat(shared); err == nil {
@@ -130,6 +132,7 @@ var wordPattern = regexp.MustCompile(`^[a-z]+$`)
 
 // TestGuideCommandsExist runs --help on every command the guide names.
 func TestGuideCommandsExist(t *testing.T) {
+	t.Parallel()
 	spans := regexp.MustCompile("`(physa [^`]*)`").FindAllStringSubmatch(skillcli.Guide(), -1)
 	seen := map[string]bool{}
 	for _, m := range spans {
@@ -145,13 +148,13 @@ func TestGuideCommandsExist(t *testing.T) {
 			continue
 		}
 		seen[key] = true
-		cmd, rest, err := rootCommand().Find(words)
+		cmd, rest, err := rootCommand(testDeps(t)).Find(words)
 		if err != nil || len(rest) != 0 || cmd.CommandPath() != "physa "+key {
 			// A trailing positional word (a command's own argument) is not a command.
 			t.Errorf("the guide names `physa %s`, which is not a command (found %q, left over %q, err %v)", key, cmd.CommandPath(), rest, err)
 			continue
 		}
-		code, stdout, stderr := runSkill(append(slices.Clone(words), "--help")...)
+		code, stdout, stderr := runSkill(t, append(slices.Clone(words), "--help")...)
 		if code != 0 || stdout == "" {
 			t.Errorf("physa %s --help: exit %d, stdout %q, stderr %q", key, code, stdout, stderr)
 		}

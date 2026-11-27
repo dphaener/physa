@@ -12,9 +12,6 @@ import (
 	"github.com/dphaener/physa/internal/vcs/git"
 )
 
-// openStore opens the store of the repository at dir. Tests replace it.
-var openStore = gitStore
-
 // gitStore opens the store that lives in the git directory of the repository at dir.
 func gitStore(ctx context.Context, dir string) (*store.Store, error) {
 	repo, err := git.Open(ctx, dir)
@@ -41,10 +38,10 @@ func withName(r mapslice.Request) string {
 	return ""
 }
 
-// recordSlice writes a slice record for req. A store that cannot be used
+// recordSlice writes a slice record for req to the store of d. A store that cannot be used
 // costs one warning line on stderr and nothing else.
-func recordSlice(ctx context.Context, dir string, req mapslice.Request, stderr io.Writer) {
-	s, err := openStore(ctx, dir)
+func (d deps) recordSlice(ctx context.Context, dir string, req mapslice.Request, stderr io.Writer) {
+	s, err := d.openStore(ctx, dir)
 	if err != nil {
 		fmt.Fprintf(stderr, "physa map slice: not recorded: %v\n", err)
 		return
@@ -65,10 +62,10 @@ func recordSlice(ctx context.Context, dir string, req mapslice.Request, stderr i
 	}
 }
 
-// records lists the slice records of the store in dir, newest first: 0 when
+// records lists the slice records of the store of d in dir, newest first: 0 when
 // it listed, 2 when the store cannot be read or the list cannot be written.
-func records(ctx context.Context, dir string, asJSON bool, stdout, stderr io.Writer) int {
-	s, err := openStore(ctx, dir)
+func (d deps) records(ctx context.Context, dir string, asJSON bool, stdout, stderr io.Writer) int {
+	s, err := d.openStore(ctx, dir)
 	if err != nil {
 		fmt.Fprintf(stderr, "physa map records: %v\n", err)
 		return 2

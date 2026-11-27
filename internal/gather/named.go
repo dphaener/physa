@@ -21,9 +21,6 @@ const textProbe = 8 << 10
 // repo root, one of the five kinds, and the reason it was named.
 type Source struct{ Path, Kind, Reason string }
 
-// open opens a file for reading; tests replace it to see what was read.
-var open = os.Open
-
 var kinds = map[string]bool{KindAgent: true, KindContributing: true, KindReadme: true, KindDecisions: true, KindOverview: true}
 
 // Named reads the named sources under root. A source is refused, and never
@@ -33,14 +30,18 @@ var kinds = map[string]bool{KindAgent: true, KindContributing: true, KindReadme:
 // not), over MaxDocBytes, of an unknown kind, a duplicate of a doc in have or
 // of an earlier source, over MaxNamed accepted, or not text (a NUL byte or
 // invalid UTF-8 in its first 8 KB). Each refusal is a Skip with its why.
-func Named(root string, listed map[string]bool, named []Source, have []store.Doc) (docs []store.Doc, skipped []Skip) {
+func Named(root string, listed map[string]bool, srcs []Source, have []store.Doc) (docs []store.Doc, skipped []Skip) {
+	return named(os.Open, root, listed, srcs, have)
+}
+
+func named(open func(string) (*os.File, error), root string, listed map[string]bool, srcs []Source, have []store.Doc) (docs []store.Doc, skipped []Skip) {
 	seen := map[string]bool{}
 	for _, d := range have {
 		seen[d.Path] = true
 	}
-	for _, src := range named {
+	for _, src := range srcs {
 		rel := path.Clean(filepath.ToSlash(src.Path))
-		body, why := readNamed(root, rel, src, listed, seen, len(docs))
+		body, why := readNamed(open, root, rel, src, listed, seen, len(docs))
 		if why != "" {
 			skipped = append(skipped, Skip{rel, why})
 			continue
@@ -54,7 +55,7 @@ func Named(root string, listed map[string]bool, named []Source, have []store.Doc
 // readNamed returns the body of the named source, or why it is refused. The
 // checks that need no bytes come first, so a refused file is not opened
 // unless the refusal is that it is not text.
-func readNamed(root, rel string, src Source, listed, seen map[string]bool, accepted int) (string, string) {
+func readNamed(open func(string) (*os.File, error), root, rel string, src Source, listed, seen map[string]bool, accepted int) (string, string) {
 	if filepath.IsAbs(src.Path) || path.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, "../") {
 		return "", "outside the repo"
 	}

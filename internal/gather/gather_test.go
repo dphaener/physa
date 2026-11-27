@@ -119,6 +119,7 @@ func bounds(t *testing.T, with ...func(*Bounds)) Bounds {
 }
 
 func TestRunHistory(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: first\n\nSession: s1\nCapability: init", "a.go", "b.go")
 	bad := r.commit("feat: second\n\nbody", "b.go")
@@ -151,6 +152,7 @@ func TestRunHistory(t *testing.T) {
 }
 
 func TestRunSinceCutsOlderChanges(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: old", "a")
 	r.commit("feat: mid", "a")
@@ -169,6 +171,7 @@ func TestRunSinceCutsOlderChanges(t *testing.T) {
 }
 
 func TestRunUnavailableNoForge(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	s, _ := run(t, r, nil, bounds(t))
@@ -178,6 +181,7 @@ func TestRunUnavailableNoForge(t *testing.T) {
 }
 
 func TestRunUnavailableWithoutMerged(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	s, _ := run(t, r, plainForge{}, bounds(t))
@@ -187,6 +191,7 @@ func TestRunUnavailableWithoutMerged(t *testing.T) {
 }
 
 func TestRunUnavailableForgeError(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	f := mergedForge{err: &forge.Error{Class: forge.ErrUnavailable, Reason: "gh is not installed"}}
@@ -247,6 +252,7 @@ func fakeWait(limit time.Duration, slept *[]time.Duration) merged.Wait {
 }
 
 func TestRunWaitsOutRateLimitAndKeepsEveryPage(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	secondary := &forge.RateLimit{Secondary: true, RetryAfter: time.Minute, Detail: "You have exceeded a secondary rate limit"}
@@ -273,6 +279,7 @@ func TestRunWaitsOutRateLimitAndKeepsEveryPage(t *testing.T) {
 }
 
 func TestRunStoppedPastRateLimitKeepsThePRs(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	r.commit("feat: y", "b")
@@ -327,6 +334,7 @@ func TestRunStoppedPastRateLimitKeepsThePRs(t *testing.T) {
 }
 
 func TestRunStoppedOnPlainError(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	for name, f := range map[string]forge.Forge{
@@ -353,6 +361,7 @@ func TestRunStoppedOnPlainError(t *testing.T) {
 }
 
 func TestRunStoppedWhenUnavailableAfterPRs(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	unauthenticated := pageAnswer{err: &forge.Error{Class: forge.ErrUnauthenticated, Reason: "gh is not logged in"}}
@@ -369,6 +378,7 @@ func TestRunStoppedWhenUnavailableAfterPRs(t *testing.T) {
 }
 
 func TestRunNoRemoteBeforeAnyPRIsUnavailable(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	noRemote := pageAnswer{err: &forge.Error{Class: forge.ErrUnavailable, Reason: "gh finds no GitHub remote", Detail: "no git remotes found"}}
@@ -393,6 +403,7 @@ func (c cappedForge) MergedPRs(_ context.Context, since time.Time, max int) ([]f
 }
 
 func TestRunNoLimitListsEveryPRSince(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	pages := func() *pagesForge {
@@ -421,6 +432,7 @@ func TestRunNoLimitListsEveryPRSince(t *testing.T) {
 }
 
 func TestRunMoreStartsHistoryAtOldestPR(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	for i := 0; i < 5; i++ {
 		r.commit(fmt.Sprintf("feat: c%d", i), "a")
@@ -449,6 +461,7 @@ func TestRunMoreStartsHistoryAtOldestPR(t *testing.T) {
 }
 
 func TestRunPRCounts(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	f := mergedForge{prs: []forge.PR{
@@ -480,6 +493,7 @@ func TestRunPRCounts(t *testing.T) {
 }
 
 func TestRunTokenEstimate(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: x\n\nCapability: a", "f.go")
 	write(t, r.dir, "README.md", strings.Repeat("r", 100))
@@ -499,6 +513,7 @@ func TestRunTokenEstimate(t *testing.T) {
 }
 
 func TestRunDocsSkippedAndHistoryFallback(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	write(t, r.dir, "README.md", strings.Repeat("x", MaxDocBytes+1))
@@ -523,6 +538,7 @@ func fullSummary() Summary {
 }
 
 func TestWriteText(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	if err := WriteText(&buf, fullSummary()); err != nil {
 		t.Fatal(err)
@@ -559,6 +575,7 @@ func TestWriteText(t *testing.T) {
 }
 
 func TestWriteJSON(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	if err := WriteJSON(&buf, fullSummary()); err != nil {
 		t.Fatal(err)
@@ -584,6 +601,7 @@ func TestWriteJSON(t *testing.T) {
 }
 
 func TestWriteTextSingular(t *testing.T) {
+	t.Parallel()
 	one := Summary{
 		Store: "/s/physa.db", Bound: BoundSummary{Since: "2025-11-21", MaxPRs: 1000},
 		Docs:            DocsSummary{Count: 1, Files: []DocFile{{"AGENTS.md", KindAgent, "x"}}},
@@ -615,6 +633,7 @@ func TestWriteTextSingular(t *testing.T) {
 }
 
 func TestWriteTextDiscoveryNotStarted(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		d    Discovery
 		want string
@@ -633,6 +652,7 @@ func TestWriteTextDiscoveryNotStarted(t *testing.T) {
 }
 
 func TestRunSummaryVersionAndEmptyDiscovery(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	s, _ := run(t, r, nil, bounds(t))
@@ -656,6 +676,7 @@ func (f loginForge) ChangeLogins(_ context.Context, ids []string) (map[string]st
 }
 
 func TestUseLoginsNamesChangesByLogin(t *testing.T) {
+	t.Parallel()
 	changes := []store.GatheredChange{{ID: "aaa", Author: "Dana Lee"}, {ID: "bbb", Author: "Sam"}}
 	useLogins(t.Context(), loginForge{logins: map[string]string{"aaa": "dana"}}, changes)
 	if changes[0].Author != "dana" || changes[1].Author != "Sam" {
@@ -669,6 +690,7 @@ func TestUseLoginsNamesChangesByLogin(t *testing.T) {
 }
 
 func TestRunSaysWhenTheCloneIsShallow(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: first", "a.go")
 	r.commit("feat: second", "b.go")
@@ -703,6 +725,7 @@ func (c changeForge) ChangePR(_ context.Context, id string) (forge.PR, bool, err
 }
 
 func TestRunGathersPRsForAreasThePRsMiss(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	byID := map[string]int{}
 	for i := 1; i <= 3; i++ {
@@ -731,6 +754,7 @@ func TestRunGathersPRsForAreasThePRsMiss(t *testing.T) {
 // PRs as merge commits, whose own changes do not name them, each PR is tied
 // to its files by its merge.
 func TestRunTiesPRsLandedAsMergesToTheirFiles(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("Start", "README.md")
 	for n, area := range map[int]string{7: "ledger", 8: "notes"} {
@@ -757,6 +781,7 @@ func TestRunTiesPRsLandedAsMergesToTheirFiles(t *testing.T) {
 }
 
 func TestRunCompleteGatherIsNotMarkedStopped(t *testing.T) {
+	t.Parallel()
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	f := &pagesForge{answers: []pageAnswer{onePage("", forge.PR{Number: 2, MergedAt: r.at(1)})}}

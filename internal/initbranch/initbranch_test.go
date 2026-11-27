@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dphaener/physa/internal/agentspointer"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfolder"
@@ -253,7 +254,7 @@ func TestWritesExactlyTheMapFiles(t *testing.T) {
 	tip := ref(f.dir, Branch)
 	checks := map[string]string{
 		".physa/README.md":   mapfolder.Readme,
-		"AGENTS.md":          pointer + "\n",
+		"AGENTS.md":          agentspointer.Pointer + "\n",
 		".physa/glossary.md": "# Glossary\n\n**Cut**: One pass of the saw.\n",
 		".physa/capabilities/billing/index.md": "---\npromise: Customers pay for what they use.\n---\n\n# Billing\n\n" +
 			"Customers pay for what they use.\n",
@@ -291,30 +292,6 @@ func TestBranchTreePassesTheMapCheck(t *testing.T) {
 	res, err := mapcheck.CheckWith(dir, mapcheck.Options{OpenRepo: git.Open})
 	if err != nil || len(res.Problems) > 0 || res.Capabilities != 2 {
 		t.Fatalf("check = %+v, %v", res, err)
-	}
-}
-
-func TestAgentsPointerKeepsEveryByteOutsideTheMarkers(t *testing.T) {
-	cases := []struct {
-		name, before, want string
-	}{
-		{"with markers", "# Agents\n\nintro\n<!-- physa -->\nold pointer\n<!-- /physa -->\ntail\nmore\n",
-			"# Agents\n\nintro\n" + pointer + "\ntail\nmore\n"},
-		{"without markers", "# Agents\n\nRules here.\n", "# Agents\n\nRules here.\n\n" + pointer + "\n"},
-		{"without markers or last newline", "# Agents", "# Agents\n\n" + pointer + "\n"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			before := c.before
-			f := newFixture(t, &before)
-			if _, err := f.run(sample(f), Options{}, nil); err != nil {
-				t.Fatal(err)
-			}
-			got := show(t, f.dir, Branch, "AGENTS.md")
-			if got != c.want {
-				t.Errorf("AGENTS.md =\n%q\nwant\n%q", got, c.want)
-			}
-		})
 	}
 }
 
@@ -664,5 +641,54 @@ func TestReadmeMatchesTheMapsOwn(t *testing.T) {
 	}
 	if string(own) != mapfolder.Readme {
 		t.Errorf(".physa/README.md differs from mapfolder.Readme:\n%s", own)
+	}
+}
+
+const productRule1 = "### Plans come first\n`plans-first` · from docs/vision.md\nEvery cut is planned before the saw runs.\nBecause: waste starts at the saw.\n"
+const productRule2 = "### Offcuts are kept\n`offcuts-kept` · from docs/vision.md\nOffcuts go to the shelf.\nBecause: they save the next cut.\n"
+
+func TestProductRulesAreWrittenAndPassTheCheck(t *testing.T) {
+	f := newFixture(t, nil)
+	m := sample(f)
+	m.ProductRules = []string{productRule1, productRule2}
+	if _, err := f.run(m, Options{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	got := show(t, f.dir, Branch, ".physa/product/rules.md")
+	t.Logf(".physa/product/rules.md:\n%s", got)
+	for _, want := range []string{"### Plans come first\n`plans-first`", "### Offcuts are kept\n`offcuts-kept`", "Because: they save the next cut."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("rules.md lacks %q", want)
+		}
+	}
+	dir := filepath.Join(t.TempDir(), "check")
+	gitIn(t, f.dir, "worktree", "add", "-q", "--detach", dir, Branch)
+	defer gitIn(t, f.dir, "worktree", "remove", "--force", dir)
+	res, err := mapcheck.CheckWith(dir, mapcheck.Options{OpenRepo: git.Open})
+	if err != nil || len(res.Problems) > 0 {
+		t.Fatalf("check = %+v, %v", res, err)
+	}
+}
+
+func TestProductRulesSlugsAreTaken(t *testing.T) {
+	m := Map{ProductName: "Woodshop", ProductPromise: "Woodworkers plan.",
+		ProductRules:     []string{"### Plans first\n`plans-first` · from docs/vision.md\nBody.\nBecause: reasons.\n"},
+		ProductQuestions: []Question{{Question: "Plans first"}}}
+	files, _ := mapFiles(m)
+	q := files[".physa/product/questions.md"]
+	if !strings.Contains(q, "`plans-first-2`") || strings.Contains(q, "`plans-first` ·") {
+		t.Errorf("question slug collides with a rule's:\n%s", q)
+	}
+}
+
+func TestNoProductRulesWritesNoRulesFile(t *testing.T) {
+	f := newFixture(t, nil)
+	if _, err := f.run(sample(f), Options{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("git", "-C", f.dir, "cat-file", "-e", Branch+":.physa/product/rules.md").CombinedOutput()
+	t.Logf("cat-file: %v %s", err, out)
+	if err == nil {
+		t.Error("a rules file was written with no product rules")
 	}
 }

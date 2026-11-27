@@ -27,26 +27,27 @@ var Usage = []string{
 	"physa init --walk [--agent NAME] [--cap <amount>] [--json]",
 	"physa init --place [--json]",
 	"physa init --recover [--only CAPABILITY]... [--agent NAME] [--cap <amount>] [--write [--push [--pr]] [--hooks]] [--json]",
+	"physa init --consolidate [--agent NAME] [--cap <amount>] [--write [--push [--pr]] [--hooks]] [--json]",
 }
 
 // Flags is a physa init command line as its declared flags read it. Since is
 // the bound's start: the date given (SinceSet), or twelve months before now;
 // MaxPRs is --max-prs, or 0 for no PR limit.
-// Gather, Propose, Areas, Walk, Place and Recover select one phase; none selects the full run.
+// Gather, Propose, Areas, Walk, Place, Recover and Consolidate select one phase; none selects the full run.
 // Agent is empty when not given; Only empty means every capability. Write, Push, PR and Hooks
 // write physa/init, push it, open its PR and install the Session: hook;
 // Answers is a new codebase's answers file; Cap is --cap, none when not given.
 type Flags struct {
-	Gather, Propose, Recover, Areas, Walk, Place bool
-	Only                                         []string
-	Agent                                        string
-	Since                                        time.Time
-	SinceSet                                     bool
-	MaxPRs                                       int
-	JSON                                         bool
-	Write, Push, PR, Hooks                       bool
-	Answers                                      string
-	Cap                                          initcap.Cap
+	Gather, Propose, Recover, Areas, Walk, Place, Consolidate bool
+	Only                                                      []string
+	Agent                                                     string
+	Since                                                     time.Time
+	SinceSet                                                  bool
+	MaxPRs                                                    int
+	JSON                                                      bool
+	Write, Push, PR, Hooks                                    bool
+	Answers                                                   string
+	Cap                                                       initcap.Cap
 
 	bad           error // why --cap was refused
 	cap           string
@@ -57,7 +58,7 @@ type Flags struct {
 
 // Full reports whether the flags select the full run: no phase named.
 func (o Flags) Full() bool {
-	return !o.Gather && !o.Propose && !o.Recover && !o.Areas && !o.Walk && !o.Place
+	return !o.Gather && !o.Propose && !o.Recover && !o.Areas && !o.Walk && !o.Place && !o.Consolidate
 }
 
 // Declare declares the flags of physa init on fs and starts o afresh, so it
@@ -66,7 +67,7 @@ func (o Flags) Full() bool {
 // (repeatable or comma-separated).
 func (o *Flags) Declare(fs *pflag.FlagSet) {
 	*o = Flags{fs: fs}
-	for name, on := range map[string]*bool{"gather": &o.Gather, "propose": &o.Propose, "recover": &o.Recover, "areas": &o.Areas, "walk": &o.Walk, "place": &o.Place,
+	for name, on := range map[string]*bool{"gather": &o.Gather, "propose": &o.Propose, "recover": &o.Recover, "areas": &o.Areas, "walk": &o.Walk, "place": &o.Place, "consolidate": &o.Consolidate,
 		"json": &o.JSON, "write": &o.Write, "push": &o.Push, "pr": &o.PR, "hooks": &o.Hooks} {
 		command.Switch(fs, name, on, "")
 	}
@@ -82,7 +83,8 @@ func (o *Flags) Declare(fs *pflag.FlagSet) {
 // one: no positionals, a real --since day, a --max-prs of at least 1, no
 // empty --only name, a --cap initcap reads and not with --place, at most one phase, --since and --max-prs with --gather
 // or the full run, --areas, --walk and --place each with no other phase and none of the
-// flags --propose refuses, --only with --recover, --answers with the full
+// flags --propose refuses, --consolidate with no other phase, no --only and
+// no gather bound (it takes --write), --only with --recover, --answers with the full
 // run, --write with --recover or the full run, --push with --write, --pr
 // with --push and --hooks with --write.
 func (o *Flags) read(args []string, now time.Time) bool {
@@ -118,6 +120,7 @@ func (o *Flags) read(args []string, now time.Time) bool {
 		o.Areas && (o.Gather || o.Propose || o.Recover || o.Place || o.Write || len(o.Only) > 0 || gatherOnly),
 		o.Walk && (o.Gather || o.Propose || o.Recover || o.Areas || o.Place || o.Write || len(o.Only) > 0 || gatherOnly),
 		o.Place && (o.Gather || o.Propose || o.Recover || o.Write || len(o.Only) > 0 || gatherOnly),
+		o.Consolidate && (o.Gather || o.Propose || o.Recover || o.Areas || o.Walk || o.Place || len(o.Only) > 0 || gatherOnly),
 		gatherOnly && (o.Propose || o.Recover),
 		len(o.Only) > 0 && !o.Recover,
 		o.Answers != "" && !o.Full(),

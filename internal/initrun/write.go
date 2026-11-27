@@ -8,26 +8,33 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/consolidatedmap"
 	"github.com/dphaener/physa/internal/initbranch"
+	"github.com/dphaener/physa/internal/initpr"
 	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/newcodebase"
 	"github.com/dphaener/physa/internal/recoverinput"
 	"github.com/dphaener/physa/internal/recovery"
-	"github.com/dphaener/physa/internal/sessionhook"
-	"github.com/dphaener/physa/internal/vcs"
 )
 
 // notReached is why a capability recovering never reached has no recovered
 // text.
 const notReached = "recovering has not reached it yet"
 
-// writeStored writes what the store holds to physa/init; see storedMap.
+// writeStored writes what the store holds to physa/init; see storedMap. A current
+// stored consolidation takes the place of the recovered text; a stale one is said and ignored.
 func (r *run) writeStored() int {
 	m, err := storedMap(r.st, r.root, r.env)
 	if err != nil {
 		return failed(r.stderr, err)
+	}
+	m, stale, err := consolidatedmap.Apply(r.st, m)
+	if err != nil {
+		return failed(r.stderr, err)
+	}
+	if stale != "" {
+		fmt.Fprintf(r.stderr, "physa init: %s\n", stale)
 	}
 	m.Summary.Skill = r.skill
 	return writeMap(m, r.o, r.env, r.p, r.stderr)
@@ -150,74 +157,18 @@ func writeMap(m initbranch.Map, o Flags, env Env, p *printer, stderr io.Writer) 
 	}
 	code := 0
 	if o.Hooks {
-		if m.Summary.Hook = installHook(env); m.Summary.Hook.State == initbranch.HookRefused {
+		if m.Summary.Hook = initpr.InstallHook(env.Hooks); m.Summary.Hook.State == initbranch.HookRefused {
 			fmt.Fprintf(stderr, "physa init: the branch was written, but the hook was not installed: %s\n", m.Summary.Hook.Detail)
 			code = 2
 		}
 		out.Body = initbranch.Body(m)
 	}
 	if o.PR {
-		out.PR, err = openPR(w, env.Forge("."), out)
+		out.PR, err = initpr.Open(w, env.Forge("."), out)
 	}
 	p.wrote(out, m.Summary.Hook)
 	if err != nil {
 		return failed(stderr, err)
 	}
 	return code
-}
-
-// installHook installs the Session: hook in the repo here and says what
-// happened; any error is a refusal, with its reason.
-func installHook(env Env) initbranch.Hook {
-	root, err := filepath.Abs(".")
-	var h vcs.Hooks
-	if err == nil {
-		h, err = env.Hooks(".")
-	}
-	var got sessionhook.Outcome
-	if err == nil {
-		got, err = sessionhook.Install(root, h)
-	}
-	switch {
-	case err != nil:
-		return initbranch.Hook{State: initbranch.HookRefused, Detail: err.Error()}
-	case got.Written:
-		return initbranch.Hook{State: initbranch.HookInstalled, Detail: got.Path}
-	case got.Set:
-		return initbranch.Hook{State: initbranch.HookInstalled, Detail: "core.hooksPath = " + sessionhook.Dir}
-	}
-	return initbranch.Hook{State: initbranch.HookAlready, Detail: got.Path}
-}
-
-// openPR opens the PR of physa/init into the default branch with out's
-// body, or refreshes the open one's body. A forge that cannot open PRs, is
-// unavailable or is not signed in leaves the branch ready, with the reason.
-// It never merges a PR.
-func openPR(w vcs.Writer, f forge.Forge, out initbranch.Outcome) (initbranch.PR, error) {
-	prs, ok := f.(forge.PRs)
-	if !ok {
-		return initbranch.PR{State: initbranch.PRReady, Reason: "the forge cannot open PRs"}, nil
-	}
-	pr := initbranch.PR{State: initbranch.PRRefreshed}
-	n, url, open, err := prs.OpenPR(initbranch.Branch)
-	if err == nil && open {
-		err = prs.EditPR(n, out.Body)
-	} else if err == nil {
-		pr.State = initbranch.PROpened
-		var def string
-		if def, err = w.DefaultBranch(); err == nil {
-			if remote, name, ok := strings.Cut(def, "/"); ok && remote != "" {
-				def = name
-			}
-			n, url, err = prs.CreatePR(initbranch.Branch, def, out.Commit.Subject, out.Body)
-		}
-	}
-	if errors.Is(err, forge.ErrUnavailable) || errors.Is(err, forge.ErrUnauthenticated) {
-		return initbranch.PR{State: initbranch.PRReady, Reason: forge.Reason(err)}, nil
-	}
-	if err != nil {
-		return initbranch.PR{}, fmt.Errorf("the PR of %s: %w", initbranch.Branch, err)
-	}
-	pr.Number, pr.URL = n, url
-	return pr, nil
 }

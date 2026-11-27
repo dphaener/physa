@@ -15,8 +15,8 @@ type Areas struct {
 	Body                       []byte
 }
 
-// PutAreas replaces the stored areas with a, and clears the walk and placement
-// made from the old ones, in one transaction.
+// PutAreas replaces the stored areas with a, and clears the walk, placement and
+// consolidation made from the old ones, in one transaction.
 func (s *Store) PutAreas(a Areas) error {
 	tx, err := s.DB().Begin()
 	if err != nil {
@@ -27,6 +27,9 @@ func (s *Store) PutAreas(a Areas) error {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM init_place`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM init_consolidate`); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`INSERT OR REPLACE INTO init_areas (id, gather_at, at, model, input, cached_input, output, body) VALUES (1, ?, ?, ?, ?, ?, ?, ?)`, ts(a.GatherAt), ts(a.At), a.Model, a.Input, a.CachedInput, a.Output, string(a.Body)); err != nil {

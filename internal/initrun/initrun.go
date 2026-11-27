@@ -14,6 +14,7 @@ import (
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/areas"
 	"github.com/dphaener/physa/internal/command"
+	"github.com/dphaener/physa/internal/consolidate"
 	"github.com/dphaener/physa/internal/coverage"
 	"github.com/dphaener/physa/internal/discovery"
 	"github.com/dphaener/physa/internal/forge"
@@ -23,6 +24,7 @@ import (
 	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapped"
 	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/newcodebase"
 	"github.com/dphaener/physa/internal/place"
 	"github.com/dphaener/physa/internal/preflight"
 	"github.com/dphaener/physa/internal/recovery"
@@ -63,7 +65,9 @@ type Env struct {
 // spend.Meter, and the prices it learns are saved to the machine's spend cache. It returns 0 when
 // all asked was done, 1 when it stopped before proposing for a source larger than one share of
 // propose, or before a session that would pass the cap, or some capabilities are not yet recovered
-// (still written with --write), 2 when it could not (a capability failed, the map failed its check,
+// (still written with --write), or, for --consolidate, a
+// session of consolidation was left as it was (see consolidate.Result.ExitCode; a write then still
+// happens), 2 when it could not (a capability failed, the map failed its check,
 // the hook was refused, the cap needs usage the agent cannot report), and command.BadUsage for a
 // bad line. o is the line's flags as Declare read them, args its positionals and words the words
 // typed after init, which a rerun hint repeats.
@@ -102,7 +106,7 @@ func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 			return code
 		}
 	}
-	if o.Propose || o.Recover || o.Areas || o.Walk || o.Place { // the phases on a stored gather say when the forge stopped it, and still run
+	if o.Propose || o.Recover || o.Areas || o.Walk || o.Place || o.Consolidate { // the phases on a stored gather say when the forge stopped it, and still run
 		preflight.Stored(stderr, st)
 	}
 	switch {
@@ -112,6 +116,8 @@ func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 		code = r.walk()
 	case o.Place:
 		code = r.place()
+	case o.Consolidate:
+		code = r.consolidate()
 	case o.Propose:
 		code = r.propose()
 	case o.Recover:
@@ -265,6 +271,24 @@ func (r *run) walk() int {
 	}
 	r.p.emit("walk", func(w io.Writer) error { return walk.Text(w, res) }, func(w io.Writer) error { return json.NewEncoder(w).Encode(res) })
 	return 0
+}
+
+// consolidate consolidates the capabilities recovered from the stored walk, stores the
+// consolidation in init's record and prints it; with --write it then writes everything stored.
+func (r *run) consolidate() int {
+	from := r.meter.Count()
+	res, err := consolidate.Run(context.Background(), r.st, consolidate.Session{Agent: r.agent, Stopped: r.guard.Stopped, Root: r.root,
+		Product: newcodebase.TitleCase(filepath.Base(r.root)), Progress: r.stderr, Now: r.env.Now})
+	r.spent("consolidate", from)
+	if err != nil {
+		return r.fail(err)
+	}
+	r.p.emit("consolidation", func(w io.Writer) error { return consolidate.Text(w, res) }, func(w io.Writer) error { return json.NewEncoder(w).Encode(res) })
+	code := res.ExitCode()
+	if r.o.Write {
+		code = max(code, r.writeStored())
+	}
+	return code
 }
 
 // place places the stored gather's PRs and changes on the capabilities by the stored footprints, with no

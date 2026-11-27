@@ -72,7 +72,7 @@ func newTest(t *testing.T) *tenv {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- engine.Run(ctx, engine.Options{Dir: dir, Idle: time.Minute, Version: "test", Methods: workapi.Methods})
+		done <- engine.Run(ctx, engine.Options{Dir: dir, Idle: time.Minute, Version: "test", Methods: workapi.Methods(func(context.Context, string) string { return "" })})
 	}()
 	t.Cleanup(func() {
 		cancel()

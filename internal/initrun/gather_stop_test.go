@@ -62,18 +62,16 @@ func prsPage(next string, first, n int, newest time.Time) pageAnswer {
 	return pageAnswer{page: forge.Page{PRs: prs, Next: next}}
 }
 
-// shortWait makes every wait for the forge's rate limit a recorded one that
-// moves a fake clock on, never a real sleep, with limit as the most waited in
-// total, until the test ends.
-func shortWait(t *testing.T, limit time.Duration) *[]time.Duration {
-	t.Helper()
+// shortWait makes every wait of env for the forge's rate limit a recorded one
+// that moves a fake clock on, never a real sleep, with limit as the most
+// waited in total.
+func shortWait(env *Env, limit time.Duration) *[]time.Duration {
 	slept, now := new([]time.Duration), time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
-	merged.Defaults = merged.Wait{
+	env.Wait = merged.Wait{
 		Limit: limit,
 		Sleep: func(d time.Duration) { *slept = append(*slept, d); now = now.Add(d) },
 		Now:   func() time.Time { return now },
 	}
-	t.Cleanup(func() { merged.Defaults = merged.Wait{} })
 	return slept
 }
 
@@ -89,8 +87,8 @@ func fixedNow(env *Env) time.Time {
 // every PR of every page, more than the 1,000 it once stopped at.
 func TestBareGatherAsksTwelveMonthsAndNoPRLimit(t *testing.T) {
 	newRepo(t)
-	shortWait(t, time.Minute)
 	env := testEnv(t, nil, nil)
+	shortWait(&env, time.Minute)
 	now := fixedNow(&env)
 	newest := now.Add(-time.Hour)
 	f := &pagesFake{answers: []pageAnswer{
@@ -130,8 +128,8 @@ func TestBareGatherAsksTwelveMonthsAndNoPRLimit(t *testing.T) {
 // keeps exactly N.
 func TestGatherMaxPRsStillCaps(t *testing.T) {
 	newRepo(t)
-	shortWait(t, time.Minute)
 	env := testEnv(t, nil, nil)
+	shortWait(&env, time.Minute)
 	now := fixedNow(&env)
 	rec := &recordingFake{}
 	env.Forge = func(string) forge.Forge { return rec }
@@ -177,8 +175,8 @@ func stoppingForge(now time.Time) (f *pagesFake, reached time.Time) {
 // stderr, and makes --gather exit 2.
 func TestGatherStoppedByRateLimitIsStoredAndExitsNonZero(t *testing.T) {
 	newRepo(t)
-	slept := shortWait(t, 3*time.Minute) // 60s and 120s are slept; 240s more is refused
 	env := testEnv(t, nil, nil)
+	slept := shortWait(&env, 3*time.Minute) // 60s and 120s are slept; 240s more is refused
 	now := fixedNow(&env)
 	f, reached := stoppingForge(now)
 	env.Forge = func(string) forge.Forge { return f }
@@ -220,9 +218,9 @@ func TestGatherStoppedByRateLimitIsStoredAndExitsNonZero(t *testing.T) {
 // stores a stopped gather, exits 2 and starts no session to propose.
 func TestFullRunStoppedByRateLimitDoesNotPropose(t *testing.T) {
 	remoteRepo(t)
-	shortWait(t, 3*time.Minute)
 	a := newRoutedAgent()
 	env := fullEnv(t, nil, a)
+	shortWait(&env, 3*time.Minute)
 	f, _ := stoppingForge(fixedNow(&env))
 	env.Forge = func(string) forge.Forge { return f }
 	var stdout, stderr bytes.Buffer
@@ -252,8 +250,8 @@ func TestFullRunStoppedByRateLimitDoesNotPropose(t *testing.T) {
 // first page makes --gather exit 2 and say so, never 0 with zero PRs.
 func TestGatherForgeErrorExitsNonZero(t *testing.T) {
 	newRepo(t)
-	shortWait(t, time.Minute)
 	env := testEnv(t, &pagesFake{answers: []pageAnswer{{err: errors.New("boom")}}}, nil)
+	shortWait(&env, time.Minute)
 	now := fixedNow(&env)
 	code, out, errOut := runInit(env, "--gather")
 	t.Logf("code %d, stderr:\n%s", code, errOut)
@@ -272,9 +270,9 @@ func TestGatherForgeErrorExitsNonZero(t *testing.T) {
 // it say so on stderr, still run, and exit as on a complete gather.
 func TestStoppedGatherThenProposeWarnsAndStillProposes(t *testing.T) {
 	remoteRepo(t)
-	shortWait(t, 3*time.Minute)
 	a := newRoutedAgent()
 	env := fullEnv(t, nil, a)
+	shortWait(&env, 3*time.Minute)
 	now := fixedNow(&env)
 	f, reached := stoppingForge(now)
 	env.Forge = func(string) forge.Forge { return f }

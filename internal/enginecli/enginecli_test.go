@@ -86,6 +86,13 @@ func newEngine(t *testing.T) *testEngine {
 // idleDir sets up the directory and commands with no engine running.
 func idleDir(t *testing.T) *testEngine {
 	t.Helper()
+	return idleDirEnv(t, os.Getenv)
+}
+
+// idleDirEnv is idleDir with getenv as how the commands find an agent's
+// session.
+func idleDirEnv(t *testing.T, getenv func(string) string) *testEngine {
+	t.Helper()
 	tmp, err := os.MkdirTemp("", "px")
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +105,7 @@ func idleDir(t *testing.T) *testEngine {
 		cmd.Env = append(os.Environ(), "PHYSA_ENGINECLI_EXIT1=1")
 		return cmd
 	}}
-	root := command.New("physa", "", nil, nil, commands("test", opts)...)
+	root := command.New("physa", "", nil, nil, commands("test", opts, getenv)...)
 	return &testEngine{dir: filepath.Join(tmp, "physa"), root: root}
 }
 
@@ -314,15 +321,13 @@ func TestStopNeverStarts(t *testing.T) {
 // TestAPICallRefusesPursuitsInASession shows a pursuit is refused, before any engine
 // starts, inside an agent's session, and that other methods are not.
 func TestAPICallRefusesPursuitsInASession(t *testing.T) {
-	te := idleDir(t) // fails the test if anything tries to start an engine
-	old := getenv
-	t.Cleanup(func() { getenv = old })
-	getenv = func(k string) string {
+	// idleDirEnv fails the test if anything tries to start an engine.
+	te := idleDirEnv(t, func(k string) string {
 		if k == "CLAUDE_CODE_SESSION_ID" {
 			return "abc"
 		}
 		return ""
-	}
+	})
 	for method, want := range map[string]string{
 		"pursuit.start": "physa api call: A person must start this pursuit: physa is running inside a Claude Code session.\n",
 		"pursuit.stop":  "physa api call: A person must stop this pursuit: physa is running inside a Claude Code session.\n",

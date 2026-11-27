@@ -10,20 +10,17 @@ import (
 	"github.com/dphaener/physa/internal/store"
 )
 
-// watch records the files Named opens.
-func watch(t *testing.T) *[]string {
-	t.Helper()
+// watch returns an opener that records the files named() opens, and the list.
+func watch() (func(string) (*os.File, error), *[]string) {
 	var opened []string
-	old := open
-	open = func(name string) (*os.File, error) {
+	return func(name string) (*os.File, error) {
 		opened = append(opened, filepath.Base(name))
 		return os.Open(name)
-	}
-	t.Cleanup(func() { open = old })
-	return &opened
+	}, &opened
 }
 
 func TestNamedRefusals(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	outside := t.TempDir()
 	write(t, outside, "secret.md", "secret")
@@ -67,8 +64,8 @@ func TestNamedRefusals(t *testing.T) {
 		{"duplicate of have", Source{Path: "have.md", Kind: KindAgent}, "a duplicate", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			opened := watch(t)
-			docs, skipped := Named(root, listed, []Source{tc.src}, have)
+			open, opened := watch()
+			docs, skipped := named(open, root, listed, []Source{tc.src}, have)
 			if len(docs) != 0 {
 				t.Fatalf("read %v", docs)
 			}
@@ -82,8 +79,8 @@ func TestNamedRefusals(t *testing.T) {
 	}
 
 	t.Run("duplicate named twice", func(t *testing.T) {
-		opened := watch(t)
-		docs, skipped := Named(root, listed, []Source{
+		open, opened := watch()
+		docs, skipped := named(open, root, listed, []Source{
 			{"twice.md", KindReadme, "first"}, {"./twice.md", KindAgent, "second"},
 		}, nil)
 		if len(docs) != 1 || docs[0].Kind != KindReadme || docs[0].Reason != "first" || docs[0].Body != "x" {
@@ -96,14 +93,14 @@ func TestNamedRefusals(t *testing.T) {
 
 	t.Run("over the limit", func(t *testing.T) {
 		many := t.TempDir()
-		var named []Source
+		var srcs []Source
 		for i := 0; i < MaxNamed+2; i++ {
 			rel := "f" + strings.Repeat("a", i) + ".md"
 			write(t, many, rel, "x")
-			named = append(named, Source{rel, KindOverview, "r"})
+			srcs = append(srcs, Source{rel, KindOverview, "r"})
 		}
-		opened := watch(t)
-		docs, skipped := Named(many, nil, named, nil)
+		open, opened := watch()
+		docs, skipped := named(open, many, nil, srcs, nil)
 		if len(docs) != MaxNamed || len(skipped) != 2 || len(*opened) != MaxNamed {
 			t.Fatalf("%d docs, %d skipped, %d opened", len(docs), len(skipped), len(*opened))
 		}
@@ -116,6 +113,7 @@ func TestNamedRefusals(t *testing.T) {
 }
 
 func TestNamedAccepts(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	write(t, root, "docs/a.md", "héllo")
 	write(t, root, "b.md", "second")
@@ -131,6 +129,7 @@ func TestNamedAccepts(t *testing.T) {
 }
 
 func TestNamedTextProbeKeepsRuneCutAtItsEnd(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	write(t, root, "a.md", strings.Repeat("a", textProbe-1)+"é"+"tail")
 	docs, skipped := Named(root, nil, []Source{{"a.md", KindAgent, ""}}, nil)
@@ -140,13 +139,14 @@ func TestNamedTextProbeKeepsRuneCutAtItsEnd(t *testing.T) {
 }
 
 func TestNamedOutsideBySymlinkedFolder(t *testing.T) {
+	t.Parallel()
 	root, outside := t.TempDir(), t.TempDir()
 	write(t, outside, "x.md", "secret")
 	if err := os.Symlink(outside, filepath.Join(root, "out")); err != nil {
 		t.Fatal(err)
 	}
-	opened := watch(t)
-	docs, skipped := Named(root, nil, []Source{{"out/x.md", KindAgent, ""}}, nil)
+	open, opened := watch()
+	docs, skipped := named(open, root, nil, []Source{{"out/x.md", KindAgent, ""}}, nil)
 	if len(docs) != 0 || len(skipped) != 1 || skipped[0].Why != "outside the repo" || len(*opened) != 0 {
 		t.Errorf("%v %v %v", docs, skipped, *opened)
 	}

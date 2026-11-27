@@ -12,7 +12,8 @@ import (
 // name is hidden from the reader, and a --flag they name but the command
 // doesn't declare is a bad flag.
 func TestUsageNamesDeclaredFlags(t *testing.T) {
-	if problems := command.Drift(rootCommand()); len(problems) > 0 {
+	t.Parallel()
+	if problems := command.Drift(rootCommand(testDeps(t))); len(problems) > 0 {
 		t.Fatalf("usage lines and declared flags drift:\n%s", strings.Join(problems, "\n"))
 	}
 }

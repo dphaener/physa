@@ -22,12 +22,17 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/adapter/claude"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/enginecli"
 	"github.com/dphaener/physa/internal/evidencecli"
+	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/forge/github"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/pursuitcli"
 	"github.com/dphaener/physa/internal/skillcli"
+	"github.com/dphaener/physa/internal/store"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -44,22 +49,41 @@ func main() {
 		<-ctx.Done()
 		stop()
 	}()
-	code := run(ctx, os.Args[1:], os.Stdout, os.Stderr)
+	code := run(ctx, realDeps(), os.Args[1:], os.Stdout, os.Stderr)
 	stop()
 	os.Exit(code)
 }
 
-// run executes one command line with ctx and returns the process exit code.
-func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	return command.Execute(ctx, rootCommand(), args, stdout, stderr)
+// deps are what the commands reach beyond the process through: the forge
+// hosting the repo in a directory, that repo's store, and the agents Physa
+// drafts with, by name. main passes the real ones; the tests pass fakes.
+type deps struct {
+	newForge  func(dir string) forge.Forge
+	openStore func(ctx context.Context, dir string) (*store.Store, error)
+	agents    map[string]func() adapter.Adapter
 }
 
-// rootCommand builds the tree of commands.
-func rootCommand() *cobra.Command {
+// realDeps are the commands' real dependencies: GitHub read through gh, the
+// store in the repo's git directory, and Claude Code.
+func realDeps() deps {
+	return deps{
+		newForge:  func(dir string) forge.Forge { return github.New(dir) },
+		openStore: gitStore,
+		agents:    map[string]func() adapter.Adapter{"claude": func() adapter.Adapter { return claude.New() }},
+	}
+}
+
+// run executes one command line with ctx and d and returns the process exit code.
+func run(ctx context.Context, d deps, args []string, stdout, stderr io.Writer) int {
+	return command.Execute(ctx, rootCommand(d), args, stdout, stderr)
+}
+
+// rootCommand builds the tree of commands on d.
+func rootCommand(d deps) *cobra.Command {
 	root := command.New("physa", "Physa: product management for agents.", []string{"physa <command> [--help]"}, nil,
-		checkCommand(), mapCommand(), initCommand(), ideacli.Command(newForge))
-	root.AddCommand(pursuitcli.Commands(newForge)...)
-	root.AddCommand(evidencecli.Command(newForge))
+		checkCommand(d), mapCommand(d), initCommand(d), ideacli.Command(d.newForge))
+	root.AddCommand(pursuitcli.Commands(d.newForge)...)
+	root.AddCommand(evidencecli.Command(d.newForge))
 	root.AddCommand(skillcli.Command(pursuitcli.Current))
 	root.AddCommand(enginecli.Commands(version)...)
 	root.AddCommand(

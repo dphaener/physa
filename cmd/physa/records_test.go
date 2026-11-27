@@ -11,22 +11,11 @@ import (
 	"github.com/dphaener/physa/internal/store"
 )
 
-// useStore points the store seam at a fresh store in a temp dir, with no
-// calling session, and returns that dir.
-func useStore(t *testing.T) string {
-	t.Helper()
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
-	dir := t.TempDir()
-	old := openStore
-	openStore = func(context.Context, string) (*store.Store, error) { return store.Open(context.Background(), dir) }
-	t.Cleanup(func() { openStore = old })
-	return dir
-}
-
-func listed(t *testing.T) []store.SliceRecord {
+// listed lists the slice records of the store of d.
+func listed(t *testing.T, d deps) []store.SliceRecord {
 	t.Helper()
 	var out, errb bytes.Buffer
-	if code := run(t.Context(), []string{"map", "records", "--json"}, &out, &errb); code != 0 {
+	if code := run(t.Context(), d, []string{"map", "records", "--json"}, &out, &errb); code != 0 {
 		t.Fatalf("records code = %d; stderr %q", code, errb.String())
 	}
 	var recs []struct {
@@ -52,17 +41,17 @@ func listed(t *testing.T) []store.SliceRecord {
 
 func TestSliceRecordsEachPrintedSlice(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
+	d := testDeps(t)
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "s-1")
 	var out, errb bytes.Buffer
-	if code := run(t.Context(), []string{"map", "slice", "slices", "map", "--with", "all"}, &out, &errb); code != 0 {
+	if code := run(t.Context(), d, []string{"map", "slice", "slices", "map", "--with", "all"}, &out, &errb); code != 0 {
 		t.Fatalf("code = %d; stderr %q", code, errb.String())
 	}
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
-	if code := run(t.Context(), []string{"map", "slice", "map"}, &out, &errb); code != 0 {
+	if code := run(t.Context(), d, []string{"map", "slice", "map"}, &out, &errb); code != 0 {
 		t.Fatalf("code = %d; stderr %q", code, errb.String())
 	}
-	recs := listed(t)
+	recs := listed(t, d)
 	if len(recs) != 2 {
 		t.Fatalf("records = %+v, want 2", recs)
 	}
@@ -73,12 +62,12 @@ func TestSliceRecordsEachPrintedSlice(t *testing.T) {
 		t.Errorf("oldest = %+v, want slices,map with all session s-1", r)
 	}
 	var js, e bytes.Buffer
-	run(t.Context(), []string{"map", "records", "--json"}, &js, &e)
+	run(t.Context(), d, []string{"map", "records", "--json"}, &js, &e)
 	if !strings.Contains(js.String(), `"session":null`) || !strings.Contains(js.String(), `"entries":null`) {
 		t.Errorf("json = %q, want null session and entries", js.String())
 	}
 	var txt bytes.Buffer
-	run(t.Context(), []string{"map", "records"}, &txt, &e)
+	run(t.Context(), d, []string{"map", "records"}, &txt, &e)
 	lines := strings.Split(strings.TrimSpace(txt.String()), "\n")
 	if len(lines) != 2 || !strings.Contains(lines[0], " — map") || !strings.HasSuffix(lines[1], "s-1 slices,map with all") {
 		t.Errorf("records = %q", txt.String())
@@ -87,12 +76,12 @@ func TestSliceRecordsEachPrintedSlice(t *testing.T) {
 
 func TestEntryReadRecordedWithItsSlugs(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
+	d := testDeps(t)
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "s-2")
-	if code := run(t.Context(), []string{"map", "slice", "--entry", "no-adr", "github-first"}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+	if code := run(t.Context(), d, []string{"map", "slice", "--entry", "no-adr", "github-first"}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	recs := listed(t)
+	recs := listed(t, d)
 	if len(recs) != 1 {
 		t.Fatalf("records = %+v, want 1", recs)
 	}
@@ -100,7 +89,7 @@ func TestEntryReadRecordedWithItsSlugs(t *testing.T) {
 		t.Errorf("record = %+v, want entries no-adr,github-first with no capabilities", r)
 	}
 	var txt, e bytes.Buffer
-	run(t.Context(), []string{"map", "records"}, &txt, &e)
+	run(t.Context(), d, []string{"map", "records"}, &txt, &e)
 	if !strings.Contains(txt.String(), "entries no-adr, github-first") {
 		t.Errorf("records = %q, want the entries shown", txt.String())
 	}
@@ -108,13 +97,13 @@ func TestEntryReadRecordedWithItsSlugs(t *testing.T) {
 
 func TestSliceWithDecisionsAndQuestionsRecorded(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
+	d := testDeps(t)
 	for _, w := range []string{"decisions", "questions"} {
-		if code := run(t.Context(), []string{"map", "slice", "map", "--with", w}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+		if code := run(t.Context(), d, []string{"map", "slice", "map", "--with", w}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
 			t.Fatalf("code = %d", code)
 		}
 	}
-	recs := listed(t)
+	recs := listed(t, d)
 	if len(recs) != 2 || recs[0].With != "questions" || recs[1].With != "decisions" {
 		t.Errorf("records = %+v", recs)
 	}
@@ -122,25 +111,23 @@ func TestSliceWithDecisionsAndQuestionsRecorded(t *testing.T) {
 
 func TestNoRecordForFailedSlices(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
+	d := testDeps(t)
 	for _, args := range [][]string{{"slice", "nope"}, {"slice"}, {"slice", "map", "--with", "bad"}, {"map", "slice", "--entry", "nope"}} {
-		run(t.Context(), args, &bytes.Buffer{}, &bytes.Buffer{})
+		run(t.Context(), d, args, &bytes.Buffer{}, &bytes.Buffer{})
 	}
-	if recs := listed(t); len(recs) != 0 {
+	if recs := listed(t, d); len(recs) != 0 {
 		t.Errorf("records = %+v, want none", recs)
 	}
 }
 
 func TestFailingStoreStillPrintsSlice(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
+	d := testDeps(t)
 	var want bytes.Buffer
-	run(t.Context(), []string{"map", "slice", "map"}, &want, &bytes.Buffer{})
-	old := openStore
-	openStore = func(context.Context, string) (*store.Store, error) { return nil, errors.New("disk on fire") }
-	t.Cleanup(func() { openStore = old })
+	run(t.Context(), d, []string{"map", "slice", "map"}, &want, &bytes.Buffer{})
+	d.openStore = func(context.Context, string) (*store.Store, error) { return nil, errors.New("disk on fire") }
 	var out, errb bytes.Buffer
-	if code := run(t.Context(), []string{"map", "slice", "map"}, &out, &errb); code != 0 {
+	if code := run(t.Context(), d, []string{"map", "slice", "map"}, &out, &errb); code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
 	if out.String() != want.String() {
@@ -153,28 +140,27 @@ func TestFailingStoreStillPrintsSlice(t *testing.T) {
 
 func TestRecordsEmpty(t *testing.T) {
 	t.Chdir("../..")
-	useStore(t)
+	d := testDeps(t)
 	var out bytes.Buffer
-	if code := run(t.Context(), []string{"map", "records"}, &out, &bytes.Buffer{}); code != 0 || out.String() != "No slice records.\n" {
+	if code := run(t.Context(), d, []string{"map", "records"}, &out, &bytes.Buffer{}); code != 0 || out.String() != "No slice records.\n" {
 		t.Errorf("code %d, out %q", code, out.String())
 	}
 	out.Reset()
-	if code := run(t.Context(), []string{"map", "records", "--json"}, &out, &bytes.Buffer{}); code != 0 || out.String() != "[]\n" {
+	if code := run(t.Context(), d, []string{"map", "records", "--json"}, &out, &bytes.Buffer{}); code != 0 || out.String() != "[]\n" {
 		t.Errorf("code %d, out %q", code, out.String())
 	}
 }
 
 func TestRecordsOutsideRepoAndBadUsage(t *testing.T) {
 	t.Chdir(t.TempDir())
-	old := openStore
-	openStore = gitStore // the real opener: a temp dir is no repo
-	t.Cleanup(func() { openStore = old })
+	d := testDeps(t)
+	d.openStore = gitStore // the real opener: a temp dir is no repo
 	var out, errb bytes.Buffer
-	if code := run(t.Context(), []string{"map", "records"}, &out, &errb); code != 2 || !strings.HasPrefix(errb.String(), "physa map records: ") {
+	if code := run(t.Context(), d, []string{"map", "records"}, &out, &errb); code != 2 || !strings.HasPrefix(errb.String(), "physa map records: ") {
 		t.Errorf("code %d, stderr %q", code, errb.String())
 	}
 	errb.Reset()
-	if code := run(t.Context(), []string{"map", "records", "--bad"}, &out, &errb); code != 2 || !strings.Contains(errb.String(), "physa map records [--json]") {
+	if code := run(t.Context(), d, []string{"map", "records", "--bad"}, &out, &errb); code != 2 || !strings.Contains(errb.String(), "physa map records [--json]") {
 		t.Errorf("code %d, stderr %q", code, errb.String())
 	}
 }

@@ -31,26 +31,22 @@ func (m mergedFake) MergedPRs(context.Context, time.Time, int) ([]forge.PR, bool
 	return m.prs, false, nil
 }
 
-func useForge(t *testing.T, f forge.Forge) {
-	t.Helper()
-	old := newForge
-	newForge = func(string) forge.Forge { return f }
-	t.Cleanup(func() { newForge = old })
+// useForge makes f the forge of d, whatever the repo.
+func useForge(d *deps, f forge.Forge) {
+	d.newForge = func(string) forge.Forge { return f }
 }
 
 // useRepoStore makes init write to the store of the repo in dir, as it does
-// outside the tests, which keep off the real store.
-func useRepoStore(t *testing.T, dir string) {
+// outside the tests, which keep off the real store, and moves the test there.
+func useRepoStore(t *testing.T, d *deps, dir string) {
 	t.Helper()
-	old := openStore
-	openStore = gitStore
-	t.Cleanup(func() { openStore = old })
+	d.openStore = gitStore
 	t.Chdir(dir)
 }
 
-func runInit(args ...string) (int, string, string) {
+func runInit(d deps, args ...string) (int, string, string) {
 	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), append([]string{"init"}, args...), &stdout, &stderr)
+	code := run(context.Background(), d, append([]string{"init"}, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -77,12 +73,13 @@ func storedGather(t *testing.T, dir string) store.Gather {
 }
 
 func TestInitGatherJSON(t *testing.T) {
+	d := testDeps(t)
 	dir := trailersRepo(t)
 	write(t, dir, "AGENTS.md", "rules\n")
 	write(t, dir, "README.md", "hello\n")
-	useRepoStore(t, dir)
-	useForge(t, mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}})
-	code, out, errOut := runInit("--gather", "--json")
+	useRepoStore(t, &d, dir)
+	useForge(&d, mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}})
+	code, out, errOut := runInit(d, "--gather", "--json")
 	if code != 0 || errOut != "physa init: gather starts no agent (discovery not started: the repo has a map)\n" {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -100,6 +97,7 @@ func TestInitGatherJSON(t *testing.T) {
 }
 
 func TestInitBareNewCodebaseReadsAnswers(t *testing.T) {
+	d := testDeps(t)
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_AUTHOR_NAME", "t")
@@ -114,11 +112,11 @@ func TestInitBareNewCodebaseReadsAnswers(t *testing.T) {
 	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "more")
 	answers := filepath.Join(t.TempDir(), "answers.txt")
 	write(t, filepath.Dir(answers), "answers.txt", "2: Lathe turns sketches into cut lists.\n")
-	useRepoStore(t, dir)
-	useForge(t, mergedFake{})
+	useRepoStore(t, &d, dir)
+	useForge(&d, mergedFake{})
 	f := &fakeAgent{}
-	useAgent(t, "claude", f)
-	code, out, errOut := runInit("--answers", answers)
+	useAgent(&d, "claude", f)
+	code, out, errOut := runInit(d, "--answers", answers)
 	if code != 0 || f.starts != 1 || !strings.Contains(out, "A new codebase") || // discovery's session alone
 		!strings.Contains(out, "Lathe, promising: Lathe turns sketches into cut lists.") {
 		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
@@ -130,57 +128,65 @@ func TestInitBareNewCodebaseReadsAnswers(t *testing.T) {
 }
 
 func TestInitPushWithoutWriteIsBadUsage(t *testing.T) {
+	d := testDeps(t)
 	t.Chdir(trailersRepo(t))
-	code, _, errOut := runInit("--push")
+	code, _, errOut := runInit(d, "--push")
 	if code != 2 || !strings.HasPrefix(errOut, "usage: physa init") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
 func TestInitBadSinceIsBadUsage(t *testing.T) {
+	d := testDeps(t)
 	t.Chdir(trailersRepo(t))
-	code, _, errOut := runInit("--gather", "--since", "yesterday")
+	code, _, errOut := runInit(d, "--gather", "--since", "yesterday")
 	if code != 2 || !strings.HasPrefix(errOut, "usage: physa init") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
 func TestInitHelp(t *testing.T) {
-	code, out, errOut := runInit("--help")
+	t.Parallel()
+	d := testDeps(t)
+	code, out, errOut := runInit(d, "--help")
 	if code != 0 || errOut != "" || !strings.HasPrefix(out, "usage: physa init [--write") || strings.Contains(out, "--appetite") || !strings.Contains(out, "physa init --gather") {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }
 
 func TestHelpListsInit(t *testing.T) {
-	if help := rootHelp(); !strings.Contains(help, "\n  init ") {
+	t.Parallel()
+	if help := rootHelp(t); !strings.Contains(help, "\n  init ") {
 		t.Errorf("root help lacks init:\n%s", help)
 	}
 }
 
 func TestInitOutsideARepo(t *testing.T) {
+	d := testDeps(t)
 	t.Chdir(t.TempDir())
 	t.Setenv("GIT_CEILING_DIRECTORIES", "/")
-	code, _, errOut := runInit("--gather")
+	code, _, errOut := runInit(d, "--gather")
 	if code != 2 || !strings.HasPrefix(errOut, "physa init: ") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
 func TestInitProposeWithGatherIsBadUsage(t *testing.T) {
+	d := testDeps(t)
 	t.Chdir(trailersRepo(t))
-	code, _, errOut := runInit("--propose", "--gather")
+	code, _, errOut := runInit(d, "--propose", "--gather")
 	if code != 2 || !strings.HasPrefix(errOut, "usage: physa init") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
 func TestInitProposeOnAMappedRepoIsRefused(t *testing.T) {
+	d := testDeps(t)
 	dir := trailersRepo(t)
-	useRepoStore(t, dir)
+	useRepoStore(t, &d, dir)
 	f := &fakeAgent{}
-	useAgent(t, "claude", f)
-	code, out, errOut := runInit("--propose")
+	useAgent(&d, "claude", f)
+	code, out, errOut := runInit(d, "--propose")
 	if code != 2 || out != "" || f.starts != 0 ||
 		!strings.Contains(errOut, "physa init: the repo already has a map") || !strings.Contains(errOut, "physa map learn") {
 		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
@@ -198,6 +204,7 @@ func (claudeFake) Name() string { return claude.Name }
 // the home, and returns the exit code, stdout, stderr and the home.
 func skillInit(t *testing.T, setup func(home string)) (int, string, string) {
 	t.Helper()
+	d := testDeps(t)
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_AUTHOR_NAME", "t")
@@ -216,18 +223,10 @@ func skillInit(t *testing.T, setup func(home string)) (int, string, string) {
 	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "more")
 	answers := filepath.Join(t.TempDir(), "answers.txt")
 	write(t, filepath.Dir(answers), "answers.txt", "2: Lathe turns sketches into cut lists.\n")
-	useRepoStore(t, dir)
-	useForge(t, mergedFake{})
-	old, had := agents["claude"]
-	agents["claude"] = func() adapter.Adapter { return claudeFake{&fakeAgent{}} }
-	t.Cleanup(func() {
-		if had {
-			agents["claude"] = old
-		} else {
-			delete(agents, "claude")
-		}
-	})
-	return runInit("--answers", answers, "--write")
+	useRepoStore(t, &d, dir)
+	useForge(&d, mergedFake{})
+	d.agents["claude"] = func() adapter.Adapter { return claudeFake{&fakeAgent{}} }
+	return runInit(d, "--answers", answers, "--write")
 }
 
 func TestInitSaysWhenTheSkillIsMissing(t *testing.T) {

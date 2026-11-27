@@ -220,6 +220,7 @@ func TestConsolidateLiftToTheRulesLimitPassesTheMapCheck(t *testing.T) {
 }
 
 func TestConsolidateIsBadUsageWithOtherPhases(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"--walk"}, {"--recover"}, {"--only", "x"}, {"--since", "2026-01-01"}} {
 		if code, _, _ := runInit(testEnv(t, nil, nil), append([]string{"--consolidate"}, args...)...); code != command.BadUsage {
 			t.Errorf("--consolidate %v: code %d, want bad usage", args, code)

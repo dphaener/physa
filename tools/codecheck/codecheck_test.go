@@ -273,3 +273,20 @@ func TestFreshContextOnMapSide(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
+
+func TestTestSwapReportsSwappedPackageVariables(t *testing.T) {
+	vs := mustCheck(t, "testdata/testswap")
+	var got []string
+	for _, v := range vs {
+		got = append(got, v.Dir+" "+v.Rule+" "+v.Message)
+	}
+	want := []string{
+		"internal/config tests-inject-fakes config_test.go:10 assigns package variable Table; pass the fake in instead",
+		"internal/config tests-inject-fakes config_test.go:15 assigns package variable hook; pass the fake in instead",
+		"internal/config tests-inject-fakes config_test.go:6 assigns package variable Mode; pass the fake in instead",
+		"internal/other tests-inject-fakes other_test.go:10 assigns package variable cfg.Mode; pass the fake in instead",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

@@ -30,10 +30,10 @@ func (f prForge) ChangePR(_ context.Context, id string) (forge.PR, bool, error) 
 	return f.pr, id == f.change, nil
 }
 
-func runLearn(t *testing.T, args ...string) (int, string, string) {
+func runLearn(t *testing.T, d deps, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), append([]string{"map", "learn"}, args...), &stdout, &stderr)
+	code := run(t.Context(), d, append([]string{"map", "learn"}, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -46,6 +46,7 @@ func learnRepo(t *testing.T) (dir, head string) {
 }
 
 func TestLearnText(t *testing.T) {
+	d := testDeps(t)
 	dir, id := learnRepo(t)
 	t.Chdir(dir)
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -54,10 +55,8 @@ func TestLearnText(t *testing.T) {
 		Comments: []forge.Comment{{Author: "ana", At: at, Kind: forge.KindReview, Body: "rename this"}},
 		Commits:  []forge.Commit{{ID: id, At: at.Add(time.Hour)}},
 	}}
-	old := newForge
-	newForge = func(string) forge.Forge { return f }
-	t.Cleanup(func() { newForge = old })
-	code, out, errOut := runLearn(t, "--signals")
+	d.newForge = func(string) forge.Forge { return f }
+	code, out, errOut := runLearn(t, d, "--signals")
 	if code != 0 || errOut != "" {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -69,9 +68,10 @@ func TestLearnText(t *testing.T) {
 }
 
 func TestLearnJSON(t *testing.T) {
+	d := testDeps(t)
 	dir, _ := learnRepo(t)
 	t.Chdir(dir)
-	code, out, _ := runLearn(t, "--signals", "--json")
+	code, out, _ := runLearn(t, d, "--signals", "--json")
 	var got struct{ Version int }
 	if code != 0 || json.Unmarshal([]byte(out), &got) != nil || got.Version != 2 {
 		t.Errorf("code %d, version %d, stdout %q", code, got.Version, out)
@@ -79,34 +79,39 @@ func TestLearnJSON(t *testing.T) {
 }
 
 func TestLearnForgeUnavailable(t *testing.T) {
+	d := testDeps(t)
 	dir, _ := learnRepo(t)
 	t.Chdir(dir)
-	useNoGH(t)
-	code, out, _ := runLearn(t, "--signals")
+	useNoGH(&d)
+	code, out, _ := runLearn(t, d, "--signals")
 	if code != 0 || !strings.Contains(out, "Forge: unavailable") {
 		t.Errorf("code %d, stdout %q", code, out)
 	}
 }
 
 func TestLearnOutsideRepo(t *testing.T) {
+	d := testDeps(t)
 	t.Chdir(t.TempDir())
-	if code, _, errOut := runLearn(t, "--signals"); code != 2 || !strings.HasPrefix(errOut, "physa map learn: ") {
+	if code, _, errOut := runLearn(t, d, "--signals"); code != 2 || !strings.HasPrefix(errOut, "physa map learn: ") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
 func TestLearnBadSince(t *testing.T) {
+	d := testDeps(t)
 	dir, _ := learnRepo(t)
 	t.Chdir(dir)
-	code, _, errOut := runLearn(t, "--signals", "--since=nosuch")
+	code, _, errOut := runLearn(t, d, "--signals", "--since=nosuch")
 	if code != 2 || !strings.HasPrefix(errOut, "physa map learn: ") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
 func TestLearnHelp(t *testing.T) {
+	t.Parallel()
+	d := testDeps(t)
 	var stdout, stderr bytes.Buffer
-	run(t.Context(), []string{"map", "learn", "--help"}, &stdout, &stderr)
+	run(t.Context(), d, []string{"map", "learn", "--help"}, &stdout, &stderr)
 	got := stdout.String() + stderr.String()
 	if !strings.Contains(got, "physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]") {
 		t.Errorf("help lacks usage: %q", got)
@@ -118,7 +123,7 @@ func TestLearnHelp(t *testing.T) {
 	}
 }
 
-// unexpectedAgent is what TestMain installs as claude: starting it is a bug
+// unexpectedAgent is what testDeps holds as claude: starting it is a bug
 // in the test, and stops the binary.
 type unexpectedAgent struct{}
 
@@ -161,23 +166,15 @@ func (s fakeSession) Wait() (adapter.Result, error) {
 	return s.f.result, s.f.waitErr
 }
 
-// useAgent installs f as the agent called name for one test.
-func useAgent(t *testing.T, name string, f *fakeAgent) {
-	t.Helper()
-	old, had := agents[name]
-	agents[name] = func() adapter.Adapter { return f }
-	t.Cleanup(func() {
-		if had {
-			agents[name] = old
-		} else {
-			delete(agents, name)
-		}
-	})
+// useAgent makes f the agent of d called name.
+func useAgent(d *deps, name string, f *fakeAgent) {
+	d.agents[name] = func() adapter.Adapter { return f }
 }
 
 // signalRepo is a learn repo where the change "feat: ok" has a correction
-// signal; it returns the repo and that change's short id.
-func signalRepo(t *testing.T) (dir, short string) {
+// signal, with d's forge answering it; it returns the repo and that change's
+// short id.
+func signalRepo(t *testing.T, d *deps) (dir, short string) {
 	t.Helper()
 	dir, id := learnRepo(t)
 	t.Chdir(dir)
@@ -187,10 +184,8 @@ func signalRepo(t *testing.T) (dir, short string) {
 		Comments: []forge.Comment{{Author: "ana", At: at, Kind: forge.KindReview, Body: "rename this"}},
 		Commits:  []forge.Commit{{ID: id, At: at.Add(time.Hour)}},
 	}}
-	old := newForge
-	newForge = func(string) forge.Forge { return f }
-	t.Cleanup(func() { newForge = old })
-	_, out, _ := runLearn(t, "--signals", "--json")
+	d.newForge = func(string) forge.Forge { return f }
+	_, out, _ := runLearn(t, *d, "--signals", "--json")
 	var res struct {
 		Learn []struct{ Short string }
 	}
@@ -211,23 +206,25 @@ func answer(short string) string {
 func branches(t *testing.T, dir string) string { return gitIn(t, dir, "branch", "--list") }
 
 func TestLearnNoSignals(t *testing.T) {
+	d := testDeps(t)
 	dir, _ := learnRepo(t)
 	t.Chdir(dir) // the default fake GitHub knows no PR, so no signal; claude must never start
-	code, out, errOut := runLearn(t)
+	code, out, errOut := runLearn(t, d)
 	if code != 0 || !strings.Contains(out, "no session started") || strings.Contains(errOut, "appetite") {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }
 
 func TestLearnDraftKeepsAndDrops(t *testing.T) {
-	dir, short := signalRepo(t)
+	d := testDeps(t)
+	dir, short := signalRepo(t, &d)
 	before, status := branches(t, dir), gitIn(t, dir, "status", "--porcelain")
 	f := &fakeAgent{
 		reports: []adapter.Tokens{{Input: 100, Output: 20}},
 		result:  adapter.Result{Text: answer(short), Tokens: adapter.Tokens{Input: 100, Output: 20}},
 	}
-	useAgent(t, "claude", f)
-	code, out, errOut := runLearn(t, "--appetite", "5000")
+	useAgent(&d, "claude", f)
+	code, out, errOut := runLearn(t, d, "--appetite", "5000")
 	if code != 0 || f.starts != 1 {
 		t.Fatalf("code %d, starts %d, stderr %q", code, f.starts, errOut)
 	}
@@ -249,9 +246,10 @@ func TestLearnDraftKeepsAndDrops(t *testing.T) {
 }
 
 func TestLearnDraftJSON(t *testing.T) {
-	_, short := signalRepo(t)
-	useAgent(t, "claude", &fakeAgent{result: adapter.Result{Text: answer(short), Tokens: adapter.Tokens{Input: 100, Output: 20}}})
-	code, out, _ := runLearn(t, "--json")
+	d := testDeps(t)
+	_, short := signalRepo(t, &d)
+	useAgent(&d, "claude", &fakeAgent{result: adapter.Result{Text: answer(short), Tokens: adapter.Tokens{Input: 100, Output: 20}}})
+	code, out, _ := runLearn(t, d, "--json")
 	var got struct {
 		Version int
 		Session string
@@ -268,22 +266,24 @@ func TestLearnDraftJSON(t *testing.T) {
 }
 
 func TestLearnUnreadableAnswer(t *testing.T) {
-	signalRepo(t)
-	useAgent(t, "claude", &fakeAgent{result: adapter.Result{Text: "no block here"}})
-	code, out, _ := runLearn(t)
+	d := testDeps(t)
+	signalRepo(t, &d)
+	useAgent(&d, "claude", &fakeAgent{result: adapter.Result{Text: "no block here"}})
+	code, out, _ := runLearn(t, d)
 	if code != 0 || !strings.Contains(out, "- the session's output, which could not be read: it has no fenced json block") || strings.Contains(out, "no kind for no capability") {
 		t.Errorf("code %d, stdout %q", code, out)
 	}
 }
 
 func TestLearnBreaker(t *testing.T) {
-	dir, short := signalRepo(t)
+	d := testDeps(t)
+	dir, short := signalRepo(t, &d)
 	before := branches(t, dir)
-	useAgent(t, "claude", &fakeAgent{
+	useAgent(&d, "claude", &fakeAgent{
 		reports: []adapter.Tokens{{Input: 900, Output: 200}},
 		result:  adapter.Result{Text: answer(short)},
 	})
-	code, out, _ := runLearn(t, "--appetite=1000")
+	code, out, _ := runLearn(t, d, "--appetite=1000")
 	if code != 1 || !strings.Contains(out, "nothing kept") || strings.Contains(out, "rename-on-review") {
 		t.Errorf("code %d, stdout %q", code, out)
 	}
@@ -293,12 +293,13 @@ func TestLearnBreaker(t *testing.T) {
 }
 
 func TestLearnAgentChoice(t *testing.T) {
-	signalRepo(t)
+	d := testDeps(t)
+	signalRepo(t, &d)
 	for name, run := range map[string]func(t *testing.T) (int, string, string){
-		"flag": func(t *testing.T) (int, string, string) { return runLearn(t, "--agent", "nosuch") },
+		"flag": func(t *testing.T) (int, string, string) { return runLearn(t, d, "--agent", "nosuch") },
 		"env": func(t *testing.T) (int, string, string) {
 			t.Setenv("PHYSA_AGENT", "nosuch")
-			return runLearn(t)
+			return runLearn(t, d)
 		},
 	} {
 		code, out, errOut := run(t)
@@ -307,30 +308,33 @@ func TestLearnAgentChoice(t *testing.T) {
 		}
 	}
 	other := &fakeAgent{result: adapter.Result{Text: "```json\n{\"proposals\":[]}\n```"}}
-	useAgent(t, "other", other)
-	if code, _, errOut := runLearn(t, "--agent=other"); code != 0 || other.starts != 1 {
+	useAgent(&d, "other", other)
+	if code, _, errOut := runLearn(t, d, "--agent=other"); code != 0 || other.starts != 1 {
 		t.Errorf("code %d, starts %d, stderr %q", code, other.starts, errOut)
 	}
 }
 
 func TestLearnAgentFailures(t *testing.T) {
-	signalRepo(t)
+	d := testDeps(t)
+	signalRepo(t, &d)
 	for _, err := range []error{adapter.ErrNotInstalled, fmt.Errorf("%w: boom", adapter.ErrFailed)} {
-		useAgent(t, "claude", &fakeAgent{startErr: err})
-		code, out, errOut := runLearn(t)
+		useAgent(&d, "claude", &fakeAgent{startErr: err})
+		code, out, errOut := runLearn(t, d)
 		if code != 2 || out != "" || !strings.Contains(errOut, err.Error()) {
 			t.Errorf("%v: code %d, stdout %q, stderr %q", err, code, out, errOut)
 		}
 	}
-	useAgent(t, "claude", &fakeAgent{waitErr: fmt.Errorf("%w: boom", adapter.ErrFailed)})
-	if code, _, errOut := runLearn(t); code != 2 || !strings.Contains(errOut, "boom") {
+	useAgent(&d, "claude", &fakeAgent{waitErr: fmt.Errorf("%w: boom", adapter.ErrFailed)})
+	if code, _, errOut := runLearn(t, d); code != 2 || !strings.Contains(errOut, "boom") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
 func TestLearnBadUsageFromRun(t *testing.T) {
+	t.Parallel()
+	d := testDeps(t)
 	for _, args := range [][]string{{"--appetite", "0"}, {"--appetite", "x"}, {"--signals", "--appetite", "5"}} {
-		if code, _, _ := runLearn(t, args...); code != 2 {
+		if code, _, _ := runLearn(t, d, args...); code != 2 {
 			t.Errorf("%v: code %d, want 2", args, code)
 		}
 	}
@@ -352,28 +356,27 @@ func (f *prsForge) CreatePR(_ context.Context, head, base, title, body string) (
 func (f *prsForge) EditPR(context.Context, int, string) error { return nil }
 
 // writeRepo is signalRepo with a local bare remote as origin, a fake forge
-// that opens PRs and an agent that proposes one good rule.
-func writeRepo(t *testing.T) (dir, bare string, f *prsForge) {
+// that opens PRs and an agent that proposes one good rule, both in d.
+func writeRepo(t *testing.T, d *deps) (dir, bare string, f *prsForge) {
 	t.Helper()
-	dir, short := signalRepo(t)
+	dir, short := signalRepo(t, d)
 	bare = filepath.Join(t.TempDir(), "remote.git")
 	gitIn(t, dir, "init", "-q", "--bare", bare)
 	gitIn(t, dir, "remote", "add", "origin", bare)
 	gitIn(t, dir, "push", "-q", "origin", "HEAD:refs/heads/main")
 	gitIn(t, dir, "fetch", "-q", "origin")
-	prev := newForge(dir).(prForge)
+	prev := d.newForge(dir).(prForge)
 	f = &prsForge{prForge: prev}
-	old := newForge
-	newForge = func(string) forge.Forge { return f }
-	t.Cleanup(func() { newForge = old })
-	useAgent(t, "claude", &fakeAgent{result: adapter.Result{Text: answer(short), Tokens: adapter.Tokens{Input: 100, Output: 20}}})
+	d.newForge = func(string) forge.Forge { return f }
+	useAgent(d, "claude", &fakeAgent{result: adapter.Result{Text: answer(short), Tokens: adapter.Tokens{Input: 100, Output: 20}}})
 	return dir, bare, f
 }
 
 func TestLearnWriteCommitsToTheBranch(t *testing.T) {
-	dir, _, _ := writeRepo(t)
+	d := testDeps(t)
+	dir, _, _ := writeRepo(t, &d)
 	status := gitIn(t, dir, "status", "--porcelain")
-	code, out, errOut := runLearn(t, "--write", "--appetite", "5000")
+	code, out, errOut := runLearn(t, d, "--write", "--appetite", "5000")
 	if code != 0 {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -397,8 +400,9 @@ func TestLearnWriteCommitsToTheBranch(t *testing.T) {
 }
 
 func TestLearnWritePushAndPR(t *testing.T) {
-	dir, bare, f := writeRepo(t)
-	code, out, errOut := runLearn(t, "--write", "--push", "--pr", "--appetite=5000")
+	d := testDeps(t)
+	dir, bare, f := writeRepo(t, &d)
+	code, out, errOut := runLearn(t, d, "--write", "--push", "--pr", "--appetite=5000")
 	if code != 0 {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -419,8 +423,9 @@ func TestLearnWritePushAndPR(t *testing.T) {
 }
 
 func TestLearnWriteJSONStaysValid(t *testing.T) {
-	writeRepo(t)
-	code, out, errOut := runLearn(t, "--write", "--json", "--appetite=5000")
+	d := testDeps(t)
+	writeRepo(t, &d)
+	code, out, errOut := runLearn(t, d, "--write", "--json", "--appetite=5000")
 	var got struct{ Version int }
 	if code != 0 || json.Unmarshal([]byte(out), &got) != nil || got.Version != 1 {
 		t.Fatalf("code %d, stdout %q", code, out)
@@ -431,8 +436,10 @@ func TestLearnWriteJSONStaysValid(t *testing.T) {
 }
 
 func TestLearnPushWithoutWriteIsBadUsage(t *testing.T) {
+	t.Parallel()
+	d := testDeps(t)
 	for _, args := range [][]string{{"--push"}, {"--pr"}, {"--write", "--pr"}} {
-		if code, _, _ := runLearn(t, args...); code != 2 {
+		if code, _, _ := runLearn(t, d, args...); code != 2 {
 			t.Errorf("%v: code %d, want 2", args, code)
 		}
 	}
@@ -446,9 +453,10 @@ func (noPRs) OpenPR(context.Context, string) (int, string, bool, error) {
 }
 
 func TestLearnPRWithoutForgeIsReadyForReview(t *testing.T) {
-	_, _, f := writeRepo(t)
-	newForge = func(string) forge.Forge { return noPRs{f} }
-	code, out, errOut := runLearn(t, "--write", "--push", "--pr", "--appetite=5000")
+	d := testDeps(t)
+	_, _, f := writeRepo(t, &d)
+	d.newForge = func(string) forge.Forge { return noPRs{f} }
+	code, out, errOut := runLearn(t, d, "--write", "--push", "--pr", "--appetite=5000")
 	if code != 0 || !strings.Contains(out, "ready for review") || len(f.created) != 0 {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -477,6 +485,7 @@ func copyTree(t *testing.T, src, dst string) {
 }
 
 func TestLearnSignalsReadSessionsByTrailer(t *testing.T) {
+	d := testDeps(t)
 	const session = "11111111-1111-4111-8111-111111111111"
 	t.Setenv("GIT_AUTHOR_DATE", "2026-11-20T09:00:00Z")
 	t.Setenv("GIT_COMMITTER_DATE", "2026-11-20T09:00:00Z")
@@ -493,7 +502,7 @@ func TestLearnSignalsReadSessionsByTrailer(t *testing.T) {
 	copyTree(t, filepath.Join("..", "..", "internal", "adapter", "claude", "claudelog", "testdata", "projects", "-fixture-repo"),
 		filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", project))
 	t.Chdir(dir)
-	code, out, errOut := runLearn(t, "--signals")
+	code, out, errOut := runLearn(t, d, "--signals")
 	if code != 0 {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -510,6 +519,7 @@ func TestLearnSignalsReadSessionsByTrailer(t *testing.T) {
 }
 
 func TestMapHooksSetsThenFindsItSet(t *testing.T) {
+	d := testDeps(t)
 	dir := trailersRepo(t)
 	write(t, dir, "tools/hooks/prepare-commit-msg", "#!/bin/sh\nexit 0\n")
 	if err := os.Chmod(filepath.Join(dir, "tools/hooks/prepare-commit-msg"), 0o755); err != nil {
@@ -521,7 +531,7 @@ func TestMapHooksSetsThenFindsItSet(t *testing.T) {
 		"core.hooksPath is already tools/hooks.\n",
 	} {
 		var stdout, stderr bytes.Buffer
-		if code := run(t.Context(), []string{"map", "hooks"}, &stdout, &stderr); code != 0 || stdout.String() != want || stderr.Len() != 0 {
+		if code := run(t.Context(), d, []string{"map", "hooks"}, &stdout, &stderr); code != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("code %d, stdout %q, stderr %q, want %q", code, stdout.String(), stderr.String(), want)
 		}
 	}
@@ -531,6 +541,7 @@ func TestMapHooksSetsThenFindsItSet(t *testing.T) {
 }
 
 func TestMapHooksRefusesAnotherHooksPath(t *testing.T) {
+	d := testDeps(t)
 	dir := trailersRepo(t)
 	write(t, dir, "tools/hooks/prepare-commit-msg", "#!/bin/sh\nexit 0\n")
 	if err := os.Chmod(filepath.Join(dir, "tools/hooks/prepare-commit-msg"), 0o755); err != nil {
@@ -539,7 +550,7 @@ func TestMapHooksRefusesAnotherHooksPath(t *testing.T) {
 	gitIn(t, dir, "config", "core.hooksPath", ".githooks")
 	t.Chdir(dir)
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), []string{"map", "hooks"}, &stdout, &stderr)
+	code := run(t.Context(), d, []string{"map", "hooks"}, &stdout, &stderr)
 	if code != 2 || stdout.Len() != 0 || !strings.HasPrefix(stderr.String(), "physa map hooks: ") ||
 		!strings.Contains(stderr.String(), ".githooks") || !strings.Contains(stderr.String(), "left alone") {
 		t.Errorf("code %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
@@ -550,8 +561,10 @@ func TestMapHooksRefusesAnotherHooksPath(t *testing.T) {
 }
 
 func TestMapHooksTakesNoArguments(t *testing.T) {
+	t.Parallel()
+	d := testDeps(t)
 	var stdout, stderr bytes.Buffer
-	if code := run(t.Context(), []string{"map", "hooks", "x"}, &stdout, &stderr); code != 2 {
+	if code := run(t.Context(), d, []string{"map", "hooks", "x"}, &stdout, &stderr); code != 2 {
 		t.Errorf("code %d, stderr %q", code, stderr.String())
 	}
 }
@@ -597,8 +610,9 @@ func attributionRepo(t *testing.T) string {
 	return dir
 }
 
-// fakeGh puts a gh on PATH that prints login for api user and fails the rest.
-func fakeGh(t *testing.T, login string) {
+// fakeGh puts a gh on PATH that prints login for api user and fails the
+// rest, and makes d's forge the GitHub client that runs it.
+func fakeGh(t *testing.T, d *deps, login string) {
 	t.Helper()
 	bin := t.TempDir()
 	script := "#!/bin/sh\ncase \"$*\" in\n  \"api user\"*) echo " + login + " ;;\n  *) echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;\nesac\n"
@@ -606,18 +620,17 @@ func fakeGh(t *testing.T, login string) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	old := newForge
-	newForge = func(dir string) forge.Forge { return github.New(dir) }
-	t.Cleanup(func() { newForge = old })
+	d.newForge = func(dir string) forge.Forge { return github.New(dir) }
 }
 
 func TestLearnNamesThePersonAndCreditsTheArbiter(t *testing.T) {
+	d := testDeps(t)
 	attributionRepo(t)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	fakeGh(t, "dphaener")
+	fakeGh(t, &d, "dphaener")
 	f := &fakeAgent{result: adapter.Result{Text: "```json\n{\"proposals\":[]}\n```\n"}}
-	useAgent(t, "claude", f)
-	code, out, errOut := runLearn(t)
+	useAgent(&d, "claude", f)
+	code, out, errOut := runLearn(t, d)
 	if code != 0 {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -652,6 +665,7 @@ func TestLearnNamesThePersonAndCreditsTheArbiter(t *testing.T) {
 }
 
 func TestLearnWithNoPersonSaysWhy(t *testing.T) {
+	d := testDeps(t)
 	attributionRepo(t)
 	// A PATH with git and without gh.
 	bin := t.TempDir()
@@ -664,12 +678,10 @@ func TestLearnWithNoPersonSaysWhy(t *testing.T) {
 	}
 	t.Setenv("PATH", bin)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	old := newForge
-	newForge = func(dir string) forge.Forge { return github.New(dir) }
-	t.Cleanup(func() { newForge = old })
+	d.newForge = func(dir string) forge.Forge { return github.New(dir) }
 	f := &fakeAgent{result: adapter.Result{Text: "```json\n{\"proposals\":[]}\n```\n"}}
-	useAgent(t, "claude", f)
-	code, out, errOut := runLearn(t)
+	useAgent(&d, "claude", f)
+	code, out, errOut := runLearn(t, d)
 	if code != 0 {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}

@@ -46,6 +46,7 @@ func parseLine(args []string, now time.Time) (Flags, bool) {
 }
 
 func TestDeclaredFlagsMatchUsage(t *testing.T) {
+	t.Parallel()
 	root := command.New("physa", "", nil, nil, command.Declare(command.New("init", "", Usage, nil), new(Flags).Declare))
 	if problems := command.Drift(root); len(problems) > 0 {
 		t.Errorf("drift:\n%s", strings.Join(problems, "\n"))
@@ -53,6 +54,7 @@ func TestDeclaredFlagsMatchUsage(t *testing.T) {
 }
 
 func TestLineKeepsTheWordsTyped(t *testing.T) {
+	t.Parallel()
 	var got []string
 	args := []string{"--write", "--agent=fake", "--only", "a,b", "--recover"}
 	execute(args, io.Discard, io.Discard, func(_ Flags, _, words []string, _, _ io.Writer) int {
@@ -65,6 +67,7 @@ func TestLineKeepsTheWordsTyped(t *testing.T) {
 }
 
 func TestLineFreshForEachLine(t *testing.T) {
+	t.Parallel()
 	if _, ok := parseLine([]string{"--recover", "--only", "a"}, now); !ok {
 		t.Fatal("recover --only a refused")
 	}
@@ -75,6 +78,7 @@ func TestLineFreshForEachLine(t *testing.T) {
 }
 
 func TestLineDefaults(t *testing.T) {
+	t.Parallel()
 	f, ok := parseLine([]string{"--gather"}, now)
 	if !ok || !f.Gather || f.SinceSet || f.JSON || f.MaxPRs != 0 { // 0: no PR limit
 		t.Fatalf("got %+v %v", f, ok)
@@ -87,6 +91,7 @@ func TestLineDefaults(t *testing.T) {
 // TestMaxPRsHelpStatesTheDefault checks that the flag's own help says a bare
 // gather has no PR limit.
 func TestMaxPRsHelpStatesTheDefault(t *testing.T) {
+	t.Parallel()
 	fs := pflag.NewFlagSet("init", pflag.ContinueOnError)
 	new(Flags).Declare(fs)
 	if got, want := fs.Lookup("max-prs").Usage, "gather at most this many merged PRs (default: every PR of the bound)"; got != want {
@@ -95,6 +100,7 @@ func TestMaxPRsHelpStatesTheDefault(t *testing.T) {
 }
 
 func TestLineValues(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"--gather", "--since", "2026-01-02", "--max-prs", "5", "--json"},
 		{"--since=2026-01-02", "--max-prs=5", "--gather", "--json"},
@@ -108,6 +114,7 @@ func TestLineValues(t *testing.T) {
 }
 
 func TestLineGatherAgent(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"--gather", "--agent", "x"},
 		{"--agent=x", "--gather", "--json"},
@@ -132,6 +139,7 @@ func TestLineGatherAgent(t *testing.T) {
 }
 
 func TestLineRejections(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"--gather", "--since", "yesterday"},
 		{"--gather", "--since", "2026-13-01"},
@@ -156,6 +164,7 @@ func TestLineRejections(t *testing.T) {
 }
 
 func TestLinePropose(t *testing.T) {
+	t.Parallel()
 	f, ok := parseLine([]string{"--propose", "--agent=claude", "--json"}, now)
 	if !ok || !f.Propose || f.Gather || f.Agent != "claude" || !f.JSON {
 		t.Fatalf("got %+v %v", f, ok)
@@ -167,6 +176,7 @@ func TestLinePropose(t *testing.T) {
 }
 
 func TestLineAreas(t *testing.T) {
+	t.Parallel()
 	f, ok := parseLine([]string{"--areas", "--agent=claude", "--json"}, now)
 	if !ok || !f.Areas || f.Full() || f.Agent != "claude" || !f.JSON {
 		t.Fatalf("got %+v %v", f, ok)
@@ -180,6 +190,7 @@ func TestLineAreas(t *testing.T) {
 }
 
 func TestLineWalk(t *testing.T) {
+	t.Parallel()
 	f, ok := parseLine([]string{"--walk", "--agent=claude", "--json"}, now)
 	if !ok || !f.Walk || f.Full() || f.Agent != "claude" || !f.JSON {
 		t.Fatalf("got %+v %v", f, ok)
@@ -193,6 +204,7 @@ func TestLineWalk(t *testing.T) {
 }
 
 func TestLinePlace(t *testing.T) {
+	t.Parallel()
 	f, ok := parseLine([]string{"--place", "--json"}, now)
 	if !ok || !f.Place || f.Full() || !f.JSON {
 		t.Fatalf("got %+v %v", f, ok)
@@ -211,6 +223,7 @@ func TestLinePlace(t *testing.T) {
 }
 
 func TestLineProposeRejections(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"--propose", "--gather"},
 		{"--gather", "--propose"},
@@ -230,6 +243,7 @@ func TestLineProposeRejections(t *testing.T) {
 }
 
 func TestLineRecover(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"--recover"},
 		{"--recover", "--only", "a", "--only=b,c", "--agent", "x", "--json"},
@@ -247,6 +261,7 @@ func TestLineRecover(t *testing.T) {
 }
 
 func TestLineRecoverRejections(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"--recover", "--gather"},
 		{"--recover", "--propose"},
@@ -268,6 +283,7 @@ func TestLineRecoverRejections(t *testing.T) {
 }
 
 func TestLineFull(t *testing.T) {
+	t.Parallel()
 	f, ok := parseLine(nil, now)
 	if !ok || !f.Full() || f.Write {
 		t.Fatalf("bare: %+v %v", f, ok)
@@ -285,6 +301,7 @@ func TestLineFull(t *testing.T) {
 }
 
 func TestLineFullRejections(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"--push"},
 		{"--write", "--pr"},
@@ -310,6 +327,7 @@ func TestLineFullRejections(t *testing.T) {
 }
 
 func TestLineCap(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"--cap", "$5"}, {"--recover", "--cap=80%"}, {"--walk", "--cap", "2m"}, {"--gather", "--cap", "5usd"}} {
 		if o, ok := parseLine(args, now); !ok || o.Cap.Kind == initcap.None {
 			t.Errorf("%v: ok %v, cap %+v", args, ok, o.Cap)
@@ -326,6 +344,7 @@ func TestLineCap(t *testing.T) {
 }
 
 func TestLineConsolidate(t *testing.T) {
+	t.Parallel()
 	f, ok := parseLine([]string{"--consolidate", "--agent=claude", "--write", "--push", "--pr", "--hooks", "--json"}, now)
 	if !ok || !f.Consolidate || f.Full() || f.Agent != "claude" || !f.Write || !f.JSON {
 		t.Fatalf("got %+v %v", f, ok)

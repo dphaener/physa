@@ -32,7 +32,9 @@ type env struct {
 
 // newEnv runs an engine with the eight methods in this process, on a short
 // temporary directory, with a new git repo, and dials it.
-func newEnv(t *testing.T) *env { return newEnvWith(t, &fakeForge{}) }
+func newEnv(t *testing.T) *env {
+	return newEnvNaming(t, &fakeForge{}, func(context.Context, string) string { return "" })
+}
 
 // fakeForge is a forge with no merged PRs.
 type fakeForge struct{}
@@ -46,9 +48,10 @@ func (*fakeForge) MergedPRs(context.Context, time.Time, int) ([]forge.PR, bool, 
 	return nil, false, nil
 }
 
-// newEnvWith is newEnv with the evidence kinds registered on a forge: the
-// poll runs in the engine, the forge is the fake, nothing reaches GitHub.
-func newEnvWith(t *testing.T, ff forge.Forge) *env {
+// newEnvNaming is newEnv with the evidence kinds registered on a forge (the
+// poll runs in the engine, nothing reaches GitHub) and name as the
+// person-namer idea.add uses when the person is left out.
+func newEnvNaming(t *testing.T, ff forge.Forge, name func(context.Context, string) string) *env {
 	t.Helper()
 	timers, intents := stateevidence.Options(func(string) forge.Forge { return ff })
 	tmp, err := os.MkdirTemp("", "px")
@@ -68,7 +71,7 @@ func newEnvWith(t *testing.T, ff forge.Forge) *env {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- engine.Run(ctx, engine.Options{Dir: dir, Idle: time.Minute, Version: "test", Methods: Methods,
+		done <- engine.Run(ctx, engine.Options{Dir: dir, Idle: time.Minute, Version: "test", Methods: Methods(name),
 			State: state.Options{Timers: timers, Intents: intents}})
 	}()
 	t.Cleanup(func() {
@@ -247,6 +250,7 @@ func TestDescribeShowsEachMethod(t *testing.T) {
 }
 
 func TestPersonOnly(t *testing.T) {
+	t.Parallel()
 	for m, want := range map[string]bool{"pursuit.start": true, "pursuit.stop": true, "pursuit.list": false, "idea.add": false, "plan.set": false} {
 		if PersonOnly(m) != want {
 			t.Errorf("PersonOnly(%s) = %v", m, !want)
@@ -457,6 +461,7 @@ func TestEvidenceBadRepo(t *testing.T) {
 }
 
 func TestProductionRegistersThePoll(t *testing.T) {
+	t.Parallel()
 	o := StateOptions()
 	var timers, intents []string
 	for _, k := range o.Timers {
@@ -474,11 +479,8 @@ func TestProductionRegistersThePoll(t *testing.T) {
 }
 
 func TestIdeaAddNamesThePersonWhenLeftOut(t *testing.T) {
-	e := newEnv(t)
 	named := "cy"
-	old := namePerson
-	namePerson = func(context.Context, string) string { return named }
-	t.Cleanup(func() { namePerson = old })
+	e := newEnvNaming(t, &fakeForge{}, func(context.Context, string) string { return named })
 
 	var idea client.IdeaOut
 	e.must("idea.add", map[string]any{"text": "Named by the engine"}, &idea)

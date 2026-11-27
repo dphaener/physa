@@ -108,9 +108,9 @@ func TestWalkWithoutAreasSaysToRunAreasFirst(t *testing.T) {
 
 func TestWalkOnAStoppedGatherWarnsAndRuns(t *testing.T) {
 	remoteRepo(t)
-	shortWait(t, 3*time.Minute)
 	a := &walkAgent{next: &areaAgent{}}
 	env := fullEnv(t, nil, a)
+	shortWait(&env, 3*time.Minute)
 	f, _ := stoppingForge(fixedNow(&env))
 	env.Forge = func(string) forge.Forge { return f }
 	if code, _, errOut := runInit(env, "--gather"); code != 2 {
@@ -126,6 +126,7 @@ func TestWalkOnAStoppedGatherWarnsAndRuns(t *testing.T) {
 }
 
 func TestWalkIsBadUsageWithOtherFlags(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"--areas"}, {"--gather"}, {"--propose"}, {"--recover"}, {"--write"}, {"--push"}, {"--hooks"},
 		{"--answers", "x"}, {"--yes"}, {"--only", "x"}, {"--since", "2026-01-01"}, {"--max-prs", "3"}} {
 		if code, _, _ := runInit(testEnv(t, nil, nil), append([]string{"--walk"}, args...)...); code != command.BadUsage {

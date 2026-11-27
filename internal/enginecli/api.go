@@ -16,9 +16,6 @@ import (
 	"github.com/dphaener/physa/internal/workapi"
 )
 
-// getenv is how apiCall finds an agent's session; tests replace it.
-var getenv = os.Getenv
-
 func (g group) apiCommand() *cobra.Command {
 	return build("api",
 		"Call the engine's API by name, for debugging: a bare api lists its methods. "+
@@ -106,7 +103,7 @@ func (g group) apiCall(_ *flags, args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 || len(args) > 2 {
 		return command.BadUsage
 	}
-	if agent, in := agentenv.Detect(getenv); in && workapi.PersonOnly(args[0]) {
+	if agent, in := agentenv.Detect(g.getenv); in && workapi.PersonOnly(args[0]) {
 		return failed(stderr, "api call", errors.New(workapi.Refusal(args[0], agent)))
 	}
 	params := []byte("{}")

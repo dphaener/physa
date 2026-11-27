@@ -27,7 +27,7 @@ func sortedKeys(m map[string][]string) []string {
 // Message is the walk session's message for area a: its name and promise
 // (and the area it was split from), its source files one per line with line
 // counts where sizes knows them, and the folders of the repo's test and doc
-// files with counts, so the session can Glob them. Everything of the repo's
+// files with counts (and its other files), so the session can Glob them. Everything of the repo's
 // sits in a fence, as data.
 func Message(a Area, split sourceset.Division, sizes map[string]int) string {
 	var w strings.Builder
@@ -49,6 +49,7 @@ func Message(a Area, split sourceset.Division, sizes map[string]int) string {
 	}{
 		{sourceset.Test, "### The repo's test files\n\nFolders with their file counts and extensions; Glob them."},
 		{sourceset.Doc, "### The repo's doc files\n\nFolders with their file counts and extensions; Glob them."},
+		{sourceset.Other, "### The repo's other files\n\nConfiguration, fixtures, assets and the like: folders with their file counts and extensions; Glob them."},
 	} {
 		var files []sourceset.File
 		for _, p := range split.Files[k.kind] {
@@ -86,6 +87,7 @@ func FixPrompt(p Problems) string {
 	list(&w, "Paths that match no file of the area", p.Outside)
 	list(&w, "Tests paths that are not test files", p.NotTest)
 	list(&w, "Docs paths that are not doc files", p.NotDoc)
+	list(&w, "Other paths that are not other files", p.NotOther)
 	list(&w, "Owning no source file", p.NoSource)
 	list(&w, "Other faults", p.Names)
 	w.WriteString("Answer with exactly one fenced block marked `json` and nothing after it, holding only the changes. ")
@@ -95,7 +97,7 @@ func FixPrompt(p Problems) string {
 		return w.String()
 	}
 	w.WriteString("`add` moves the exact paths to a capability's own sources, taking them from every other claim (a file claimed twice goes to one), " +
-		"`shared` lists files to share with a `path` and a `reason`, `new` lists capabilities to add, each with `name`, `promise`, `sources`, `tests` and `docs`, " +
+		"`shared` lists files to share with a `path` and a `reason`, `new` lists capabilities to add, each with `name`, `promise`, `sources`, `tests`, `docs` and `other`, " +
 		"`drop` lists paths to take back from every claim, and `remove` lists capabilities to take out by name, such as one to rename: remove the old name and add it under `new`. Use `[]` or `{}` when empty.\n\n" +
 		"```json\n{\"add\":{\"order-refunds\":[\"path/to/file\"]},\"shared\":[{\"path\":\"path/to/glue\",\"reason\":\"One line.\"}],\"new\":[],\"drop\":[\"path/to/wrong\"],\"remove\":[]}\n```\n")
 	return w.String()

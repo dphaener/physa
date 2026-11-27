@@ -4,19 +4,20 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
-	"strings"
 
 	"github.com/dphaener/physa/internal/draft"
+	"github.com/dphaener/physa/internal/jsonblock"
 )
 
 // Capability is one capability as the session names it: the source files it
-// owns and the tests and docs that bear on it.
+// owns and the tests, docs and other files that bear on it.
 type Capability struct {
 	Name    string   `json:"name"`
 	Promise string   `json:"promise"`
 	Sources []string `json:"sources"`
 	Tests   []string `json:"tests"`
 	Docs    []string `json:"docs"`
+	Other   []string `json:"other,omitempty"`
 }
 
 // Shared is a source file, or a folder ending with a slash, kept by many
@@ -88,7 +89,7 @@ func Apply(ans Answer, fix Fix) Answer {
 	}
 	for _, c := range ans.Capabilities {
 		if !slices.Contains(fix.Remove, c.Name) {
-			c.Sources, c.Tests, c.Docs = without(c.Sources, moved), without(c.Tests, fix.Drop), without(c.Docs, fix.Drop)
+			c.Sources, c.Tests, c.Docs, c.Other = without(c.Sources, moved), without(c.Tests, fix.Drop), without(c.Docs, fix.Drop), without(c.Other, fix.Drop)
 			out.Capabilities = append(out.Capabilities, c)
 		}
 	}
@@ -119,7 +120,7 @@ func without(list, drop []string) []string {
 }
 
 func decode(text string, v any) error {
-	block, ok := lastJSONBlock(text)
+	block, ok := jsonblock.Last(text)
 	if !ok {
 		return errors.New("it has no fenced json block")
 	}
@@ -127,30 +128,4 @@ func decode(text string, v any) error {
 		return errors.New("its json block does not decode (" + err.Error() + ")")
 	}
 	return nil
-}
-
-// lastJSONBlock returns the content of the last closed fence opened by a
-// line of three or more backticks followed by json.
-func lastJSONBlock(text string) (string, bool) {
-	var found, open string
-	var ok, isJSON bool
-	var start int
-	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-	for i, line := range lines {
-		t := strings.TrimSpace(line)
-		if open == "" {
-			if ticks := len(t) - len(strings.TrimLeft(t, "`")); ticks >= 3 {
-				open, start = t[:ticks], i+1
-				isJSON = strings.EqualFold(strings.TrimSpace(t[ticks:]), "json")
-			}
-			continue
-		}
-		if strings.HasPrefix(t, open) && strings.Trim(t, "`") == "" {
-			if isJSON {
-				found, ok = strings.Join(lines[start:i], "\n"), true
-			}
-			open = ""
-		}
-	}
-	return found, ok
 }

@@ -161,3 +161,24 @@ func TestCheckSplitProblems(t *testing.T) {
 		t.Error("one part passed")
 	}
 }
+
+func TestCheckExpandsOtherAndReportsAPathThatIsNotOther(t *testing.T) {
+	sp := sourceset.Division{Files: map[sourceset.Kind][]string{
+		sourceset.Test: split.Files[sourceset.Test], sourceset.Doc: split.Files[sourceset.Doc],
+		sourceset.Other: {"config/refunds.yml", "config/orders.yml"},
+	}}
+	ans := whole()
+	ans.Capabilities[0].Other = []string{"config/"}
+	fp, p := Check(area, ans, sp)
+	if !p.Empty() || len(fp.Capabilities[0].Other) != 2 || fp.Capabilities[0].Entries.Other[0] != "config/" {
+		t.Fatalf("other %v entries %v problems %+v", fp.Capabilities[0].Other, fp.Capabilities[0].Entries, p)
+	}
+	ans.Capabilities[0].Other = []string{"server/orders/order.go"}
+	_, p = Check(area, ans, sp)
+	if !slices.Equal(p.NotOther, []string{"order-refunds: server/orders/order.go"}) || p.Empty() {
+		t.Fatalf("not other %v", p.NotOther)
+	}
+	if f := FixPrompt(p); !strings.Contains(f, "Other paths that are not other files") || !strings.Contains(f, "server/orders/order.go") {
+		t.Errorf("fix prompt %s", f)
+	}
+}

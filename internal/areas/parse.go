@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dphaener/physa/internal/draft"
+	"github.com/dphaener/physa/internal/jsonblock"
 )
 
 // Fix is a session's answer to FixPrompt: exact claims for files that were
@@ -125,7 +126,7 @@ func ParseMerge(text string) ([]Joint, error) {
 // decode reads the last fenced json block of text into v. want names the
 // shape the error says was expected.
 func decode(text, want string, v any) error {
-	block, ok := lastJSONBlock(text)
+	block, ok := jsonblock.Last(text)
 	if !ok {
 		return errors.New("it has no fenced json block; expected " + want)
 	}
@@ -144,35 +145,4 @@ func kebab(s string) string {
 		return "unnamed"
 	}
 	return s
-}
-
-// lastJSONBlock returns the content of the last closed fence opened by a line
-// of three or more backticks followed by json.
-func lastJSONBlock(text string) (string, bool) {
-	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-	var (
-		found  string
-		ok     bool
-		open   string // the opening fence's backticks; empty outside a fence
-		isJSON bool
-		start  int
-	)
-	for i, line := range lines {
-		t := strings.TrimSpace(line)
-		if open == "" {
-			ticks := len(t) - len(strings.TrimLeft(t, "`"))
-			if ticks >= 3 {
-				open, start = t[:ticks], i+1
-				isJSON = strings.EqualFold(strings.TrimSpace(t[ticks:]), "json")
-			}
-			continue
-		}
-		if strings.HasPrefix(t, open) && strings.Trim(t, "`") == "" {
-			if isJSON {
-				found, ok = strings.Join(lines[start:i], "\n"), true
-			}
-			open = ""
-		}
-	}
-	return found, ok
 }

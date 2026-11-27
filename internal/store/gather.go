@@ -106,7 +106,7 @@ func (s *Store) PutGather(g Gather) error {
 		}
 		return string(b)
 	}
-	for _, t := range []string{"gather_comments", "gather_prs", "gather_changes", "gather_docs", "gather_runs", "init_areas", "init_walk", "init_place", "init_proposal", "init_recovery", "init_spend"} {
+	for _, t := range []string{"gather_comments", "gather_prs", "gather_changes", "gather_docs", "gather_runs", "init_areas", "init_walk", "init_place", "init_recover", "init_proposal", "init_recovery", "init_spend"} {
 		ex("DELETE FROM " + t)
 	}
 	r := g.Run

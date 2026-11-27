@@ -3,14 +3,17 @@ package recovery
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/dphaener/physa/internal/draft"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfile"
 	"github.com/dphaener/physa/internal/mapfolder"
+	"github.com/dphaener/physa/internal/pathlint"
 	"github.com/dphaener/physa/internal/recovering"
 	"github.com/dphaener/physa/internal/vcs"
 )
@@ -78,9 +81,10 @@ func (c checker) scratch(name, file, terms string) (string, []mapfile.Problem, e
 }
 
 // run returns the problems the map check finds in name's folder and its
-// terms, and any Split found in file; a problem in the scratch map's own
-// files would be Physa's bug, and is left out. The error is for a scratch
-// map that could not be written or read.
+// terms, any Split found in file, and each file path a file of the folder
+// names outside its anchors (pathlint), on that file and line; a problem in
+// the scratch map's own files would be Physa's bug, and is left out. The
+// error is for a scratch map that could not be written or read.
 func (c checker) run(name, file, terms string) ([]mapfile.Problem, error) {
 	dir, out, err := c.scratch(name, file, terms)
 	if err != nil {
@@ -97,7 +101,26 @@ func (c checker) run(name, file, terms string) ([]mapfile.Problem, error) {
 			out = append(out, p)
 		}
 	}
+	if folder, serr := mapfolder.Split(file); serr == nil {
+		out = append(out, pathsNamed(name, folder)...)
+	}
 	return out, err
+}
+
+// pathsNamed is a problem for each file path a file of name's folder f
+// names outside its anchors, by file and line. The lines Split generated
+// (the contents, the index's links to the folder's files) are Physa's, and
+// are left out.
+func pathsNamed(name string, f mapfolder.Folder) []mapfile.Problem {
+	var out []mapfile.Problem
+	for _, n := range slices.Sorted(maps.Keys(f.Files)) {
+		for _, h := range pathlint.Find(f.Files[n]) {
+			if src := f.Source[n]; h.Line <= len(src) && src[h.Line-1] > 0 {
+				out = append(out, mapfile.Problem{Path: mapfolder.CapabilityDir(name) + "/" + n, Line: h.Line, Message: pathlint.Message(h.Path)})
+			}
+		}
+	}
+	return out
 }
 
 // read returns the entries of name's folder and the terms, as the map

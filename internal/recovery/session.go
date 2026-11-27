@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 
 	"github.com/dphaener/physa/internal/adapter"
@@ -121,7 +120,7 @@ func (r *runner) capability(ctx context.Context, j job) Outcome {
 			}
 			system, prompt = recovering.Split(j.rec.InShare(parts, k, earlier, terms))
 		}
-		a, problems, err := r.turns(ctx, c, adapter.Spec{Prompt: prompt, System: system, PromptOnly: true}, &out)
+		a, problems, err := r.turns(ctx, c, adapter.Spec{Prompt: prompt, System: system, ReadOnly: true, Dir: r.check.root}, &out)
 		if errors.Is(err, adapter.ErrTooLong) {
 			if room = recovering.Half(room, prompt); room < recovering.MinRoom {
 				return fail(fmt.Errorf("%w; with the room for a share halved to about %s tokens it still did not fit", tooLong(err, system, prompt, read), reading.Thousands(int64(room*2))))
@@ -150,25 +149,27 @@ func (r *runner) capability(ctx context.Context, j job) Outcome {
 	return out
 }
 
-// turns runs one session on spec to its end: the first attempt, then a
-// resumed attempt on the same session for each answer with problems, up to
-// MaxRetries. It adds its attempts, tokens, model and session id to out and
-// returns its last answer that was read and checked, nil when none was, and
-// what is wrong with the newest. Every attempt runs in one fresh directory,
-// removed afterwards, since an agent finds a session to resume by its
-// directory.
+// turns runs one session on spec, read-only in the repo's root, to its
+// end: the first attempt, then a resumed attempt on the same session for
+// each answer with problems, up to MaxRetries. When the agent cannot resume,
+// a retry starts a new session on the first prompt followed by the retry. It
+// adds its attempts, tokens, model and session id to out and returns its
+// last answer that was read and checked, nil when none was, and what is
+// wrong with the newest.
 func (r *runner) turns(ctx context.Context, c mapping.Capability, spec adapter.Spec, out *Outcome) (*answer, []string, error) {
-	dir, err := os.MkdirTemp("", "physa-recover-")
-	if err != nil {
-		return nil, nil, err
-	}
-	defer os.RemoveAll(dir)
-	spec.Dir, spec.SessionID = dir, draft.NewSessionID()
+	spec.SessionID = draft.NewSessionID()
 	out.SessionID = spec.SessionID
+	first := spec.Prompt
 	var last *answer      // the last answer that was read and checked
 	var problems []string // what is wrong with the newest answer
 	for tries := 0; ; tries++ {
 		res, err := attempt(ctx, r.agent, spec)
+		if spec.Resume && errors.Is(err, adapter.ErrNoResume) {
+			spec.Prompt, spec.Resume, spec.SessionID = first+"\n\n"+spec.Prompt, false, draft.NewSessionID()
+			out.SessionID = spec.SessionID
+			r.sayf("physa init: %s: the agent cannot resume, so the retry starts a new session, %s\n", c.Name, spec.SessionID)
+			res, err = attempt(ctx, r.agent, spec)
+		}
 		out.Attempts++
 		add(&out.Tokens, res.Tokens)
 		if res.Model != "" {

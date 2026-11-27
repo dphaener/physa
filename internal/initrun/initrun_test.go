@@ -19,6 +19,7 @@ import (
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
@@ -520,4 +521,46 @@ type startSpy struct {
 func (s startSpy) Start(ctx context.Context, spec adapter.Spec) (adapter.Session, error) {
 	s.before()
 	return s.warnAgent.Start(ctx, spec)
+}
+
+func TestStoredMapWritesTheWalksCapabilitiesAndSkipsRowsOfAnEarlierSource(t *testing.T) {
+	env, _ := placeEnv(t)
+	if code, _, errOut := runInit(env, "--place"); code != 0 {
+		t.Fatalf("place: %d %s", code, errOut)
+	}
+	st, err := env.Store(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	rec := initrecord.Of(st)
+	w, ok, err := rec.Walk()
+	if err != nil || !ok {
+		t.Fatalf("walk: %v, %v", ok, err)
+	}
+	// A walk only: no proposal is stored, and the map still lists the walk's.
+	m, err := storedMap(rec, "repo", env)
+	if err != nil || len(m.Capabilities) != 2 || m.Capabilities[0].Name != "zz-cap-marker" || m.ProductPromise != "Not yet stated." {
+		t.Fatalf("walk only: %+v, %v", m, err)
+	}
+	rows := []initrecord.Recovered{
+		{Capability: "zz-cap-marker", ProposalAt: w.At, Status: recovery.StatusRecovered, File: "# Marker\n", Terms: "term"},
+		{Capability: "zz-cap-second", ProposalAt: w.At.Add(-time.Hour), Status: recovery.StatusRecovered, File: "# Stale\n"},
+		{Capability: "delivery", ProposalAt: w.At, Status: recovery.StatusRecovered, File: "# Delivery\n"},
+	}
+	if err := rec.PutRecovered(rows); err != nil {
+		t.Fatal(err)
+	}
+	if m, err = storedMap(rec, "repo", env); err != nil || len(m.Capabilities) != 2 {
+		t.Fatalf("with rows: %+v, %v", m, err)
+	}
+	if c := m.Capabilities[0]; c.File != "# Marker\n" || c.Status != recovery.StatusRecovered {
+		t.Errorf("walk capability: %+v", c)
+	}
+	if c := m.Capabilities[1]; c.File != "" || c.Status != recovery.StatusNotYet {
+		t.Errorf("a row of an earlier source was written: %+v", c)
+	}
+	if m.Terms != "term" {
+		t.Errorf("terms %q", m.Terms)
+	}
 }

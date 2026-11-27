@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dphaener/physa/internal/coverage"
-	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/place"
 	"github.com/dphaener/physa/internal/recovering"
 	"github.com/dphaener/physa/internal/store"
@@ -49,54 +47,24 @@ func changeIDs(g store.Gather) []string {
 	return ids
 }
 
-func TestProposedSourcesAreTheCapabilitysOwn(t *testing.T) {
+// TestPlacedSourcesHoldTheChangesARevertLinks checks that a capability's
+// sources hold, beside the PRs and changes placed with it, the change a
+// placed change reverts and the change that reverts a placed one, and
+// nothing placed with another capability.
+func TestPlacedSourcesHoldTheChangesARevertLinks(t *testing.T) {
 	g := testGather()
-	sub := Proposed(g, mapping.Capability{Name: "export", ShownBy: []string{"#12"},
-		Questions: []mapping.Question{{Question: "Was it reverted?", SuggestedBy: []string{"b1b2c3d"}}}}, coverage.Placement{})
-	if len(sub.Docs) != 1 || len(sub.PRs) != 1 || sub.PRs[0].Number != 12 {
-		t.Errorf("docs %d, PRs %+v", len(sub.Docs), sub.PRs)
-	}
-	// b1b2c3d is linked; a1b2c3d comes with it as the change it reverts.
-	if len(sub.Changes) != 2 || sub.Changes[0].ID != idA || sub.Changes[1].ID != idB {
-		t.Errorf("changes %+v", sub.Changes)
+	got := placed(g, place.CapabilityPlaced{Capability: "export", Changes: []string{"b1b2c3d"}})
+	// b1b2c3d is placed; a1b2c3d comes with it as the change it reverts.
+	if ids := changeIDs(got); !slices.Equal(ids, []string{idA, idB}) || len(got.PRs) != 0 {
+		t.Errorf("changes %v, PRs %+v", ids, got.PRs)
 	}
 	// And the other way: the revert comes with the change it reverts.
-	sub = Proposed(g, mapping.Capability{ShownBy: []string{"a1b2c3d"}}, coverage.Placement{})
-	if len(sub.Changes) != 2 || len(sub.PRs) != 0 {
-		t.Errorf("changes %+v, PRs %+v", sub.Changes, sub.PRs)
+	got = placed(g, place.CapabilityPlaced{Capability: "export", PRs: []int{12}, Changes: []string{idA}})
+	if ids := changeIDs(got); !slices.Equal(ids, []string{idA, idB}) || len(got.PRs) != 1 || got.PRs[0].Number != 12 {
+		t.Errorf("changes %v, PRs %+v", ids, got.PRs)
 	}
-}
-
-// TestProposedSourcesHoldWhatIsPlacedWithTheCapability checks that a
-// capability reads the PRs and changes placed with it by their files,
-// besides what it cites, and not those placed with another.
-func TestProposedSourcesHoldWhatIsPlacedWithTheCapability(t *testing.T) {
-	g := testGather()
-	pl := coverage.Placement{PRs: map[string][]int{"export": {12}, "search": {7}}, Changes: map[string][]string{"export": {idA}}}
-	sub := Proposed(g, mapping.Capability{Name: "export"}, pl)
-	if len(sub.PRs) != 1 || sub.PRs[0].Number != 12 {
-		t.Errorf("PRs %+v, want #12 alone", sub.PRs)
-	}
-	// a1b2c3d is placed; b1b2c3d, its revert, comes with it.
-	if len(sub.Changes) != 2 {
-		t.Errorf("changes %+v", sub.Changes)
-	}
-}
-
-func TestProposedSourcesHoldOnlyTheCapabilitysDocs(t *testing.T) {
-	g := testGather()
-	g.Docs = []store.Doc{
-		{Path: "AGENTS.md", Kind: "agent"}, {Path: "README.md", Kind: "readme"}, {Path: "CONTRIBUTING.md", Kind: "contributing"},
-		{Path: "docs/export.md", Kind: "overview"}, {Path: "docs/search.md", Kind: "overview"}, {Path: "docs/decisions.md", Kind: "decisions"},
-	}
-	sub := Proposed(g, mapping.Capability{Name: "export", Docs: []string{"docs/export.md", "docs/decisions.md"}}, coverage.Placement{})
-	var got []string
-	for _, d := range sub.Docs {
-		got = append(got, d.Path)
-	}
-	want := []string{"AGENTS.md", "README.md", "CONTRIBUTING.md", "docs/export.md", "docs/decisions.md"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("docs = %v, want %v", got, want)
+	if len(got.Docs) != 0 || !got.Run.At.Equal(gatherAt) {
+		t.Errorf("docs %v, run %+v", got.Docs, got.Run)
 	}
 }
 

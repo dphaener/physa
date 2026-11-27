@@ -1,6 +1,7 @@
 package areas
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,7 +14,7 @@ import (
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/draft"
 	"github.com/dphaener/physa/internal/initrecord"
-	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/productpromise"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/sourceset"
 	"github.com/dphaener/physa/internal/store"
@@ -59,8 +60,8 @@ type AreaCount struct {
 // Result is what the phase ended with: the tracked files listed, those left
 // out by reason, the files of each kind and the source count, the areas,
 // the parts and merges, the fix rounds run, the unused and dropped patterns,
-// and the model and tokens. MergeKept, when set, says why the merge failed
-// and the areas were kept apart.
+// the model and tokens, and the product the grouping stated. MergeKept, when
+// set, says why the merge failed and the areas were kept apart.
 type Result struct {
 	Listed    int                    `json:"listed"`
 	Left      map[string]int         `json:"left"`
@@ -75,15 +76,17 @@ type Result struct {
 	Dropped   []string               `json:"dropped"`
 	Model     string                 `json:"model"`
 	Tokens    adapter.Tokens         `json:"tokens"`
+	Product   productpromise.Product `json:"product"`
 }
 
 // Run is init's areas phase end to end. It lists the repo's tracked files,
 // has one session name the test, doc and other files as patterns, then has
 // one session (one per part when the listing is larger than a part) place
 // every source file in exactly one area; files left out or claimed twice go
-// back to that session, at most MaxFixRounds times. It stores the areas and
-// the split in init's record, and writes nothing to the repo or the map. On
-// any error it stores nothing.
+// back to that session, at most MaxFixRounds times. The first session to
+// state the product's promise sets it; later parts and the merge are given
+// it. It stores the areas, the split and the product in init's record, and
+// writes nothing to the repo or the map. On any error it stores nothing.
 func Run(ctx context.Context, st Store, s Session) (Result, error) {
 	res := Result{Left: map[string]int{}, Kinds: map[sourceset.Kind]int{}}
 	g, ok, err := st.Gathered(ctx)
@@ -91,7 +94,7 @@ func Run(ctx context.Context, st Store, s Session) (Result, error) {
 		return res, err
 	}
 	if !ok {
-		return res, mapping.ErrNoGather
+		return res, store.ErrNoGather
 	}
 	tr, ok := s.Repo.(vcs.Tracker)
 	if !ok {
@@ -134,10 +137,7 @@ func Run(ctx context.Context, st Store, s Session) (Result, error) {
 	}
 	source := d.Files[sourceset.Source]
 	if res.Source = len(source); res.Source == 0 {
-		dropped := strings.Join(d.Dropped, ", ")
-		if dropped == "" {
-			dropped = "none"
-		}
+		dropped := cmp.Or(strings.Join(d.Dropped, ", "), "none")
 		return res, fmt.Errorf("the split leaves no source file to divide into areas (patterns dropped for matching every file: %s)", dropped)
 	}
 	src := sourceset.Only(l.Files, source)
@@ -154,7 +154,7 @@ func Run(ctx context.Context, st Store, s Session) (Result, error) {
 	} else {
 		res.Parts = len(parts)
 		for i := 0; err == nil && i < len(parts); i++ {
-			sys, msg := PartPrompt(i+1, len(parts), overview, r.briefs(nil), parts[i].Text)
+			sys, msg := PartPrompt(i+1, len(parts), r.product.Promise, overview, r.briefs(nil), parts[i].Text)
 			err = r.group(ctx, sys, msg, parts[i].Files, fmt.Sprintf("grouping part %d of %d places %d source files", i+1, len(parts), len(parts[i].Files)))
 		}
 		if err == nil {
@@ -170,7 +170,8 @@ func Run(ctx context.Context, st Store, s Session) (Result, error) {
 	for _, area := range r.areas {
 		res.Areas = append(res.Areas, AreaCount{Name: area.Name, Promise: area.Promise, Files: len(area.Files)})
 	}
-	body, err := json.Marshal(record(l, d, r.areas, res.Parts, res.Merges, r.ids))
+	res.Product = r.product
+	body, err := json.Marshal(r.record(l, d))
 	if err != nil {
 		return res, err
 	}
@@ -191,20 +192,22 @@ func partSize(chars, window int, overview string) int {
 		chars = DefaultPartChars
 	}
 	if window > 0 {
-		room := (window - mapping.ReplyReserve - reading.Tokens(Areas+Parts+overview)) * 2
+		room := (window - reading.ReplyReserve - reading.Tokens(Areas+Parts+overview)) * 2
 		chars = min(chars, max(room, minPartChars))
 	}
 	return chars
 }
 
-// runner holds a run's agent, its areas so far in order, and its sessions.
+// runner holds a run's agent, its areas so far in order, its sessions and
+// the product the first grouping session to state a promise stated.
 type runner struct {
-	a      adapter.Adapter
-	s      Session
-	res    *Result
-	ids    []string
-	areas  []*Area
-	byName map[string]*Area
+	a       adapter.Adapter
+	s       Session
+	res     *Result
+	ids     []string
+	areas   []*Area
+	byName  map[string]*Area
+	product productpromise.Product
 }
 
 // turn runs one turn of a session in the root, read-only unless prompt-only,
@@ -236,9 +239,7 @@ func (r *runner) turn(ctx context.Context, spec adapter.Spec, what string) (adap
 	}
 	t := &r.res.Tokens
 	t.Input, t.CachedInput, t.Output = t.Input+out.Tokens.Input, t.CachedInput+out.Tokens.CachedInput, t.Output+out.Tokens.Output
-	if out.Model != "" {
-		r.res.Model = out.Model
-	}
+	r.res.Model = cmp.Or(out.Model, r.res.Model)
 	return out, err
 }
 
@@ -259,9 +260,7 @@ func (r *runner) take(list []Area, here map[string]bool, claims *[]sourceset.Cla
 			area = &Area{Name: name}
 			r.byName[name], r.areas = area, append(r.areas, area)
 		}
-		if a.Promise != "" {
-			area.Promise = a.Promise
-		}
+		area.Promise = cmp.Or(a.Promise, area.Promise)
 		here[name] = true
 		*claims = append(*claims, sourceset.Claim{Owner: name, Patterns: a.Sources})
 	}
@@ -276,9 +275,12 @@ func (r *runner) group(ctx context.Context, system, message string, files []stri
 	if err != nil {
 		return err
 	}
-	answer, err := ParseAreas(out.Text)
+	answer, product, err := ParseAreas(out.Text)
 	if err != nil {
 		return fmt.Errorf("the areas answer: %w", err)
+	}
+	if r.product.Promise == "" && product.Promise != "" {
+		r.product = product
 	}
 	here, ours, adds := map[string]bool{}, set(files), map[string]string{}
 	var claims []sourceset.Claim
@@ -361,7 +363,7 @@ func (r *runner) briefs(extra map[string]string) string {
 // it names between existing areas, moving only whole areas. A failed or
 // unreadable merge keeps the areas apart and says so in the result.
 func (r *runner) merge(ctx context.Context) error {
-	sys, msg := MergePrompt(r.briefs(nil))
+	sys, msg := MergePrompt(r.product.Promise, r.briefs(nil))
 	out, err := r.turn(ctx, adapter.Spec{System: sys, Prompt: msg, PromptOnly: true}, fmt.Sprintf("merge reads the briefs of %d areas", len(r.areas)))
 	if cerr := ctx.Err(); cerr != nil {
 		return cerr
@@ -386,9 +388,7 @@ func (r *runner) merge(ctx context.Context) error {
 			}
 		}
 		if len(from) > 0 {
-			if j.Promise != "" {
-				into.Promise = j.Promise
-			}
+			into.Promise = cmp.Or(j.Promise, into.Promise)
 			r.res.Merges = append(r.res.Merges, Joint{Into: into.Name, From: from, Promise: into.Promise, Why: j.Why})
 		}
 	}

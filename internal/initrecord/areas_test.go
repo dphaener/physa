@@ -55,19 +55,6 @@ func TestPutGatherClearsAreas(t *testing.T) {
 	}
 }
 
-func TestPutProposalKeepsAreas(t *testing.T) {
-	s, _ := open(t)
-	if err := s.PutAreas(t.Context(), sampleAreas()); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.PutProposal(t.Context(), sampleProposal()); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok, err := s.Areas(t.Context()); !ok || err != nil {
-		t.Errorf("Areas after a proposal = %v, %v; want kept", ok, err)
-	}
-}
-
 func TestSpendingOrdersAreasBetweenDiscoverAndPropose(t *testing.T) {
 	s, _ := open(t)
 	for _, p := range []string{"recover", "propose", "areas", "other", "discover"} {

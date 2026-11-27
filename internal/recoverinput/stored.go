@@ -78,9 +78,9 @@ func Choose(names, only []string, missing string) ([]int, error) {
 	return out, nil
 }
 
-// Done is the set of capabilities rows holds recovered from the source at
-// at (the walk's time or the proposal's): a row of another time is of an
-// earlier source, and one that failed or is not yet recovered is not done.
+// Done is the set of capabilities rows holds recovered from the walk of
+// time at: a row of another time is of an earlier source, and one that
+// failed or is not yet recovered is not done.
 func Done(rows []initrecord.Recovered, at time.Time) map[string]bool {
 	done := map[string]bool{}
 	for _, r := range rows {

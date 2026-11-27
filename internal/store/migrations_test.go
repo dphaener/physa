@@ -158,15 +158,8 @@ func TestMigrationFiveUpgradesVersionFourStore(t *testing.T) {
 	if err != nil || !ok || g.Run.MaxPRs != 10 || g.Run.ForgeReason != "none" {
 		t.Errorf("gather after upgrade = %+v, %v, %v; want it intact", g.Run, ok, err)
 	}
-	if _, ok, err := proposed(s); ok || err != nil {
-		t.Errorf("Proposed = %v, %v; want false, nil", ok, err)
-	}
-}
-
-// proposed reports whether the store holds an init proposal, as
-// initrecord's Proposed does, which this package cannot import.
-func proposed(s *Store) (struct{}, bool, error) {
 	var n int
-	err := s.db.QueryRow(`SELECT count(*) FROM init_proposal`).Scan(&n)
-	return struct{}{}, n > 0, err
+	if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name = 'init_proposal'").Scan(&n); err != nil || n != 0 {
+		t.Errorf("init_proposal tables = %d, %v; want none after the upgrade", n, err)
+	}
 }

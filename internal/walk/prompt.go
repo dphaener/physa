@@ -3,7 +3,8 @@ package walk
 import (
 	"fmt"
 	"io"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/dphaener/physa/internal/draft"
@@ -16,12 +17,7 @@ func fenced(w io.Writer, label, text string) {
 }
 
 func sortedKeys(m map[string][]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
+	return slices.Sorted(maps.Keys(m))
 }
 
 // Message is the walk session's message for area a: its name and promise

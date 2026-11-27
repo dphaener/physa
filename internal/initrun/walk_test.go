@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -127,7 +128,7 @@ func TestWalkOnAStoppedGatherWarnsAndRuns(t *testing.T) {
 
 func TestWalkIsBadUsageWithOtherFlags(t *testing.T) {
 	t.Parallel()
-	for _, args := range [][]string{{"--areas"}, {"--gather"}, {"--propose"}, {"--recover"}, {"--write"}, {"--push"}, {"--hooks"},
+	for _, args := range [][]string{{"--areas"}, {"--gather"}, {"--recover"}, {"--write"}, {"--push"}, {"--hooks"},
 		{"--answers", "x"}, {"--yes"}, {"--only", "x"}, {"--since", "2026-01-01"}, {"--max-prs", "3"}} {
 		if code, _, _ := runInit(testEnv(t, nil, nil), append([]string{"--walk"}, args...)...); code != command.BadUsage {
 			t.Errorf("--walk %v: code %d, want bad usage", args, code)
@@ -135,15 +136,15 @@ func TestWalkIsBadUsageWithOtherFlags(t *testing.T) {
 	}
 }
 
-// TestWalkNeverReachesTheMap: capabilities and file paths with distinctive
-// words are kept in init's record under .git/physa, the repo is untouched, and
-// the map written from what init stored holds none of them.
-func TestWalkNeverReachesTheMap(t *testing.T) {
+// TestWalkFootprintsNeverReachTheMap: the footprints are kept in init's record
+// under .git/physa and the repo is untouched by --walk; the map written from
+// what init stored lists the walk's capabilities by name and promise, and
+// holds none of the file paths of their footprints.
+func TestWalkFootprintsNeverReachTheMap(t *testing.T) {
 	dir, _ := remoteRepo(t)
-	write(t, dir, "web/app.js", "let a\n")
-	gitIn(t, dir, "add", "web/app.js")
-	gitIn(t, dir, "commit", "-q", "-m", "feat: Add web", "--", "web/app.js")
-	a := &walkAgent{next: &areaAgent{next: newRoutedAgent()}}
+	r := newRoutedAgent()
+	r.replies = map[string]string{"zz-cap-marker": capReply("marker"), "zz-cap-second": capReply("second")}
+	a := &walkAgent{next: &areaAgent{next: r}}
 	env := fullEnv(t, &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}, a)
 	env.Store = func(context.Context, string) (*store.Store, error) {
 		return store.Open(context.Background(), filepath.Join(dir, ".git", "physa"))
@@ -166,7 +167,7 @@ func TestWalkNeverReachesTheMap(t *testing.T) {
 	if got := gitIn(t, dir, "ls-files", ".physa"); got != "" {
 		t.Errorf(".physa is tracked: %s", got)
 	}
-	for _, args := range [][]string{{"--propose"}, {"--recover", "--write"}} {
+	for _, args := range [][]string{{"--place"}, {"--recover", "--write"}} {
 		if code, _, errOut := runInit(env, args...); code != 0 {
 			t.Fatalf("%v: %d %s", args, code, errOut)
 		}
@@ -178,15 +179,21 @@ func TestWalkNeverReachesTheMap(t *testing.T) {
 	rec, ok, err := walk.Load(t.Context(), initrecord.Of(st))
 	st.Close()
 	if !ok || err != nil || len(rec.Capabilities) != 2 {
-		t.Fatalf("the footprints were not kept through propose and recover: %+v %v %v", rec, ok, err)
+		t.Fatalf("the footprints were not kept through the placements and the recovery: %+v %v %v", rec, ok, err)
 	}
 	files := strings.Fields(gitIn(t, dir, "ls-tree", "-r", "--name-only", "physa/init"))
-	if len(files) < 3 {
-		t.Fatalf("physa/init holds %v", files)
+	if !slices.Contains(files, ".physa/capabilities/zz-cap-marker/index.md") || !slices.Contains(files, ".physa/capabilities/zz-cap-second/index.md") {
+		t.Fatalf("physa/init holds %v, without the walk's capabilities", files)
+	}
+	if idx := gitIn(t, dir, "show", "physa/init:.physa/capabilities/zz-cap-marker/index.md"); !strings.Contains(idx, "zz-cap-promise.") {
+		t.Errorf("the capability's promise is not the walk's:\n%s", idx)
 	}
 	for _, f := range files {
+		if !strings.HasPrefix(f, ".physa/") && f != "AGENTS.md" { // the repo's own files, not the map's
+			continue
+		}
 		body := gitIn(t, dir, "show", "physa/init:"+f)
-		for _, word := range []string{"zz-cap-marker", "zz-cap-second", "zz-cap-promise", "web/app.js"} {
+		for _, word := range []string{"web/app.js", "main.go"} {
 			if strings.Contains(body, word) || strings.Contains(f, word) {
 				t.Errorf("%s holds %q", f, word)
 			}

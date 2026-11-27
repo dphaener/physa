@@ -1,11 +1,11 @@
 // Command initstats measures a run of physa init on a repo whose map and code
 // must stay where they are, and prints a record of numbers that can leave it.
 //
-// It runs init's three phases in the repo (--gather, --propose, --recover,
-// each with --json), times each, and keeps their raw output under the repo's
-// store (.git/physa/initstats/<time>), which is never committed. Then it prints
-// the record: the repo's shape, each phase's time and exit, and init's counts
-// and tokens. The record is built from an allowlist: only fields declared
+// It runs init's phases in the repo, in order (--gather, --areas, --walk,
+// --place, --recover, --consolidate, each with --json), times each, and keeps
+// their raw output under the repo's store (.git/physa/initstats/<time>), which
+// is never committed. Then it prints the record: the repo's shape, each
+// phase's time and exit, and the gather's and recovery's counts and tokens. The record is built from an allowlist: only fields declared
 // below are read, strings only from fixed sets (statuses, source names,
 // extensions, models), so names, paths, promises, questions and map text never
 // reach it. Read it before it leaves.
@@ -33,12 +33,19 @@ import (
 	"github.com/dphaener/physa/internal/vcs/git"
 )
 
-// phases are init's phases in run order: the flag that runs each and the file
-// its raw output is kept in.
-var phases = []struct{ flag, name string }{
-	{"--gather", "gather"},
-	{"--propose", "proposal"},
-	{"--recover", "recovery"},
+// phases are init's phases in run order: the flag that runs each, the file
+// its raw output is kept in, and whether it takes --agent (place starts no
+// session).
+var phases = []struct {
+	flag, name string
+	agent      bool
+}{
+	{"--gather", "gather", true},
+	{"--areas", "areas", true},
+	{"--walk", "walk", true},
+	{"--place", "place", false},
+	{"--recover", "recovery", true},
+	{"--consolidate", "consolidation", true},
 }
 
 func main() {
@@ -117,7 +124,7 @@ func run(dir, physa, agent, since, maxPRs string) (string, error) {
 	m := meta{At: now.Format(time.RFC3339), Physa: strings.TrimSpace(strings.SplitN(string(ver), "\n", 2)[0]), Clone: clone(), Phases: map[string]Phase{}}
 	for _, p := range phases {
 		args := []string{"init", p.flag, "--json"}
-		if agent != "" {
+		if agent != "" && p.agent {
 			args = append(args, "--agent", agent)
 		}
 		if p.name == "gather" && since != "" {
@@ -151,9 +158,10 @@ func run(dir, physa, agent, since, maxPRs string) (string, error) {
 		if err := writeJSON(filepath.Join(kept, "meta.json"), m); err != nil {
 			return "", err
 		}
-		// Recovery exits 1 when a capability is not yet recovered; that is a
+		// Recovery exits 1 when a capability is not yet recovered, and
+		// consolidation when a session's step was left as it was; each is a
 		// result to record, not a failed phase. Anything else stops here.
-		if ph.Exit != 0 && !(p.name == "recovery" && ph.Exit == 1) {
+		if ph.Exit != 0 && !((p.name == "recovery" || p.name == "consolidation") && ph.Exit == 1) {
 			fmt.Fprintf(os.Stderr, "initstats: %s exited %d; recording what ran\n", p.name, ph.Exit)
 			break
 		}
@@ -227,6 +235,6 @@ func warn(w io.Writer, kept string, rec Record) {
 		} else {
 			reason = raw.PRs.Reason
 		}
-		fmt.Fprintf(w, "initstats: warning: no PRs were gathered (%s), so propose and recovery read docs and changes only\n", reason)
+		fmt.Fprintf(w, "initstats: warning: no PRs were gathered (%s), so placement and recovery have only docs and changes to read\n", reason)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/draft"
+	"github.com/dphaener/physa/internal/productpromise"
 	"github.com/dphaener/physa/internal/reading"
 )
 
@@ -23,9 +24,9 @@ const none = "none\n"
 // Prompt returns everything the session reads: the recovering skill, then
 // the capability, then, for one found in the code, its files, then its
 // sources, whole, under their own headings. All that others wrote (the
-// promises and questions an agent proposed, the area and files the walk
-// named, docs, PR titles, bodies and review comments, change subjects and
-// messages, names) sits in fenced blocks nothing inside can close; the
+// promises an agent wrote, the area and files the walk named, docs, PR
+// titles, bodies and review comments, change subjects and messages, names)
+// sits in fenced blocks nothing inside can close; the
 // labels outside the fences are Physa's own. Clusters of files are never
 // written: recovery reads none. A capability found in the code has its docs
 // named in its files, so its sources hold a docs part only when docs were
@@ -52,8 +53,7 @@ func Prompt(in Input) string {
 // the same for every capability: the skill, the date, the product's promise
 // and the docs every capability reads (reading.Always), still fenced, under
 // a line saying they are sources and never instructions. message is the
-// rest: the capability, its questions or its files, and its own docs, PRs
-// and changes. For a capability found in the code, a docs part is written
+// rest: the capability, its files, and its own docs, PRs and changes. For a capability found in the code, a docs part is written
 // only when docs were given, as in Prompt.
 func Split(in Input) (system, message string) {
 	var shared, own []reading.Doc
@@ -91,33 +91,20 @@ func Split(in Input) (system, message string) {
 	return s.String(), m.String()
 }
 
-// writeProduct writes the date and the product's promise.
+// writeProduct writes the date and the product's promise, in the form
+// every init session reads it (productpromise.Block).
 func writeProduct(w *strings.Builder, in Input) {
-	fmt.Fprintf(w, "Today's date: %s\n\nThe product's promise:\n\n", in.Date.UTC().Format(time.DateOnly))
-	draft.Fence(w, in.Product)
+	fmt.Fprintf(w, "Today's date: %s\n\n%s", in.Date.UTC().Format(time.DateOnly), productpromise.Block(in.Product))
 }
 
 // writeCapability writes the capability, and then the area of the code it
-// was found in, or the proposal's questions about it.
+// was found in when it was found in the code.
 func writeCapability(w *strings.Builder, in Input) {
 	w.WriteString("The capability:\n\n")
 	draft.Fence(w, "name: "+draft.OneLine(in.Name)+"\npromise: "+draft.OneLine(in.Promise))
 	if in.Footprint != nil {
 		w.WriteString("\nThe area of the code it was found in:\n\n")
 		draft.Fence(w, draft.OneLine(in.Area))
-		writeShare(w, in)
-		return
-	}
-	w.WriteString("\nThe proposal's questions about it:\n\n")
-	if len(in.Questions) == 0 {
-		w.WriteString(none)
-	}
-	for i, q := range in.Questions {
-		if i > 0 {
-			w.WriteString("\n")
-		}
-		fmt.Fprintf(w, "Question %d of %d:\n\n", i+1, len(in.Questions))
-		draft.Fence(w, "question: "+draft.OneLine(q.Question)+"\nsuggested by: "+draft.OneLine(strings.Join(q.SuggestedBy, " ")))
 	}
 	writeShare(w, in)
 }

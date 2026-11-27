@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/coverage"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather/merged"
 	"github.com/dphaener/physa/internal/reading"
@@ -771,7 +770,7 @@ func TestRunTiesPRsLandedAsMergesToTheirFiles(t *testing.T) {
 	}
 	files := map[int][]string{}
 	for _, c := range g.Changes {
-		if n := coverage.PROf(c); n > 0 {
+		if n := store.PROf(c); n > 0 {
 			files[n] = append(files[n], c.Files...)
 		}
 	}

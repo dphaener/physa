@@ -65,7 +65,7 @@ Built (decided by Myxo for the owner to review, 2026-11-26). A full run of `phys
 - stale: Claude Code's Physa skill is out of date: run `physa skill setup` to update it.
 - other, a `SKILL.md` Physa did not write: `~/.claude/skills/physa/SKILL.md` was not written by Physa, so Claude Code has no current Physa skill, and `physa skill setup` leaves that file alone: move it aside, then run `physa skill setup`.
 
-A current skill, a state that cannot be read, no home, and an agent with no target say nothing. So do the phases alone (`--gather`, `--propose`, `--recover`, `--consolidate`) and a run that stops on a bad command line or a refused repo. A full run that has started says it even when it then stops or its hook is refused. The line never changes the exit code, and init never installs, updates or removes the skill.
+A current skill, a state that cannot be read, no home, and an agent with no target say nothing. So do the phases alone (`--gather`, `--areas`, `--walk`, `--place`, `--recover`, `--consolidate`; `--propose` is gone, 15 §3) and a run that stops on a bad command line or a refused repo. A full run that has started says it even when it then stops or its hook is refused. The line never changes the exit code, and init never installs, updates or removes the skill.
 
 ## 6. The glossary
 

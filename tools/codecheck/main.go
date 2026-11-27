@@ -10,7 +10,9 @@
 // with context.Background or context.TODO: the command's context comes down.
 // It also checks that no test file assigns a package variable of a non-test
 // file, its own package's or another package's of the module through its
-// import: a test passes its fake in instead of swapping one.
+// import: a test passes its fake in instead of swapping one. It also checks
+// that nothing imports, and nothing lives at, a package code-first init
+// removed (removedPackages), test files included.
 package main
 
 import (
@@ -84,6 +86,27 @@ var engineSide = []string{
 	"internal/workapi",
 }
 
+// removedPackages lists the packages, relative to the module, that code-first
+// init removed (design 15 §10.1), each with the reason. A listed path covers
+// its subdirectories. Any package that imports one, test files included, or
+// lives at one, is reported, so they do not come back.
+var removedPackages = []struct{ Path, Reason string }{
+	{"internal/mapping", "removed by code-first init (design 15 §10.1)"},
+	{"internal/mapping/shareview", "removed by code-first init (design 15 §10.1)"},
+	{"internal/coverage", "removed by code-first init (design 15 §10.1)"},
+}
+
+// removed returns the reason the module-relative path rel is a removed
+// package, or "" when it is not.
+func removed(rel string) string {
+	for _, r := range removedPackages {
+		if rel == r.Path || strings.HasPrefix(rel, r.Path+"/") {
+			return r.Reason
+		}
+	}
+	return ""
+}
+
 // Rule names reported in violations.
 const (
 	ruleImports  = "no-plugin-imports"
@@ -94,6 +117,7 @@ const (
 	ruleTables   = "engine-tables-writer"
 	ruleContext  = "context-from-command"
 	ruleTestSwap = "tests-inject-fakes"
+	ruleRemoved  = "removed-packages"
 )
 
 // stateDir is the one package, with its subdirectories, that may write the
@@ -243,6 +267,9 @@ func checkPackage(root, module string, pk *pkg, budgets map[string]int) ([]Viola
 	inCore := pk.dir == "internal" || strings.HasPrefix(pk.dir, "internal/")
 	mapSide := inCore && !onEngineSide(pk.dir)
 	lines := 0
+	if why := removed(pk.dir); why != "" {
+		out = append(out, Violation{pk.dir, ruleRemoved, fmt.Sprintf("the package lives at %s, a removed path: %s", pk.dir, why)})
+	}
 	hasDoc, docOK := false, false
 	pkgName := ""
 	var wrongDoc string
@@ -254,6 +281,17 @@ func checkPackage(root, module string, pk *pkg, budgets map[string]int) ([]Viola
 			return nil, err
 		}
 		isTest := strings.HasSuffix(name, "_test.go")
+		for _, imp := range f.Imports {
+			ip, err := strconv.Unquote(imp.Path.Value)
+			if err != nil {
+				return nil, err
+			}
+			if rel, ok := strings.CutPrefix(ip, module+"/"); ok {
+				if why := removed(rel); why != "" {
+					out = append(out, Violation{pk.dir, ruleRemoved, fmt.Sprintf("%s imports %s, a removed package: %s", name, ip, why)})
+				}
+			}
+		}
 		if inCore {
 			for _, imp := range f.Imports {
 				ip, err := strconv.Unquote(imp.Path.Value)

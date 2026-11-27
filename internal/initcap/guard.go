@@ -10,7 +10,6 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/initrecord"
-	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/spend"
 )
@@ -95,7 +94,7 @@ func (g *Guard) Stopped() bool {
 // over, since output weighs five times input; or the mean of the sessions
 // this guard has seen end, when larger. Call with mu held.
 func (g *Guard) budget(spec adapter.Spec) int64 {
-	b := 2*int64(reading.Tokens(spec.System+spec.Prompt)) + 5*int64(mapping.ReplyReserve)
+	b := 2*int64(reading.Tokens(spec.System+spec.Prompt)) + 5*int64(reading.ReplyReserve)
 	if g.ended > 0 && g.endedSum/g.ended > b {
 		b = g.endedSum / g.ended
 	}
@@ -306,21 +305,29 @@ func (g *Guard) StartLine() string {
 // Reached is what initrun prints after "physa init: " when the guard
 // stopped a run: the cap was reached, nothing more was started, sessions
 // running finished, what init has spent in the cap's unit (or the plan's
-// usage), and how to continue with continueLine.
-func (g *Guard) Reached(continueLine string) string {
+// usage), and how to continue with lines.
+func (g *Guard) Reached(lines Lines) string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	head := fmt.Sprintf("the cap of %s was reached: nothing more was started and sessions already running finished; ", g.Cap)
 	if g.Cap.Kind != Share {
-		return head + fmt.Sprintf("init has spent %s. To continue, run %s with a larger --cap, or none.",
-			g.Cap.Show(g.spent()), continueLine)
+		return head + fmt.Sprintf("init has spent %s. To continue, run %s.", g.Cap.Show(g.spent()), larger(lines))
 	}
 	if g.readErr != nil {
 		return head + fmt.Sprintf("the plan's usage could not be read (%v). To continue, run %s once it can be read and is under %s.",
-			g.readErr, continueLine, g.Cap)
+			g.readErr, lines, g.Cap)
 	}
 	return head + fmt.Sprintf("the plan's usage is %s. To continue, run %s once the plan's usage is under %s (%s).",
-		g.usage(), continueLine, g.Cap, g.resets())
+		g.usage(), lines, g.Cap, g.resets())
+}
+
+// larger is lines with the ask for a larger cap: after one line, "with a
+// larger --cap, or none"; after several, on each line that starts sessions.
+func larger(lines Lines) string {
+	if len(lines) > 1 {
+		return lines.String() + ", with a larger --cap on each line that starts sessions, or none"
+	}
+	return lines.String() + " with a larger --cap, or none"
 }
 
 // End is what initrun prints after "physa init: " when a capped run ended
@@ -354,7 +361,7 @@ type Run struct {
 	Record Spending
 	Fresh  bool
 	// Again is the line that continues the run when the cap is already reached.
-	Again string
+	Again Lines
 	// Say prints the cap's StartLine; a bare run says it in its own first line.
 	Say bool
 	// Out is where Start prints, each line after "physa init: ".
@@ -403,7 +410,7 @@ func Start(ctx context.Context, r Run) (*Guard, int) {
 // against its cap and returns its code: when the guard stopped it, Reached
 // with again and a code of at least 1; otherwise End and code. A nil guard
 // says nothing.
-func (g *Guard) Finish(w io.Writer, code int, again string) int {
+func (g *Guard) Finish(w io.Writer, code int, again Lines) int {
 	switch {
 	case g == nil:
 		return code

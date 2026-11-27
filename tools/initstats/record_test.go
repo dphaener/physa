@@ -21,8 +21,9 @@ import (
 // promises, questions, map text, errors and session ids.
 const canary = "Acme Secret/payments"
 
-// keep writes init's three outputs into a kept run's folder, every string field
-// set to the canary.
+// keep writes init's gather and recovery outputs into a kept run's folder,
+// beside an areas output and an older run's proposal, every string field set
+// to the canary.
 func keep(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -32,7 +33,8 @@ func keep(t *testing.T) string {
 		}
 	}
 	m, _ := json.Marshal(meta{At: "2026-11-24T15:00:00Z", Physa: "physa " + canary, Clone: canary,
-		Phases: map[string]Phase{"gather": {Seconds: 12}, "proposal": {Seconds: 340}, "recovery": {Seconds: 2100, Exit: 1}}})
+		Phases: map[string]Phase{"gather": {Seconds: 12}, "areas": {Seconds: 90}, "walk": {Seconds: 600}, "place": {Seconds: 1},
+			"recovery": {Seconds: 2100, Exit: 1}, "consolidation": {Seconds: 300, Exit: 1}}})
 	write("meta.json", m)
 
 	tok := adapter.Tokens{Input: 1000, CachedInput: 400, Output: 50}
@@ -49,21 +51,13 @@ func keep(t *testing.T) string {
 	}
 	write("gather.json", b.Bytes())
 
-	q := map[string]any{"question": canary, "suggested_by": []string{canary}}
-	write("proposal.json", mustJSON(t, map[string]any{
-		"version": 3,
-		"product": map[string]any{"promise": canary},
-		"capabilities": []any{
-			map[string]any{"name": canary, "promise": canary, "shown_by": []string{canary}, "docs": []string{canary}, "questions": []any{q}, "unshown": true},
-			map[string]any{"name": canary, "promise": canary, "shown_by": []string{}, "docs": []string{}, "questions": []any{}, "unshown": false},
-		},
-		"questions": []any{q},
-		"dropped":   []any{map[string]any{"what": canary, "capability": canary, "value": canary, "reason": canary}},
-		"malformed": []any{map[string]any{"raw": canary, "reason": canary}},
-		"read": map[string]any{"prompt_tokens": 100000, "source_tokens": 470000, "lines": []string{canary},
-			"sources": []any{map[string]any{"name": "docs", "items": 3, "tokens": 900}, map[string]any{"name": canary, "items": 1, "tokens": 5}}},
-		"session": map[string]any{"id": canary, "model": "claude-opus-5-5", "tokens": tok},
-	}))
+	// The other phases' outputs, and a proposal an older initstats kept, are
+	// never read into the record.
+	write("areas.json", mustJSON(t, map[string]any{"areas": []any{map[string]any{"name": canary, "files": []string{canary}}},
+		"product": map[string]any{"name": canary, "promise": canary}}))
+	write("proposal.json", mustJSON(t, map[string]any{"product": map[string]any{"promise": canary},
+		"capabilities": []any{map[string]any{"name": canary, "promise": canary}},
+		"session":      map[string]any{"id": canary, "model": "claude-opus-5-5", "tokens": tok}}))
 
 	b.Reset()
 	r := recovery.Report{Used: tok, Capabilities: []recovery.Outcome{
@@ -113,12 +107,8 @@ func TestRecordKeepsTheNumbers(t *testing.T) {
 		g.Bound.Since != "" || g.Bound.HistorySince != "2026-01-02" || g.Bound.MaxPRs != 50 || !g.Bound.PRLimitReached || g.Quiet == nil || g.Quiet.Clusters != 7 || g.Quiet.PRs != 12 {
 		t.Fatalf("gather %+v", rec.Gather)
 	}
-	p := rec.Proposal
-	if p == nil || p.Capabilities != 2 || p.Unshown != 1 || p.Questions != 2 || p.Dropped != 1 || p.Malformed != 1 || p.SourceTokens != 470000 || p.Model != "claude-opus-5-5" {
-		t.Fatalf("proposal %+v", p)
-	}
-	if p.Sources[0].Name != "docs" || p.Sources[1].Name != "other" {
-		t.Fatalf("sources %+v", p.Sources)
+	if rec.Phases["walk"].Seconds != 600 || rec.Phases["consolidation"].Exit != 1 || len(rec.Phases) != 6 {
+		t.Fatalf("phases %+v", rec.Phases)
 	}
 	r := rec.Recovery
 	if r == nil || len(r.Capabilities) != 2 || r.Statuses["recovered"] != 1 || r.Statuses["failed"] != 1 {
@@ -136,8 +126,43 @@ func TestBuildReadsAPartialRun(t *testing.T) {
 	dir := keep(t)
 	os.Remove(filepath.Join(dir, "recovery.json"))
 	rec, err := build(dir, "repo-a")
-	if err != nil || rec.Recovery != nil || rec.Proposal == nil {
+	if err != nil || rec.Recovery != nil || rec.Gather == nil {
 		t.Fatalf("rec %+v err %v", rec, err)
+	}
+}
+
+func TestRecordHasNoProposal(t *testing.T) {
+	rec, err := build(keep(t), "repo-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(mustJSON(t, rec), &keys); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"repo", "phases", "gather", "recovery"} {
+		if _, ok := keys[k]; !ok {
+			t.Errorf("record lacks %q", k)
+		}
+	}
+	if _, ok := keys["proposal"]; ok {
+		t.Errorf("record holds a proposal: %s", keys["proposal"])
+	}
+}
+
+func TestPhasesRunInInitsOrder(t *testing.T) {
+	var got []string
+	for _, p := range phases {
+		got = append(got, p.flag)
+	}
+	want := []string{"--gather", "--areas", "--walk", "--place", "--recover", "--consolidate"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("phases = %v, want %v", got, want)
+	}
+	for _, p := range phases {
+		if p.agent == (p.flag == "--place") {
+			t.Errorf("%s takes --agent = %v", p.flag, p.agent)
+		}
 	}
 }
 

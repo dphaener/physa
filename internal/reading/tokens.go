@@ -15,9 +15,12 @@ const (
 	// ClusterMinChanges is the fewest changes a pair of files must share to
 	// be clustered.
 	ClusterMinChanges = 3
-	// ClusterPaths is the most paths listed for one cluster.
-	ClusterPaths = 8
 )
+
+// ReplyReserve is what init counts for one session's reply when it asks
+// whether a prompt fits the window and what a session may spend. It is a
+// first guess, to be tuned from real runs (measure-before-budget).
+const ReplyReserve = 16_000
 
 // BytesPerTokenTenths is the bytes per token every estimate uses, in tenths:
 // 2.3. It was measured on #25's real propose prompts: 178,659 bytes read as
@@ -51,8 +54,8 @@ func Thousands(n int64) string {
 
 // GatherTokens estimates the tokens of everything g holds to read: its
 // docs, its changes' messages and files, and its PRs' titles, bodies,
-// linked issues and comments. It is the gather's estimate, and what
-// recovery's ratio is measured against.
+// linked issues and comments. It is the gather's estimate, which the
+// gather's report shows.
 func GatherTokens(g store.Gather) int {
 	n := 0
 	for _, d := range g.Docs {

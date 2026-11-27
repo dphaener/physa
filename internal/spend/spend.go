@@ -6,8 +6,9 @@
 // machine-wide, newest wins. A model with no price yet counts at raw tokens,
 // with no cost shown. Spend reads in weighted tokens first, with the cost
 // estimate beside it: "2.1M tokens (about $28)". A Meter weighs an
-// adapter's sessions as they end, and the cache also keeps the ratio init
-// estimates recovery with, measured from its finished runs.
+// adapter's sessions as they end. The cache keeps each model's input price and
+// each adapter's default model; the ratios an earlier init estimated recovery
+// with are dropped when it is saved.
 package spend
 
 import (

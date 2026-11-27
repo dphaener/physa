@@ -1,6 +1,7 @@
 package recovery
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -15,17 +16,14 @@ import (
 	"github.com/dphaener/physa/internal/mapfile"
 	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/pathlint"
+	"github.com/dphaener/physa/internal/productpromise"
 	"github.com/dphaener/physa/internal/recovering"
 	"github.com/dphaener/physa/internal/vcs"
 )
 
-// What the scratch map holds beside the capability: a README, which the
-// check only asks to exist, and a stand-in for a product promise the
-// proposal lacks, so that the scratch map's own files check clean.
-const (
-	readme    = "# The map\n\nA scratch copy of one recovered capability, made to check it.\n"
-	noPromise = "Not yet stated."
-)
+// readme is the scratch map's README, beside the capability, which the
+// check only asks to exist.
+const readme = "# The map\n\nA scratch copy of one recovered capability, made to check it.\n"
 
 // answer is one answer of a session as the check read it: the capability's
 // single text with its front matter, the terms, and the problems found in
@@ -36,8 +34,9 @@ type answer struct {
 }
 
 // checker checks one capability at a time, as `physa check map` does, in a
-// scratch map of its own: product is the proposal's product promise and
-// root the repo's root.
+// scratch map of its own: product is the product's promise as init's record
+// holds it (productpromise.NoPromise when none is stated) and root the
+// repo's root.
 type checker struct {
 	product, root string
 	prExists      func(context.Context, int) (bool, error)
@@ -54,10 +53,7 @@ func (c checker) scratch(name, file, terms string) (string, []mapfile.Problem, e
 	if err != nil {
 		return "", nil, err
 	}
-	product := draft.OneLine(c.product)
-	if product == "" {
-		product = noPromise
-	}
+	product := cmp.Or(draft.OneLine(c.product), productpromise.NoPromise)
 	var split []mapfile.Problem
 	folder, err := mapfolder.Split(file)
 	if e := (*mapfolder.SplitError)(nil); errors.As(err, &e) {

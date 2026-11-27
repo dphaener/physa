@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -54,6 +56,23 @@ type GatheredChange struct {
 	Files    []string
 }
 
+// ErrNoGather is returned when the store holds no gather.
+var ErrNoGather = errors.New("nothing gathered yet; run physa init --gather first")
+
+// prRef finds the PR a change came from: GitHub's squash subject, "Title
+// (#12)", or its merge subject, "Merge pull request #12 from …".
+var prRef = regexp.MustCompile(`\(#(\d+)\)\s*$|^Merge pull request #(\d+)\b`)
+
+// PROf is the number of the PR change ch came from, or 0.
+func PROf(ch GatheredChange) int {
+	m := prRef.FindStringSubmatch(ch.Subject)
+	if m == nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(m[1] + m[2])
+	return n
+}
+
 // GatheredComment is one review comment on a PR.
 type GatheredComment struct {
 	Author          string
@@ -87,8 +106,9 @@ type Gather struct {
 func ts(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
 // PutGather replaces the stored gather with g in one transaction: on any
-// error the earlier gather is left intact. It also deletes the stored init
-// areas, proposal, recoveries and spend, which belong to one gather.
+// error the earlier gather is left intact. It also deletes init's record:
+// the stored areas, walk, placements, recoveries, consolidation and spend,
+// which belong to one gather.
 func (s *Store) PutGather(ctx context.Context, g Gather) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -108,7 +128,7 @@ func (s *Store) PutGather(ctx context.Context, g Gather) error {
 		}
 		return string(b)
 	}
-	for _, t := range []string{"gather_comments", "gather_prs", "gather_changes", "gather_docs", "gather_runs", "init_areas", "init_walk", "init_place", "init_consolidate", "init_recover", "init_proposal", "init_recovery", "init_spend"} {
+	for _, t := range []string{"gather_comments", "gather_prs", "gather_changes", "gather_docs", "gather_runs", "init_areas", "init_walk", "init_place", "init_consolidate", "init_recover", "init_recovery", "init_spend"} {
 		ex("DELETE FROM " + t)
 	}
 	r := g.Run

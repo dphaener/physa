@@ -1,6 +1,7 @@
 package initcap
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -80,21 +81,61 @@ func TestShowSpendsInTheCapsUnit(t *testing.T) {
 // --cap typed, quoted when it holds a $, where the cap's own line drops it.
 func TestContinueKeepsTheCap(t *testing.T) {
 	for _, c := range []struct {
-		words      []string
-		recovering bool
-		again      string
-		cont       string
+		words []string
+		again string
+		cont  string
 	}{
-		{[]string{"--walk", "--cap", "$5"}, false, "physa init --walk", "physa init --walk --cap '$5'"},
-		{[]string{"--recover", "--cap=80%"}, false, "physa init --recover", "physa init --recover --cap=80%"},
-		{[]string{"--cap", "2m", "--json"}, true, "physa init --recover --json", "physa init --recover --cap 2m --json"},
-		{[]string{"--areas"}, false, "physa init --areas", "physa init --areas"},
+		{[]string{"--walk", "--cap", "$5"}, "physa init --walk", "physa init --walk --cap '$5'"},
+		{[]string{"--recover", "--cap=80%"}, "physa init --recover", "physa init --recover --cap=80%"},
+		{[]string{"--cap", "2m", "--json"}, "physa init --json", "physa init --cap 2m --json"},
+		{[]string{"--areas"}, "physa init --areas", "physa init --areas"},
 	} {
-		if got := Again(c.words, c.recovering); got != c.again {
-			t.Errorf("Again(%q, %v) = %q, want %q", c.words, c.recovering, got, c.again)
+		if got := Again(c.words, "").String(); got != c.again {
+			t.Errorf("Again(%q, none) = %q, want %q", c.words, got, c.again)
 		}
-		if got := Continue(c.words, c.recovering); got != c.cont {
-			t.Errorf("Continue(%q, %v) = %q, want %q", c.words, c.recovering, got, c.cont)
+		if got := Continue(c.words, "").String(); got != c.cont {
+			t.Errorf("Continue(%q, none) = %q, want %q", c.words, got, c.cont)
+		}
+	}
+}
+
+var typed = []string{"--cap", "$5", "--agent", "x", "--json", "--write", "--push", "--pr", "--hooks", "--max-prs", "5", "--since", "2026-01-01"}
+
+// TestAgainNamesThePhaseAndThoseAfterIt checks each phase's lines: the phase
+// first, then the later ones, each with only the words its phase takes, and
+// the write flags on the --consolidate line only.
+func TestAgainNamesThePhaseAndThoseAfterIt(t *testing.T) {
+	for phase, want := range map[string]Lines{
+		"areas": {"physa init --areas --agent x --json", "physa init --walk --agent x --json", "physa init --place --json",
+			"physa init --recover --agent x --json", "physa init --consolidate --agent x --json --write --push --pr --hooks"},
+		"walk": {"physa init --walk --agent x --json", "physa init --place --json",
+			"physa init --recover --agent x --json", "physa init --consolidate --agent x --json --write --push --pr --hooks"},
+		"place":       {"physa init --place --json", "physa init --recover --agent x --json", "physa init --consolidate --agent x --json --write --push --pr --hooks"},
+		"recover":     {"physa init --recover --agent x --json", "physa init --consolidate --agent x --json --write --push --pr --hooks"},
+		"consolidate": {"physa init --consolidate --agent x --json --write --push --pr --hooks"},
+		"":            {"physa init --agent x --json --write --push --pr --hooks --max-prs 5 --since 2026-01-01"},
+	} {
+		if got := Again(typed, phase); !slices.Equal(got, want) {
+			t.Errorf("Again(%q) = %q, want %q", phase, got, want)
+		}
+	}
+}
+
+// TestContinueKeepsTheCapOnLinesThatStartSessions checks that Continue keeps
+// --cap quoted on every line but --place's.
+func TestContinueKeepsTheCapOnLinesThatStartSessions(t *testing.T) {
+	want := Lines{"physa init --walk --cap '$5' --agent x --json", "physa init --place --json",
+		"physa init --recover --cap '$5' --agent x --json", "physa init --consolidate --cap '$5' --agent x --json --write --push --pr --hooks"}
+	if got := Continue(typed, "walk"); !slices.Equal(got, want) {
+		t.Errorf("Continue = %q, want %q", got, want)
+	}
+}
+
+// TestLinesJoin checks the joined form of one, two and several lines.
+func TestLinesJoin(t *testing.T) {
+	for want, l := range map[string]Lines{"A": {"A"}, "A, then B": {"A", "B"}, "A, then B, C and D": {"A", "B", "C", "D"}, "": nil} {
+		if got := l.String(); got != want {
+			t.Errorf("%q joined = %q, want %q", []string(l), got, want)
 		}
 	}
 }

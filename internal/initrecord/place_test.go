@@ -86,16 +86,3 @@ func TestPutWalkClearsPlace(t *testing.T) {
 		t.Error("the new walk was not stored")
 	}
 }
-
-func TestPutProposalKeepsPlace(t *testing.T) {
-	s, _ := open(t)
-	if err := s.PutPlace(t.Context(), samplePlace()); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.PutProposal(t.Context(), Proposal{Body: []byte("{}")}); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok, err := s.Place(t.Context()); !ok || err != nil {
-		t.Errorf("Place after a proposal = %v, %v; want kept", ok, err)
-	}
-}

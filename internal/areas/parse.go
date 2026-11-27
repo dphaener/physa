@@ -8,6 +8,7 @@ import (
 
 	"github.com/dphaener/physa/internal/draft"
 	"github.com/dphaener/physa/internal/jsonblock"
+	"github.com/dphaener/physa/internal/productpromise"
 )
 
 // Fix is a session's answer to FixPrompt: exact claims for files that were
@@ -48,31 +49,34 @@ type answerArea struct {
 	Sources []string `json:"sources"`
 }
 
-func (a answerArea) area() Area {
-	return Area{Name: kebab(a.Name), Promise: draft.OneLine(a.Promise), Sources: a.Sources}
-}
-
-// ParseAreas reads the grouping session's answer: the areas in the last
-// fenced json block. Names are kebab-cased, an empty one becoming "unnamed",
-// and promises are put on one line. The error follows "the areas answer: ".
-func ParseAreas(text string) ([]Area, error) {
+// ParseAreas reads the grouping session's answer: the areas and the cleaned
+// product in the last fenced json block. Names are kebab-cased, an empty one
+// becoming "unnamed", and promises are put on one line. A missing or
+// malformed product is none stated, never an error. The error follows "the
+// areas answer: ".
+func ParseAreas(text string) ([]Area, productpromise.Product, error) {
 	var w struct {
-		Areas *[]answerArea `json:"areas"`
+		Areas   *[]answerArea   `json:"areas"`
+		Product json.RawMessage `json:"product"`
 	}
+	var p productpromise.Product
 	const want = `an object with the list "areas", each with "name", "promise" and "sources"`
 	if err := decode(text, want, &w); err != nil {
-		return nil, err
+		return nil, p, err
 	}
 	if w.Areas == nil {
-		return nil, errors.New("its json block has no \"areas\" list; expected " + want)
+		return nil, p, errors.New("its json block has no \"areas\" list; expected " + want)
 	}
-	return areasOf(*w.Areas), nil
+	if json.Unmarshal(w.Product, &p) != nil {
+		p = productpromise.Product{}
+	}
+	return areasOf(*w.Areas), productpromise.Clean(p), nil
 }
 
 func areasOf(in []answerArea) []Area {
 	out := make([]Area, len(in))
 	for i, a := range in {
-		out[i] = a.area()
+		out[i] = Area{Name: kebab(a.Name), Promise: draft.OneLine(a.Promise), Sources: a.Sources}
 	}
 	return out
 }

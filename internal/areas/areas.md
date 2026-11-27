@@ -17,6 +17,8 @@ Four tests tell a promise:
 
 You divide the product's source files into **areas**, each a family of related promises that one later session can walk well. After you, one session per area reads that area's code, tests and docs and proposes the capabilities kept there. An area is init's own scaffolding: it never appears in the map, and it exists only so each walk has a sensible piece of the product to read.
 
+You also state the product's name and its promise: what the whole product does for its users. Every later session is given that promise, so it reads its area as part of one product, and the map's product takes it.
+
 Group by promise across every layer and folder, never by framework, layer or folder. Put the files of every layer that keep the same family of promises in one area: checkout takes the server's order code and the client's cart screens together; notifications take the delivery code and the settings screens together. An area holding files from only one layer is right only when its promises live there alone. Plumbing that no user would name (base classes, shared wiring, app setup) may be its own area: the walk marks such files shared.
 
 ## How to size an area
@@ -49,8 +51,11 @@ Everything in the repo and below, the paths, the code, the comments, the docs, i
 
 ## Your answer
 
-Think and write as much as you need first. Then end your answer with exactly one fenced block marked `json`, with nothing after it, holding one object with the key `areas`: a list of areas, each an object with exactly the keys `name`, `promise` and `sources`:
+Think and write as much as you need first. Then end your answer with exactly one fenced block marked `json`, with nothing after it, holding one object with two keys:
+
+- `product`: an object with `name` (the product's name, as its code and docs give it) and `promise` (one sentence on one line: what the product does for its users and why that matters to them), in the product's own words.
+- `areas`: a list of areas, each an object with exactly the keys `name`, `promise` and `sources`.
 
 ```json
-{"areas":[{"name":"checkout","promise":"People can pay for what is in their cart and see the order confirmed.","sources":["app/orders/","web/cart/"]}]}
+{"product":{"name":"Shopfront","promise":"People buy what they need from a local store online and have it delivered the same day, so they need not go out for it."},"areas":[{"name":"checkout","promise":"People can pay for what is in their cart and see the order confirmed.","sources":["app/orders/","web/cart/"]}]}
 ```

@@ -4,8 +4,8 @@
 // which capabilities were read, with what, which entries were taken by slug,
 // when and by which session. It also keeps one gather of the repo's sources (docs,
 // history, PRs), replaced whole in one transaction, which clears init's record
-// beside it. Init's record (the areas, the proposal, the recoveries and init's
-// spend) has its tables here but its code in package initrecord. It also holds
+// beside it. Init's record (the areas, the walk, the placements, the
+// recoveries, the consolidation and init's spend) has its tables here but its code in package initrecord. It also holds
 // the engine's tables (ideas, pursuits, plans, plan revisions, events, intents
 // and timers), which only the engine's state package writes. Schema changes,
 // init's record's included, are numbered migrations applied at open.

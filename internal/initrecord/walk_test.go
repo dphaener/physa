@@ -76,19 +76,6 @@ func TestPutAreasClearsWalk(t *testing.T) {
 	}
 }
 
-func TestPutProposalKeepsWalk(t *testing.T) {
-	s, _ := open(t)
-	if err := s.PutWalk(t.Context(), sampleWalk()); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.PutProposal(t.Context(), Proposal{Body: []byte("{}")}); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok, err := s.Walk(t.Context()); !ok || err != nil {
-		t.Errorf("Walk after a proposal = %v, %v; want kept", ok, err)
-	}
-}
-
 func TestWalkSpendingOrder(t *testing.T) {
 	s, _ := open(t)
 	for _, ph := range []string{"propose", "walk", "recover", "areas", "discover"} {

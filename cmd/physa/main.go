@@ -1,10 +1,10 @@
 // Command physa is Physa's command line, a tree of grouped commands: check
 // checks the map and a range of changes; map reads the map, slices it, lists
 // changes and records, formats it and learns from merged changes; init
-// gathers a repo's sources and proposes its first map; idea adds, lists
-// and shows ideas; pursue starts a pursuit of an idea against a signal;
-// pursuit lists, shows and stops pursuits and holds their plans; evidence
-// lists the facts observed in version control and the forge;
+// gathers a repo's sources and makes its first map from its code; idea
+// adds, lists and shows ideas; pursue starts a pursuit of an idea against a
+// signal; pursuit lists, shows and stops pursuits and holds their plans;
+// evidence lists the facts observed in version control and the forge;
 // skill prints Physa's skill guide for a person's agent;
 // engine starts, checks and stops the machine's engine; api calls the
 // engine's API by name; sync is not built yet; version prints the build's

@@ -214,9 +214,9 @@ func TestGatherStoppedByRateLimitIsStoredAndExitsNonZero(t *testing.T) {
 	}
 }
 
-// TestFullRunStoppedByRateLimitDoesNotPropose checks that the full run
-// stores a stopped gather, exits 2 and starts no session to propose.
-func TestFullRunStoppedByRateLimitDoesNotPropose(t *testing.T) {
+// TestFullRunStoppedByRateLimitDoesNotGoOn checks that the full run stores a
+// stopped gather, exits 2 and starts no session of a later phase.
+func TestFullRunStoppedByRateLimitDoesNotGoOn(t *testing.T) {
 	remoteRepo(t)
 	a := newRoutedAgent()
 	env := fullEnv(t, nil, a)
@@ -241,8 +241,11 @@ func TestFullRunStoppedByRateLimitDoesNotPropose(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if _, ok, err := initrecord.Of(st).Proposed(context.Background()); ok || err != nil {
-		t.Errorf("a proposal was stored after a stopped gather: %v %v", ok, err)
+	if _, ok, err := initrecord.Of(st).Areas(context.Background()); ok || err != nil {
+		t.Errorf("areas were stored after a stopped gather: %v %v", ok, err)
+	}
+	if strings.Contains(stderr.String(), "To continue") {
+		t.Errorf("a gather the forge stopped said how to continue a capped run:\n%s", stderr.String())
 	}
 }
 
@@ -264,11 +267,12 @@ func TestGatherForgeErrorExitsNonZero(t *testing.T) {
 	}
 }
 
-// TestStoppedGatherThenProposeWarnsAndStillProposes checks acceptance 5: a
+// TestStoppedGatherThenThePhasesWarnAndStillRun checks acceptance 5: a
 // --gather the forge stopped past the wait limit is stored with the mark,
-// the date it reached and the reason, and a later --propose and --recover on
-// it say so on stderr, still run, and exit as on a complete gather.
-func TestStoppedGatherThenProposeWarnsAndStillProposes(t *testing.T) {
+// the date it reached and the reason, and the later phases on it, from
+// --areas to --recover, say so on stderr, still run, and exit as on a
+// complete gather.
+func TestStoppedGatherThenThePhasesWarnAndStillRun(t *testing.T) {
 	remoteRepo(t)
 	a := newRoutedAgent()
 	env := fullEnv(t, nil, a)
@@ -289,37 +293,39 @@ func TestStoppedGatherThenProposeWarnsAndStillProposes(t *testing.T) {
 		"its PRs reach back to " + at + " of the asked " + asked,
 		"miss the PRs merged before " + at, "physa init --gather again",
 	}
-	code, out, errOut := runInit(env, "--propose")
-	t.Logf("--propose: code %d, stderr:\n%s", code, errOut)
+	code, out, errOut := runInit(env, "--areas")
+	t.Logf("--areas: code %d, stderr:\n%s", code, errOut)
 	if code != 0 || out == "" {
-		t.Errorf("--propose on a stopped gather: code %d, stdout %q", code, out)
+		t.Errorf("--areas on a stopped gather: code %d, stdout %q", code, out)
 	}
 	for _, want := range wants {
 		if !strings.Contains(errOut, want) {
-			t.Errorf("--propose stderr lacks %q", want)
+			t.Errorf("--areas stderr lacks %q", want)
 		}
 	}
 	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, ok, err := initrecord.Of(st).Proposed(context.Background())
+	_, ok, err := initrecord.Of(st).Areas(context.Background())
 	st.Close()
 	if !ok || err != nil {
-		t.Errorf("no proposal stored after --propose on a stopped gather: %v %v", ok, err)
+		t.Errorf("no areas stored after --areas on a stopped gather: %v %v", ok, err)
 	}
-	code, _, errOut = runInit(env, "--recover")
-	if code != 0 || !strings.Contains(errOut, wants[0]) {
-		t.Errorf("--recover on a stopped gather: code %d, stderr:\n%s", code, errOut)
+	for _, phase := range []string{"--walk", "--place", "--recover"} {
+		code, _, errOut = runInit(env, phase)
+		if code != 0 || !strings.Contains(errOut, wants[0]) {
+			t.Errorf("%s on a stopped gather: code %d, stderr:\n%s", phase, code, errOut)
+		}
 	}
 	if g := storedGather(t, env); !g.Run.Stopped {
 		t.Error("a later phase treated the stopped gather as complete")
 	}
 }
 
-// TestCompleteGatherThenProposeHasNoStoppedWarning checks that --propose on
-// a complete gather says nothing of a stopped one.
-func TestCompleteGatherThenProposeHasNoStoppedWarning(t *testing.T) {
+// TestCompleteGatherThenAreasHasNoStoppedWarning checks that --areas on a
+// complete gather says nothing of a stopped one.
+func TestCompleteGatherThenAreasHasNoStoppedWarning(t *testing.T) {
 	remoteRepo(t)
 	env := fullEnv(t, onePR(), newRoutedAgent())
 	if code, _, errOut := runInit(env, "--gather"); code != 0 {
@@ -328,8 +334,8 @@ func TestCompleteGatherThenProposeHasNoStoppedWarning(t *testing.T) {
 	if g := storedGather(t, env); g.Run.Stopped || g.Run.StopReason != "" {
 		t.Errorf("a complete gather is marked stopped: %+v", g.Run)
 	}
-	code, _, errOut := runInit(env, "--propose")
+	code, _, errOut := runInit(env, "--areas")
 	if code != 0 || strings.Contains(errOut, "stopped short") {
-		t.Errorf("--propose on a complete gather: code %d, stderr:\n%s", code, errOut)
+		t.Errorf("--areas on a complete gather: code %d, stderr:\n%s", code, errOut)
 	}
 }

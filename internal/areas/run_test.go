@@ -2,6 +2,7 @@ package areas
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/initrecord"
+	"github.com/dphaener/physa/internal/productpromise"
 	"github.com/dphaener/physa/internal/sourceset"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs/git"
@@ -554,5 +556,144 @@ func TestRunCancelStartsNoSessionAfter(t *testing.T) {
 	}
 	if _, ok := load(t, st); ok {
 		t.Error("a cancelled run stored areas")
+	}
+}
+
+// allAreas places every source file in one area, with product before it.
+func allAreas(product string) string {
+	return fenceJSON(`{` + product + `"areas":[{"name":"all","promise":"Everything.","sources":["app/","web/","cmd/","Makefile"]}]}`)
+}
+
+// text is the phase's text output for res.
+func text(t *testing.T, res Result) string {
+	t.Helper()
+	var b strings.Builder
+	if err := Text(&b, res); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+
+func TestRunProductOneSession(t *testing.T) {
+	dir := fixture(t)
+	f := &fakeAgent{reply: func(s adapter.Spec, n int) string {
+		if kind(s) == "split" {
+			return splitAnswer
+		}
+		return allAreas(`"product":{"name":"Shop","promise":"People buy what they need\nand get it delivered."},`)
+	}}
+	st, s := setup(t, dir, f)
+	res, err := Run(t.Context(), st, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := productpromise.Product{Name: "Shop", Promise: "People buy what they need and get it delivered."}
+	if res.Product != want {
+		t.Errorf("result product %+v", res.Product)
+	}
+	got, ok, err := productpromise.Stored(t.Context(), st)
+	if err != nil || !ok || got != want {
+		t.Errorf("stored product %+v %v %v", got, ok, err)
+	}
+	if r, _ := load(t, st); r.Product != want {
+		t.Errorf("record product %+v", r.Product)
+	}
+	out := text(t, res)
+	for _, w := range []string{"Shop", want.Promise} {
+		if !strings.Contains(out, w) {
+			t.Errorf("text lacks %q:\n%s", w, out)
+		}
+	}
+	if strings.Contains(out, "session") || strings.Contains(out, productpromise.NoPromise) {
+		t.Errorf("text names a session or no promise:\n%s", out)
+	}
+	doc, err := json.Marshal(res)
+	if err != nil || !strings.Contains(string(doc), `"product":{"name":"Shop","promise":"People buy what they need and get it delivered."}`) {
+		t.Errorf("json result %s %v", doc, err)
+	}
+}
+
+func TestRunProductInParts(t *testing.T) {
+	dir := fixture(t)
+	first := "People pay and sign in."
+	var f *fakeAgent
+	f = &fakeAgent{reply: func(s adapter.Spec, n int) string {
+		switch kind(s) {
+		case "split":
+			return splitAnswer
+		case "merge":
+			return fenceJSON(`{"product":{"name":"Other","promise":"Merged away."},"merge":[]}`)
+		}
+		if len(f.of("part")) == 1 {
+			return fenceJSON(`{"product":{"name":"Shop","promise":"` + first + `"},` + partsAnswer[1:])
+		}
+		return fenceJSON(`{"product":{"name":"Later","promise":"A later part restates it."},` + partsAnswer[1:])
+	}}
+	st, s := setup(t, dir, f)
+	s.PartChars = 60
+	res, err := Run(t.Context(), st, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts, merges := f.of("part"), f.of("merge")
+	if len(parts) < 2 || len(merges) != 1 {
+		t.Fatalf("%d parts, %d merges", len(parts), len(merges))
+	}
+	block := productpromise.Block(first)
+	if strings.Contains(parts[0].Prompt, "The product's promise") {
+		t.Errorf("the first part is given a promise:\n%s", parts[0].Prompt)
+	}
+	for i, sp := range parts[1:] {
+		if !strings.Contains(sp.Prompt, block) {
+			t.Errorf("part %d lacks the first part's promise:\n%s", i+2, sp.Prompt)
+		}
+	}
+	if !strings.Contains(merges[0].Prompt, block) {
+		t.Errorf("merge lacks the first part's promise:\n%s", merges[0].Prompt)
+	}
+	want := productpromise.Product{Name: "Shop", Promise: first}
+	got, ok, err := productpromise.Stored(t.Context(), st)
+	if err != nil || !ok || got != want || res.Product != want {
+		t.Errorf("stored %+v %v %v, result %+v", got, ok, err, res.Product)
+	}
+}
+
+func TestRunProductMissing(t *testing.T) {
+	dir := fixture(t)
+	f := &fakeAgent{reply: func(s adapter.Spec, n int) string {
+		if kind(s) == "split" {
+			return splitAnswer
+		}
+		return allAreas("")
+	}}
+	st, s := setup(t, dir, f)
+	res, err := Run(t.Context(), st, s)
+	if err != nil {
+		t.Fatalf("a missing product failed the phase: %v", err)
+	}
+	if len(f.specs) != 2 || res.FixRounds != 0 {
+		t.Errorf("%d sessions, %d fix rounds; want split and areas only", len(f.specs), res.FixRounds)
+	}
+	a, ok, err := st.Areas(t.Context())
+	if err != nil || !ok {
+		t.Fatalf("areas stored: %v %v", ok, err)
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(a.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if p, has := body["product"]; has {
+		t.Errorf("areas body holds product %s", p)
+	}
+	if _, ok, err := productpromise.Stored(t.Context(), st); ok || err != nil {
+		t.Errorf("a promise read back: %v %v", ok, err)
+	}
+	out := text(t, res)
+	t.Log("text output:\n" + out)
+	if !strings.Contains(out, `no product promise was stated with the areas, so the map's product will say "Not yet stated."`) {
+		t.Errorf("text does not say the map's product will say Not yet stated.:\n%s", out)
+	}
+	if strings.Contains(out, "session") {
+		t.Errorf("text names a session:\n%s", out)
 	}
 }

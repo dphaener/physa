@@ -1,9 +1,9 @@
 // Package initrecord keeps init's record in .git/physa: the areas a repo was
-// divided into, the one init proposal, the capabilities' recoveries and what
-// each init phase spent. It sits beside the gather the store keeps, in the
-// same database, and a new gather clears it. None of it reaches the map. The
-// tables' schema is the store's: every migration lives in the store's one
-// numbered order.
+// divided into, the walk and its placements, the capabilities' recoveries,
+// their consolidation and what each init phase spent. It sits beside the
+// gather the store keeps, in the same database, and a new gather clears it.
+// None of it reaches the map. The tables' schema is the store's: every
+// migration lives in the store's one numbered order.
 package initrecord
 
 import (

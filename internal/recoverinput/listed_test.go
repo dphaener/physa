@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/initrecord"
-	"github.com/dphaener/physa/internal/mapping"
 )
 
 // listStore holds a walk and a placement, each when set.
@@ -36,32 +35,27 @@ func storedWalk(t *testing.T, at time.Time) *initrecord.Walk {
 	return &initrecord.Walk{At: at, Body: b}
 }
 
-func TestListedTakesTheWalkWhenBothAreStoredElseTheProposal(t *testing.T) {
+func TestListedTakesTheWalkOnlyWhenTheWalkAndPlacementsAreStored(t *testing.T) {
 	at := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
-	prop := mapping.Proposal{Capabilities: []mapping.Capability{{Name: "delivery", Promise: "Ships."}}}
-
-	src, ok, err := Listed(t.Context(), listStore{storedWalk(t, at), true}, prop, true)
-	if err != nil || !ok || !src.FromWalk || len(src.Capabilities) != len(testWalk().Capabilities) || src.Capabilities[0].Name != testWalk().Capabilities[0].Name {
+	src, ok, err := Listed(t.Context(), listStore{storedWalk(t, at), true})
+	want := testWalk().Capabilities
+	if err != nil || !ok || !src.At.Equal(at) || len(src.Capabilities) != len(want) ||
+		src.Capabilities[0] != (Capability{Name: want[0].Name, Promise: want[0].Promise}) {
 		t.Errorf("both: %+v, %v, %v", src, ok, err)
 	}
 	if !src.Holds(at) || src.Holds(at.Add(-time.Hour)) {
 		t.Error("a walk's source holds only the rows recovered from that walk")
 	}
-
-	for name, st := range map[string]listStore{"walk only": {storedWalk(t, at), false}, "neither": {}} {
-		src, ok, err := Listed(t.Context(), st, prop, true)
-		if err != nil || !ok || src.FromWalk || len(src.Capabilities) != 1 || !src.Holds(at.Add(-time.Hour)) {
+	for name, st := range map[string]listStore{"walk only": {storedWalk(t, at), false}, "placements only": {nil, true}, "neither": {}} {
+		if src, ok, err := Listed(t.Context(), st); ok || err != nil || len(src.Capabilities) != 0 {
 			t.Errorf("%s: %+v, %v, %v", name, src, ok, err)
 		}
 	}
-	if _, ok, err := Listed(t.Context(), listStore{storedWalk(t, at), false}, mapping.Proposal{}, false); ok || err != nil {
-		t.Errorf("a walk without placements and no proposal: %v, %v", ok, err)
-	}
 }
 
-func TestListedWalkOnlyNeedsNoProposal(t *testing.T) {
-	src, ok, err := Listed(t.Context(), listStore{storedWalk(t, time.Now()), true}, mapping.Proposal{}, false)
-	if err != nil || !ok || !src.FromWalk {
-		t.Errorf("%+v, %v, %v", src, ok, err)
+func TestListedWalkThatCannotBeReadIsAnError(t *testing.T) {
+	st := listStore{&initrecord.Walk{Body: []byte("not json")}, true}
+	if _, ok, err := Listed(t.Context(), st); ok || err == nil {
+		t.Errorf("%v, %v", ok, err)
 	}
 }

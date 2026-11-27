@@ -1,7 +1,6 @@
 package recovering
 
 import (
-	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/shares"
 )
@@ -9,7 +8,7 @@ import (
 // Reserve is what a share's room keeps beside its sources: the reply, and
 // from the second share on the text the shares before it recovered, each
 // about as large as a reply.
-const Reserve = 2 * mapping.ReplyReserve
+const Reserve = 2 * reading.ReplyReserve
 
 // MinRoom is the smallest room for a share's sources that halving goes down
 // to; below it the capability fails, as too long. A first guess, to be
@@ -21,7 +20,7 @@ const MinRoom = 20_000
 // 0 is unknown, and then it fits: the capability runs one session, and
 // goes to shares only when that session is refused as too long.
 func Fits(system, message string, window int) bool {
-	return window == 0 || reading.Tokens(system)+reading.Tokens(message)+mapping.ReplyReserve <= window
+	return window == 0 || reading.Tokens(system)+reading.Tokens(message)+reading.ReplyReserve <= window
 }
 
 // Lay lays sources, in's or those of its shares not yet read, into shares

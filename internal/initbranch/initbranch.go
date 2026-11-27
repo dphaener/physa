@@ -373,7 +373,7 @@ func message(m Map) string {
 			"answers, and its capabilities come as the product grows.\n")
 	} else {
 		rec, notYet, failed := counts(m)
-		fmt.Fprintf(&b, "Init proposed %d %s from the repo's docs, history and PRs:\n", len(m.Capabilities), plural(len(m.Capabilities), "capability", "capabilities"))
+		fmt.Fprintf(&b, "Init named %d %s from the repo's code, with its docs, history and PRs:\n", len(m.Capabilities), plural(len(m.Capabilities), "capability", "capabilities"))
 		fmt.Fprintf(&b, "%d recovered, %d not yet recovered and %d failed.", rec, notYet, failed)
 		if notYet+failed > 0 {
 			b.WriteString("\nThose not recovered hold their promise only, to be filled from future PRs.")

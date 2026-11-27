@@ -18,6 +18,7 @@ import (
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/areas"
 	"github.com/dphaener/physa/internal/initrecord"
+	"github.com/dphaener/physa/internal/productpromise"
 	"github.com/dphaener/physa/internal/sourceset"
 	"github.com/dphaener/physa/internal/store"
 )
@@ -805,5 +806,62 @@ func TestRunCancelStartsNoSessionAfter(t *testing.T) {
 	}
 	if _, ok := load(t, st); ok {
 		t.Error("a cancelled walk stored a record")
+	}
+}
+
+// putProduct stores the fixture's areas again with a product stated.
+func putProduct(t *testing.T, st *initrecord.Store, product string) {
+	t.Helper()
+	body, err := json.Marshal(struct {
+		Split sourceset.Division `json:"split"`
+		Areas []areas.AreaRecord `json:"areas"`
+		Prod  json.RawMessage    `json:"product"`
+	}{storedSplit, stored, json.RawMessage(product)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutAreas(t.Context(), initrecord.Areas{At: areasAt, Body: body}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A stated product's promise leads every session's message, a split part's too.
+func TestRunProductPromiseLeadsEverySessionsMessage(t *testing.T) {
+	f := &fakeAgent{reply: splitAnswers()}
+	st, s := setup(t, f, stored)
+	putProduct(t, st, `{"name":"Shop","promise":"People buy things."}`)
+	if _, err := Run(t.Context(), st, s); err != nil {
+		t.Fatal(err)
+	}
+	block := productpromise.Block("People buy things.") + "\n## The area `"
+	first := 0
+	for _, spec := range f.specs {
+		if spec.Resume {
+			continue
+		}
+		first++
+		if !strings.HasPrefix(spec.Prompt, block) {
+			t.Errorf("the message does not begin with the promise block:\n%s", spec.Prompt)
+		}
+	}
+	if first != 5 { // accounts, billing, tooling, and billing's two parts
+		t.Errorf("%d sessions started, want 5", first)
+	}
+}
+
+// With no product stated, a message is what Message gives and says nothing of a promise.
+func TestRunProductPromiseNoneLeavesTheMessage(t *testing.T) {
+	f := &fakeAgent{reply: splitAnswers()}
+	st, s := setup(t, f, stored)
+	if _, err := Run(t.Context(), st, s); err != nil {
+		t.Fatal(err)
+	}
+	for _, spec := range f.specs {
+		if spec.Resume {
+			continue
+		}
+		if !strings.HasPrefix(spec.Prompt, "## The area `") || strings.Contains(spec.Prompt, "promise:\n") || strings.Contains(spec.Prompt, "Not yet stated.") {
+			t.Errorf("the message changed with no product stated:\n%s", spec.Prompt)
+		}
 	}
 }

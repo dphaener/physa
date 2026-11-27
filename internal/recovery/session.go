@@ -9,7 +9,6 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/draft"
-	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/recovering"
 	"github.com/dphaener/physa/internal/recoverinput"
@@ -170,7 +169,7 @@ func (r *runner) capability(ctx context.Context, j job) Outcome {
 // adds its attempts, tokens, model and session id to out and returns its
 // last answer that was read and checked, nil when none was, and what is
 // wrong with the newest. Once ctx is done it starts no further turn.
-func (r *runner) turns(ctx context.Context, c mapping.Capability, spec adapter.Spec, out *Outcome) (*answer, []string, error) {
+func (r *runner) turns(ctx context.Context, c recoverinput.Capability, spec adapter.Spec, out *Outcome) (*answer, []string, error) {
 	spec.SessionID = draft.NewSessionID()
 	out.SessionID = spec.SessionID
 	first := spec.Prompt

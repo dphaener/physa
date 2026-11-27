@@ -290,3 +290,48 @@ func TestTestSwapReportsSwappedPackageVariables(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
+
+func TestRemovedPackages(t *testing.T) {
+	vs := mustCheck(t, "testdata/removedpackages")
+	got := rules(vs)
+	want := []string{"internal/importer removed-packages"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	for _, s := range []string{"importer.go imports example.com/removedpackages/internal/mapping", "removed by code-first init (design 15 §10.1)"} {
+		if !strings.Contains(vs[0].Message, s) {
+			t.Errorf("want %q in %q", s, vs[0].Message)
+		}
+	}
+	t.Logf("reported: %s: %s: %s", vs[0].Dir, vs[0].Rule, vs[0].Message)
+}
+
+func TestRemovedPackageReturning(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"go.mod":                              "module example.com/back\n",
+		"internal/coverage/coverage.go":       "// Package coverage is back.\npackage coverage\n",
+		"internal/mapping/mapping.go":         "// Package mapping is back.\npackage mapping\n",
+		"internal/mapping/shareview/share.go": "// Package shareview is back.\npackage shareview\n",
+		"internal/user/user_test.go":          "package user\n\nimport _ \"example.com/back/internal/mapping\"\n",
+	}
+	for name, body := range files {
+		p := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := rules(mustCheck(t, root))
+	want := []string{
+		"internal/coverage removed-packages",
+		"internal/mapping removed-packages",
+		"internal/mapping/shareview removed-packages",
+		"internal/user removed-packages",
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}

@@ -17,6 +17,7 @@
 package skillcli
 
 import (
+	"context"
 	_ "embed"
 	"io"
 
@@ -40,7 +41,7 @@ func Guide() string { return guide }
 // on, for the hidden session command the session hook runs.
 func Command(current CurrentFunc) *cobra.Command { return newCommand(defaultEnv(current)) }
 
-func show(args []string, stdout, stderr io.Writer) int {
+func show(_ context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
 		return command.BadUsage
 	}

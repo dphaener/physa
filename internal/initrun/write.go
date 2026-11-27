@@ -25,12 +25,12 @@ const notReached = "recovering has not reached it yet"
 
 // writeStored writes what the store holds to physa/init; see storedMap. A current
 // stored consolidation takes the place of the recovered text; a stale one is said and ignored.
-func (r *run) writeStored() int {
-	m, err := storedMap(r.st, r.root, r.env)
+func (r *run) writeStored(ctx context.Context) int {
+	m, err := storedMap(ctx, r.st, r.root, r.env)
 	if err != nil {
 		return failed(r.stderr, err)
 	}
-	m, stale, err := consolidatedmap.Apply(r.st, m)
+	m, stale, err := consolidatedmap.Apply(ctx, r.st, m)
 	if err != nil {
 		return failed(r.stderr, err)
 	}
@@ -38,7 +38,7 @@ func (r *run) writeStored() int {
 		fmt.Fprintf(r.stderr, "physa init: %s\n", stale)
 	}
 	m.Summary.Skill = r.skill
-	return writeMap(m, r.o, r.env, r.p, r.stderr)
+	return writeMap(ctx, m, r.o, r.env, r.p, r.stderr)
 }
 
 // storedMap builds init's map from the store: the capabilities of the source
@@ -50,8 +50,7 @@ func (r *run) writeStored() int {
 // it. The product's promise, questions and dropped items are the stored
 // proposal's, or "Not yet stated." with none without one. The product is
 // named after root.
-func storedMap(st *initrecord.Store, root string, env Env) (initbranch.Map, error) {
-	ctx := context.TODO()
+func storedMap(ctx context.Context, st *initrecord.Store, root string, env Env) (initbranch.Map, error) {
 	prop, hasProp, err := st.Proposed(ctx)
 	var s mapping.Stored
 	if err == nil && hasProp {
@@ -60,7 +59,7 @@ func storedMap(st *initrecord.Store, root string, env Env) (initbranch.Map, erro
 	var src recoverinput.Source
 	var ok bool
 	if err == nil {
-		if src, ok, err = recoverinput.Listed(st, s.Proposal, hasProp); err == nil && !ok {
+		if src, ok, err = recoverinput.Listed(ctx, st, s.Proposal, hasProp); err == nil && !ok {
 			err = recovery.ErrNoProposal
 		}
 	}
@@ -144,8 +143,8 @@ func newMap(a newcodebase.Answers, env Env, skill string) initbranch.Map {
 // and before the PR, so the PR body says what happened to it; a refused
 // hook keeps the branch and makes the exit code 2. With --pr it then opens
 // the branch's PR, or refreshes the open one. It returns the exit code.
-func writeMap(m initbranch.Map, o Flags, env Env, p *printer, stderr io.Writer) int {
-	w, err := env.Writer(".")
+func writeMap(ctx context.Context, m initbranch.Map, o Flags, env Env, p *printer, stderr io.Writer) int {
+	w, err := env.Writer(ctx, ".")
 	if err != nil {
 		return failed(stderr, err)
 	}
@@ -153,20 +152,20 @@ func writeMap(m initbranch.Map, o Flags, env Env, p *printer, stderr io.Writer) 
 	if env.PRExists != nil {
 		opts.PRExists = env.PRExists(".")
 	}
-	out, err := initbranch.Run(w, m, opts)
+	out, err := initbranch.Run(ctx, w, m, opts)
 	if err != nil {
 		return failed(stderr, err)
 	}
 	code := 0
 	if o.Hooks {
-		if m.Summary.Hook = initpr.InstallHook(env.Hooks); m.Summary.Hook.State == initbranch.HookRefused {
+		if m.Summary.Hook = initpr.InstallHook(ctx, env.Hooks); m.Summary.Hook.State == initbranch.HookRefused {
 			fmt.Fprintf(stderr, "physa init: the branch was written, but the hook was not installed: %s\n", m.Summary.Hook.Detail)
 			code = 2
 		}
 		out.Body = initbranch.Body(m)
 	}
 	if o.PR {
-		out.PR, err = initpr.Open(w, env.Forge("."), out)
+		out.PR, err = initpr.Open(ctx, w, env.Forge("."), out)
 	}
 	p.wrote(out, m.Summary.Hook)
 	if err != nil {

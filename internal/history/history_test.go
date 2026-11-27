@@ -116,7 +116,7 @@ func TestReadParsesTrailers(t *testing.T) {
 	commit(t, dir, "feat: a\n\nBody.\n\nCapability: slices\n\nCo-authored-by: X <x@y.z>")
 	commit(t, dir, "feat: b\n\nCapability: map")
 	commit(t, dir, "feat: c")
-	got, err := Read(r, "HEAD~3..HEAD")
+	got, err := Read(t.Context(), r, "HEAD~3..HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestReadParsesTrailers(t *testing.T) {
 func TestReadBadRange(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "chore: base")
-	_, err := Read(r, "nosuch..HEAD")
+	_, err := Read(t.Context(), r, "nosuch..HEAD")
 	if err == nil || !strings.Contains(err.Error(), "nosuch") {
 		t.Errorf("want git's error naming the range, got %v", err)
 	}
@@ -152,7 +152,7 @@ type fk struct{ subject, kind, slug string }
 // kind and slug.
 func kinds(t *testing.T, r vcs.Repo, rng string) ([]fk, []Finding) {
 	t.Helper()
-	commits, err := Read(r, rng)
+	commits, err := Read(t.Context(), r, rng)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func kinds(t *testing.T, r vcs.Repo, rng string) ([]fk, []Finding) {
 	for _, c := range commits {
 		subjects[c.Short] = c.Subject
 	}
-	got, err := Check(r, commits)
+	got, err := Check(t.Context(), r, commits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestCheck(t *testing.T) {
 	if !strings.HasPrefix(findings[1].Message, "Capability names 2 capabilities (slices, nope)") {
 		t.Errorf("multiple message: %q", findings[1].Message)
 	}
-	if got, err := Check(r, nil); err != nil || got == nil || len(got) != 0 {
+	if got, err := Check(t.Context(), r, nil); err != nil || got == nil || len(got) != 0 {
 		t.Errorf("no commits should give an empty, non-nil list, got %v %v", got, err)
 	}
 }
@@ -228,7 +228,7 @@ func TestCheckMapAsTheChangeLeavesIt(t *testing.T) {
 func TestCheckFilesError(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "x\n\nCapability: a")
-	_, err := Check(r, []Commit{{Hash: "deadbeefdeadbeef", Short: "deadbee", Capabilities: []string{"a"}}})
+	_, err := Check(t.Context(), r, []Commit{{Hash: "deadbeefdeadbeef", Short: "deadbee", Capabilities: []string{"a"}}})
 	if err == nil || !strings.Contains(err.Error(), "deadbeefdeadbeef") {
 		t.Errorf("want an error naming the change, got %v", err)
 	}
@@ -259,7 +259,7 @@ func TestReadFillsSessions(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "chore: base")
 	commit(t, dir, "feat: a\n\nCapability: map\nSession: s1, s2")
-	got, err := Read(r, "HEAD~1..HEAD")
+	got, err := Read(t.Context(), r, "HEAD~1..HEAD")
 	if err != nil || len(got) != 1 {
 		t.Fatalf("Read = %+v, %v", got, err)
 	}

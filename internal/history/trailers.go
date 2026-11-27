@@ -146,8 +146,7 @@ func splitSlugs(value string) []string {
 // Findings follow commit order; for each commit, missing or multiple come
 // before unknown slugs, each in the order written. The error is for a commit
 // whose files version control cannot list.
-func Check(repo vcs.Repo, commits []Commit) ([]Finding, error) {
-	ctx := context.TODO()
+func Check(ctx context.Context, repo vcs.Repo, commits []Commit) ([]Finding, error) {
 	findings := []Finding{}
 	for _, c := range commits {
 		before, err := beforeTheMap(ctx, repo, c.Hash)

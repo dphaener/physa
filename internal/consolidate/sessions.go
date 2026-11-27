@@ -16,7 +16,6 @@ import (
 
 // runner holds what every session of one consolidation shares.
 type runner struct {
-	ctx    context.Context
 	a      adapter.Adapter
 	s      Session
 	window int
@@ -37,7 +36,7 @@ func (r *runner) fits(system, msg string) bool { return recovering.Fits(system, 
 
 // all runs asks, at most Concurrency at once, and returns when every one has
 // ended. Each keeps its own answer, so the order they end in never matters.
-func (r *runner) all(asks []*ask) {
+func (r *runner) all(ctx context.Context, asks []*ask) {
 	slots := make(chan struct{}, Concurrency)
 	var wg sync.WaitGroup
 	for _, q := range asks {
@@ -46,7 +45,7 @@ func (r *runner) all(asks []*ask) {
 		go func() {
 			defer wg.Done()
 			defer func() { <-slots }()
-			r.one(q)
+			r.one(ctx, q)
 		}()
 	}
 	wg.Wait()
@@ -57,9 +56,9 @@ func (r *runner) all(asks []*ask) {
 
 // one runs q's session, prompt-only, with one answer-now turn when its reply
 // cannot be read, and leaves in q whether it answered or why not.
-func (r *runner) one(q *ask) {
+func (r *runner) one(ctx context.Context, q *ask) {
 	q.run = SessionRun{Step: q.step, Item: q.item, IDs: []string{}}
-	text, err := r.turn(q, "", q.msg, "asked")
+	text, err := r.turn(ctx, q, "", q.msg, "asked")
 	for try := 0; err == nil; try++ {
 		perr := q.parse(text)
 		switch {
@@ -69,7 +68,7 @@ func (r *runner) one(q *ask) {
 		case try == 1:
 			err = fmt.Errorf("its reply could not be read: %v", perr)
 		default:
-			text, err = r.turn(q, q.run.IDs[len(q.run.IDs)-1], fmt.Sprintf(consolidateprompt.AnswerNow, perr), "asked to answer now")
+			text, err = r.turn(ctx, q, q.run.IDs[len(q.run.IDs)-1], fmt.Sprintf(consolidateprompt.AnswerNow, perr), "asked to answer now")
 		}
 	}
 	q.run.Error = err.Error()
@@ -78,7 +77,11 @@ func (r *runner) one(q *ask) {
 // turn sends prompt to q's session: a new one when id is empty, else a
 // resume of id. When the agent cannot resume, it starts a new session with
 // q's message and then prompt. It adds what the session used to the result.
-func (r *runner) turn(q *ask, id, prompt, what string) (string, error) {
+func (r *runner) turn(ctx context.Context, q *ask, id, prompt, what string) (string, error) {
+	// A cancelled ctx starts no session.
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	spec := adapter.Spec{Prompt: prompt, PromptOnly: true, SessionID: id, Resume: id != "", Dir: r.s.Root}
 	if !spec.Resume {
 		spec.System, spec.SessionID = q.system, draft.NewSessionID()
@@ -93,9 +96,9 @@ func (r *runner) turn(q *ask, id, prompt, what string) (string, error) {
 		fmt.Fprintf(r.s.Progress, "physa init: consolidate: %s %s: %s; session %s\n", q.step, q.item, what, spec.SessionID)
 	}
 	r.mu.Unlock()
-	sess, err := r.a.Start(r.ctx, spec)
+	sess, err := r.a.Start(ctx, spec)
 	if spec.Resume && errors.Is(err, adapter.ErrNoResume) {
-		return r.turn(q, "", q.msg+"\n"+prompt, what+" in a new session, as the agent cannot resume")
+		return r.turn(ctx, q, "", q.msg+"\n"+prompt, what+" in a new session, as the agent cannot resume")
 	}
 	if err != nil {
 		return "", err

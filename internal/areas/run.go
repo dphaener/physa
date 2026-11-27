@@ -116,10 +116,10 @@ func Run(ctx context.Context, st Store, s Session) (Result, error) {
 	if err != nil {
 		return res, err
 	}
-	r := &runner{ctx: ctx, a: a, s: s, res: &res, byName: map[string]*Area{}}
+	r := &runner{a: a, s: s, res: &res, byName: map[string]*Area{}}
 
 	sys, msg := SplitPrompt(sourceset.Kinds(l.Files))
-	out, err := r.turn(adapter.Spec{System: sys, Prompt: msg}, fmt.Sprintf("the split names the test, doc and other files among %d", len(l.Files)))
+	out, err := r.turn(ctx, adapter.Spec{System: sys, Prompt: msg}, fmt.Sprintf("the split names the test, doc and other files among %d", len(l.Files)))
 	if err != nil {
 		return res, err
 	}
@@ -150,15 +150,15 @@ func Run(ctx context.Context, st Store, s Session) (Result, error) {
 	if len(parts) < 2 {
 		res.Parts = 1
 		sys, msg := AreasPrompt(sourceset.Tree(src))
-		err = r.group(sys, msg, source, fmt.Sprintf("grouping places %d source files", res.Source))
+		err = r.group(ctx, sys, msg, source, fmt.Sprintf("grouping places %d source files", res.Source))
 	} else {
 		res.Parts = len(parts)
 		for i := 0; err == nil && i < len(parts); i++ {
 			sys, msg := PartPrompt(i+1, len(parts), overview, r.briefs(nil), parts[i].Text)
-			err = r.group(sys, msg, parts[i].Files, fmt.Sprintf("grouping part %d of %d places %d source files", i+1, len(parts), len(parts[i].Files)))
+			err = r.group(ctx, sys, msg, parts[i].Files, fmt.Sprintf("grouping part %d of %d places %d source files", i+1, len(parts), len(parts[i].Files)))
 		}
 		if err == nil {
-			err = r.merge()
+			err = r.merge(ctx)
 		}
 	}
 	if err == nil {
@@ -199,7 +199,6 @@ func partSize(chars, window int, overview string) int {
 
 // runner holds a run's agent, its areas so far in order, and its sessions.
 type runner struct {
-	ctx    context.Context
 	a      adapter.Adapter
 	s      Session
 	res    *Result
@@ -210,7 +209,11 @@ type runner struct {
 
 // turn runs one turn of a session in the root, read-only unless prompt-only,
 // after a progress line, adding what it used to the result.
-func (r *runner) turn(spec adapter.Spec, what string) (adapter.Result, error) {
+func (r *runner) turn(ctx context.Context, spec adapter.Spec, what string) (adapter.Result, error) {
+	// A cancelled ctx starts no session.
+	if err := ctx.Err(); err != nil {
+		return adapter.Result{}, err
+	}
 	if spec.SessionID == "" {
 		spec.SessionID = draft.NewSessionID()
 	}
@@ -220,7 +223,7 @@ func (r *runner) turn(spec adapter.Spec, what string) (adapter.Result, error) {
 	}
 	var last atomic.Pointer[adapter.Tokens]
 	spec.Usage = func(t adapter.Tokens) { last.Store(&t) }
-	sess, err := r.a.Start(r.ctx, spec)
+	sess, err := r.a.Start(ctx, spec)
 	if err != nil {
 		return adapter.Result{}, err
 	}
@@ -267,9 +270,9 @@ func (r *runner) take(list []Area, here map[string]bool, claims *[]sourceset.Cla
 // group runs one grouping session over files, and its fix rounds, then
 // places each file in the one area claiming it. The session's patterns claim
 // only its own files, and a fix's exact paths win over them.
-func (r *runner) group(system, message string, files []string, what string) error {
+func (r *runner) group(ctx context.Context, system, message string, files []string, what string) error {
 	id := draft.NewSessionID()
-	out, err := r.turn(adapter.Spec{System: system, Prompt: message, SessionID: id}, what)
+	out, err := r.turn(ctx, adapter.Spec{System: system, Prompt: message, SessionID: id}, what)
 	if err != nil {
 		return err
 	}
@@ -299,12 +302,12 @@ func (r *runner) group(system, message string, files []string, what string) erro
 		r.res.FixRounds++
 		fix := FixPrompt(missing, twice)
 		what := fmt.Sprintf("fix round %d sends back %d files", round, len(missing)+len(twice))
-		out, err = r.turn(adapter.Spec{Prompt: fix, SessionID: id, Resume: true}, what)
+		out, err = r.turn(ctx, adapter.Spec{Prompt: fix, SessionID: id, Resume: true}, what)
 		if errors.Is(err, adapter.ErrNoResume) {
 			var w strings.Builder
 			fenced(&w, "## Areas so far", r.briefs(where))
 			id = draft.NewSessionID()
-			out, err = r.turn(adapter.Spec{System: system, Prompt: w.String() + "\n" + fix, SessionID: id}, what+" to a new session, as the agent cannot resume")
+			out, err = r.turn(ctx, adapter.Spec{System: system, Prompt: w.String() + "\n" + fix, SessionID: id}, what+" to a new session, as the agent cannot resume")
 		}
 		if err != nil {
 			return err
@@ -357,10 +360,10 @@ func (r *runner) briefs(extra map[string]string) string {
 // merge runs one prompt-only session over the briefs and applies the merges
 // it names between existing areas, moving only whole areas. A failed or
 // unreadable merge keeps the areas apart and says so in the result.
-func (r *runner) merge() error {
+func (r *runner) merge(ctx context.Context) error {
 	sys, msg := MergePrompt(r.briefs(nil))
-	out, err := r.turn(adapter.Spec{System: sys, Prompt: msg, PromptOnly: true}, fmt.Sprintf("merge reads the briefs of %d areas", len(r.areas)))
-	if cerr := r.ctx.Err(); cerr != nil {
+	out, err := r.turn(ctx, adapter.Spec{System: sys, Prompt: msg, PromptOnly: true}, fmt.Sprintf("merge reads the briefs of %d areas", len(r.areas)))
+	if cerr := ctx.Err(); cerr != nil {
 		return cerr
 	}
 	var joints []Joint

@@ -81,7 +81,7 @@ func TestDiscoverMergesNamedDocs(t *testing.T) {
 		source("docs/design/api.md", "decisions", "the api decisions"),
 		source("nope.md", "readme", "not there"),
 	)}
-	g, s, err := Run(r.dir, r.open(), nil, bounds(t), f.discover(), gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), nil, bounds(t), f.discover(), gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestDiscoverMergesNamedDocs(t *testing.T) {
 func TestDiscoverKeepsFindsWhenNoSourcesNamed(t *testing.T) {
 	r := discoverRepo(t)
 	f := &fakeAgent{t: t, text: reply()}
-	g, s, err := Run(r.dir, r.open(), nil, bounds(t), f.discover(), gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), nil, bounds(t), f.discover(), gatherNow(t))
 	if err != nil || len(g.Docs) != 1 || g.Docs[0].Path != "README.md" {
 		t.Fatalf("docs = %+v, err = %v", g.Docs, err)
 	}
@@ -136,7 +136,7 @@ func TestDiscoverNotInstalledKeepsFinds(t *testing.T) {
 	d := Discover{Session: discovery.Session{
 		Agent: func() (adapter.Adapter, error) { return nil, fmt.Errorf("claude: %w", adapter.ErrNotInstalled) },
 	}}
-	g, s, err := Run(r.dir, r.open(), nil, bounds(t), d, gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), nil, bounds(t), d, gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestDiscoverNotInstalledKeepsFinds(t *testing.T) {
 func TestDiscoverFailingSessionKeepsFinds(t *testing.T) {
 	r := discoverRepo(t)
 	f := &fakeAgent{t: t, err: errors.New("boom"), tokens: adapter.Tokens{Input: 5}}
-	g, s, err := Run(r.dir, r.open(), nil, bounds(t), f.discover(), gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), nil, bounds(t), f.discover(), gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestDiscoverIsNeverStopped(t *testing.T) {
 	r := discoverRepo(t)
 	f := &fakeAgent{t: t, text: reply(source("docs/design/api.md", "overview", "x")),
 		reports: []adapter.Tokens{{Input: 4_000_000, Output: 500}}, tokens: adapter.Tokens{Input: 4_000_000, Output: 500}}
-	g, s, err := Run(r.dir, r.open(), nil, bounds(t), f.discover(), gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), nil, bounds(t), f.discover(), gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestDiscoverOffStartsNothing(t *testing.T) {
 	f := &fakeAgent{t: t, noStart: true}
 	d := f.discover()
 	d.Off = "discovery not started: the repo has a map"
-	_, s, err := Run(r.dir, r.open(), nil, bounds(t), d, gatherNow(t))
+	_, s, err := Run(t.Context(), r.dir, r.open(), nil, bounds(t), d, gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestDiscoverOffStartsNothing(t *testing.T) {
 
 func TestDiscoverZeroValueIsNotAsked(t *testing.T) {
 	r := discoverRepo(t)
-	_, s, err := Run(r.dir, r.open(), nil, bounds(t), Discover{}, gatherNow(t))
+	_, s, err := Run(t.Context(), r.dir, r.open(), nil, bounds(t), Discover{}, gatherNow(t))
 	if err != nil || s.Discovery.Started || s.Discovery.Why != "discovery not asked" {
 		t.Fatalf("discovery = %+v, err = %v", s.Discovery, err)
 	}
@@ -204,7 +204,7 @@ func TestDiscoverRefusesWhatTheListerDoesNotList(t *testing.T) {
 	r := discoverRepo(t)
 	f := &fakeAgent{t: t, text: reply(source("docs/design/api.md", "overview", "x"))}
 	repo := listerRepo{Repo: r.open(), paths: []string{"README.md", "listed-only.go", "docs/design/index.md"}}
-	g, s, err := Run(r.dir, repo, nil, bounds(t), f.discover(), gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, repo, nil, bounds(t), f.discover(), gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestDiscoverWithoutAListerReadsTheWorkingTree(t *testing.T) {
 	r := discoverRepo(t)
 	write(t, r.dir, "node_modules/dep/index.js", "x")
 	f := &fakeAgent{t: t, text: reply(source("docs/design/api.md", "overview", "the api"))}
-	g, s, err := Run(r.dir, withoutLister{r.open()}, nil, bounds(t), f.discover(), gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, withoutLister{r.open()}, nil, bounds(t), f.discover(), gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestDiscoverWithoutAListerReadsTheWorkingTree(t *testing.T) {
 func TestDiscoverPromptListsNoPaths(t *testing.T) {
 	r := discoverRepo(t)
 	f := &fakeAgent{t: t, text: reply()}
-	if _, _, err := Run(r.dir, r.open(), nil, bounds(t), f.discover(), gatherNow(t)); err != nil {
+	if _, _, err := Run(t.Context(), r.dir, r.open(), nil, bounds(t), f.discover(), gatherNow(t)); err != nil {
 		t.Fatal(err)
 	}
 	if p := f.specs[0].Prompt; p != discovery.Prompt() || strings.Contains(p, "main.go") || strings.Contains(p, "README.md (readme)") {

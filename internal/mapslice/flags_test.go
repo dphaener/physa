@@ -1,6 +1,7 @@
 package mapslice
 
 import (
+	"context"
 	"io"
 	"reflect"
 	"testing"
@@ -14,7 +15,7 @@ func parse(args ...string) (Flags, bool) {
 	var l Line
 	var got Flags
 	c := command.Declare(command.New("slice", "", []string{"slice [--with x] [--format x] [--entry]"},
-		func(pos []string, _, _ io.Writer) int {
+		func(_ context.Context, pos []string, _, _ io.Writer) int {
 			o, ok := l.Flags(pos)
 			if !ok {
 				return command.BadUsage
@@ -22,7 +23,7 @@ func parse(args ...string) (Flags, bool) {
 			got = o
 			return 0
 		}), l.Declare)
-	code := command.Execute(c, args, io.Discard, io.Discard)
+	code := command.Execute(context.Background(), c, args, io.Discard, io.Discard)
 	return got, code == 0
 }
 
@@ -85,7 +86,7 @@ func TestParseFlagsStartAfresh(t *testing.T) {
 	var l Line
 	var got []Flags
 	c := command.Declare(command.New("slice", "", nil,
-		func(pos []string, _, _ io.Writer) int {
+		func(_ context.Context, pos []string, _, _ io.Writer) int {
 			o, ok := l.Flags(pos)
 			if !ok {
 				return command.BadUsage
@@ -94,7 +95,7 @@ func TestParseFlagsStartAfresh(t *testing.T) {
 			return 0
 		}), l.Declare)
 	for _, args := range [][]string{{"--entry=x", "--format", "json"}, {"a"}} {
-		if code := command.Execute(c, args, io.Discard, io.Discard); code != 0 {
+		if code := command.Execute(t.Context(), c, args, io.Discard, io.Discard); code != 0 {
 			t.Fatalf("%v = %d", args, code)
 		}
 	}

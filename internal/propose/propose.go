@@ -6,6 +6,7 @@
 package propose
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"slices"
@@ -44,10 +45,10 @@ var entryKinds = map[string]mapfile.Kind{
 type Options struct {
 	// OpenRepo opens the version control holding the repo, for commit
 	// anchors. Nil leaves them unresolved, as in mapcheck.
-	OpenRepo func(root string) (vcs.Repo, error)
+	OpenRepo func(ctx context.Context, root string) (vcs.Repo, error)
 	// PRExists tells whether a PR with this number exists. Nil checks #N
 	// anchors for form only.
-	PRExists func(n int) (bool, error)
+	PRExists func(ctx context.Context, n int) (bool, error)
 }
 
 // Kept is a proposal that passed every check.
@@ -86,7 +87,7 @@ func FromMalformed(ms []draft.Malformed) []Dropped {
 // check finds no problem the map did not have already, the capability's
 // kind file holds exactly one more entry of its kind, and that entry's
 // anchors cite one of its changes. Nothing under root is written.
-func Check(root string, b draft.Batch, ps []draft.Proposal, o Options) ([]Kept, []Dropped) {
+func Check(ctx context.Context, root string, b draft.Batch, ps []draft.Proposal, o Options) ([]Kept, []Dropped) {
 	var (
 		kept    []Kept
 		dropped []Dropped
@@ -105,7 +106,7 @@ func Check(root string, b draft.Batch, ps []draft.Proposal, o Options) ([]Kept, 
 		return kept, dropped
 	}
 	co := once(o)
-	base, err := mapcheck.CheckWith(root, mapcheck.Options{OpenRepo: co.OpenRepo, PRExists: co.PRExists})
+	base, err := mapcheck.CheckWith(ctx, root, mapcheck.Options{OpenRepo: co.OpenRepo, PRExists: co.PRExists})
 	if err != nil {
 		for _, p := range ps {
 			drop(p, "the map cannot be checked: %v", err)
@@ -118,7 +119,7 @@ func Check(root string, b draft.Batch, ps []draft.Proposal, o Options) ([]Kept, 
 			drop(p, "%s", reason)
 			continue
 		}
-		slug, reason := tryOn(root, m, p, baseline, co)
+		slug, reason := tryOn(ctx, root, m, p, baseline, co)
 		if reason != "" {
 			drop(p, "%s", reason)
 			continue
@@ -256,12 +257,12 @@ func once(o Options) Options {
 			repo   vcs.Repo
 			err    error
 		)
-		out.OpenRepo = func(root string) (vcs.Repo, error) {
+		out.OpenRepo = func(ctx context.Context, root string) (vcs.Repo, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			if !opened {
 				opened = true
-				repo, err = o.OpenRepo(root)
+				repo, err = o.OpenRepo(ctx, root)
 			}
 			return repo, err
 		}
@@ -272,7 +273,7 @@ func once(o Options) Options {
 			known = map[int]bool{}
 			fail  error
 		)
-		out.PRExists = func(n int) (bool, error) {
+		out.PRExists = func(ctx context.Context, n int) (bool, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			if fail != nil {
@@ -281,7 +282,7 @@ func once(o Options) Options {
 			if v, ok := known[n]; ok {
 				return v, nil
 			}
-			v, err := o.PRExists(n)
+			v, err := o.PRExists(ctx, n)
 			if err != nil {
 				fail = err
 				return false, err

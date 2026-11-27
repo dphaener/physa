@@ -9,7 +9,7 @@ import (
 
 func TestLogin(t *testing.T) {
 	fakeGH(t, "echo dphaener\n")
-	got, err := New(t.TempDir()).Login()
+	got, err := New(t.TempDir()).Login(t.Context())
 	if err != nil || got != "dphaener" {
 		t.Errorf("Login = %q, %v", got, err)
 	}
@@ -17,7 +17,7 @@ func TestLogin(t *testing.T) {
 
 func TestLoginAsksForTheUser(t *testing.T) {
 	f := &fake{out: " dphaener \n"}
-	got, err := NewWithRunner(".", f.run).Login()
+	got, err := NewWithRunner(".", f.run).Login(t.Context())
 	if err != nil || got != "dphaener" {
 		t.Fatalf("Login = %q, %v", got, err)
 	}
@@ -28,14 +28,14 @@ func TestLoginAsksForTheUser(t *testing.T) {
 
 func TestLoginNoGH(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	if _, err := New(t.TempDir()).Login(); !errors.Is(err, forge.ErrUnavailable) {
+	if _, err := New(t.TempDir()).Login(t.Context()); !errors.Is(err, forge.ErrUnavailable) {
 		t.Errorf("no gh: %v", err)
 	}
 }
 
 func TestLoginUnauthenticated(t *testing.T) {
 	fakeGH(t, "echo nope >&2\nexit 4\n")
-	if _, err := New(t.TempDir()).Login(); !errors.Is(err, forge.ErrUnauthenticated) {
+	if _, err := New(t.TempDir()).Login(t.Context()); !errors.Is(err, forge.ErrUnauthenticated) {
 		t.Errorf("exit 4: %v", err)
 	}
 }

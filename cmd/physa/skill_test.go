@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,7 +15,7 @@ import (
 
 func runSkill(args ...string) (int, string, string) {
 	var stdout, stderr bytes.Buffer
-	code := run(args, &stdout, &stderr)
+	code := run(context.Background(), args, &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 

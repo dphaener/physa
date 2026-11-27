@@ -144,8 +144,7 @@ type entry struct {
 // Run collects the changes on the default branch not yet learned from, finds
 // their signals and triages them. The error is for a history that cannot be
 // read; a source of signals that cannot be read is reported in the Result.
-func Run(repo vcs.Repo, o Options) (Result, error) {
-	ctx := context.TODO()
+func Run(ctx context.Context, repo vcs.Repo, o Options) (Result, error) {
 	ref, err := repo.DefaultBranch(ctx)
 	if err != nil {
 		return Result{}, err
@@ -184,7 +183,7 @@ func Run(repo vcs.Repo, o Options) (Result, error) {
 	}
 	res.Changes = len(entries)
 
-	res.Forge, res.Unavailable = askForge(entries, o, res.Unavailable)
+	res.Forge, res.Unavailable = askForge(ctx, entries, o, res.Unavailable)
 	for _, e := range entries {
 		if s, ok := revertSignal(ctx, repo, e.change, collected); ok {
 			e.signals = append(e.signals, s)
@@ -303,7 +302,7 @@ func sameChange(a, b string) bool {
 // every change after that has its forge signals not checked. It returns the
 // forge's name when it answered for every change, and unavailable with the
 // forge's kinds added when it did not.
-func askForge(entries []*entry, o Options, unavailable []Unavailable) (string, []Unavailable) {
+func askForge(ctx context.Context, entries []*entry, o Options, unavailable []Unavailable) (string, []Unavailable) {
 	f, reason := o.Forge, o.ForgeReason
 	if f == nil && reason == "" {
 		reason = "no forge"
@@ -313,7 +312,7 @@ func askForge(entries []*entry, o Options, unavailable []Unavailable) (string, [
 			e.forgeGap = reason
 			continue
 		}
-		pr, ok, err := f.ChangePR(e.change.ID)
+		pr, ok, err := f.ChangePR(ctx, e.change.ID)
 		switch {
 		case errors.Is(err, forge.ErrUnavailable) || errors.Is(err, forge.ErrUnauthenticated):
 			f, reason = nil, forge.Reason(err)

@@ -54,7 +54,7 @@ func Propose(ctx context.Context, st mapping.Store, s mapping.Session) (mapping.
 		return mapping.Result{}, err
 	}
 	in, window := mapping.Read(g), adapter.Window(a)
-	p := &proposing{ctx: ctx, a: a, g: g, out: s.Progress, rest: in, room: window - mapping.ReplyReserve}
+	p := &proposing{a: a, g: g, out: s.Progress, rest: in, room: window - mapping.ReplyReserve}
 	if Fits(in, window) {
 		one := s
 		one.Agent = func() (adapter.Adapter, error) { return a, nil }
@@ -73,10 +73,10 @@ func Propose(ctx context.Context, st mapping.Store, s mapping.Session) (mapping.
 	} else if err := p.lay(); err != nil {
 		return p.res, err
 	}
-	if err := p.shares(); err != nil {
+	if err := p.shares(ctx); err != nil {
 		return p.res, err
 	}
-	if err := p.merge(); err != nil {
+	if err := p.merge(ctx); err != nil {
 		return p.res, err
 	}
 	p.res.Read = in.Report
@@ -100,7 +100,6 @@ func Propose(ctx context.Context, st mapping.Store, s mapping.Session) (mapping.
 
 // proposing is one run of propose in shares.
 type proposing struct {
-	ctx context.Context
 	a   adapter.Adapter
 	g   store.Gather
 	out io.Writer
@@ -162,8 +161,8 @@ func (p *proposing) halve(refused string, cause error) error {
 }
 
 // run runs one prompt-only session and counts what it used.
-func (p *proposing) run(prompt, id string, read reading.Report) (draft.Outcome, mapping.Share, error) {
-	out, err := draft.Run(p.ctx, p.a, prompt, math.MaxInt64, id) // no circuit breaker: init is never bounded
+func (p *proposing) run(ctx context.Context, prompt, id string, read reading.Report) (draft.Outcome, mapping.Share, error) {
+	out, err := draft.Run(ctx, p.a, prompt, math.MaxInt64, id) // no circuit breaker: init is never bounded
 	sh := mapping.Share{Read: read, PromptTokens: reading.Tokens(prompt), SessionID: out.SessionID, Model: out.Model, Tokens: out.Tokens}
 	if errors.Is(err, adapter.ErrTooLong) {
 		return out, sh, err
@@ -181,14 +180,14 @@ func (p *proposing) run(prompt, id string, read reading.Report) (draft.Outcome, 
 
 // shares runs the laid shares one at a time, laying again at half the room
 // whenever one is refused as too long.
-func (p *proposing) shares() error {
+func (p *proposing) shares(ctx context.Context) error {
 	for len(p.laid) > 0 {
 		share := p.laid[0]
 		i, k := len(p.res.Shares)+1, len(p.res.Shares)+len(p.laid)
 		prompt, id := mapping.Prompt(share), draft.NewSessionID()
 		p.say("physa init: propose reads share %d of %d whole, ~%s, in a prompt of ~%s; session %s\n",
 			i, k, tokens(share.Report.Tokens), tokens(reading.Tokens(prompt)), id)
-		out, sh, err := p.run(prompt, id, share.Report)
+		out, sh, err := p.run(ctx, prompt, id, share.Report)
 		if errors.Is(err, adapter.ErrTooLong) {
 			if err := p.halve(prompt, err); err != nil {
 				return err
@@ -229,11 +228,11 @@ func (p *proposing) shares() error {
 // merge runs the merge session over the shares' checked proposals and
 // checks its reply: no link no share gave, then against the gather. A merge
 // refused as too long fails: it reads no source, so nothing can be halved.
-func (p *proposing) merge() error {
+func (p *proposing) merge(ctx context.Context) error {
 	prompt, id := MergePrompt(p.props), draft.NewSessionID()
 	p.say("physa init: propose merges the proposals of its %d shares, in a prompt of ~%s; session %s\n",
 		len(p.props), tokens(reading.Tokens(prompt)), id)
-	out, sh, err := p.run(prompt, id, reading.Report{})
+	out, sh, err := p.run(ctx, prompt, id, reading.Report{})
 	if err != nil {
 		if errors.Is(err, adapter.ErrTooLong) {
 			err = fmt.Errorf("the merge of the shares' proposals: %w", err)

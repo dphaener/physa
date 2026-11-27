@@ -211,7 +211,7 @@ func TestNewCodebaseWritesAValidProductFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := initbranch.Map{ProductName: a.Name, ProductPromise: a.Promise, Terms: a.GlossaryTerms()}
-	if _, err := initbranch.Run(w, m, initbranch.Options{}); err != nil {
+	if _, err := initbranch.Run(t.Context(), w, m, initbranch.Options{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := gitIn(t, dir, "ls-tree", "-r", "--name-only", initbranch.Branch, ".physa"); got != ".physa/README.md\n.physa/glossary.md\n.physa/product/index.md" {
@@ -223,7 +223,7 @@ func TestNewCodebaseWritesAValidProductFolder(t *testing.T) {
 	}
 	tree := filepath.Join(t.TempDir(), "tree")
 	gitIn(t, dir, "worktree", "add", "-q", "--detach", tree, initbranch.Branch)
-	res, err := mapcheck.CheckWith(tree, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
+	res, err := mapcheck.CheckWith(t.Context(), tree, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil || len(res.Problems) > 0 || res.Capabilities != 0 {
 		t.Fatalf("check = %+v, %v", res, err)
 	}

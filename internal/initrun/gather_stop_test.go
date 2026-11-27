@@ -29,7 +29,7 @@ type pageAnswer struct {
 	err  error
 }
 
-func (p *pagesFake) MergedPage(since time.Time, cursor string) (forge.Page, error) {
+func (p *pagesFake) MergedPage(_ context.Context, since time.Time, cursor string) (forge.Page, error) {
 	p.since, p.cursors = append(p.since, since), append(p.cursors, cursor)
 	if len(p.answers) == 0 {
 		return forge.Page{}, errors.New("fake forge: no answer left")
@@ -47,7 +47,7 @@ type recordingFake struct {
 	max   int
 }
 
-func (r *recordingFake) MergedPRs(since time.Time, max int) ([]forge.PR, bool, error) {
+func (r *recordingFake) MergedPRs(_ context.Context, since time.Time, max int) ([]forge.PR, bool, error) {
 	r.since, r.max = since, max
 	return []forge.PR{}, false, nil
 }
@@ -238,7 +238,7 @@ func TestFullRunStoppedByRateLimitDoesNotPropose(t *testing.T) {
 	if g := storedGather(t, env); len(g.PRs) != 3 {
 		t.Errorf("stored %d PRs, want the 3 fetched", len(g.PRs))
 	}
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func TestStoppedGatherThenProposeWarnsAndStillProposes(t *testing.T) {
 			t.Errorf("--propose stderr lacks %q", want)
 		}
 	}
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}

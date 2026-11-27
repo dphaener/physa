@@ -108,7 +108,7 @@ func checkForm(t *testing.T, out Output) {
 	if _, _, err := mapfile.Read(dir); err != nil {
 		t.Fatal(err)
 	}
-	res, err := mapcheck.CheckWith(dir, mapcheck.Options{FormOnly: true})
+	res, err := mapcheck.CheckWith(t.Context(), dir, mapcheck.Options{FormOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}

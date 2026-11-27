@@ -253,7 +253,14 @@ var takesValue = map[string]bool{"--agent": true, "--answers": true, "--since": 
 // recovering was stopped in a bare run, "physa init --recover" and the
 // words of the bare run --recover takes (--agent, --write, --push, --pr,
 // --hooks and --json).
-func Again(words []string, recovering bool) string {
+func Again(words []string, recovering bool) string { return again(words, recovering, false) }
+
+// Continue is the line that continues a run an interrupt stopped: Again's,
+// keeping the --cap typed, quoted when it holds a $ so a shell keeps it, as
+// the person's cap still applies.
+func Continue(words []string, recovering bool) string { return again(words, recovering, true) }
+
+func again(words []string, recovering, keepCap bool) string {
 	out := []string{"physa", "init"}
 	if recovering {
 		out = append(out, "--recover")
@@ -265,14 +272,23 @@ func Again(words []string, recovering bool) string {
 		if recovering {
 			_, keep = recoverTakes[name]
 		}
+		keep = keep || keepCap && name == "--cap"
 		if keep {
-			out = append(out, w)
+			out = append(out, quoted(w))
 		}
 		if takesValue[name] && !joined && i+1 < len(words) {
 			if i++; keep {
-				out = append(out, words[i])
+				out = append(out, quoted(words[i]))
 			}
 		}
 	}
 	return strings.Join(out, " ")
+}
+
+// quoted is w in single quotes when it holds a $, so a shell passes it as typed.
+func quoted(w string) string {
+	if strings.Contains(w, "$") {
+		return "'" + w + "'"
+	}
+	return w
 }

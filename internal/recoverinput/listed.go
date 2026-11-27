@@ -39,11 +39,10 @@ func (s Source) Holds(proposalAt time.Time) bool {
 // Listed is the source of the stored recovery: the walk's capabilities and
 // promises in walk order when st holds both the walk and the placements,
 // else the proposal's capabilities when proposed is true, else ok is false.
-func Listed(st interface {
+func Listed(ctx context.Context, st interface {
 	Walk(ctx context.Context) (initrecord.Walk, bool, error)
 	Place(ctx context.Context) (initrecord.Place, bool, error)
 }, proposed mapping.Proposal, hasProposal bool) (src Source, ok bool, err error) {
-	ctx := context.TODO()
 	w, walked, err := st.Walk(ctx)
 	if err != nil {
 		return src, false, err

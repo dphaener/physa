@@ -22,7 +22,7 @@ func observeForge(ctx context.Context, repo Repo, f Merged, since, now time.Time
 	if from.IsZero() {
 		from = now.Add(-window)
 	}
-	prs, _, err := f.MergedPRs(from, forgeMax)
+	prs, _, err := f.MergedPRs(ctx, from, forgeMax)
 	if err != nil {
 		return nil, since, err
 	}

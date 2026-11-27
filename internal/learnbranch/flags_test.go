@@ -1,6 +1,7 @@
 package learnbranch
 
 import (
+	"context"
 	"io"
 	"testing"
 
@@ -13,14 +14,14 @@ func parse(args ...string) (Flags, bool) {
 	var f Flags
 	var got Flags
 	c := command.Declare(command.New("learn", "", []string{"learn [--signals] [--write] [--push] [--pr] [--since x] [--appetite x] [--agent x] [--json]"},
-		func(pos []string, _, _ io.Writer) int {
+		func(_ context.Context, pos []string, _, _ io.Writer) int {
 			if len(pos) > 0 || !f.Valid() {
 				return command.BadUsage
 			}
 			got = f
 			return 0
 		}), f.Declare)
-	return got, command.Execute(c, args, io.Discard, io.Discard) == 0
+	return got, command.Execute(context.Background(), c, args, io.Discard, io.Discard) == 0
 }
 
 func TestFlagsBadUsage(t *testing.T) {
@@ -52,12 +53,12 @@ func TestFlagsStartAfresh(t *testing.T) {
 	var f Flags
 	var seen []Flags
 	c := command.Declare(command.New("learn", "", []string{"learn"},
-		func(_ []string, _, _ io.Writer) int {
+		func(_ context.Context, _ []string, _, _ io.Writer) int {
 			seen = append(seen, f)
 			return 0
 		}), f.Declare)
-	command.Execute(c, []string{"--appetite", "5", "--json"}, io.Discard, io.Discard)
-	command.Execute(c, nil, io.Discard, io.Discard)
+	command.Execute(t.Context(), c, []string{"--appetite", "5", "--json"}, io.Discard, io.Discard)
+	command.Execute(t.Context(), c, nil, io.Discard, io.Discard)
 	if len(seen) != 2 || seen[1].Appetite != 0 || seen[1].JSON || seen[1].fs.Changed("appetite") {
 		t.Errorf("second line saw %+v", seen)
 	}

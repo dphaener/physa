@@ -106,7 +106,7 @@ func newFixture(t *testing.T) *fixture {
 }
 
 func (f *fixture) opts() Options {
-	return Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }}
+	return Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }}
 }
 
 // snapshot reads every file under dir.
@@ -189,7 +189,7 @@ func TestKeepsEachKind(t *testing.T) {
 		}(),
 	}
 	before := snapshot(t, f.root)
-	kept, dropped := Check(f.root, f.batch, ps, f.opts())
+	kept, dropped := Check(t.Context(), f.root, f.batch, ps, f.opts())
 	for _, d := range dropped {
 		t.Errorf("dropped %s: %s", d.Proposal.Kind, d.Reason)
 	}
@@ -249,7 +249,7 @@ func TestDropReasons(t *testing.T) {
 	for _, c := range cases {
 		all = append(all, c.p)
 		t.Run(c.name, func(t *testing.T) {
-			kept, dropped := Check(f.root, f.batch, []draft.Proposal{c.p}, f.opts())
+			kept, dropped := Check(t.Context(), f.root, f.batch, []draft.Proposal{c.p}, f.opts())
 			if len(kept) != 0 || len(dropped) != 1 {
 				t.Fatalf("kept %d, dropped %d; want one dropped", len(kept), len(dropped))
 			}
@@ -260,7 +260,7 @@ func TestDropReasons(t *testing.T) {
 		})
 	}
 	// Together, every one is dropped, in order: none is lost.
-	kept, dropped := Check(f.root, f.batch, all, f.opts())
+	kept, dropped := Check(t.Context(), f.root, f.batch, all, f.opts())
 	if len(kept) != 0 || len(dropped) != len(all) {
 		t.Fatalf("kept %d, dropped %d of %d", len(kept), len(dropped), len(all))
 	}
@@ -276,7 +276,7 @@ func TestDropReasons(t *testing.T) {
 func TestDropAllWhenTheMapCannotBeRead(t *testing.T) {
 	f := newFixture(t)
 	ps := []draft.Proposal{f.rule("a-rule", f.c2), f.rule("b-rule", f.c2)}
-	kept, dropped := Check(t.TempDir(), f.batch, ps, f.opts())
+	kept, dropped := Check(t.Context(), t.TempDir(), f.batch, ps, f.opts())
 	if len(kept) != 0 || len(dropped) != 2 || !strings.HasPrefix(dropped[1].Reason, "the map cannot be read:") {
 		t.Fatalf("kept %v, dropped %v", kept, dropped)
 	}
@@ -306,7 +306,7 @@ func TestPreexistingProblemKeepsAGoodProposal(t *testing.T) {
 	for _, capability := range []string{"delivery", "billing", "zones"} {
 		p := f.rule("queue-retries", f.c2)
 		p.Capability = capability
-		kept, dropped := Check(f.root, f.batch, []draft.Proposal{p}, f.opts())
+		kept, dropped := Check(t.Context(), f.root, f.batch, []draft.Proposal{p}, f.opts())
 		if len(kept) != 1 || len(dropped) != 0 {
 			t.Fatalf("%s: kept %v, dropped %v", capability, kept, dropped)
 		}
@@ -317,7 +317,7 @@ func TestDropAddedProblemQuotesOnlyTheNewOne(t *testing.T) {
 	f := newFixture(t)
 	folder(t, f.root, ".physa/capabilities/billing", "---\npromise: Billed.\n---\n# Billing\n\n## Rules\n\n"+
 		"### Bills are exact\n`exact-bills` · from docs/gone.md\nBills are exact.\nBecause: trust.\n")
-	_, dropped := Check(f.root, f.batch, []draft.Proposal{f.rule("queue-retries", "from docs/missing.md")}, f.opts())
+	_, dropped := Check(t.Context(), f.root, f.batch, []draft.Proposal{f.rule("queue-retries", "from docs/missing.md")}, f.opts())
 	if len(dropped) != 1 {
 		t.Fatalf("dropped %v", dropped)
 	}
@@ -333,11 +333,14 @@ func TestResolversAreAskedOnce(t *testing.T) {
 		"### Bills are exact\n`exact-bills` · #12\nBills are exact.\nBecause: trust.\n")
 	var prs, opens int
 	o := Options{
-		OpenRepo: func(root string) (vcs.Repo, error) { opens++; return git.Open(context.Background(), root) },
-		PRExists: func(n int) (bool, error) { prs++; return n == 12, nil },
+		OpenRepo: func(_ context.Context, root string) (vcs.Repo, error) {
+			opens++
+			return git.Open(context.Background(), root)
+		},
+		PRExists: func(_ context.Context, n int) (bool, error) { prs++; return n == 12, nil },
 	}
 	ps := []draft.Proposal{f.rule("a-rule", f.c2), f.rule("b-rule", f.c2), f.rule("c-rule", f.c2)}
-	kept, dropped := Check(f.root, f.batch, ps, o)
+	kept, dropped := Check(t.Context(), f.root, f.batch, ps, o)
 	if len(kept) != 3 || len(dropped) != 0 {
 		t.Fatalf("kept %v, dropped %v", kept, dropped)
 	}
@@ -351,8 +354,8 @@ func TestResolverErrorIsTheSameEveryTime(t *testing.T) {
 	folder(t, f.root, ".physa/capabilities/billing", "---\npromise: Billed.\n---\n# Billing\n\n## Rules\n\n"+
 		"### Bills are exact\n`exact-bills` · #12\nBills are exact.\nBecause: trust.\n")
 	calls := 0
-	o := Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }, PRExists: func(int) (bool, error) { calls++; return false, errors.New("gh is not installed") }}
-	kept, _ := Check(f.root, f.batch, []draft.Proposal{f.rule("a-rule", f.c2)}, o)
+	o := Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }, PRExists: func(context.Context, int) (bool, error) { calls++; return false, errors.New("gh is not installed") }}
+	kept, _ := Check(t.Context(), f.root, f.batch, []draft.Proposal{f.rule("a-rule", f.c2)}, o)
 	if len(kept) != 1 || calls != 1 {
 		t.Errorf("kept %d, resolver called %d times", len(kept), calls)
 	}
@@ -484,11 +487,11 @@ func TestApplyAllLandsEachInOrder(t *testing.T) {
 		Changes: []string{f.c1},
 		Entry:   "Webhooks reach customers at least once, in order per endpoint.",
 	}}
-	kept, dropped := Check(f.root, f.batch, ps, f.opts())
+	kept, dropped := Check(t.Context(), f.root, f.batch, ps, f.opts())
 	if len(dropped) != 0 || len(kept) != 3 {
 		t.Fatalf("Check kept %d, dropped %v", len(kept), dropped)
 	}
-	applied, dropped := ApplyAll(f.root, f.batch, kept, f.opts())
+	applied, dropped := ApplyAll(t.Context(), f.root, f.batch, kept, f.opts())
 	if len(dropped) != 0 || len(applied) != 3 {
 		t.Fatalf("applied %d, dropped %v", len(applied), dropped)
 	}
@@ -502,7 +505,7 @@ func TestApplyAllLandsEachInOrder(t *testing.T) {
 		strings.Contains(text, "promise: "+deliveryPromise+"\n") {
 		t.Errorf("the promise was not replaced in place:\n%s", text)
 	}
-	res, err := mapcheck.CheckWith(f.root, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
+	res, err := mapcheck.CheckWith(t.Context(), f.root, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil || len(res.Problems) != 0 {
 		t.Errorf("map check: %v %v", err, res.Problems)
 	}
@@ -513,7 +516,7 @@ func TestApplyAllDropsADuplicateSlug(t *testing.T) {
 	f := newFixture(t)
 	kept := []Kept{{Proposal: f.rule("queue-retries", f.c2)}, {Proposal: f.second("queue-retries")}}
 	file := filepath.Join(f.root, ".physa/capabilities/delivery/rules.md")
-	applied, dropped := ApplyAll(f.root, f.batch, kept, f.opts())
+	applied, dropped := ApplyAll(t.Context(), f.root, f.batch, kept, f.opts())
 	if len(applied) != 1 || applied[0].Slug != "queue-retries" || len(dropped) != 1 {
 		t.Fatalf("applied %v, dropped %v", applied, dropped)
 	}
@@ -560,7 +563,7 @@ func read(t *testing.T, root, rel string) string {
 // checked fails t unless the map under root passes the map check.
 func checked(t *testing.T, root string) {
 	t.Helper()
-	res, err := mapcheck.CheckWith(root, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
+	res, err := mapcheck.CheckWith(t.Context(), root, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil || len(res.Problems) != 0 {
 		t.Errorf("map check: %v %v", err, res.Problems)
 	}
@@ -589,7 +592,7 @@ func TestDecisionLandsInItsKindFileWithItsContentsLine(t *testing.T) {
 	f := newFixture(t)
 	dir := ".physa/capabilities/delivery/"
 	index := read(t, f.root, dir+"index.md")
-	applied, dropped := ApplyAll(f.root, f.batch, []Kept{{Proposal: f.decision("decided by dana, choosing an option · 2026-03-02")}}, f.opts())
+	applied, dropped := ApplyAll(t.Context(), f.root, f.batch, []Kept{{Proposal: f.decision("decided by dana, choosing an option · 2026-03-02")}}, f.opts())
 	if len(applied) != 1 || applied[0].Slug != "retry-limit" || len(dropped) != 0 {
 		t.Fatalf("applied %v, dropped %v", applied, dropped)
 	}
@@ -610,7 +613,7 @@ func TestDecisionLandsInItsKindFileWithItsContentsLine(t *testing.T) {
 func TestQuestionMakesItsKindFileAndIndexLinksIt(t *testing.T) {
 	f := newFixture(t)
 	dir := ".physa/capabilities/delivery/"
-	applied, dropped := ApplyAll(f.root, f.batch, []Kept{{Proposal: f.question("raised by sam · 2026-11-01")}}, f.opts())
+	applied, dropped := ApplyAll(t.Context(), f.root, f.batch, []Kept{{Proposal: f.question("raised by sam · 2026-11-01")}}, f.opts())
 	if len(applied) != 1 || applied[0].Slug != "ordering-scope" || len(dropped) != 0 {
 		t.Fatalf("applied %v, dropped %v", applied, dropped)
 	}
@@ -636,7 +639,7 @@ func TestPromiseEditsOnlyIndexFrontMatter(t *testing.T) {
 	p := draft.Proposal{Kind: "promise", Capability: "delivery", Section: "promise",
 		Signal:  draft.SignalRef{Kind: "served-not-loaded", Changes: []string{f.c1, f.c2}},
 		Changes: []string{f.c1}, Entry: "Webhooks reach customers at least once, in order per endpoint."}
-	applied, dropped := ApplyAll(f.root, f.batch, []Kept{{Proposal: p}}, f.opts())
+	applied, dropped := ApplyAll(t.Context(), f.root, f.batch, []Kept{{Proposal: p}}, f.opts())
 	if len(applied) != 1 || len(dropped) != 0 {
 		t.Fatalf("applied %v, dropped %v", applied, dropped)
 	}
@@ -657,7 +660,7 @@ func TestDropRestoresTheChangedKindFile(t *testing.T) {
 	dir := filepath.Join(f.root, ".physa/capabilities/delivery")
 	before := snapshot(t, dir)
 	// A decision with no date: its meta line is bad.
-	applied, dropped := ApplyAll(f.root, f.batch, []Kept{{Proposal: f.decision("decided by dana, choosing an option")}}, f.opts())
+	applied, dropped := ApplyAll(t.Context(), f.root, f.batch, []Kept{{Proposal: f.decision("decided by dana, choosing an option")}}, f.opts())
 	if len(applied) != 0 || len(dropped) != 1 {
 		t.Fatalf("applied %v, dropped %v", applied, dropped)
 	}
@@ -676,8 +679,11 @@ func TestDropRemovesTheKindFileItMade(t *testing.T) {
 	// A question with no date, for a capability with no questions yet.
 	q := f.question("raised by sam")
 	for _, run := range []func() []Dropped{
-		func() []Dropped { _, d := Check(f.root, f.batch, []draft.Proposal{q}, f.opts()); return d },
-		func() []Dropped { _, d := ApplyAll(f.root, f.batch, []Kept{{Proposal: q}}, f.opts()); return d },
+		func() []Dropped { _, d := Check(t.Context(), f.root, f.batch, []draft.Proposal{q}, f.opts()); return d },
+		func() []Dropped {
+			_, d := ApplyAll(t.Context(), f.root, f.batch, []Kept{{Proposal: q}}, f.opts())
+			return d
+		},
 	} {
 		dropped := run()
 		if len(dropped) != 1 {

@@ -163,7 +163,9 @@ func (a *Adapter) Start(ctx context.Context, s adapter.Spec) (adapter.Session, e
 	cmd.Dir = s.Dir
 	cmd.Env = append(os.Environ(), s.Env...)
 	cmd.Stdin = strings.NewReader(s.Prompt)
-	cmd.Cancel = func() error { return cmd.Process.Kill() }
+	// A cancel asks the agent to end as a Ctrl-C does; WaitDelay has Go kill it
+	// if it has not ended by then.
+	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
 	cmd.WaitDelay = waitDelay
 	pr, pw := io.Pipe()
 	cmd.Stdout = pw
@@ -182,14 +184,16 @@ func (a *Adapter) Start(ctx context.Context, s adapter.Spec) (adapter.Session, e
 			os.Remove(system)
 		}
 		pw.Close()
+		if cerr := ctx.Err(); err != nil && cerr != nil {
+			err = fmt.Errorf("%w: %w", adapter.ErrFailed, cerr)
+		}
 		done <- err
 	}()
-	return &session{ctx: ctx, out: pr, done: done, stderr: tail, usage: s.Usage, keySet: a.keySet(s.Env)}, nil
+	return &session{out: pr, done: done, stderr: tail, usage: s.Usage, keySet: a.keySet(s.Env)}, nil
 }
 
 // session is one running claude -p process.
 type session struct {
-	ctx    context.Context
 	out    *io.PipeReader
 	done   chan error
 	stderr *tailWriter
@@ -212,8 +216,8 @@ func (s *session) Wait() (adapter.Result, error) {
 	if !failed {
 		return res, nil
 	}
-	if err := s.ctx.Err(); err != nil {
-		return res, fmt.Errorf("%w: %w", adapter.ErrFailed, err)
+	if errors.Is(exitErr, adapter.ErrFailed) { // ended by the caller's cancel
+		return res, exitErr
 	}
 	if readErr != nil {
 		return res, fmt.Errorf("%w: reading the stream: %v", adapter.ErrFailed, readErr)

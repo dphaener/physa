@@ -485,7 +485,7 @@ func TestDropWhatTheMapCheckFinds(t *testing.T) {
 	check := func(file string) []mapfile.Problem {
 		root := t.TempDir()
 		writeScratch(t, root, "export", file, Glossary(""))
-		res, err := mapcheck.Check(root)
+		res, err := mapcheck.Check(t.Context(), root)
 		if err != nil {
 			t.Fatal(err)
 		}

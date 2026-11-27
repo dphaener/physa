@@ -59,7 +59,7 @@ func TestPlacePrintsTheCountsWithNoAgentCall(t *testing.T) {
 			t.Errorf("stdout lacks %q:\n%s", want, out)
 		}
 	}
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -57,11 +57,11 @@ type Options struct {
 	// PRExists tells whether a PR with this number exists. Nil checks #N
 	// anchors for form only. An error stops resolving for the rest of the
 	// run: PR anchors are then checked for form only.
-	PRExists func(n int) (bool, error)
+	PRExists func(ctx context.Context, n int) (bool, error)
 	// OpenRepo opens the version control holding root. It is called once,
 	// when the first commit anchor is met. Nil leaves commit anchors
 	// unresolved: each is a problem.
-	OpenRepo func(root string) (vcs.Repo, error)
+	OpenRepo func(ctx context.Context, root string) (vcs.Repo, error)
 	// DocRoot is where `from <path>` anchors resolve; empty means root. A
 	// scratch copy of the map uses it to check against the real repo.
 	DocRoot string
@@ -76,20 +76,20 @@ type Options struct {
 // Check reads the map under root (the repo root) and checks it, with no
 // resolver for #N anchors and no version control for commit anchors. The
 // error is only for a map that cannot be read at all.
-func Check(root string) (Result, error) {
-	return CheckWith(root, Options{})
+func Check(ctx context.Context, root string) (Result, error) {
+	return CheckWith(ctx, root, Options{})
 }
 
 // CheckWith is Check with options: it resolves #N anchors through
 // o.PRExists and commit anchors through o.OpenRepo, when each is set.
-func CheckWith(root string, o Options) (Result, error) {
-	_, res, err := CheckRead(root, o)
+func CheckWith(ctx context.Context, root string, o Options) (Result, error) {
+	_, res, err := CheckRead(ctx, root, o)
 	return res, err
 }
 
 // CheckRead is CheckWith that also returns the map it read, so a caller
 // that needs the map reads it once. The map is nil only with an error.
-func CheckRead(root string, o Options) (*mapfile.Map, Result, error) {
+func CheckRead(ctx context.Context, root string, o Options) (*mapfile.Map, Result, error) {
 	m, problems, err := mapfile.Read(root)
 	if err != nil {
 		return nil, Result{}, err
@@ -115,7 +115,7 @@ func CheckRead(root string, o Options) (*mapfile.Map, Result, error) {
 	for _, f := range files {
 		res.Entries += len(f.Entries)
 		for i := range f.Entries {
-			c.entry(&f.Entries[i], seen)
+			c.entry(ctx, &f.Entries[i], seen)
 		}
 		c.folder(f, known)
 	}
@@ -143,11 +143,11 @@ type checker struct {
 	docRoot  string // where doc anchors resolve
 	problems []mapfile.Problem
 
-	prExists func(n int) (bool, error) // nil once resolving is off
-	prKnown  map[int]bool              // resolved numbers
+	prExists func(ctx context.Context, n int) (bool, error) // nil once resolving is off
+	prKnown  map[int]bool                                   // resolved numbers
 	prNote   string
 
-	openRepo func(root string) (vcs.Repo, error)
+	openRepo func(ctx context.Context, root string) (vcs.Repo, error)
 	repo     vcs.Repo // opened when the first commit anchor is met
 	repoErr  error
 	repoOpen bool
@@ -160,7 +160,7 @@ func (c *checker) add(p string, line int, format string, args ...any) {
 // entry checks one entry. Problems are reported in the entry's own file:
 // those about the meta line on it, which sits right under the heading; the
 // rest on the heading.
-func (c *checker) entry(e *mapfile.Entry, seen map[string]string) {
+func (c *checker) entry(ctx context.Context, e *mapfile.Entry, seen map[string]string) {
 	meta := e.Line + 1
 	at := func(line int, format string, args ...any) { c.add(e.Path, line, format, args...) }
 	if e.MetaHas.Slug {
@@ -213,9 +213,9 @@ func (c *checker) entry(e *mapfile.Entry, seen map[string]string) {
 		case mapfile.Doc:
 			c.docAnchor(e.Path, meta, a.Value)
 		case mapfile.Commit:
-			c.commitAnchor(e.Path, meta, a.Value)
+			c.commitAnchor(ctx, e.Path, meta, a.Value)
 		case mapfile.PR:
-			c.prAnchor(e.Path, meta, a.Value)
+			c.prAnchor(ctx, e.Path, meta, a.Value)
 		}
 	}
 }
@@ -248,7 +248,7 @@ func (c *checker) docAnchor(file string, line int, p string) {
 
 // commitAnchor checks that a commit-hash anchor names a change in the repo.
 // Version control is opened only when the first commit anchor is met.
-func (c *checker) commitAnchor(file string, line int, hash string) {
+func (c *checker) commitAnchor(ctx context.Context, file string, line int, hash string) {
 	if c.formOnly {
 		return // the reader has checked the form
 	}
@@ -257,10 +257,9 @@ func (c *checker) commitAnchor(file string, line int, hash string) {
 		if c.openRepo == nil {
 			c.repoErr = errNoVCS
 		} else {
-			c.repo, c.repoErr = c.openRepo(c.root)
+			c.repo, c.repoErr = c.openRepo(ctx, c.root)
 		}
 	}
-	ctx := context.TODO()
 	switch {
 	case c.repoErr != nil:
 		// vcs.ErrNotRepo reads "not a repository under version control".
@@ -276,14 +275,14 @@ func (c *checker) commitAnchor(file string, line int, hash string) {
 
 // prAnchor checks that a #N anchor names a PR, when a resolver is set. Each
 // number is resolved once; the first resolver error turns resolving off.
-func (c *checker) prAnchor(file string, line int, value string) {
+func (c *checker) prAnchor(ctx context.Context, file string, line int, value string) {
 	n, err := strconv.Atoi(value)
 	if c.prExists == nil || err != nil {
 		return // form only; the reader has checked the form
 	}
 	exists, seen := c.prKnown[n]
 	if !seen {
-		exists, err = c.prExists(n)
+		exists, err = c.prExists(ctx, n)
 		if err != nil {
 			c.prNote = err.Error()
 			if c.prNote == "" {

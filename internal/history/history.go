@@ -35,8 +35,8 @@ type Commit struct {
 // Read returns the non-merge changes of the range rng, newest first, each
 // with the capabilities its trailers name. The adapter's own message is the
 // error when the range is not valid.
-func Read(repo vcs.Repo, rng string) ([]Commit, error) {
-	changes, err := repo.Changes(context.TODO(), rng)
+func Read(ctx context.Context, repo vcs.Repo, rng string) ([]Commit, error) {
+	changes, err := repo.Changes(ctx, rng)
 	if err != nil {
 		return nil, err
 	}

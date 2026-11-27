@@ -74,12 +74,12 @@ func TestWalkPrintsTheFootprints(t *testing.T) {
 			t.Errorf("stdout lacks %q:\n%s", want, out)
 		}
 	}
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if rec, ok, err := walk.Load(initrecord.Of(st)); !ok || err != nil || len(rec.Capabilities) != 2 {
+	if rec, ok, err := walk.Load(t.Context(), initrecord.Of(st)); !ok || err != nil || len(rec.Capabilities) != 2 {
 		t.Errorf("walk stored: %+v %v %v", rec, ok, err)
 	}
 	if spent, err := initrecord.Of(st).Spending(context.Background()); err != nil || len(spent) == 0 || spent[len(spent)-1].Phase != "walk" {
@@ -144,7 +144,7 @@ func TestWalkNeverReachesTheMap(t *testing.T) {
 	gitIn(t, dir, "commit", "-q", "-m", "feat: Add web", "--", "web/app.js")
 	a := &walkAgent{next: &areaAgent{next: newRoutedAgent()}}
 	env := fullEnv(t, &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}, a)
-	env.Store = func(string) (*store.Store, error) {
+	env.Store = func(context.Context, string) (*store.Store, error) {
 		return store.Open(context.Background(), filepath.Join(dir, ".git", "physa"))
 	}
 	for _, args := range [][]string{{"--gather"}, {"--areas"}} {
@@ -170,11 +170,11 @@ func TestWalkNeverReachesTheMap(t *testing.T) {
 			t.Fatalf("%v: %d %s", args, code, errOut)
 		}
 	}
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec, ok, err := walk.Load(initrecord.Of(st))
+	rec, ok, err := walk.Load(t.Context(), initrecord.Of(st))
 	st.Close()
 	if !ok || err != nil || len(rec.Capabilities) != 2 {
 		t.Fatalf("the footprints were not kept through propose and recover: %+v %v %v", rec, ok, err)

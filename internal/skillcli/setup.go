@@ -1,6 +1,7 @@
 package skillcli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -124,7 +125,9 @@ func newCommand(e env) *cobra.Command {
 	var groupJSON, statusJSON, setupJSON, setupYes, removeJSON, removeYes bool
 	jsonFlag := func(fs *pflag.FlagSet, on *bool) { command.Switch(fs, "json", on, "") }
 	status := func(asJSON *bool) command.Run {
-		return func(args []string, stdout, stderr io.Writer) int { return e.status(args, *asJSON, stdout, stderr) }
+		return func(_ context.Context, args []string, stdout, stderr io.Writer) int {
+			return e.status(args, *asJSON, stdout, stderr)
+		}
 	}
 	return command.Declare(command.New("skill",
 		"Set up, check, print and remove Physa's skill, the guide a person's agent loads to use Physa's commands and terms. "+
@@ -137,7 +140,7 @@ func newCommand(e env) *cobra.Command {
 		[]string{groupUsage, setupUsage, statusUsage, "physa skill show", removeUsage}, status(&groupJSON),
 		command.Declare(command.New("setup",
 			"Write Physa's stub to ~/.claude/skills/physa/SKILL.md and its session hook to ~/.claude/settings.json, and, for the agents found among Codex, OpenCode and Pi, the stub to ~/.agents/skills/physa/SKILL.md and, for Codex, the hook to its hooks.json, replacing stale ones; a SKILL.md Physa did not write, or a hooks file Physa cannot edit, is left as it is.",
-			[]string{setupUsage}, func(args []string, stdout, stderr io.Writer) int {
+			[]string{setupUsage}, func(_ context.Context, args []string, stdout, stderr io.Writer) int {
 				return e.change(verbs[0], args, setupYes, setupJSON, stdout, stderr)
 			}), func(fs *pflag.FlagSet) {
 			command.Switch(fs, "yes", &setupYes, "")
@@ -149,7 +152,7 @@ func newCommand(e env) *cobra.Command {
 		hidden(e.sessionCommand()),
 		command.Declare(command.New("remove",
 			"Delete Physa's stubs (~/.claude/skills/physa and ~/.agents/skills/physa) and take Physa's session hook out of ~/.claude/settings.json and Codex's hooks.json, leaving every other entry; a SKILL.md Physa did not write, or a hooks file Physa cannot edit, is left as it is.",
-			[]string{removeUsage}, func(args []string, stdout, stderr io.Writer) int {
+			[]string{removeUsage}, func(_ context.Context, args []string, stdout, stderr io.Writer) int {
 				return e.change(verbs[1], args, removeYes, removeJSON, stdout, stderr)
 			}), func(fs *pflag.FlagSet) {
 			command.Switch(fs, "yes", &removeYes, "")

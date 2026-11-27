@@ -40,7 +40,7 @@ func TestListedTakesTheWalkWhenBothAreStoredElseTheProposal(t *testing.T) {
 	at := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
 	prop := mapping.Proposal{Capabilities: []mapping.Capability{{Name: "delivery", Promise: "Ships."}}}
 
-	src, ok, err := Listed(listStore{storedWalk(t, at), true}, prop, true)
+	src, ok, err := Listed(t.Context(), listStore{storedWalk(t, at), true}, prop, true)
 	if err != nil || !ok || !src.FromWalk || len(src.Capabilities) != len(testWalk().Capabilities) || src.Capabilities[0].Name != testWalk().Capabilities[0].Name {
 		t.Errorf("both: %+v, %v, %v", src, ok, err)
 	}
@@ -49,18 +49,18 @@ func TestListedTakesTheWalkWhenBothAreStoredElseTheProposal(t *testing.T) {
 	}
 
 	for name, st := range map[string]listStore{"walk only": {storedWalk(t, at), false}, "neither": {}} {
-		src, ok, err := Listed(st, prop, true)
+		src, ok, err := Listed(t.Context(), st, prop, true)
 		if err != nil || !ok || src.FromWalk || len(src.Capabilities) != 1 || !src.Holds(at.Add(-time.Hour)) {
 			t.Errorf("%s: %+v, %v, %v", name, src, ok, err)
 		}
 	}
-	if _, ok, err := Listed(listStore{storedWalk(t, at), false}, mapping.Proposal{}, false); ok || err != nil {
+	if _, ok, err := Listed(t.Context(), listStore{storedWalk(t, at), false}, mapping.Proposal{}, false); ok || err != nil {
 		t.Errorf("a walk without placements and no proposal: %v, %v", ok, err)
 	}
 }
 
 func TestListedWalkOnlyNeedsNoProposal(t *testing.T) {
-	src, ok, err := Listed(listStore{storedWalk(t, time.Now()), true}, mapping.Proposal{}, false)
+	src, ok, err := Listed(t.Context(), listStore{storedWalk(t, time.Now()), true}, mapping.Proposal{}, false)
 	if err != nil || !ok || !src.FromWalk {
 		t.Errorf("%+v, %v, %v", src, ok, err)
 	}

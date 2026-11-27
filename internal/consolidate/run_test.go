@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -307,11 +308,11 @@ func TestMergeTwoCapabilitiesIntoOne(t *testing.T) {
 	if res.ExitCode() != 0 || res.Model != "fake-model" || res.Tokens.Input == 0 {
 		t.Errorf("exit %d, model %q, tokens %+v", res.ExitCode(), res.Model, res.Tokens)
 	}
-	stored, ok, err := Load(st)
+	stored, ok, err := Load(t.Context(), st)
 	if err != nil || !ok || !reflect.DeepEqual(stored, res) {
 		t.Fatalf("Load = %v, %v; want the result stored", ok, err)
 	}
-	if cur, err := Current(st); !cur || err != nil {
+	if cur, err := Current(t.Context(), st); !cur || err != nil {
 		t.Errorf("Current = %v, %v; want true", cur, err)
 	}
 }
@@ -540,7 +541,7 @@ func TestUnjudgedMergeBlocksLift(t *testing.T) {
 	if res.ExitCode() != 1 {
 		t.Errorf("exit code = %d; want 1", res.ExitCode())
 	}
-	if _, ok, _ := Load(st); !ok {
+	if _, ok, _ := Load(t.Context(), st); !ok {
 		t.Error("the record was not stored")
 	}
 	var merge SessionRun
@@ -606,7 +607,7 @@ func TestSecondRunGivesTheSameResult(t *testing.T) {
 func TestCurrentGoesStaleOnNewRecovery(t *testing.T) {
 	st := seed(t, billing, nil)
 	consolidate(t, st, &fakeAgent{reply: nothing})
-	if cur, _ := Current(st); !cur {
+	if cur, _ := Current(t.Context(), st); !cur {
 		t.Fatal("not current right after the run")
 	}
 	rows, _ := st.Recovered(context.Background())
@@ -614,7 +615,7 @@ func TestCurrentGoesStaleOnNewRecovery(t *testing.T) {
 	if err := st.PutRecovered(context.Background(), rows[:1]); err != nil {
 		t.Fatal(err)
 	}
-	if cur, err := Current(st); cur || err != nil {
+	if cur, err := Current(t.Context(), st); cur || err != nil {
 		t.Errorf("Current after a new recovery = %v, %v; want stale", cur, err)
 	}
 }
@@ -632,7 +633,7 @@ func TestNoWalkIsClearError(t *testing.T) {
 	} else {
 		t.Logf("no walk: %v", err)
 	}
-	if cur, err := Current(st); cur || err != nil {
+	if cur, err := Current(t.Context(), st); cur || err != nil {
 		t.Errorf("Current = %v, %v; want false, nil", cur, err)
 	}
 	body, _ := json.Marshal(walk.Record{})
@@ -656,9 +657,44 @@ func TestCancelledStoresNothing(t *testing.T) {
 	if _, err := Run(ctx, st, Session{Agent: func() (adapter.Adapter, error) { return f, nil }}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v; want cancelled", err)
 	}
-	if _, ok, _ := Load(st); ok {
+	if _, ok, _ := Load(t.Context(), st); ok {
 		t.Error("a cancelled run stored a record")
 	}
+}
+
+// A cancel during a step starts no further session: the agent's fake takes
+// no ctx check of its own here, so only the run's guard can hold it back.
+func TestCancelDuringAStepStartsNoFurtherSession(t *testing.T) {
+	st := seed(t, signIn, signInRename)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var late atomic.Int32
+	f := &fakeAgent{reply: func(step, area string, turn int) (string, error) { cancel(); return nothing(step, area, turn) }}
+	a := cancelWatch{f, &late}
+	_, err := Run(ctx, st, Session{Agent: func() (adapter.Adapter, error) { return a, nil }})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v; want cancelled", err)
+	}
+	if late.Load() != 0 {
+		t.Errorf("%d sessions started after the cancel", late.Load())
+	}
+	if _, ok, _ := Load(t.Context(), st); ok {
+		t.Error("a cancelled run stored a record")
+	}
+}
+
+// cancelWatch counts the sessions started with a done ctx, and lets them
+// through so the fake's own ctx check does not hide the run's.
+type cancelWatch struct {
+	*fakeAgent
+	late *atomic.Int32
+}
+
+func (w cancelWatch) Start(ctx context.Context, s adapter.Spec) (adapter.Session, error) {
+	if ctx.Err() != nil {
+		w.late.Add(1)
+	}
+	return w.fakeAgent.Start(context.WithoutCancel(ctx), s)
 }
 
 func TestAreaSplitToFitTheWindow(t *testing.T) {

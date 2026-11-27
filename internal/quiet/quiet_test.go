@@ -1,6 +1,7 @@
 package quiet
 
 import (
+	"context"
 	"reflect"
 	"testing"
 	"time"
@@ -17,9 +18,9 @@ type fakeForge struct {
 	asked []string
 }
 
-func (f *fakeForge) Name() string               { return "fake" }
-func (f *fakeForge) PRExists(int) (bool, error) { return true, nil }
-func (f *fakeForge) ChangePR(id string) (forge.PR, bool, error) {
+func (f *fakeForge) Name() string                                { return "fake" }
+func (f *fakeForge) PRExists(context.Context, int) (bool, error) { return true, nil }
+func (f *fakeForge) ChangePR(_ context.Context, id string) (forge.PR, bool, error) {
 	f.asked = append(f.asked, id)
 	if id == f.stop {
 		return forge.PR{}, false, &forge.Error{Class: forge.ErrUnavailable, Reason: "rate limited"}
@@ -51,7 +52,7 @@ func older() []store.GatheredChange {
 func TestReachGathersTheNewestPRsOfQuietClusters(t *testing.T) {
 	recent := []store.GatheredChange{ch("c40", 40, "app/notes/model.rb")}
 	f := &fakeForge{}
-	prs, changes, sum := Reach(recent, older(), f, map[int]bool{8: true})
+	prs, changes, sum := Reach(t.Context(), recent, older(), f, map[int]bool{8: true})
 	var got []int
 	for _, p := range prs {
 		got = append(got, p.Number)
@@ -68,18 +69,18 @@ func TestReachGathersTheNewestPRsOfQuietClusters(t *testing.T) {
 }
 
 func TestReachStopsWhenTheForgeStopsAnswering(t *testing.T) {
-	prs, _, sum := Reach(nil, older(), &fakeForge{stop: "c7"}, nil)
+	prs, _, sum := Reach(t.Context(), nil, older(), &fakeForge{stop: "c7"}, nil)
 	if len(prs) != 2 || sum.Why != "rate limited" || sum.PRs != 2 {
 		t.Errorf("PRs %+v, summary %+v", prs, sum)
 	}
-	if _, _, sum := Reach(nil, older(), nil, nil); sum != (Summary{}) {
+	if _, _, sum := Reach(t.Context(), nil, older(), nil, nil); sum != (Summary{}) {
 		t.Errorf("no forge: %+v", sum)
 	}
 }
 
 func TestAddKeepsRecentChangesAndAddsWhatReachFinds(t *testing.T) {
 	g := store.Gather{Changes: append([]store.GatheredChange{ch("c40", 40, "app/notes/model.rb")}, older()...), PRs: []store.GatheredPR{{Number: 40}}}
-	sum := Add(&g, day.AddDate(0, 0, 30), &fakeForge{})
+	sum := Add(t.Context(), &g, day.AddDate(0, 0, 30), &fakeForge{})
 	if len(g.Changes) != 4 || g.Changes[0].ID != "c40" || len(g.PRs) != 4 || sum.PRs != 3 {
 		t.Errorf("changes %d, PRs %d, summary %+v", len(g.Changes), len(g.PRs), sum)
 	}

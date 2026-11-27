@@ -39,21 +39,26 @@ func (e *Error) Error() string {
 
 // Runner runs gh with args in dir and returns its stdout, also when gh exits
 // non-zero (gh api prints GraphQL errors there).
-type Runner func(dir string, args ...string) (stdout []byte, err error)
+type Runner func(ctx context.Context, dir string, args ...string) (stdout []byte, err error)
 
 // StdinRunner is a Runner that also passes stdin to gh when it is not nil.
-type StdinRunner func(dir string, stdin []byte, args ...string) (stdout []byte, err error)
+type StdinRunner func(ctx context.Context, dir string, stdin []byte, args ...string) (stdout []byte, err error)
 
-func ghRunner(dir string, args ...string) ([]byte, error) { return ghStdinRunner(dir, nil, args...) }
+func ghRunner(ctx context.Context, dir string, args ...string) ([]byte, error) {
+	return ghStdinRunner(ctx, dir, nil, args...)
+}
 
 // ghTimeout bounds every gh call, so a hung gh never holds up a caller or an
 // engine shutdown.
 const ghTimeout = 30 * time.Second
 
-func ghStdinRunner(dir string, stdin []byte, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), ghTimeout)
+// errGHTimeout is the cause of a gh call that ghTimeout ended.
+var errGHTimeout = errors.New("gh timed out")
+
+func ghStdinRunner(ctx context.Context, dir string, stdin []byte, args ...string) ([]byte, error) {
+	bounded, cancel := context.WithTimeoutCause(ctx, ghTimeout, errGHTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "gh", args...)
+	cmd := exec.CommandContext(bounded, "gh", args...)
 	cmd.Dir = dir
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
@@ -61,8 +66,11 @@ func ghStdinRunner(dir string, stdin []byte, args ...string) ([]byte, error) {
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
-		if ctx.Err() != nil {
+		if errors.Is(context.Cause(bounded), errGHTimeout) {
 			return nil, fmt.Errorf("gh %s: timed out after %s", strings.Join(args, " "), ghTimeout)
+		}
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("gh %s: %w", strings.Join(args, " "), context.Cause(ctx))
 		}
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
@@ -86,8 +94,8 @@ func New(dir string) *Client { return NewWithStdinRunner(dir, ghStdinRunner) }
 // NewWithRunner returns a Client that uses r instead of gh. r is not given
 // the body of a PR, so it suits the reads; see NewWithStdinRunner.
 func NewWithRunner(dir string, r Runner) *Client {
-	return NewWithStdinRunner(dir, func(dir string, _ []byte, args ...string) ([]byte, error) {
-		return r(dir, args...)
+	return NewWithStdinRunner(dir, func(ctx context.Context, dir string, _ []byte, args ...string) ([]byte, error) {
+		return r(ctx, dir, args...)
 	})
 }
 
@@ -100,11 +108,13 @@ func (c *Client) Name() string { return "github" }
 
 // gh runs gh and classes its failure as a forge.Error when it is one of the
 // forge's sentinels. Its stdout is returned whatever the error.
-func (c *Client) gh(args ...string) ([]byte, error) { return c.ghIn(nil, args...) }
+func (c *Client) gh(ctx context.Context, args ...string) ([]byte, error) {
+	return c.ghIn(ctx, nil, args...)
+}
 
 // ghIn is gh with stdin for the command.
-func (c *Client) ghIn(stdin []byte, args ...string) ([]byte, error) {
-	out, err := c.run(c.dir, stdin, args...)
+func (c *Client) ghIn(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
+	out, err := c.run(ctx, c.dir, stdin, args...)
 	if err == nil {
 		return out, nil
 	}
@@ -133,8 +143,8 @@ func classify(err error) error {
 }
 
 // PRExists reports whether the repo has a pull request numbered n.
-func (c *Client) PRExists(n int) (bool, error) {
-	_, err := c.gh("api", fmt.Sprintf("repos/{owner}/{repo}/pulls/%d", n), "--jq", ".number")
+func (c *Client) PRExists(ctx context.Context, n int) (bool, error) {
+	_, err := c.gh(ctx, "api", fmt.Sprintf("repos/{owner}/{repo}/pulls/%d", n), "--jq", ".number")
 	if errors.Is(err, forge.ErrNotFound) {
 		return false, nil
 	}
@@ -142,11 +152,11 @@ func (c *Client) PRExists(n int) (bool, error) {
 }
 
 // repo returns the repo's owner and name, asking gh once per Client.
-func (c *Client) repo() (owner, name string, err error) {
+func (c *Client) repo(ctx context.Context) (owner, name string, err error) {
 	if c.owner != "" {
 		return c.owner, c.name, nil
 	}
-	out, err := c.gh("repo", "view", "--json", "owner,name")
+	out, err := c.gh(ctx, "repo", "view", "--json", "owner,name")
 	if err != nil {
 		return "", "", err
 	}
@@ -246,12 +256,12 @@ type changePRResponse struct {
 // discussion and its commits, oldest first. Its bool is false when change
 // came from no PR or GitHub does not know it. Reviews still pending are left
 // out: only their author can see them.
-func (c *Client) ChangePR(change string) (forge.PR, bool, error) {
-	owner, name, err := c.repo()
+func (c *Client) ChangePR(ctx context.Context, change string) (forge.PR, bool, error) {
+	owner, name, err := c.repo(ctx)
 	if err != nil {
 		return forge.PR{}, false, err
 	}
-	out, err := c.gh("api", "graphql", "-f", "query="+changePRQuery,
+	out, err := c.gh(ctx, "api", "graphql", "-f", "query="+changePRQuery,
 		"-f", "owner="+owner, "-f", "name="+name, "-f", "oid="+change)
 	var resp changePRResponse
 	if jerr := json.Unmarshal(out, &resp); jerr == nil && len(resp.Errors) > 0 {

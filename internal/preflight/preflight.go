@@ -54,8 +54,8 @@ type Gathered interface {
 
 // Stored warns on w when st holds a gather the forge stopped short, as
 // Stopped says; no gather, or a complete one, says nothing.
-func Stored(w io.Writer, st Gathered) {
-	if g, ok, err := st.Gathered(context.TODO()); err == nil && ok {
+func Stored(ctx context.Context, w io.Writer, st Gathered) {
+	if g, ok, err := st.Gathered(ctx); err == nil && ok {
 		Warn(w, Stopped(g.Run))
 	}
 }

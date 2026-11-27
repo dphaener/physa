@@ -7,6 +7,7 @@
 package merged
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -75,13 +76,13 @@ func (w Wait) defaults() Wait {
 // total waiting past w.Limit is not slept, and List returns the PRs so far
 // with an error wrapping that limit. Any other error returns the PRs so far
 // and the error.
-func List(f forge.MergedPages, since time.Time, max int, w Wait) (prs []forge.PR, more bool, err error) {
+func List(ctx context.Context, f forge.MergedPages, since time.Time, max int, w Wait) (prs []forge.PR, more bool, err error) {
 	w = w.defaults()
 	var waited time.Duration
 	limits := 0
 	cursor := ""
 	for {
-		page, perr := f.MergedPage(since, cursor)
+		page, perr := f.MergedPage(ctx, since, cursor)
 		if perr != nil {
 			var rl *forge.RateLimit
 			if !errors.As(perr, &rl) {
@@ -173,14 +174,14 @@ func Oldest(prs []forge.PR) time.Time {
 // unauthenticated before it listed any PR. Any other error, or one after PRs
 // were listed, is a *Stopped, with prs holding every PR listed and more
 // false.
-func Read(f forge.Forge, since time.Time, max int, w Wait) (prs []forge.PR, more bool, reason string, err error) {
+func Read(ctx context.Context, f forge.Forge, since time.Time, max int, w Wait) (prs []forge.PR, more bool, reason string, err error) {
 	if p, ok := f.(forge.MergedPages); ok {
-		prs, more, err = List(p, since, max, w)
+		prs, more, err = List(ctx, p, since, max, w)
 	} else if m, ok := f.(forge.Merged); ok {
 		if max <= 0 {
 			max = math.MaxInt // no cap
 		}
-		prs, more, err = m.MergedPRs(since, max)
+		prs, more, err = m.MergedPRs(ctx, since, max)
 	} else if f == nil {
 		return nil, false, "no forge", nil
 	} else {

@@ -47,16 +47,18 @@ type fakeForge struct {
 	calls int
 }
 
-func (f *fakeForge) Name() string                            { return "fake" }
-func (f *fakeForge) PRExists(int) (bool, error)              { return false, nil }
-func (f *fakeForge) ChangePR(string) (forge.PR, bool, error) { return forge.PR{}, false, nil }
+func (f *fakeForge) Name() string                                { return "fake" }
+func (f *fakeForge) PRExists(context.Context, int) (bool, error) { return false, nil }
+func (f *fakeForge) ChangePR(context.Context, string) (forge.PR, bool, error) {
+	return forge.PR{}, false, nil
+}
 func (f *fakeForge) set(prs []forge.PR, err error) {
 	f.mu.Lock()
 	f.prs, f.err = prs, err
 	f.mu.Unlock()
 }
 func (f *fakeForge) count() int { f.mu.Lock(); defer f.mu.Unlock(); return f.calls }
-func (f *fakeForge) MergedPRs(since time.Time, max int) ([]forge.PR, bool, error) {
+func (f *fakeForge) MergedPRs(_ context.Context, since time.Time, max int) ([]forge.PR, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++

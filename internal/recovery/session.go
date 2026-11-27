@@ -99,11 +99,16 @@ func kept(c recovering.Counts) string {
 // capability runs one capability to its end: in one session, or, when its
 // sources are more than one session holds, in shares, one session after
 // another (shares.go), then settles its last answer. A session the cap
-// refuses (adapter.ErrCapped) leaves it not yet recovered, not failed.
+// refuses (adapter.ErrCapped), or one a cancelled ctx cut short, leaves it
+// not yet recovered, not failed, so a later --recover takes it again.
 func (r *runner) capability(ctx context.Context, j job) Outcome {
 	c := j.capability
 	out := Outcome{Name: c.Name, Shares: len(j.parts)}
 	fail := func(err error) Outcome {
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) { // the run was interrupted, not the capability at fault
+			out.Status, out.Problems = StatusNotYet, nil
+			return out
+		}
 		out.Status, out.Error = StatusFailed, err.Error()
 		return out
 	}
@@ -143,13 +148,16 @@ func (r *runner) capability(ctx context.Context, j job) Outcome {
 		if err != nil {
 			return fail(err)
 		}
+		if a == nil && ctx.Err() != nil {
+			return fail(ctx.Err())
+		}
 		if a == nil {
 			out.Status, out.Problems = StatusFailed, problems
 			return out
 		}
 		last = a
 	}
-	if err := r.check.settle(c.Name, *last, &out); err != nil {
+	if err := r.check.settle(ctx, c.Name, *last, &out); err != nil {
 		return fail(err)
 	}
 	return out
@@ -161,7 +169,7 @@ func (r *runner) capability(ctx context.Context, j job) Outcome {
 // a retry starts a new session on the first prompt followed by the retry. It
 // adds its attempts, tokens, model and session id to out and returns its
 // last answer that was read and checked, nil when none was, and what is
-// wrong with the newest.
+// wrong with the newest. Once ctx is done it starts no further turn.
 func (r *runner) turns(ctx context.Context, c mapping.Capability, spec adapter.Spec, out *Outcome) (*answer, []string, error) {
 	spec.SessionID = draft.NewSessionID()
 	out.SessionID = spec.SessionID
@@ -169,6 +177,9 @@ func (r *runner) turns(ctx context.Context, c mapping.Capability, spec adapter.S
 	var last *answer      // the last answer that was read and checked
 	var problems []string // what is wrong with the newest answer
 	for tries := 0; ; tries++ {
+		if err := ctx.Err(); err != nil {
+			return last, problems, err
+		}
 		res, err := attempt(ctx, r.agent, spec)
 		if spec.Resume && errors.Is(err, adapter.ErrNoResume) {
 			spec.Prompt, spec.Resume, spec.SessionID = first+"\n\n"+spec.Prompt, false, draft.NewSessionID()
@@ -192,7 +203,7 @@ func (r *runner) turns(ctx context.Context, c mapping.Capability, spec adapter.S
 			problems = []string{"the session's output: " + err.Error()}
 		} else {
 			a := answer{file: recovering.File(c.Name, c.Promise, reply.File), terms: reply.Terms}
-			if a.problems, err = r.check.run(c.Name, a.file, a.terms); err != nil {
+			if a.problems, err = r.check.run(ctx, c.Name, a.file, a.terms); err != nil {
 				return last, problems, err
 			}
 			last = &a

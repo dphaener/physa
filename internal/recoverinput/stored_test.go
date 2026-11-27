@@ -41,18 +41,18 @@ func TestChosenOrdersTheWalkBySeedOrByOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	w, g, root := initrecord.Walk{Body: wb}, testGather(), t.TempDir()
-	got, err := Chosen(placeStore{pb}, root, w, g, nil, 42)
+	got, err := Chosen(t.Context(), placeStore{pb}, root, w, g, nil, 42)
 	if want := Order(Walk(root, testWalk(), place.Record{}, g), 42); err != nil || !slices.Equal(names(got), names(want)) {
 		t.Errorf("all: %v, want %v (%v)", names(got), names(want), err)
 	}
-	got, err = Chosen(placeStore{pb}, root, w, g, []string{"search"}, 42)
+	got, err = Chosen(t.Context(), placeStore{pb}, root, w, g, []string{"search"}, 42)
 	if err != nil || len(got) != 1 || len(got[0].Sources.PRs) != 1 || got[0].Sources.PRs[0].Number != 7 {
 		t.Errorf("only search: %+v, %v", got, err)
 	}
-	if _, err := Chosen(placeStore{pb}, root, w, g, []string{"billing"}, 42); err == nil || !strings.Contains(err.Error(), `no capability "billing" in the walk; it found: export, search`) {
+	if _, err := Chosen(t.Context(), placeStore{pb}, root, w, g, []string{"billing"}, 42); err == nil || !strings.Contains(err.Error(), `no capability "billing" in the walk; it found: export, search`) {
 		t.Errorf("unknown: %v", err)
 	}
-	if _, err := Chosen(placeStore{pb}, root, initrecord.Walk{Body: []byte(`{"capabilities":[]}`)}, g, nil, 42); err == nil {
+	if _, err := Chosen(t.Context(), placeStore{pb}, root, initrecord.Walk{Body: []byte(`{"capabilities":[]}`)}, g, nil, 42); err == nil {
 		t.Error("an empty walk gave no error")
 	}
 }

@@ -83,7 +83,7 @@ func lineOf(t *testing.T, root, rel, prefix string) int {
 // check checks the map under root with the git adapter for commit anchors.
 func check(t *testing.T, root string) Result {
 	t.Helper()
-	r, err := CheckWith(root, Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
+	r, err := CheckWith(t.Context(), root, Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestMapWithoutCapabilitiesPasses(t *testing.T) {
 }
 
 func TestMissingMapIsError(t *testing.T) {
-	if _, err := Check(t.TempDir()); err == nil {
+	if _, err := Check(t.Context(), t.TempDir()); err == nil {
 		t.Fatal("want an error for a missing .physa")
 	}
 }
@@ -269,7 +269,7 @@ func TestCommitAnchorMissing(t *testing.T) {
 // Without version control, a commit anchor cannot resolve.
 func TestCommitAnchorNoVersionControl(t *testing.T) {
 	root := newMap(t, "", commitCap("1a2b3c4"))
-	r, err := Check(root)
+	r, err := Check(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,10 @@ func TestCommitAnchorOpenerError(t *testing.T) {
 	cap := commitCap("1a2b3c4") + "\n### B\n`b` · from docs/d.md · 5e6f7a8\nBecause: y.\n"
 	root := newMap(t, "", cap)
 	calls := 0
-	open := func(string) (vcs.Repo, error) { calls++; return nil, errors.New("hg is not installed") }
+	open := func(context.Context, string) (vcs.Repo, error) {
+		calls++
+		return nil, errors.New("hg is not installed")
+	}
 	r := checkWith(t, root, Options{OpenRepo: open})
 	if calls != 1 {
 		t.Errorf("opener called %d times, want 1", calls)
@@ -635,7 +638,7 @@ func prCap(nums ...string) string {
 
 func checkWith(t *testing.T, root string, o Options) Result {
 	t.Helper()
-	r, err := CheckWith(root, o)
+	r, err := CheckWith(t.Context(), root, o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -644,7 +647,7 @@ func checkWith(t *testing.T, root string, o Options) Result {
 
 func TestPRAnchorsResolved(t *testing.T) {
 	root := newMap(t, "", prCap("10"))
-	r := checkWith(t, root, Options{PRExists: func(n int) (bool, error) { return n == 10, nil }})
+	r := checkWith(t, root, Options{PRExists: func(_ context.Context, n int) (bool, error) { return n == 10, nil }})
 	if len(r.Problems) != 0 || r.PRAnchors != "github" || r.PRNote != "" {
 		t.Errorf("want none and github, got %v %q %q", r.Problems, r.PRAnchors, r.PRNote)
 	}
@@ -652,7 +655,7 @@ func TestPRAnchorsResolved(t *testing.T) {
 
 func TestPRAnchorUnknown(t *testing.T) {
 	root := newMap(t, "", prCap("10", "999"))
-	r := checkWith(t, root, Options{PRExists: func(n int) (bool, error) { return n == 10, nil }})
+	r := checkWith(t, root, Options{PRExists: func(_ context.Context, n int) (bool, error) { return n == 10, nil }})
 	expect(t, r, capRules, lineOf(t, root, capRules, "`rb` ·"), "anchor #999 names no PR in this repo")
 	if len(r.Problems) != 1 || r.PRAnchors != "github" {
 		t.Errorf("want one problem and github, got %v %q", r.Problems, r.PRAnchors)
@@ -662,7 +665,7 @@ func TestPRAnchorUnknown(t *testing.T) {
 func TestPRAnchorResolvedOnce(t *testing.T) {
 	root := newMap(t, "", prCap("10", "10", "11"))
 	calls := map[int]int{}
-	checkWith(t, root, Options{PRExists: func(n int) (bool, error) { calls[n]++; return true, nil }})
+	checkWith(t, root, Options{PRExists: func(_ context.Context, n int) (bool, error) { calls[n]++; return true, nil }})
 	if calls[10] != 1 || calls[11] != 1 {
 		t.Errorf("want one call per number, got %v", calls)
 	}
@@ -671,7 +674,7 @@ func TestPRAnchorResolvedOnce(t *testing.T) {
 func TestPRAnchorsFallBackOnError(t *testing.T) {
 	root := newMap(t, "", prCap("10", "999"))
 	calls := 0
-	r := checkWith(t, root, Options{PRExists: func(n int) (bool, error) { calls++; return false, errors.New("gh is not logged in") }})
+	r := checkWith(t, root, Options{PRExists: func(_ context.Context, n int) (bool, error) { calls++; return false, errors.New("gh is not logged in") }})
 	if len(r.Problems) != 0 || r.PRAnchors != "form-only" || r.PRNote != "gh is not logged in" || calls != 1 {
 		t.Errorf("got %v %q %q after %d calls", r.Problems, r.PRAnchors, r.PRNote, calls)
 	}
@@ -704,7 +707,7 @@ func TestFormOnlyLeavesCommitAnchorsUnresolved(t *testing.T) {
 		t.Fatalf("without the option: want one problem, got %v", r.Problems)
 	}
 	calls := 0
-	open := func(string) (vcs.Repo, error) { calls++; return nil, errors.New("must not open") }
+	open := func(context.Context, string) (vcs.Repo, error) { calls++; return nil, errors.New("must not open") }
 	r := checkWith(t, root, Options{FormOnly: true, OpenRepo: open})
 	if len(r.Problems) != 0 || calls != 0 {
 		t.Errorf("want no problem and no repo opened, got %v after %d opens", r.Problems, calls)
@@ -714,7 +717,7 @@ func TestFormOnlyLeavesCommitAnchorsUnresolved(t *testing.T) {
 // FormOnly does not resolve #N anchors, even with a resolver set.
 func TestFormOnlyDoesNotResolvePRAnchors(t *testing.T) {
 	root := newMap(t, "", prCap("10"))
-	exists := func(int) (bool, error) { t.Error("resolver called"); return false, nil }
+	exists := func(context.Context, int) (bool, error) { t.Error("resolver called"); return false, nil }
 	r := checkWith(t, root, Options{FormOnly: true, PRExists: exists})
 	if len(r.Problems) != 0 || r.PRAnchors != PRAnchorsFormOnly {
 		t.Errorf("want no problem and form-only, got %v %q", r.Problems, r.PRAnchors)

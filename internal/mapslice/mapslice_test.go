@@ -578,7 +578,7 @@ func smallMap(t *testing.T, rules string) string {
 }
 
 func TestReadAcceptsAGoodMap(t *testing.T) {
-	m, err := Read(smallMap(t, "### Keep it short\n`x-short` · #2 1a2b3c4\nKeep it short.\nBecause: it reads fast.\n"))
+	m, err := Read(t.Context(), smallMap(t, "### Keep it short\n`x-short` · #2 1a2b3c4\nKeep it short.\nBecause: it reads fast.\n"))
 	if err != nil {
 		t.Fatalf("a map the check accepts, with a commit anchor history cannot resolve: %v", err)
 	}
@@ -589,7 +589,7 @@ func TestReadAcceptsAGoodMap(t *testing.T) {
 
 func TestReadFailsOnMalformedMap(t *testing.T) {
 	root := smallMap(t, "### Keep it short\n`x-short` · #2\nKeep it short.\n\n### Bad slug\n`Bad_Slug` · #3\nBecause: no.\n")
-	m, err := Read(root)
+	m, err := Read(t.Context(), root)
 	if m != nil || err == nil {
 		t.Fatalf("want a failure and no map, got %v, %v", m, err)
 	}
@@ -602,7 +602,7 @@ func TestReadFailsOnMalformedMap(t *testing.T) {
 }
 
 func TestOwnMap(t *testing.T) {
-	m, err := Read(filepath.Join("..", ".."))
+	m, err := Read(t.Context(), filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -705,7 +705,7 @@ func TestLatency(t *testing.T) {
 	run := func(req Request) (time.Duration, int) {
 		runtime.GC()
 		start := time.Now()
-		m, err := Read(root)
+		m, err := Read(t.Context(), root)
 		if err != nil {
 			t.Fatal(err)
 		}

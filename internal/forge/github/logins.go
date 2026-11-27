@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -9,8 +10,8 @@ import (
 // ChangeLogins asks GitHub, 100 changes a query, for each change's author's
 // login. A change GitHub does not know, or whose author has no account, is
 // left out.
-func (c *Client) ChangeLogins(ids []string) (map[string]string, error) {
-	owner, name, err := c.repo()
+func (c *Client) ChangeLogins(ctx context.Context, ids []string) (map[string]string, error) {
+	owner, name, err := c.repo(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -23,7 +24,7 @@ func (c *Client) ChangeLogins(ids []string) (map[string]string, error) {
 			fmt.Fprintf(&q, "c%d:object(oid:%q){...on Commit{author{user{login}}}}", i, id)
 		}
 		q.WriteString("}}")
-		raw, err := c.gh("api", "graphql", "-f", "query="+q.String(), "-f", "owner="+owner, "-f", "name="+name)
+		raw, err := c.gh(ctx, "api", "graphql", "-f", "query="+q.String(), "-f", "owner="+owner, "-f", "name="+name)
 		if err != nil {
 			return nil, err
 		}

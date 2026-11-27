@@ -32,7 +32,7 @@ func (u *usageAgent) Usage(context.Context) (adapter.Usage, error) {
 // recoveredRows is what init's record holds of each capability's recovery.
 func recoveredRows(t *testing.T, env Env) map[string]string {
 	t.Helper()
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,12 +131,12 @@ func TestCappedWalkStopsCleanly(t *testing.T) {
 	if strings.Contains(errOut, "did not end whole") || strings.Contains(errOut, "not started:") {
 		t.Errorf("a line says the walk failed:\n%s", errOut)
 	}
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if _, ok, err := walk.Load(initrecord.Of(st)); ok || err != nil {
+	if _, ok, err := walk.Load(t.Context(), initrecord.Of(st)); ok || err != nil {
 		t.Errorf("a walk was stored: %v %v", ok, err)
 	}
 	if _, ok, err := initrecord.Of(st).Areas(context.Background()); !ok || err != nil {
@@ -189,7 +189,7 @@ func TestUsageCapWithoutUsageRefusesToStart(t *testing.T) {
 	if code != 2 || f.starts != 0 || out != "" || errOut != want {
 		t.Fatalf("code %d, %d sessions\nstdout %s\nstderr %q\nwant %q", code, f.starts, out, errOut, want)
 	}
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}

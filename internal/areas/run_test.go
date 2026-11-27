@@ -27,6 +27,8 @@ type fakeAgent struct {
 	reply    func(s adapter.Spec, n int) string
 	noResume bool
 	window   int
+	late     int    // sessions started with a done ctx
+	cancel   func() // when set, the first session cancels
 }
 
 type fakeSession struct{ res adapter.Result }
@@ -35,9 +37,15 @@ func (s fakeSession) Wait() (adapter.Result, error) { return s.res, nil }
 
 func (f *fakeAgent) Name() string { return "fake" }
 
-func (f *fakeAgent) Start(_ context.Context, s adapter.Spec) (adapter.Session, error) {
+func (f *fakeAgent) Start(ctx context.Context, s adapter.Spec) (adapter.Session, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if ctx.Err() != nil {
+		f.late++ // the fake takes it, so a session started after a cancel shows
+	}
+	if f.cancel != nil {
+		f.cancel()
+	}
 	if s.Resume && f.noResume {
 		return nil, adapter.ErrNoResume
 	}
@@ -163,7 +171,7 @@ func setup(t *testing.T, dir string, f *fakeAgent) (*initrecord.Store, Session) 
 
 func load(t *testing.T, st *initrecord.Store) (Record, bool) {
 	t.Helper()
-	r, ok, err := Load(st)
+	r, ok, err := Load(t.Context(), st)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -527,5 +535,25 @@ func TestRunNeedsAGather(t *testing.T) {
 	_, err = Run(context.Background(), initrecord.Of(st), Session{Agent: func() (adapter.Adapter, error) { called = true; return nil, errors.New("x") }})
 	if err == nil || !strings.Contains(err.Error(), "physa init --gather") || called {
 		t.Errorf("error %v, agent resolved %v", err, called)
+	}
+}
+
+// A cancel during the split session starts no grouping session, and nothing
+// is stored.
+func TestRunCancelStartsNoSessionAfter(t *testing.T) {
+	dir := fixture(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	f := &fakeAgent{cancel: cancel, reply: func(s adapter.Spec, n int) string { return splitAnswer }}
+	st, s := setup(t, dir, f)
+	_, err := Run(ctx, st, s)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v; want cancelled", err)
+	}
+	if f.late != 0 || len(f.specs) != 1 {
+		t.Errorf("%d sessions started, %d after the cancel; want only the split", len(f.specs), f.late)
+	}
+	if _, ok := load(t, st); ok {
+		t.Error("a cancelled run stored areas")
 	}
 }

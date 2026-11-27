@@ -122,7 +122,7 @@ func (te *tenv) run(args ...string) (int, string, string) {
 	te.t.Helper()
 	var out, errb bytes.Buffer
 	root := command.New("physa", "", nil, nil, te.e.command())
-	code := command.Execute(root, args, &out, &errb)
+	code := command.Execute(context.Background(), root, args, &out, &errb)
 	return code, out.String(), errb.String()
 }
 

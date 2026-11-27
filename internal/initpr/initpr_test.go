@@ -1,6 +1,7 @@
 package initpr
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -18,14 +19,16 @@ type openingForge struct {
 	err error
 }
 
-func (f openingForge) OpenPR(string) (int, string, bool, error) { return 0, "", false, f.err }
-func (f openingForge) CreatePR(string, string, string, string) (int, string, error) {
+func (f openingForge) OpenPR(context.Context, string) (int, string, bool, error) {
+	return 0, "", false, f.err
+}
+func (f openingForge) CreatePR(context.Context, string, string, string, string) (int, string, error) {
 	return 0, "", f.err
 }
-func (f openingForge) EditPR(int, string) error { return f.err }
+func (f openingForge) EditPR(context.Context, int, string) error { return f.err }
 
 func TestOpenLeavesTheBranchReadyWithoutPRs(t *testing.T) {
-	pr, err := Open(nil, readOnlyForge{}, initbranch.Outcome{})
+	pr, err := Open(t.Context(), nil, readOnlyForge{}, initbranch.Outcome{})
 	if err != nil || pr != (initbranch.PR{State: initbranch.PRReady, Reason: "the forge cannot open PRs"}) {
 		t.Fatalf("PR = %+v, %v", pr, err)
 	}
@@ -33,7 +36,7 @@ func TestOpenLeavesTheBranchReadyWithoutPRs(t *testing.T) {
 
 func TestOpenLeavesTheBranchReadyWhenTheForgeIsUnavailable(t *testing.T) {
 	for _, cause := range []error{forge.ErrUnavailable, forge.ErrUnauthenticated} {
-		pr, err := Open(nil, openingForge{err: cause}, initbranch.Outcome{})
+		pr, err := Open(t.Context(), nil, openingForge{err: cause}, initbranch.Outcome{})
 		if err != nil {
 			t.Fatalf("%v: err %v", cause, err)
 		}
@@ -45,7 +48,7 @@ func TestOpenLeavesTheBranchReadyWhenTheForgeIsUnavailable(t *testing.T) {
 
 func TestOpenReportsAnyOtherForgeErrorWithTheBranch(t *testing.T) {
 	boom := errors.New("boom")
-	_, err := Open(nil, openingForge{err: boom}, initbranch.Outcome{})
+	_, err := Open(t.Context(), nil, openingForge{err: boom}, initbranch.Outcome{})
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want the forge error", err)
 	}
@@ -53,7 +56,7 @@ func TestOpenReportsAnyOtherForgeErrorWithTheBranch(t *testing.T) {
 
 func TestInstallHookRefusesWithItsReason(t *testing.T) {
 	boom := errors.New("no hooks here")
-	h := InstallHook(func(string) (vcs.Hooks, error) { return nil, boom })
+	h := InstallHook(t.Context(), func(context.Context, string) (vcs.Hooks, error) { return nil, boom })
 	if h.State != initbranch.HookRefused || h.Detail != boom.Error() {
 		t.Fatalf("hook = %+v", h)
 	}

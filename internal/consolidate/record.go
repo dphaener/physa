@@ -52,9 +52,9 @@ type input struct {
 }
 
 // Load reads the stored consolidation, false when none is stored.
-func Load(st *initrecord.Store) (Result, bool, error) {
+func Load(ctx context.Context, st *initrecord.Store) (Result, bool, error) {
 	var r Result
-	c, ok, err := st.Consolidated(context.TODO())
+	c, ok, err := st.Consolidated(ctx)
 	if err == nil && ok {
 		err = json.Unmarshal(c.Body, &r)
 	}
@@ -65,12 +65,12 @@ func Load(st *initrecord.Store) (Result, bool, error) {
 // was made from: the recovered rows of the walk eligible now, the walk and
 // the product's promise. Any later recovery, of one more capability too,
 // makes it stale.
-func Current(st *initrecord.Store) (bool, error) {
-	r, ok, err := Load(st)
+func Current(ctx context.Context, st *initrecord.Store) (bool, error) {
+	r, ok, err := Load(ctx, st)
 	if err != nil || !ok {
 		return false, err
 	}
-	in, err := read(context.TODO(), st, "")
+	in, err := read(ctx, st, "")
 	if errors.As(err, new(missing)) {
 		err = nil
 	}
@@ -83,14 +83,14 @@ func Current(st *initrecord.Store) (bool, error) {
 // missing error naming the phases to run first.
 func read(ctx context.Context, st *initrecord.Store, root string) (input, error) {
 	var in input
-	wr, walked, err := walk.Load(st)
+	wr, walked, err := walk.Load(ctx, st)
 	if err != nil {
 		return in, fmt.Errorf("the stored walk cannot be read: %w", err)
 	}
 	if !walked {
 		return in, missing{"no walk stored yet; run physa init --walk, --place and --recover first"}
 	}
-	src, _, err := recoverinput.Listed(st, mapping.Proposal{}, false)
+	src, _, err := recoverinput.Listed(ctx, st, mapping.Proposal{}, false)
 	if err == nil && !src.FromWalk {
 		err = missing{"no placements stored yet; run physa init --place and --recover first"}
 	}
@@ -204,7 +204,7 @@ func dropped(r initrecord.Recovered) []recovering.Dropped {
 // capabilities' folders, the product's index and rules and the terms, and
 // runs the map check on it for form only, `from` anchors resolving in root.
 // Any problem is an error naming the first ones.
-func formCheck(out consolidating.Output, promise, root string) error {
+func formCheck(ctx context.Context, out consolidating.Output, promise, root string) error {
 	dir, err := os.MkdirTemp("", "physa-consolidate-")
 	if err != nil {
 		return err
@@ -238,7 +238,7 @@ func formCheck(out consolidating.Output, promise, root string) error {
 			return err
 		}
 	}
-	res, err := mapcheck.CheckWith(dir, mapcheck.Options{FormOnly: true, DocRoot: root})
+	res, err := mapcheck.CheckWith(ctx, dir, mapcheck.Options{FormOnly: true, DocRoot: root})
 	if err != nil {
 		return err
 	}

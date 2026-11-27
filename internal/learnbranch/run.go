@@ -145,7 +145,7 @@ func Run(ctx context.Context, w vcs.Writer, o Options) (Outcome, error) {
 		Records: o.Records, RecordsReason: o.RecordsReason, Sessions: o.Sessions}
 	var batch draft.Batch
 	err = inCopy(ctx, w, st.def, st.base(o.Push), func(c vcs.Copy, carried []string) error {
-		m, res, err := Read(c.Dir(), w, lo)
+		m, res, err := Read(ctx, c.Dir(), w, lo)
 		if err != nil {
 			return err
 		}
@@ -183,7 +183,7 @@ func Run(ctx context.Context, w vcs.Writer, o Options) (Outcome, error) {
 
 // Read reads the map in dir and what the history r holds teaches it, with lo
 // and its Capabilities taken from the map. It writes nothing.
-func Read(dir string, r vcs.Repo, lo learn.Options) (*mapfile.Map, learn.Result, error) {
+func Read(ctx context.Context, dir string, r vcs.Repo, lo learn.Options) (*mapfile.Map, learn.Result, error) {
 	m, _, err := mapfile.Read(dir)
 	if err != nil {
 		return m, learn.Result{}, err
@@ -192,7 +192,7 @@ func Read(dir string, r vcs.Repo, lo learn.Options) (*mapfile.Map, learn.Result,
 	for _, c := range m.Capabilities {
 		lo.Capabilities = append(lo.Capabilities, c.Name)
 	}
-	res, err := learn.Run(r, lo)
+	res, err := learn.Run(ctx, r, lo)
 	return m, res, err
 }
 
@@ -305,7 +305,7 @@ func inCopy(ctx context.Context, w vcs.Writer, def, base string, fn func(vcs.Cop
 // or a watermark that moves.
 // It returns nil when it commits nothing.
 func apply(ctx context.Context, w vcs.Writer, c vcs.Copy, b draft.Batch, report *propose.Report, kept []propose.Kept, rec record, o propose.Options) (*Commit, error) {
-	applied, dropped := propose.ApplyAll(c.Dir(), b, kept, o)
+	applied, dropped := propose.ApplyAll(ctx, c.Dir(), b, kept, o)
 	report.Kept = append([]propose.Kept{}, applied...)
 	report.Dropped = append(report.Dropped, dropped...)
 	if len(applied) == 0 && rec.through == rec.watermark {
@@ -329,7 +329,7 @@ func redo(ctx context.Context, w vcs.Writer, out *Outcome, lo learn.Options, b d
 	if err != nil {
 		return err
 	}
-	now, err := learn.Run(w, lo)
+	now, err := learn.Run(ctx, w, lo)
 	if err != nil {
 		return err
 	}

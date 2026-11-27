@@ -28,10 +28,12 @@ import (
 // mergedFake is a forge that lists the merged PRs it was given.
 type mergedFake struct{ prs []forge.PR }
 
-func (mergedFake) Name() string                            { return "fake" }
-func (mergedFake) PRExists(int) (bool, error)              { return false, nil }
-func (mergedFake) ChangePR(string) (forge.PR, bool, error) { return forge.PR{}, false, nil }
-func (m mergedFake) MergedPRs(time.Time, int) ([]forge.PR, bool, error) {
+func (mergedFake) Name() string                                { return "fake" }
+func (mergedFake) PRExists(context.Context, int) (bool, error) { return false, nil }
+func (mergedFake) ChangePR(context.Context, string) (forge.PR, bool, error) {
+	return forge.PR{}, false, nil
+}
+func (m mergedFake) MergedPRs(context.Context, time.Time, int) ([]forge.PR, bool, error) {
 	return m.prs, false, nil
 }
 
@@ -111,8 +113,8 @@ func testEnv(t *testing.T, f forge.Forge, a adapter.Adapter) Env {
 	t.Helper()
 	sd := t.TempDir()
 	return Env{
-		Store: func(string) (*store.Store, error) { return store.Open(context.Background(), sd) },
-		Repo:  func(dir string) (vcs.Repo, error) { return git.Open(context.Background(), dir) },
+		Store: func(context.Context, string) (*store.Store, error) { return store.Open(context.Background(), sd) },
+		Repo:  func(_ context.Context, dir string) (vcs.Repo, error) { return git.Open(context.Background(), dir) },
 		Forge: func(string) forge.Forge { return f },
 		Agent: func(string) (adapter.Adapter, error) {
 			if a == nil {
@@ -121,7 +123,7 @@ func testEnv(t *testing.T, f forge.Forge, a adapter.Adapter) Env {
 			return a, nil
 		},
 		Now:    time.Now,
-		Writer: func(d string) (vcs.Writer, error) { return git.OpenWriter(context.Background(), d) },
+		Writer: func(_ context.Context, d string) (vcs.Writer, error) { return git.OpenWriter(context.Background(), d) },
 		Spend:  filepath.Join(sd, "spend.json"),
 	}
 }
@@ -137,13 +139,13 @@ func runInit(env Env, args ...string) (int, string, string) {
 
 func runInitTo(stdout, stderr io.Writer, env Env, args ...string) int {
 	return execute(args, stdout, stderr, func(f Flags, pos, words []string, stdout, stderr io.Writer) int {
-		return Run(f, pos, words, stdout, stderr, env)
+		return Run(context.Background(), f, pos, words, stdout, stderr, env)
 	})
 }
 
 func storedGather(t *testing.T, env Env) store.Gather {
 	t.Helper()
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +271,7 @@ func TestProposeStoresAndPrintsMarkdown(t *testing.T) {
 	if !strings.Contains(out, "Coverage: the capabilities cite 1 of 1 gathered PRs;") || strings.Contains(errOut, "coverage is low") {
 		t.Errorf("the proposal's coverage:\n%s\n%s", out, errOut)
 	}
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +395,7 @@ func TestRecoverText(t *testing.T) {
 	if !strings.Contains(errOut, "physa init: delivery: recovered") {
 		t.Errorf("stderr %q", errOut)
 	}
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +443,7 @@ func TestRecoverFailedExitsTwo(t *testing.T) {
 
 func TestStoredMapGivesOneSessionPerShareAndTheMerge(t *testing.T) {
 	env := proposedEnv(t, nil)
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +452,7 @@ func TestStoredMapGivesOneSessionPerShareAndTheMerge(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("proposed: ok %v, err %v", ok, err)
 	}
-	m, err := storedMap(initrecord.Of(st), "repo", env)
+	m, err := storedMap(t.Context(), initrecord.Of(st), "repo", env)
 	if err != nil || len(m.Sessions) != 1 || m.Sessions[0] != prop.SessionID {
 		t.Fatalf("one session: %v, %v; want [%s]", m.Sessions, err, prop.SessionID)
 	}
@@ -465,7 +467,7 @@ func TestStoredMapGivesOneSessionPerShareAndTheMerge(t *testing.T) {
 	if err := initrecord.Of(st).PutProposal(context.Background(), prop); err != nil {
 		t.Fatal(err)
 	}
-	if m, err = storedMap(initrecord.Of(st), "repo", env); err != nil || !reflect.DeepEqual(m.Sessions, s.Sessions) {
+	if m, err = storedMap(t.Context(), initrecord.Of(st), "repo", env); err != nil || !reflect.DeepEqual(m.Sessions, s.Sessions) {
 		t.Errorf("in shares: %v, %v; want %v", m.Sessions, err, s.Sessions)
 	}
 }
@@ -473,7 +475,7 @@ func TestStoredMapGivesOneSessionPerShareAndTheMerge(t *testing.T) {
 // downForge is a forge that cannot list PRs, as one without auth.
 type downForge struct{ mergedFake }
 
-func (downForge) MergedPRs(time.Time, int) ([]forge.PR, bool, error) {
+func (downForge) MergedPRs(context.Context, time.Time, int) ([]forge.PR, bool, error) {
 	return nil, false, &forge.Error{Class: forge.ErrUnauthenticated, Reason: "gh is not logged in"}
 }
 
@@ -528,7 +530,7 @@ func TestStoredMapWritesTheWalksCapabilitiesAndSkipsRowsOfAnEarlierSource(t *tes
 	if code, _, errOut := runInit(env, "--place"); code != 0 {
 		t.Fatalf("place: %d %s", code, errOut)
 	}
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,7 +541,7 @@ func TestStoredMapWritesTheWalksCapabilitiesAndSkipsRowsOfAnEarlierSource(t *tes
 		t.Fatalf("walk: %v, %v", ok, err)
 	}
 	// A walk only: no proposal is stored, and the map still lists the walk's.
-	m, err := storedMap(rec, "repo", env)
+	m, err := storedMap(t.Context(), rec, "repo", env)
 	if err != nil || len(m.Capabilities) != 2 || m.Capabilities[0].Name != "zz-cap-marker" || m.ProductPromise != "Not yet stated." {
 		t.Fatalf("walk only: %+v, %v", m, err)
 	}
@@ -551,7 +553,7 @@ func TestStoredMapWritesTheWalksCapabilitiesAndSkipsRowsOfAnEarlierSource(t *tes
 	if err := rec.PutRecovered(context.Background(), rows); err != nil {
 		t.Fatal(err)
 	}
-	if m, err = storedMap(rec, "repo", env); err != nil || len(m.Capabilities) != 2 {
+	if m, err = storedMap(t.Context(), rec, "repo", env); err != nil || len(m.Capabilities) != 2 {
 		t.Fatalf("with rows: %+v, %v", m, err)
 	}
 	if c := m.Capabilities[0]; c.File != "# Marker\n" || c.Status != recovery.StatusRecovered {

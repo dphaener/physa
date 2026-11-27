@@ -15,6 +15,7 @@
 package forge
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -25,11 +26,11 @@ type Forge interface {
 	// Name names the forge, in lower case: "github".
 	Name() string
 	// PRExists reports whether the repo has a PR numbered n.
-	PRExists(n int) (bool, error)
+	PRExists(ctx context.Context, n int) (bool, error)
 	// ChangePR returns the PR that change came from. Its bool is false when
 	// the change came from no PR (it was pushed directly) or the forge does
 	// not know the change.
-	ChangePR(change string) (PR, bool, error)
+	ChangePR(ctx context.Context, change string) (PR, bool, error)
 }
 
 // PRs opens and refreshes a PR. It is separate from Forge, which only reads.
@@ -39,11 +40,11 @@ type Forge interface {
 type PRs interface {
 	// OpenPR returns the open PR whose head is the branch head. Its bool is
 	// false when none is open.
-	OpenPR(head string) (n int, url string, ok bool, err error)
+	OpenPR(ctx context.Context, head string) (n int, url string, ok bool, err error)
 	// CreatePR opens a PR from branch head into branch base.
-	CreatePR(head, base, title, body string) (n int, url string, err error)
+	CreatePR(ctx context.Context, head, base, title, body string) (n int, url string, err error)
 	// EditPR replaces the body of PR n.
-	EditPR(n int, body string) error
+	EditPR(ctx context.Context, n int, body string) error
 }
 
 // Logins resolves changes' authors to forge logins. It is separate from
@@ -51,7 +52,7 @@ type PRs interface {
 type Logins interface {
 	// ChangeLogins returns the login of each change's author it can find,
 	// keyed by the change's full id; a change it cannot resolve is left out.
-	ChangeLogins(ids []string) (map[string]string, error)
+	ChangeLogins(ctx context.Context, ids []string) (map[string]string, error)
 }
 
 // Merged lists merged PRs. It is separate from Forge because an adapter may
@@ -60,7 +61,7 @@ type Merged interface {
 	// MergedPRs returns the PRs merged at or after since, newest merge first,
 	// at most max. more is true when the limit stopped the list before the
 	// date did.
-	MergedPRs(since time.Time, max int) (prs []PR, more bool, err error)
+	MergedPRs(ctx context.Context, since time.Time, max int) (prs []PR, more bool, err error)
 }
 
 // MergedPages lists merged PRs one page at a time, so a caller can keep the
@@ -70,7 +71,7 @@ type MergedPages interface {
 	// MergedPage returns one page of the PRs merged at or after since,
 	// starting at cursor ("" for the first page), in the forge's own page
 	// order.
-	MergedPage(since time.Time, cursor string) (Page, error)
+	MergedPage(ctx context.Context, since time.Time, cursor string) (Page, error)
 }
 
 // Page is one page of merged PRs.

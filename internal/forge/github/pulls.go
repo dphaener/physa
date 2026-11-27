@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -9,8 +10,8 @@ import (
 
 // OpenPR returns the open PR whose head is the branch head. Its bool is
 // false when none is open.
-func (c *Client) OpenPR(head string) (n int, url string, ok bool, err error) {
-	out, err := c.gh("pr", "list", "--head", head, "--state", "open", "--json", "number,url", "--limit", "1")
+func (c *Client) OpenPR(ctx context.Context, head string) (n int, url string, ok bool, err error) {
+	out, err := c.gh(ctx, "pr", "list", "--head", head, "--state", "open", "--json", "number,url", "--limit", "1")
 	if err != nil {
 		return 0, "", false, err
 	}
@@ -29,8 +30,8 @@ func (c *Client) OpenPR(head string) (n int, url string, ok bool, err error) {
 
 // CreatePR opens a PR from branch head into branch base, with body on gh's
 // stdin. It returns the new PR's number and URL.
-func (c *Client) CreatePR(head, base, title, body string) (n int, url string, err error) {
-	out, err := c.ghIn([]byte(body), "pr", "create", "--head", head, "--base", base,
+func (c *Client) CreatePR(ctx context.Context, head, base, title, body string) (n int, url string, err error) {
+	out, err := c.ghIn(ctx, []byte(body), "pr", "create", "--head", head, "--base", base,
 		"--title", title, "--body-file", "-")
 	if err != nil {
 		return 0, "", err
@@ -47,7 +48,7 @@ func (c *Client) CreatePR(head, base, title, body string) (n int, url string, er
 }
 
 // EditPR replaces the body of PR n, with the body on gh's stdin.
-func (c *Client) EditPR(n int, body string) error {
-	_, err := c.ghIn([]byte(body), "pr", "edit", strconv.Itoa(n), "--body-file", "-")
+func (c *Client) EditPR(ctx context.Context, n int, body string) error {
+	_, err := c.ghIn(ctx, []byte(body), "pr", "edit", strconv.Itoa(n), "--body-file", "-")
 	return err
 }

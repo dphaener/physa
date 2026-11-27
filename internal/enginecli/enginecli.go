@@ -230,7 +230,9 @@ func leaf(name, usage, summary string, job run, names ...string) *cobra.Command 
 func build(name, summary string, usage []string, job run, names []string, subs ...*cobra.Command) *cobra.Command {
 	f := &flags{}
 	return command.Declare(command.New(name, summary, usage,
-		func(args []string, stdout, stderr io.Writer) int { return job(f, args, stdout, stderr) }, subs...),
+		func(_ context.Context, args []string, stdout, stderr io.Writer) int {
+			return job(f, args, stdout, stderr)
+		}, subs...),
 		func(fs *pflag.FlagSet) {
 			for _, n := range names {
 				switch n {

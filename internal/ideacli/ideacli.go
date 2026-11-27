@@ -4,6 +4,7 @@
 package ideacli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -36,18 +37,26 @@ func (e *Env) command() *cobra.Command {
 			"physa idea list [--json]",
 			"physa idea show [<slug>] [--json]",
 		},
-		func(args []string, stdout, stderr io.Writer) int { return e.list(args, asJSON, stdout, stderr) },
+		func(_ context.Context, args []string, stdout, stderr io.Writer) int {
+			return e.list(args, asJSON, stdout, stderr)
+		},
 		leaf("add", `physa idea add "<text>" [--slug <slug>] [--json]`,
 			"Add an idea and print its slug, made from the text unless --slug chooses it.",
-			func(args []string, stdout, stderr io.Writer) int { return e.add(args, slug, addJSON, stdout, stderr) },
+			func(_ context.Context, args []string, stdout, stderr io.Writer) int {
+				return e.add(args, slug, addJSON, stdout, stderr)
+			},
 			func(fs *pflag.FlagSet) { JSON(fs, &addJSON); String(fs, "slug", &slug) }),
 		leaf("list", "physa idea list [--json]",
 			"List the ideas, newest first, with who added them and their facts.",
-			func(args []string, stdout, stderr io.Writer) int { return e.list(args, listJSON, stdout, stderr) },
+			func(_ context.Context, args []string, stdout, stderr io.Writer) int {
+				return e.list(args, listJSON, stdout, stderr)
+			},
 			func(fs *pflag.FlagSet) { JSON(fs, &listJSON) }),
 		leaf("show", "physa idea show [<slug>] [--json]",
 			"Show an idea: its text, who added it, and its pursuits.",
-			func(args []string, stdout, stderr io.Writer) int { return e.show(args, showJSON, stdout, stderr) },
+			func(_ context.Context, args []string, stdout, stderr io.Writer) int {
+				return e.show(args, showJSON, stdout, stderr)
+			},
 			func(fs *pflag.FlagSet) { JSON(fs, &showJSON) })),
 		func(fs *pflag.FlagSet) { JSON(fs, &asJSON) })
 }

@@ -33,12 +33,12 @@ func openPR(ctx context.Context, w vcs.Writer, out *Outcome, st state, o Options
 	if err != nil || !ok {
 		return err
 	}
-	n, url, open, err := o.PRs.OpenPR(Branch)
+	n, url, open, err := o.PRs.OpenPR(ctx, Branch)
 	if err != nil {
 		return fmt.Errorf("the PR of %s cannot be read: %w", Branch, err)
 	}
 	if open {
-		if err := o.PRs.EditPR(n, body); err != nil {
+		if err := o.PRs.EditPR(ctx, n, body); err != nil {
 			return fmt.Errorf("PR #%d cannot be refreshed: %w", n, err)
 		}
 		out.PR = PR{State: PRRefreshed, Number: n, URL: url}
@@ -47,7 +47,7 @@ func openPR(ctx context.Context, w vcs.Writer, out *Outcome, st state, o Options
 	if len(out.Report.Kept) == 0 {
 		return nil
 	}
-	n, url, err = o.PRs.CreatePR(Branch, st.name, prTitle, body)
+	n, url, err = o.PRs.CreatePR(ctx, Branch, st.name, prTitle, body)
 	if err != nil {
 		return fmt.Errorf("the PR of %s cannot be opened: %w", Branch, err)
 	}

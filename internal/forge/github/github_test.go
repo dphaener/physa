@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -20,7 +21,7 @@ type fake struct {
 	err   error
 }
 
-func (f *fake) run(dir string, args ...string) ([]byte, error) {
+func (f *fake) run(_ context.Context, dir string, args ...string) ([]byte, error) {
 	f.calls = append(f.calls, args)
 	return []byte(f.out), f.err
 }
@@ -33,7 +34,7 @@ func TestName(t *testing.T) {
 
 func TestPRExists(t *testing.T) {
 	f := &fake{out: "7\n"}
-	ok, err := NewWithRunner(".", f.run).PRExists(7)
+	ok, err := NewWithRunner(".", f.run).PRExists(t.Context(), 7)
 	if err != nil || !ok {
 		t.Fatalf("got %v, %v", ok, err)
 	}
@@ -42,12 +43,12 @@ func TestPRExists(t *testing.T) {
 		t.Errorf("args = %v", f.calls[0])
 	}
 	f.err = &Error{Stderr: "gh: Not Found (HTTP 404)", ExitCode: 1}
-	ok, err = NewWithRunner(".", f.run).PRExists(8)
+	ok, err = NewWithRunner(".", f.run).PRExists(t.Context(), 8)
 	if err != nil || ok {
 		t.Errorf("404: got %v, %v", ok, err)
 	}
 	f.err = &Error{Stderr: "boom", ExitCode: 1}
-	if ok, err = NewWithRunner(".", f.run).PRExists(8); err == nil || ok {
+	if ok, err = NewWithRunner(".", f.run).PRExists(t.Context(), 8); err == nil || ok {
 		t.Errorf("other: got %v, %v", ok, err)
 	}
 }
@@ -70,7 +71,7 @@ func TestErrorClasses(t *testing.T) {
 	}
 	for _, c := range cases {
 		f := &fake{err: c.err}
-		_, err := NewWithRunner(".", f.run).gh("api", "x")
+		_, err := NewWithRunner(".", f.run).gh(t.Context(), "api", "x")
 		if !errors.Is(err, c.want) {
 			t.Errorf("%s: %v", c.name, err)
 		}
@@ -79,7 +80,7 @@ func TestErrorClasses(t *testing.T) {
 		}
 	}
 	f := &fake{err: &Error{ExitCode: 1, Stderr: "kaput"}}
-	_, err := NewWithRunner(".", f.run).gh("api", "x")
+	_, err := NewWithRunner(".", f.run).gh(t.Context(), "api", "x")
 	var ge *Error
 	if !errors.As(err, &ge) || !strings.Contains(err.Error(), "kaput") {
 		t.Errorf("other: %v", err)
@@ -102,28 +103,38 @@ func fakeGH(t *testing.T, script string) {
 
 func TestDefaultRunner(t *testing.T) {
 	fakeGH(t, "echo 7\n")
-	ok, err := New(t.TempDir()).PRExists(7)
+	ok, err := New(t.TempDir()).PRExists(t.Context(), 7)
 	if err != nil || !ok {
 		t.Errorf("success: %v, %v", ok, err)
 	}
 	fakeGH(t, "echo 'HTTP 404' >&2\nexit 1\n")
-	ok, err = New(t.TempDir()).PRExists(7)
+	ok, err = New(t.TempDir()).PRExists(t.Context(), 7)
 	if err != nil || ok {
 		t.Errorf("404: %v, %v", ok, err)
 	}
 	fakeGH(t, "echo nope >&2\nexit 4\n")
-	if _, err = New(t.TempDir()).PRExists(7); !errors.Is(err, forge.ErrUnauthenticated) {
+	if _, err = New(t.TempDir()).PRExists(t.Context(), 7); !errors.Is(err, forge.ErrUnauthenticated) {
 		t.Errorf("exit 4: %v", err)
 	}
 	fakeGH(t, "echo '{\"errors\":[{\"message\":\"bad oid\"}]}'\necho 'gh: bad oid' >&2\nexit 1\n")
 	c := New(t.TempDir())
 	c.owner, c.name = "o", "r"
-	if _, _, err = c.ChangePR("abc"); err == nil || !strings.Contains(err.Error(), "bad oid") {
+	if _, _, err = c.ChangePR(t.Context(), "abc"); err == nil || !strings.Contains(err.Error(), "bad oid") {
 		t.Errorf("graphql error with exit 1: %v", err)
 	}
 	t.Setenv("PATH", t.TempDir())
-	if _, err = New(t.TempDir()).PRExists(7); !errors.Is(err, forge.ErrUnavailable) || forge.Reason(err) != "gh is not installed" {
+	if _, err = New(t.TempDir()).PRExists(t.Context(), 7); !errors.Is(err, forge.ErrUnavailable) || forge.Reason(err) != "gh is not installed" {
 		t.Errorf("no gh: %v", err)
+	}
+}
+
+func TestDefaultRunnerCancelledIsNoTimeout(t *testing.T) {
+	fakeGH(t, "echo 7\n")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := ghStdinRunner(ctx, t.TempDir(), nil, "api", "x")
+	if !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "timed out") {
+		t.Errorf("cancelled: %v", err)
 	}
 }
 
@@ -134,7 +145,7 @@ type script struct {
 	errs    map[string]error
 }
 
-func (s *script) run(_ string, args ...string) ([]byte, error) {
+func (s *script) run(_ context.Context, _ string, args ...string) ([]byte, error) {
 	s.calls = append(s.calls, args)
 	key := strings.Join(args[:2], " ")
 	if err, ok := s.errs[key]; ok {
@@ -179,7 +190,7 @@ func at(s string) time.Time {
 func TestChangePR(t *testing.T) {
 	s := &script{answers: map[string]string{"repo view": repoView, "api graphql": fullPR}}
 	c := NewWithRunner(".", s.run)
-	pr, ok, err := c.ChangePR("c0ffee")
+	pr, ok, err := c.ChangePR(t.Context(), "c0ffee")
 	if err != nil || !ok {
 		t.Fatalf("got %v, %v", ok, err)
 	}
@@ -203,7 +214,7 @@ func TestChangePR(t *testing.T) {
 	if !reflect.DeepEqual(s.calls, wantCalls) {
 		t.Errorf("calls = %q", s.calls)
 	}
-	if _, _, err := c.ChangePR("c0ffee"); err != nil || len(s.calls) != 3 || s.calls[2][0] != "api" {
+	if _, _, err := c.ChangePR(t.Context(), "c0ffee"); err != nil || len(s.calls) != 3 || s.calls[2][0] != "api" {
 		t.Errorf("second call did not reuse the repo: %v, %q", err, s.calls)
 	}
 }
@@ -215,7 +226,7 @@ func TestChangePRNoPR(t *testing.T) {
 		"not commit": `{"data":{"repository":{"object":{}}}}`,
 	} {
 		s := &script{answers: map[string]string{"repo view": repoView, "api graphql": body}}
-		pr, ok, err := NewWithRunner(".", s.run).ChangePR("c0ffee")
+		pr, ok, err := NewWithRunner(".", s.run).ChangePR(t.Context(), "c0ffee")
 		if err != nil || ok || !reflect.DeepEqual(pr, forge.PR{}) {
 			t.Errorf("%s: got %+v, %v, %v", name, pr, ok, err)
 		}
@@ -225,12 +236,12 @@ func TestChangePRNoPR(t *testing.T) {
 func TestChangePRGraphQLErrors(t *testing.T) {
 	s := &script{answers: map[string]string{"repo view": repoView,
 		"api graphql": `{"data":null,"errors":[{"message":"Could not resolve to a Repository"},{"message":"second"}]}`}}
-	_, ok, err := NewWithRunner(".", s.run).ChangePR("c0ffee")
+	_, ok, err := NewWithRunner(".", s.run).ChangePR(t.Context(), "c0ffee")
 	if ok || err == nil || !strings.Contains(err.Error(), "Could not resolve to a Repository") || strings.Contains(err.Error(), "second") {
 		t.Errorf("got %v, %v", ok, err)
 	}
 	s.answers["api graphql"] = "not json"
-	if _, ok, err = NewWithRunner(".", s.run).ChangePR("c0ffee"); ok || err == nil {
+	if _, ok, err = NewWithRunner(".", s.run).ChangePR(t.Context(), "c0ffee"); ok || err == nil {
 		t.Errorf("bad json: %v, %v", ok, err)
 	}
 }
@@ -247,7 +258,7 @@ func TestChangePRUnavailable(t *testing.T) {
 	}
 	for _, c := range cases {
 		s := &script{errs: map[string]error{"repo view": c.err}}
-		_, ok, err := NewWithRunner(".", s.run).ChangePR("c0ffee")
+		_, ok, err := NewWithRunner(".", s.run).ChangePR(t.Context(), "c0ffee")
 		if ok || !errors.Is(err, c.want) {
 			t.Errorf("%s: %v, %v", c.name, ok, err)
 		}
@@ -257,7 +268,7 @@ func TestChangePRUnavailable(t *testing.T) {
 	}
 	s := &script{answers: map[string]string{"repo view": repoView},
 		errs: map[string]error{"api graphql": &Error{ExitCode: 4, Stderr: "HTTP 401: Bad credentials"}}}
-	if _, _, err := NewWithRunner(".", s.run).ChangePR("c0ffee"); !errors.Is(err, forge.ErrUnauthenticated) {
+	if _, _, err := NewWithRunner(".", s.run).ChangePR(t.Context(), "c0ffee"); !errors.Is(err, forge.ErrUnauthenticated) {
 		t.Errorf("graphql 401: %v", err)
 	}
 }
@@ -265,7 +276,7 @@ func TestChangePRUnavailable(t *testing.T) {
 func TestRepoViewBad(t *testing.T) {
 	for _, out := range []string{"nope", `{"name":"","owner":{"login":""}}`} {
 		s := &script{answers: map[string]string{"repo view": out}}
-		if _, _, err := NewWithRunner(".", s.run).ChangePR("c0ffee"); err == nil {
+		if _, _, err := NewWithRunner(".", s.run).ChangePR(t.Context(), "c0ffee"); err == nil {
 			t.Errorf("%q: no error", out)
 		}
 	}
@@ -275,7 +286,7 @@ func TestChangeLogins(t *testing.T) {
 	f := &fake{out: `{"data":{"repository":{"c0":{"author":{"user":{"login":"dana"}}},"c1":{"author":{"user":null}},"c2":null}}}`}
 	c := NewWithRunner(".", f.run)
 	c.owner, c.name = "o", "n"
-	got, err := c.ChangeLogins([]string{"aaa", "bbb", "ccc"})
+	got, err := c.ChangeLogins(t.Context(), []string{"aaa", "bbb", "ccc"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +306,7 @@ func TestChangeLoginsAsksAHundredAtATime(t *testing.T) {
 	for i := range ids {
 		ids[i] = fmt.Sprintf("%040d", i)
 	}
-	if _, err := c.ChangeLogins(ids); err != nil {
+	if _, err := c.ChangeLogins(t.Context(), ids); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.calls) != 3 {

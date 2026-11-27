@@ -2,6 +2,7 @@ package skillcli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -49,7 +50,7 @@ func (h *harness) run(args ...string) (int, string, string) {
 			return h.answer, nil
 		},
 	}
-	code := command.Execute(command.New("physa", "", nil, nil, newCommand(e)), append([]string{"skill"}, args...), &h.stdout, &errb)
+	code := command.Execute(context.Background(), command.New("physa", "", nil, nil, newCommand(e)), append([]string{"skill"}, args...), &h.stdout, &errb)
 	return code, h.stdout.String(), errb.String()
 }
 
@@ -294,7 +295,7 @@ func TestBareSkillRunsStatus(t *testing.T) {
 func TestNoHomeIsAnIOError(t *testing.T) {
 	e := env{home: func() (string, error) { return "", errors.New("$HOME is not defined") }}
 	var out, errb bytes.Buffer
-	code := command.Execute(command.New("physa", "", nil, nil, newCommand(e)), []string{"skill", "setup", "--yes"}, &out, &errb)
+	code := command.Execute(t.Context(), command.New("physa", "", nil, nil, newCommand(e)), []string{"skill", "setup", "--yes"}, &out, &errb)
 	if code != 1 || !strings.Contains(errb.String(), "physa skill setup:") {
 		t.Fatalf("%d %q", code, errb.String())
 	}

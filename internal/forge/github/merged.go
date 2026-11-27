@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -102,7 +103,7 @@ type mergedResponse struct {
 // true when max stopped the list before since did. A max below 1 returns
 // nothing. It asks MergedPage page after page and never waits: a rate limit
 // comes back as its *forge.RateLimit.
-func (c *Client) MergedPRs(since time.Time, max int) ([]forge.PR, bool, error) {
+func (c *Client) MergedPRs(ctx context.Context, since time.Time, max int) ([]forge.PR, bool, error) {
 	if max < 1 {
 		return []forge.PR{}, false, nil
 	}
@@ -110,7 +111,7 @@ func (c *Client) MergedPRs(since time.Time, max int) ([]forge.PR, bool, error) {
 	more := false
 	cursor := ""
 	for {
-		page, err := c.MergedPage(since, cursor)
+		page, err := c.MergedPage(ctx, since, cursor)
 		if err != nil {
 			return nil, false, err
 		}
@@ -141,8 +142,8 @@ func (c *Client) MergedPRs(since time.Time, max int) ([]forge.PR, bool, error) {
 // back past since, at an empty page and at the last page. A rate limit,
 // whether GitHub names it in the response or gh names it on stderr, is a
 // *forge.RateLimit; MergedPage never waits or retries.
-func (c *Client) MergedPage(since time.Time, cursor string) (forge.Page, error) {
-	owner, name, err := c.repo()
+func (c *Client) MergedPage(ctx context.Context, since time.Time, cursor string) (forge.Page, error) {
+	owner, name, err := c.repo(ctx)
 	if err != nil {
 		return forge.Page{}, err
 	}
@@ -150,7 +151,7 @@ func (c *Client) MergedPage(since time.Time, cursor string) (forge.Page, error) 
 	if cursor != "" {
 		args = append(args, "-f", "cursor="+cursor)
 	}
-	out, err := c.run(c.dir, nil, args...)
+	out, err := c.run(ctx, c.dir, nil, args...)
 	r := splitInclude(out)
 	if limit := rateLimit(r); limit != nil {
 		return forge.Page{}, limit

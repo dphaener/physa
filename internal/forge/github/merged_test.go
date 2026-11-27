@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -22,7 +23,7 @@ type pager struct {
 	calls [][]string
 }
 
-func (p *pager) run(_ string, args ...string) ([]byte, error) {
+func (p *pager) run(_ context.Context, _ string, args ...string) ([]byte, error) {
 	p.calls = append(p.calls, args)
 	if args[0] == "repo" {
 		return []byte(repoView), nil
@@ -63,7 +64,7 @@ func TestMergedPRsTwoPagesStopsAtSince(t *testing.T) {
 		pageOf("c2", node(0, "2026-10-01T00:00:00Z", "2026-11-05T00:00:00Z", ""), node(1, "2026-11-06T00:00:00Z", "2026-11-06T00:00:00Z", ""), node(9, "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z", "")),
 		pageOf(""),
 	}}
-	prs, more, err := NewWithRunner(".", p.run).MergedPRs(at("2026-11-01T00:00:00Z"), 100)
+	prs, more, err := NewWithRunner(".", p.run).MergedPRs(t.Context(), at("2026-11-01T00:00:00Z"), 100)
 	if err != nil || more {
 		t.Fatalf("got %v, %v", more, err)
 	}
@@ -93,7 +94,7 @@ func TestMergedPRsSortsByMergeTime(t *testing.T) {
 	p := &pager{pages: []string{
 		pageOf("", node(1, "2026-11-05T00:00:00Z", "2026-11-20T00:00:00Z", ""), node(2, "2026-11-09T00:00:00Z", "2026-11-10T00:00:00Z", "")),
 	}}
-	prs, more, err := NewWithRunner(".", p.run).MergedPRs(at("2026-11-01T00:00:00Z"), 10)
+	prs, more, err := NewWithRunner(".", p.run).MergedPRs(t.Context(), at("2026-11-01T00:00:00Z"), 10)
 	if err != nil || more || !reflect.DeepEqual(numbers(prs), []int{2, 1}) {
 		t.Errorf("got %v, %v, %v", numbers(prs), more, err)
 	}
@@ -103,7 +104,7 @@ func TestMergedPRsMaxCutsPage(t *testing.T) {
 	p := &pager{pages: []string{
 		pageOf("c1", node(3, "2026-11-10T00:00:00Z", "2026-11-12T00:00:00Z", ""), node(2, "2026-11-08T00:00:00Z", "2026-11-09T00:00:00Z", ""), node(1, "2026-11-06T00:00:00Z", "2026-11-07T00:00:00Z", "")),
 	}}
-	prs, more, err := NewWithRunner(".", p.run).MergedPRs(at("2026-11-01T00:00:00Z"), 2)
+	prs, more, err := NewWithRunner(".", p.run).MergedPRs(t.Context(), at("2026-11-01T00:00:00Z"), 2)
 	if err != nil || !more || !reflect.DeepEqual(numbers(prs), []int{3, 2}) {
 		t.Errorf("got %v, %v, %v", numbers(prs), more, err)
 	}
@@ -117,11 +118,11 @@ func TestMergedPRsMaxExactlyAtEnd(t *testing.T) {
 	p := &pager{pages: []string{
 		pageOf("c1", node(2, "2026-11-08T00:00:00Z", "2026-11-09T00:00:00Z", ""), node(1, "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", "")),
 	}}
-	prs, more, err := NewWithRunner(".", p.run).MergedPRs(at("2026-11-01T00:00:00Z"), 1)
+	prs, more, err := NewWithRunner(".", p.run).MergedPRs(t.Context(), at("2026-11-01T00:00:00Z"), 1)
 	if err != nil || more || !reflect.DeepEqual(numbers(prs), []int{2}) {
 		t.Errorf("got %v, %v, %v", numbers(prs), more, err)
 	}
-	prs, more, err = NewWithRunner(".", (&pager{pages: []string{pageOf("")}}).run).MergedPRs(at("2026-11-01T00:00:00Z"), 0)
+	prs, more, err = NewWithRunner(".", (&pager{pages: []string{pageOf("")}}).run).MergedPRs(t.Context(), at("2026-11-01T00:00:00Z"), 0)
 	if err != nil || more || len(prs) != 0 {
 		t.Errorf("max 0: %v, %v, %v", prs, more, err)
 	}
@@ -140,7 +141,7 @@ func TestMergedPRsReviewMarksBotsAndIssues(t *testing.T) {
 	    {"author":{"login":"di","__typename":"User"},"state":"PENDING","submittedAt":null,"body":"draft","comments":{"nodes":[]}}]},
 	  "closingIssuesReferences":{"nodes":[{"number":4,"title":"Bug","body":"It breaks."},{"number":6,"title":"Other","body":""}]}}`
 	p := &pager{pages: []string{pageOf("", n)}}
-	prs, _, err := NewWithRunner(".", p.run).MergedPRs(at("2026-11-01T00:00:00Z"), 5)
+	prs, _, err := NewWithRunner(".", p.run).MergedPRs(t.Context(), at("2026-11-01T00:00:00Z"), 5)
 	if err != nil || len(prs) != 1 {
 		t.Fatalf("got %v, %v", prs, err)
 	}
@@ -163,32 +164,32 @@ func TestMergedPRsReviewMarksBotsAndIssues(t *testing.T) {
 func TestMergedPRsErrors(t *testing.T) {
 	since := at("2026-11-01T00:00:00Z")
 	s := &script{errs: map[string]error{"repo view": &exec.Error{Name: "gh", Err: exec.ErrNotFound}}}
-	if _, _, err := NewWithRunner(".", s.run).MergedPRs(since, 5); !errors.Is(err, forge.ErrUnavailable) {
+	if _, _, err := NewWithRunner(".", s.run).MergedPRs(t.Context(), since, 5); !errors.Is(err, forge.ErrUnavailable) {
 		t.Errorf("gh missing: %v", err)
 	}
 	for _, stderr := range []string{"no git remotes found",
 		"none of the git remotes configured for this repository point to a known GitHub host"} {
 		s = &script{errs: map[string]error{"repo view": &Error{ExitCode: 1, Stderr: stderr}}}
-		if _, err := NewWithRunner(".", s.run).MergedPage(since, ""); !errors.Is(err, forge.ErrUnavailable) || forge.Reason(err) != "gh finds no GitHub remote" {
+		if _, err := NewWithRunner(".", s.run).MergedPage(t.Context(), since, ""); !errors.Is(err, forge.ErrUnavailable) || forge.Reason(err) != "gh finds no GitHub remote" {
 			t.Errorf("%s: %v", stderr, err)
 		}
 	}
 	s = &script{answers: map[string]string{"repo view": repoView},
 		errs: map[string]error{"api graphql": &Error{ExitCode: 4, Stderr: "HTTP 401: Bad credentials"}}}
-	if _, _, err := NewWithRunner(".", s.run).MergedPRs(since, 5); !errors.Is(err, forge.ErrUnauthenticated) {
+	if _, _, err := NewWithRunner(".", s.run).MergedPRs(t.Context(), since, 5); !errors.Is(err, forge.ErrUnauthenticated) {
 		t.Errorf("401: %v", err)
 	}
 	s = &script{answers: map[string]string{"repo view": repoView,
 		"api graphql": `{"data":null,"errors":[{"message":"Could not resolve to a Repository"}]}`}}
-	if _, _, err := NewWithRunner(".", s.run).MergedPRs(since, 5); err == nil || !strings.Contains(err.Error(), "Could not resolve") {
+	if _, _, err := NewWithRunner(".", s.run).MergedPRs(t.Context(), since, 5); err == nil || !strings.Contains(err.Error(), "Could not resolve") {
 		t.Errorf("graphql error: %v", err)
 	}
 	s.answers["api graphql"] = "not json"
-	if _, _, err := NewWithRunner(".", s.run).MergedPRs(since, 5); err == nil {
+	if _, _, err := NewWithRunner(".", s.run).MergedPRs(t.Context(), since, 5); err == nil {
 		t.Errorf("bad json: no error")
 	}
 	s.answers["api graphql"] = `{"data":{"repository":null}}`
-	if _, _, err := NewWithRunner(".", s.run).MergedPRs(since, 5); err == nil {
+	if _, _, err := NewWithRunner(".", s.run).MergedPRs(t.Context(), since, 5); err == nil {
 		t.Errorf("no repository: no error")
 	}
 }
@@ -200,7 +201,7 @@ func TestMergedPRsOpenedMergeCommitAndChecks(t *testing.T) {
 	    {"commit":{"oid":"c1","committedDate":"2026-11-09T01:00:00Z","statusCheckRollup":{"state":"FAILURE"}}},
 	    {"commit":{"oid":"c3","committedDate":"2026-11-09T03:00:00Z","statusCheckRollup":null}}]}`)
 	p := &pager{pages: []string{pageOf("", n)}}
-	prs, _, err := NewWithRunner(".", p.run).MergedPRs(at("2026-11-01T00:00:00Z"), 5)
+	prs, _, err := NewWithRunner(".", p.run).MergedPRs(t.Context(), at("2026-11-01T00:00:00Z"), 5)
 	if err != nil || len(prs) != 1 {
 		t.Fatalf("got %v, %v", prs, err)
 	}
@@ -222,7 +223,7 @@ func TestMergedPRsNoRollupNoMergeCommit(t *testing.T) {
 	n := node(8, "2026-11-10T00:00:00Z", "2026-11-10T00:00:00Z", `,"mergeCommit":null,
 	  "commits":{"nodes":[{"commit":{"oid":"c1","committedDate":"2026-11-09T01:00:00Z"}}]}`)
 	p := &pager{pages: []string{pageOf("", n, node(9, "2026-11-09T00:00:00Z", "2026-11-09T00:00:00Z", ""))}}
-	prs, _, err := NewWithRunner(".", p.run).MergedPRs(at("2026-11-01T00:00:00Z"), 5)
+	prs, _, err := NewWithRunner(".", p.run).MergedPRs(t.Context(), at("2026-11-01T00:00:00Z"), 5)
 	if err != nil || len(prs) != 2 {
 		t.Fatalf("got %v, %v", prs, err)
 	}

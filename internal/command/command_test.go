@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -14,7 +15,7 @@ import (
 )
 
 func echo(name string) Run {
-	return func(args []string, stdout, _ io.Writer) int {
+	return func(_ context.Context, args []string, stdout, _ io.Writer) int {
 		fmt.Fprintf(stdout, "%s %s\n", name, strings.Join(args, ","))
 		return 0
 	}
@@ -26,9 +27,9 @@ func tree() *cobra.Command {
 	return New("physa", "test root", []string{"physa <command>"}, nil,
 		New("grp", "a group with a bare job", []string{"physa grp [arg]", "physa grp leaf"}, echo("grp"),
 			New("leaf", "a leaf", []string{"physa grp leaf [dir]"}, echo("leaf")),
-			New("bad", "always bad", []string{"physa grp bad"}, func([]string, io.Writer, io.Writer) int { return BadUsage }),
-			New("fail", "fails", nil, func([]string, io.Writer, io.Writer) int { return 1 }),
-			New("three", "exits 3", nil, func([]string, io.Writer, io.Writer) int { return 3 }),
+			New("bad", "always bad", []string{"physa grp bad"}, func(context.Context, []string, io.Writer, io.Writer) int { return BadUsage }),
+			New("fail", "fails", nil, func(context.Context, []string, io.Writer, io.Writer) int { return 1 }),
+			New("three", "exits 3", nil, func(context.Context, []string, io.Writer, io.Writer) int { return 3 }),
 		),
 		New("grp2", "a group without a bare job", nil, nil,
 			New("x", "x leaf", nil, echo("x")),
@@ -38,12 +39,32 @@ func tree() *cobra.Command {
 
 func execute(root *cobra.Command, args ...string) (int, string, string) {
 	var out, errb bytes.Buffer
-	code := Execute(root, args, &out, &errb)
+	code := Execute(context.Background(), root, args, &out, &errb)
 	return code, out.String(), errb.String()
 }
 
 func dispatch(args ...string) (int, string, string) {
 	return execute(tree(), args...)
+}
+
+// ctxKey keys the value TestJobGetsExecutesContext puts in its context.
+type ctxKey struct{}
+
+func TestJobGetsExecutesContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.WithValue(t.Context(), ctxKey{}, "mine"))
+	cancel()
+	var got context.Context
+	leaf := New("leaf", "a leaf", nil, func(c context.Context, _ []string, _, _ io.Writer) int {
+		got = c
+		return 0
+	})
+	var out, errb bytes.Buffer
+	if code := Execute(ctx, New("physa", "test root", nil, nil, leaf), []string{"leaf"}, &out, &errb); code != 0 {
+		t.Fatalf("code %d, stderr %q", code, errb.String())
+	}
+	if got == nil || got.Value(ctxKey{}) != "mine" || got.Err() == nil {
+		t.Errorf("the job did not get Execute's context: %v", got)
+	}
 }
 
 func TestDescendIntoSub(t *testing.T) {
@@ -211,7 +232,7 @@ func helpTree() *cobra.Command {
 		New("zeta", "z", nil, echo("zeta")),
 		New("alpha", "a", nil, echo("alpha")),
 	)
-	root.AddCommand(New("help", "Print the commands.", []string{"physa help"}, func(args []string, stdout, _ io.Writer) int {
+	root.AddCommand(New("help", "Print the commands.", []string{"physa help"}, func(_ context.Context, args []string, stdout, _ io.Writer) int {
 		if len(args) > 0 {
 			return BadUsage
 		}
@@ -251,7 +272,7 @@ func TestNilArgsDoNotReadOSArgs(t *testing.T) {
 	os.Args = []string{"physa", "grp", "leaf", "from-os"}
 	t.Cleanup(func() { os.Args = old })
 	var out, errb bytes.Buffer
-	code := Execute(tree(), nil, &out, &errb)
+	code := Execute(t.Context(), tree(), nil, &out, &errb)
 	if code != 2 || out.String() != "" || !strings.HasPrefix(errb.String(), "usage: physa <command>") {
 		t.Fatalf("got %d %q %q", code, out.String(), errb.String())
 	}
@@ -280,7 +301,7 @@ func declaredTree() *cobra.Command {
 		dec    *cobra.Command
 	)
 	dec = Declare(New("dec", "a declared command", []string{"physa dec [<arg>...] [--json] [--slug <slug>] [--limit N] [--tag T]... [--entry E]"},
-		func(args []string, stdout, _ io.Writer) int {
+		func(_ context.Context, args []string, stdout, _ io.Writer) int {
 			if len(args) > 3 {
 				return BadUsage
 			}
@@ -518,7 +539,7 @@ func TestDrift(t *testing.T) {
 func TestSwitchTakesNoValue(t *testing.T) {
 	var on bool
 	root := New("physa", "test root", nil, nil,
-		Declare(New("leaf", "a leaf", []string{"physa leaf [--on]"}, func(_ []string, stdout, _ io.Writer) int {
+		Declare(New("leaf", "a leaf", []string{"physa leaf [--on]"}, func(_ context.Context, _ []string, stdout, _ io.Writer) int {
 			fmt.Fprintln(stdout, on)
 			return 0
 		}), func(fs *pflag.FlagSet) { Switch(fs, "on", &on, "") }))

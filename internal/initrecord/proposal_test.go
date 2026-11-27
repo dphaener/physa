@@ -1,10 +1,9 @@
-package store
+package initrecord
 
 import (
-	"database/sql"
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/spend"
-	"path/filepath"
+	"github.com/dphaener/physa/internal/store"
 	"reflect"
 	"testing"
 	"time"
@@ -47,7 +46,7 @@ func TestProposalReplaces(t *testing.T) {
 		t.Errorf("got %+v, %v, %v; want the second proposal", got, ok, err)
 	}
 	var n int
-	if err := s.db.QueryRow("SELECT count(*) FROM init_proposal").Scan(&n); err != nil || n != 1 {
+	if err := s.DB().QueryRow("SELECT count(*) FROM init_proposal").Scan(&n); err != nil || n != 1 {
 		t.Errorf("rows = %d, %v; want 1", n, err)
 	}
 }
@@ -78,59 +77,8 @@ func TestPutGatherClearsProposal(t *testing.T) {
 	}
 }
 
-func TestMigrationFiveUpgradesVersionFourStore(t *testing.T) {
-	dir := t.TempDir()
-	db, err := sql.Open("sqlite", filepath.Join(dir, "physa.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	ms, err := migrations()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, m := range ms {
-		if m.n > 4 {
-			break
-		}
-		body, err := migrationFiles.ReadFile("migrations/" + m.name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(string(body)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := db.Exec("PRAGMA user_version = 4"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO gather_runs VALUES (1, '2026-11-21T09:00:00Z', '2025-11-21T09:00:00Z', 10, 0, '', 'none')`); err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-
-	s, err := Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	if got, want := version(t, s), newestMigration(t); got != want {
-		t.Errorf("user_version = %d, want %d", got, want)
-	}
-	g, ok, err := s.Gathered()
-	if err != nil || !ok || g.Run.MaxPRs != 10 || g.Run.ForgeReason != "none" {
-		t.Errorf("gather after upgrade = %+v, %v, %v; want it intact", g.Run, ok, err)
-	}
-	if _, ok, err := s.Proposed(); ok || err != nil {
-		t.Errorf("Proposed = %v, %v; want false, nil", ok, err)
-	}
-}
-
 func TestSpentAddsPerPhaseAndIsCleared(t *testing.T) {
-	s, err := Open(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
+	s, _ := open(t)
 	sp := func(phase string, in, cached, out, w, usd int64, unpriced bool) Spent {
 		return Spent{Phase: phase, Count: spend.Count{Raw: adapter.Tokens{Input: in, CachedInput: cached, Output: out}, Spend: spend.Spend{Tokens: w, MicroUSD: usd, Unpriced: unpriced}}}
 	}
@@ -150,7 +98,7 @@ func TestSpentAddsPerPhaseAndIsCleared(t *testing.T) {
 	if got, _ := s.Spending(); len(got) != 1 || got[0].Phase != "discover" {
 		t.Errorf("after a new proposal: %+v", got)
 	}
-	if err := s.PutGather(Gather{}); err != nil {
+	if err := s.PutGather(store.Gather{}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := s.Spending(); len(got) != 0 {

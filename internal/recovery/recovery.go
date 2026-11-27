@@ -22,6 +22,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/coverage"
+	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/recovering"
@@ -53,8 +54,8 @@ var ErrNoProposal = errors.New("nothing proposed yet; run physa init --propose f
 // and a place for what was recovered.
 type Store interface {
 	Gathered() (store.Gather, bool, error)
-	Proposed() (store.Proposal, bool, error)
-	PutRecovered([]store.Recovered) error
+	Proposed() (initrecord.Proposal, bool, error)
+	PutRecovered([]initrecord.Recovered) error
 }
 
 // Session says how Run runs its sessions.
@@ -100,7 +101,7 @@ type Report struct {
 // is how many shares its sources were read in, one session each, when they
 // were more than one session holds; 0 is one session.
 // SessionID is the id assigned to the session, empty when none started.
-// Without its File and Terms, it is the JSON form of store.Recovered's
+// Without its File and Terms, it is the JSON form of initrecord.Recovered's
 // Details.
 type Outcome struct {
 	Name      string               `json:"name"`
@@ -220,7 +221,7 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	if err := dedupe(r.check, rep.Capabilities); err != nil {
 		return rep, err
 	}
-	rows := make([]store.Recovered, len(rep.Capabilities))
+	rows := make([]initrecord.Recovered, len(rep.Capabilities))
 	for i := range rep.Capabilities {
 		o := &rep.Capabilities[i]
 		if o.Dropped == nil {
@@ -236,7 +237,7 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 		if err != nil {
 			return rep, err
 		}
-		rows[i] = store.Recovered{
+		rows[i] = initrecord.Recovered{
 			Capability: o.Name, ProposalAt: p.At, At: now().UTC(), Status: o.Status, File: o.File, Terms: o.Terms, KeepEarlier: o.Status != StatusRecovered,
 			Details: details, SessionID: o.SessionID, Model: o.Model, Attempts: o.Attempts,
 			Input: o.Tokens.Input, CachedInput: o.Tokens.CachedInput, Output: o.Tokens.Output,

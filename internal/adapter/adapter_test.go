@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -72,5 +74,52 @@ func TestTooLongIsFoundBesideFailed(t *testing.T) {
 	}
 	if errors.Is(ErrFailed, ErrTooLong) {
 		t.Fatal("ErrFailed is ErrTooLong")
+	}
+}
+
+func TestToolsPerFence(t *testing.T) {
+	cases := []struct {
+		name string
+		spec Spec
+		want []string
+		none bool // want is nil
+	}{
+		{"prompt-only", Spec{PromptOnly: true}, []string{}, false},
+		{"read-only", Spec{ReadOnly: true}, []string{"Read", "Glob", "Grep"}, false},
+		{"read-only and prompt-only", Spec{ReadOnly: true, PromptOnly: true}, []string{}, false},
+		{"unfenced", Spec{}, nil, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := c.spec.Tools()
+			if c.none {
+				if got != nil {
+					t.Fatalf("Tools() = %#v, want nil", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("Tools() = nil, want a non-nil list")
+			}
+			if !reflect.DeepEqual(got, c.want) {
+				t.Fatalf("Tools() = %#v, want %#v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestToolsNeverWrite(t *testing.T) {
+	banned := []string{"Write", "Edit", "Bash", "NotebookEdit"}
+	for _, s := range []Spec{{ReadOnly: true}, {PromptOnly: true}, {ReadOnly: true, PromptOnly: true}} {
+		for _, tool := range s.Tools() {
+			if slices.Contains(banned, tool) {
+				t.Errorf("fenced spec %+v lists %s in Tools()", s, tool)
+			}
+		}
+	}
+	for _, tool := range banned {
+		if slices.Contains((Spec{ReadOnly: true}).Tools(), tool) {
+			t.Errorf("ReadOnly Tools() holds %s", tool)
+		}
 	}
 }

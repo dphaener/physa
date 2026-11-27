@@ -115,3 +115,58 @@ func TestBetsBecomePursuits(t *testing.T) {
 		rows.Close()
 	}
 }
+
+func TestMigrationFiveUpgradesVersionFourStore(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, "physa.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms, err := migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range ms {
+		if m.n > 4 {
+			break
+		}
+		body, err := migrationFiles.ReadFile("migrations/" + m.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec("PRAGMA user_version = 4"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO gather_runs VALUES (1, '2026-11-21T09:00:00Z', '2025-11-21T09:00:00Z', 10, 0, '', 'none')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if got, want := version(t, s), newestMigration(t); got != want {
+		t.Errorf("user_version = %d, want %d", got, want)
+	}
+	g, ok, err := s.Gathered()
+	if err != nil || !ok || g.Run.MaxPRs != 10 || g.Run.ForgeReason != "none" {
+		t.Errorf("gather after upgrade = %+v, %v, %v; want it intact", g.Run, ok, err)
+	}
+	if _, ok, err := proposed(s); ok || err != nil {
+		t.Errorf("Proposed = %v, %v; want false, nil", ok, err)
+	}
+}
+
+// proposed reports whether the store holds an init proposal, as
+// initrecord's Proposed does, which this package cannot import.
+func proposed(s *Store) (struct{}, bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT count(*) FROM init_proposal`).Scan(&n)
+	return struct{}{}, n > 0, err
+}

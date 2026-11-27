@@ -17,6 +17,7 @@ import (
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
+	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
@@ -272,7 +273,7 @@ func TestProposeStoresAndPrintsMarkdown(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	p, ok, err := st.Proposed()
+	p, ok, err := initrecord.Of(st).Proposed()
 	if err != nil || !ok || !strings.Contains(string(p.Body), "delivery") {
 		t.Errorf("proposed: ok %v, err %v, body %s", ok, err, p.Body)
 	}
@@ -396,7 +397,7 @@ func TestRecoverText(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	rs, err := st.Recovered()
+	rs, err := initrecord.Of(st).Recovered()
 	if err != nil || len(rs) != 1 || rs[0].Capability != "delivery" || !strings.Contains(rs[0].File, "ship-in-order") {
 		t.Errorf("stored %+v, err %v", rs, err)
 	}
@@ -444,11 +445,11 @@ func TestStoredMapGivesOneSessionPerShareAndTheMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	prop, ok, err := st.Proposed()
+	prop, ok, err := initrecord.Of(st).Proposed()
 	if err != nil || !ok {
 		t.Fatalf("proposed: ok %v, err %v", ok, err)
 	}
-	m, err := storedMap(st, "repo", env)
+	m, err := storedMap(initrecord.Of(st), "repo", env)
 	if err != nil || len(m.Sessions) != 1 || m.Sessions[0] != prop.SessionID {
 		t.Fatalf("one session: %v, %v; want [%s]", m.Sessions, err, prop.SessionID)
 	}
@@ -460,10 +461,10 @@ func TestStoredMapGivesOneSessionPerShareAndTheMerge(t *testing.T) {
 	if prop.Body, err = json.Marshal(s); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.PutProposal(prop); err != nil {
+	if err := initrecord.Of(st).PutProposal(prop); err != nil {
 		t.Fatal(err)
 	}
-	if m, err = storedMap(st, "repo", env); err != nil || !reflect.DeepEqual(m.Sessions, s.Sessions) {
+	if m, err = storedMap(initrecord.Of(st), "repo", env); err != nil || !reflect.DeepEqual(m.Sessions, s.Sessions) {
 		t.Errorf("in shares: %v, %v; want %v", m.Sessions, err, s.Sessions)
 	}
 }

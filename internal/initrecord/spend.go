@@ -1,4 +1,4 @@
-package store
+package initrecord
 
 import "github.com/dphaener/physa/internal/spend"
 
@@ -11,7 +11,7 @@ type Spent struct {
 
 // AddSpent adds p to what its phase has spent so far.
 func (s *Store) AddSpent(p Spent) error {
-	_, err := s.db.Exec(`INSERT INTO init_spend (phase, input, cached_input, output, weighted, micro_usd, unpriced) VALUES (?, ?, ?, ?, ?, ?, ?)
+	_, err := s.DB().Exec(`INSERT INTO init_spend (phase, input, cached_input, output, weighted, micro_usd, unpriced) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (phase) DO UPDATE SET input = input + excluded.input, cached_input = cached_input + excluded.cached_input,
 		output = output + excluded.output, weighted = weighted + excluded.weighted, micro_usd = micro_usd + excluded.micro_usd,
 		unpriced = max(unpriced, excluded.unpriced)`,
@@ -20,10 +20,10 @@ func (s *Store) AddSpent(p Spent) error {
 }
 
 // Spending returns what each init phase has spent, in run order: discover, areas,
-// propose, recover.
+// walk, propose, recover.
 func (s *Store) Spending() ([]Spent, error) {
-	rows, err := s.db.Query(`SELECT phase, input, cached_input, output, weighted, micro_usd, unpriced FROM init_spend
-		ORDER BY CASE phase WHEN 'discover' THEN 0 WHEN 'areas' THEN 1 WHEN 'propose' THEN 2 WHEN 'recover' THEN 3 ELSE 4 END, phase`)
+	rows, err := s.DB().Query(`SELECT phase, input, cached_input, output, weighted, micro_usd, unpriced FROM init_spend
+		ORDER BY CASE phase WHEN 'discover' THEN 0 WHEN 'areas' THEN 1 WHEN 'walk' THEN 2 WHEN 'propose' THEN 3 WHEN 'recover' THEN 4 ELSE 5 END, phase`)
 	if err != nil {
 		return nil, err
 	}

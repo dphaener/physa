@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
@@ -53,12 +54,12 @@ func large() store.Gather { return gatherOf(2, 1_000, 12, 3_000, 30) }
 type fakeStore struct {
 	gather store.Gather
 	has    bool
-	put    []store.Proposal
+	put    []initrecord.Proposal
 }
 
 func (s *fakeStore) Gathered() (store.Gather, bool, error) { return s.gather, s.has, nil }
 
-func (s *fakeStore) PutProposal(p store.Proposal) error {
+func (s *fakeStore) PutProposal(p initrecord.Proposal) error {
 	s.put = append(s.put, p)
 	return nil
 }

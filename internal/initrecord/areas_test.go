@@ -1,6 +1,7 @@
-package store
+package initrecord
 
 import (
+	"github.com/dphaener/physa/internal/store"
 	"reflect"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func TestAreasRoundTripAndReplace(t *testing.T) {
 		t.Errorf("body = %s; want the second", got.Body)
 	}
 	var n int
-	if err := s.db.QueryRow("SELECT count(*) FROM init_areas").Scan(&n); err != nil || n != 1 {
+	if err := s.DB().QueryRow("SELECT count(*) FROM init_areas").Scan(&n); err != nil || n != 1 {
 		t.Errorf("rows = %d, %v; want 1", n, err)
 	}
 }
@@ -44,7 +45,7 @@ func TestPutGatherClearsAreas(t *testing.T) {
 	if err := s.PutAreas(sampleAreas()); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PutGather(Gather{}); err != nil {
+	if err := s.PutGather(store.Gather{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok, err := s.Areas(); ok || err != nil {

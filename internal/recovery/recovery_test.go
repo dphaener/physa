@@ -16,6 +16,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/coverage"
+	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/mapping"
@@ -139,20 +140,20 @@ func (s *fakeSession) Wait() (adapter.Result, error) {
 // fakeStore holds a gather and a proposal, and what was put in it.
 type fakeStore struct {
 	gather   store.Gather
-	proposal *store.Proposal
-	puts     [][]store.Recovered
+	proposal *initrecord.Proposal
+	puts     [][]initrecord.Recovered
 }
 
 func (s *fakeStore) Gathered() (store.Gather, bool, error) { return s.gather, true, nil }
 
-func (s *fakeStore) Proposed() (store.Proposal, bool, error) {
+func (s *fakeStore) Proposed() (initrecord.Proposal, bool, error) {
 	if s.proposal == nil {
-		return store.Proposal{}, false, nil
+		return initrecord.Proposal{}, false, nil
 	}
 	return *s.proposal, true, nil
 }
 
-func (s *fakeStore) PutRecovered(rs []store.Recovered) error {
+func (s *fakeStore) PutRecovered(rs []initrecord.Recovered) error {
 	s.puts = append(s.puts, rs)
 	return nil
 }
@@ -193,7 +194,7 @@ func testStore(t *testing.T) *fakeStore {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fakeStore{gather: testGather(), proposal: &store.Proposal{GatherAt: gatherAt, At: proposedAt, Body: body}}
+	return &fakeStore{gather: testGather(), proposal: &initrecord.Proposal{GatherAt: gatherAt, At: proposedAt, Body: body}}
 }
 
 // reply wraps a capability text and terms as a session's answer.
@@ -698,10 +699,10 @@ func TestGlossaryProblemOutsideAnyTermDropsTheTermsAndKeepsTheFile(t *testing.T)
 // realPuts keeps what a run reads from the fake and stores into a real store.
 type realPuts struct {
 	*fakeStore
-	real *store.Store
+	real *initrecord.Store
 }
 
-func (r realPuts) PutRecovered(rs []store.Recovered) error { return r.real.PutRecovered(rs) }
+func (r realPuts) PutRecovered(rs []initrecord.Recovered) error { return r.real.PutRecovered(rs) }
 
 func TestRerunKeepsEarlierRecoveredFile(t *testing.T) {
 	st, err := store.Open(t.TempDir())
@@ -713,7 +714,7 @@ func TestRerunKeepsEarlierRecoveredFile(t *testing.T) {
 		"export": {{text: reply(good("export-deleted"), "")}, {err: errors.New("agent down")}},
 	})
 	h.session.Only = []string{"export"}
-	rs := realPuts{fakeStore: h.store, real: st}
+	rs := realPuts{fakeStore: h.store, real: initrecord.Of(st)}
 	if rep, err := Run(context.Background(), rs, h.session); err != nil || statuses(rep)[0] != "export: recovered" {
 		t.Fatalf("first run %v, %v", statuses(rep), err)
 	}
@@ -724,7 +725,7 @@ func TestRerunKeepsEarlierRecoveredFile(t *testing.T) {
 	if got := statuses(rep); got[0] != "export: failed" {
 		t.Fatalf("second run %v; want failed", got)
 	}
-	rows, err := st.Recovered()
+	rows, err := initrecord.Of(st).Recovered()
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("rows %+v, %v", rows, err)
 	}

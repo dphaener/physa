@@ -18,6 +18,7 @@ import (
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/gather/merged"
+	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapped"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/preflight"
@@ -27,6 +28,7 @@ import (
 	"github.com/dphaener/physa/internal/spend"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
+	"github.com/dphaener/physa/internal/walk"
 )
 
 // Env is what init reaches outside itself through, each a seam the caller
@@ -90,14 +92,16 @@ func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 			fmt.Fprintf(stderr, "physa init: the spend cache was not saved: %v\n", err)
 		}
 	}()
-	r := &run{o: o, env: env, st: st, root: root, args: words, stderr: stderr, cache: cache, p: newPrinter(o, stdout), counts: map[string]spend.Count{}}
+	r := &run{o: o, env: env, st: initrecord.Of(st), root: root, args: words, stderr: stderr, cache: cache, p: newPrinter(o, stdout), counts: map[string]spend.Count{}}
 	code := 0
-	if o.Propose || o.Recover || o.Areas { // the phases on a stored gather say when the forge stopped it, and still run
+	if o.Propose || o.Recover || o.Areas || o.Walk { // the phases on a stored gather say when the forge stopped it, and still run
 		preflight.Stored(stderr, st)
 	}
 	switch {
 	case o.Areas:
 		code = r.areas()
+	case o.Walk:
+		code = r.walk()
 	case o.Propose:
 		code = r.propose()
 	case o.Recover:
@@ -129,7 +133,7 @@ func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 type run struct {
 	o      Flags
 	env    Env
-	st     *store.Store
+	st     *initrecord.Store
 	root   string
 	args   []string
 	stderr io.Writer
@@ -164,7 +168,7 @@ func (r *run) agent() (adapter.Adapter, error) {
 func (r *run) spent(phase string, from spend.Count) {
 	if c := r.meter.Count().Since(from); c != (spend.Count{}) {
 		r.counts[phase] = c
-		if err := r.st.AddSpent(store.Spent{Phase: phase, Count: c}); err != nil {
+		if err := r.st.AddSpent(initrecord.Spent{Phase: phase, Count: c}); err != nil {
 			fmt.Fprintf(r.stderr, "physa init: what %s spent was not stored: %v\n", phase, err)
 		}
 	}
@@ -232,6 +236,18 @@ func (r *run) areas() int {
 		return failed(r.stderr, err)
 	}
 	r.p.emit("areas", func(w io.Writer) error { return areas.Text(w, res) }, func(w io.Writer) error { return json.NewEncoder(w).Encode(res) })
+	return 0
+}
+
+// walk names each stored area's capabilities with their footprints, stores them in init's record and prints them.
+func (r *run) walk() int {
+	from := r.meter.Count()
+	res, err := walk.Run(context.Background(), r.st, walk.Session{Agent: r.agent, Root: r.root, Progress: r.stderr, Now: r.env.Now})
+	r.spent("walk", from)
+	if err != nil {
+		return failed(r.stderr, err)
+	}
+	r.p.emit("walk", func(w io.Writer) error { return walk.Text(w, res) }, func(w io.Writer) error { return json.NewEncoder(w).Encode(res) })
 	return 0
 }
 

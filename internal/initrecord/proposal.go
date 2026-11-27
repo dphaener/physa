@@ -1,4 +1,4 @@
-package store
+package initrecord
 
 import (
 	"database/sql"
@@ -24,7 +24,7 @@ type Proposal struct {
 // stored recoveries and what proposing and recovering spent, which belong to
 // one proposal.
 func (s *Store) PutProposal(p Proposal) error {
-	tx, err := s.db.Begin()
+	tx, err := s.DB().Begin()
 	if err != nil {
 		return err
 	}
@@ -46,7 +46,7 @@ func (s *Store) PutProposal(p Proposal) error {
 func (s *Store) Proposed() (Proposal, bool, error) {
 	var p Proposal
 	var gatherAt, at, body string
-	err := s.db.QueryRow(`SELECT gather_at, at, session_id, model, appetite, input, cached_input, output, body FROM init_proposal WHERE id = 1`).
+	err := s.DB().QueryRow(`SELECT gather_at, at, session_id, model, appetite, input, cached_input, output, body FROM init_proposal WHERE id = 1`).
 		Scan(&gatherAt, &at, &p.SessionID, &p.Model, &p.Appetite, &p.Input, &p.CachedInput, &p.Output, &body)
 	if err == sql.ErrNoRows {
 		return Proposal{}, false, nil

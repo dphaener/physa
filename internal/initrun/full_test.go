@@ -19,6 +19,7 @@ import (
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
+	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/reading"
@@ -416,7 +417,7 @@ func TestPhasesRecordTheRatioToo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := st.Spending()
+	rows, err := initrecord.Of(st).Spending()
 	st.Close()
 	if err != nil || len(rows) != 3 {
 		t.Fatalf("spent %+v, %v", rows, err)
@@ -467,7 +468,7 @@ func TestFullRecordsTheRatioForTheNextRun(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rows, err := st.Spending()
+		rows, err := initrecord.Of(st).Spending()
 		st.Close()
 		if err != nil || len(rows) != 3 {
 			t.Fatalf("run %d spent %+v, %v", i, rows, err)
@@ -528,7 +529,7 @@ func TestFullTableAgreesWithTheRunAt1HourWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	rows, err := st.Spending()
+	rows, err := initrecord.Of(st).Spending()
 	var w, in int64
 	for _, p := range rows {
 		w, in = w+p.Spend.Tokens, in+p.Raw.Input
@@ -595,14 +596,14 @@ func TestFullJSONIsOneDocument(t *testing.T) {
 }
 
 // storedRow returns the stored recovery of capability c.
-func storedRow(t *testing.T, env Env, c string) store.Recovered {
+func storedRow(t *testing.T, env Env, c string) initrecord.Recovered {
 	t.Helper()
 	st, err := env.Store(".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	rows, err := st.Recovered()
+	rows, err := initrecord.Of(st).Recovered()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -611,7 +612,7 @@ func storedRow(t *testing.T, env Env, c string) store.Recovered {
 			return r
 		}
 	}
-	return store.Recovered{}
+	return initrecord.Recovered{}
 }
 
 // newCodebaseRepo is a repo of two changes and a README only, with a local

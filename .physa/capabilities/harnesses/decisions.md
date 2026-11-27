@@ -5,7 +5,7 @@
 - [The owner's harness is the first](#the-owners-harness-is-the-first)
 - [A Rex view plugin](#a-rex-view-plugin)
 - [A harness is files, an adapter is code](#a-harness-is-files-an-adapter-is-code)
-- [Every harness is installed into one skeleton](#every-harness-is-installed-into-one-skeleton)
+- [A harness is whatever meets Physa's contract](#a-harness-is-whatever-meets-physas-contract)
 - [Native subagents inside a role](#native-subagents-inside-a-role)
 - [Isolation is the engine's](#isolation-is-the-engines)
 - [The team picks the merge method](#the-team-picks-the-merge-method)
@@ -27,14 +27,14 @@ Because: it proves views plug in, alongside harnesses.
 A harness is prompts and skills; the engine runs no harness code. Adapters, one per agent, are compiled into the core, Claude Code first.
 Because: the engine must enforce what a harness promises, and it cannot enforce code it runs on the harness's behalf.
 
-### Every harness is installed into one skeleton
-`install-harness` · decided by dphaener, accepting a proposal · 2026-11-20 · from docs/archive/architecture/04-harness-interface.md
-Install reads a developer's existing plugin and proposes a mapping of its subagents and skills onto roles, reviewed once; Physa's default prompts fill any role it lacks. Every role is an engine session. The plugin's prompts are never edited.
-Because: developers already have harnesses as plugins for their agent, and none will rewrite one to try a tool. ("Why not just do that for everything?", the owner, on wrapping.)
+### A harness is whatever meets Physa's contract
+`harness-contract` · decided by dphaener, accepting a proposal · 2026-11-26 · from docs/architecture/16-engine-runs-work.md
+Physa defines a contract and hosts nothing: it calls start, result and stop, and listens for state, asks, calls, findings and an outcome per acceptance item, through files, environment, JSON and exit codes, bound to the team's own commands by a file in the repo. A team takes the levels it wants; running roles one by one is the deepest, not the entry point. Each run records its level.
+Because: the owner, playing a team that won't change its harness ("I'm not changing my harness"), then: "Let's think about this as an API with strict boundaries."
 Rejected:
+- Every harness installed into one skeleton, every role an engine session, the plugin's prompts never edited (`install-harness`, 2026-11-20): it reached inside a harness, and a team's working harness didn't fit.
 - A harness format written for Physa: a rewrite nobody makes.
 - Redirecting native subagent spawns with hooks: per-agent tricks, and hooks are not universal.
-- Agent-native orchestration with only checks run by the engine: two paths, and isolation back to promises for every other role.
 
 ### Native subagents inside a role
 `native-subagents` · decided by dphaener, in their words · 2026-11-20 · from docs/archive/architecture/04-harness-interface.md

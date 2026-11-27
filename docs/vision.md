@@ -139,7 +139,7 @@ The core, what must hold whatever workflow a team uses:
 4. **Every claim cites a source.**
 5. **One word for one thing**, through the glossary (§4.6).
 6. **People decide; agents propose.** Nothing changes silently.
-7. **The engine enforces and never judges.** It owns gates, identity and records, so a workflow can never grade its own work.
+7. **The engine enforces structure and never judges.** It owns gates, identity and records, and labels every claim with who made it; it never runs a team's code.
 8. **Every change can be undone**, cheapest way first (§7).
 9. **Spend is always counted**, whether or not an appetite limits it.
 10. **A person pursues an idea by naming its signal.** A pursuit is the explicit moment a person puts their name on building an idea, distinct from having it. Its signal has four parts: a claim, its direction (what counts as for and against), a window and a resolver. What the claim is and how it is read are the team's.
@@ -171,7 +171,7 @@ Confidence costs most where mistakes cost most.
 
 - **Stakes** are strength × exposure × reversibility, worked out by the engine. A change to an established capability behind a flag that is off has low stakes to land; the stakes rise when the flag widens.
 - **With earned release on, landing code and exposing users are separate steps**, each with its own bar. Most of the speed comes from this separation. With it off, landing is exposing, and the one bar includes everyone the change reaches.
-- **Every change carries its case**: what it is for, its stakes, the rules at stake and whether the reviewer found them respected, what was checked, and the way back. The engine re-runs the checks itself and never takes an agent's word for them.
+- **Every change carries its case**: what it is for, its stakes, the rules at stake and whether the reviewer found them respected, what was checked, and the way back. The engine checks that every acceptance item has an outcome for the exact commit, and records who vouched for it; trust comes from the evidence that follows.
 - **Teams set the bar; the engine enforces it.** Policy maps stakes to required evidence: for example, low lands on its own when checks pass, medium also needs a sign-off, high also needs an earned release watched by guardrails.
 - **Guardrails roll back automatically.** Established capabilities declare signals that must not get worse; if one degrades while an idea earns its release, the engine turns the flag off and records the rollback. It carries out a rule the team set in advance; it does not judge.
 - **Calibration**: Physa tracks how each policy level performs (rollbacks, defects that reached users, guardrail trips) and proposes widening or tightening it. The team decides.
@@ -180,7 +180,7 @@ Confidence costs most where mistakes cost most.
 ## 9. The engine and harnesses
 
 - **The engine is dumb but durable.** It moves work through its lifecycle, enforces the gates and limits a team sets (an appetite and its circuit breaker among them), supervises runs, and keeps the record. It never makes judgments.
-- **The engine owns gates, identity and records**, so a harness can never grade its own work.
+- **The engine owns gates, identity and records**, so every claim a harness makes is recorded as its own.
 - **Harnesses are pluggable.** A harness is a workflow of agent roles that builds and checks changes. Teams bring their own skills, workflows and agents.
 - **The first harness is the one Physa is built with**: a conductor, builders and independent verifiers per change, isolated checks, a critic that can only remove or downgrade findings, and fixers. Building Physa with it is the proof that harnesses are pluggable.
 - **What the prompts promise, the engine enforces**: read-only checkouts for verifiers and checks, check prompts built by the engine rather than the conductor, explicit caps on retries and fix cycles.

@@ -17,9 +17,9 @@ The engine moves work, enforces appetites, circuit breakers and gates, supervise
 Because: "the daemon should be dumb but durable" (the owner, about Rhiza).
 
 ### The engine owns gates, identity and records
-`engine-owns-gates` · from docs/research/harness-spec.md
-No harness can grade its own work: verdicts come from the engine's records.
-Because: it is what made the owner's harness trustworthy.
+`engine-owns-gates` · from docs/architecture/16-engine-runs-work.md
+The engine owns the gates on structure: a change is ready only when its record is complete (its commit carries its change, every acceptance item has an outcome for that commit), and every claim carries who made it. The engine never runs a team's code.
+Because: the owner, "We're responsible for the structure not functionality of their code": Physa enforces what its own records depend on, and trust comes from the evidence that follows.
 
 ### The engine supervises its own sessions
 `built-in-supervision` · from docs/research/rhiza-v1-lessons.md

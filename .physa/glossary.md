@@ -96,7 +96,7 @@ _Avoid_: extension
 **Engine**: The part of Physa that moves work through its lifecycle, enforces appetites and gates, and runs harnesses. It never makes judgments.
 _Avoid_: daemon, orchestrator
 
-**Harness**: A pluggable workflow of agent roles that builds and checks changes. The first is Darin Haener's, descended from his afk (github.com/dphaener/afk). Installed from a developer's plugin, with harness settings that map its agents onto roles, reviewed once.
+**Harness**: A team's workflow for building and checking changes: whatever meets Physa's harness contract (start, result, and what it reports), bound by a file in the repo. A harness may be run role by role (conduct, build, check, fix), or as a whole. The first is Darin Haener's, descended from his afk (github.com/dphaener/afk).
 _Avoid_: pipeline, agent framework, overlay
 
 **Role**: A part an agent plays in a harness, declared by the harness as one of four kinds: conduct (leads the work and spawns the others), build, check or fix. The engine sees only the kind, never the harness's own name for a role.

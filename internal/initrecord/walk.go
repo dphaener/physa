@@ -16,8 +16,8 @@ type Walk struct {
 	Body                       []byte
 }
 
-// PutWalk replaces the stored walk with w, and clears the placement made
-// from the old one, in one transaction.
+// PutWalk replaces the stored walk with w, and clears the placement and
+// consolidation made from the old one, in one transaction.
 func (s *Store) PutWalk(w Walk) error {
 	tx, err := s.DB().Begin()
 	if err != nil {
@@ -25,6 +25,9 @@ func (s *Store) PutWalk(w Walk) error {
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`DELETE FROM init_place`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM init_consolidate`); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`INSERT OR REPLACE INTO init_walk (id, areas_at, at, model, input, cached_input, output, body) VALUES (1, ?, ?, ?, ?, ?, ?, ?)`, ts(w.AreasAt), ts(w.At), w.Model, w.Input, w.CachedInput, w.Output, string(w.Body)); err != nil {

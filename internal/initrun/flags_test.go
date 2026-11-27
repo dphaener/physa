@@ -323,3 +323,16 @@ func TestLineCap(t *testing.T) {
 		}
 	}
 }
+
+func TestLineConsolidate(t *testing.T) {
+	f, ok := parseLine([]string{"--consolidate", "--agent=claude", "--write", "--push", "--pr", "--hooks", "--json"}, now)
+	if !ok || !f.Consolidate || f.Full() || f.Agent != "claude" || !f.Write || !f.JSON {
+		t.Fatalf("got %+v %v", f, ok)
+	}
+	for _, args := range [][]string{{"--areas"}, {"--walk"}, {"--place"}, {"--gather"}, {"--propose"}, {"--recover"}, {"--only", "x"}, {"--push"}, {"--hooks"},
+		{"--answers", "a"}, {"--yes"}, {"--since", "2026-01-02"}, {"--max-prs", "5"}} {
+		if _, ok := parseLine(append([]string{"--consolidate"}, args...), now); ok {
+			t.Errorf("--consolidate %v accepted", args)
+		}
+	}
+}

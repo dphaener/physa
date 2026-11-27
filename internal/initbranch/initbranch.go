@@ -34,6 +34,9 @@ type Map struct {
 	ProductName string
 	// ProductPromise is the product's promise, on one line.
 	ProductPromise string
+	// ProductRules are the product's rules, each the full text of one rule
+	// entry (heading, meta line, body, Because:), written as given.
+	ProductRules []string
 	// ProductQuestions are the product-wide questions, raised by physa.
 	ProductQuestions []Question
 	// Capabilities are written in this order, one folder each.

@@ -9,8 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/adapter/claude"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
+	"github.com/dphaener/physa/internal/skillstub"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs/git"
 )
@@ -178,5 +181,90 @@ func TestInitProposeOnAMappedRepoIsRefused(t *testing.T) {
 	if code != 2 || out != "" || f.starts != 0 ||
 		!strings.Contains(errOut, "physa init: the repo already has a map") || !strings.Contains(errOut, "physa map learn") {
 		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
+	}
+}
+
+// claudeFake is a fake agent that answers to Claude Code's name, so init
+// looks for Claude Code's skill.
+type claudeFake struct{ *fakeAgent }
+
+func (claudeFake) Name() string { return claude.Name }
+
+// skillInit runs a new codebase's init with --write in a temp repo, with
+// HOME and CLAUDE_CONFIG_DIR in temp directories, after setup has prepared
+// the home, and returns the exit code, stdout, stderr and the home.
+func skillInit(t *testing.T, setup func(home string)) (int, string, string) {
+	t.Helper()
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_AUTHOR_NAME", "t")
+	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "t")
+	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(t.TempDir(), "claude"))
+	setup(home)
+	dir := filepath.Join(t.TempDir(), "lathe")
+	write(t, dir, "README.md", "# Lathe\n")
+	gitIn(t, dir, "init", "-q")
+	gitIn(t, dir, "add", ".")
+	gitIn(t, dir, "commit", "-q", "-m", "base")
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "more")
+	answers := filepath.Join(t.TempDir(), "answers.txt")
+	write(t, filepath.Dir(answers), "answers.txt", "2: Lathe turns sketches into cut lists.\n")
+	useRepoStore(t, dir)
+	useForge(t, mergedFake{})
+	old, had := agents["claude"]
+	agents["claude"] = func() adapter.Adapter { return claudeFake{&fakeAgent{}} }
+	t.Cleanup(func() {
+		if had {
+			agents["claude"] = old
+		} else {
+			delete(agents, "claude")
+		}
+	})
+	return runInit("--answers", answers, "--write")
+}
+
+func TestInitSaysWhenTheSkillIsMissing(t *testing.T) {
+	code, out, errOut := skillInit(t, func(string) {})
+	line := "Claude Code has no Physa skill on this account: run `physa skill setup`"
+	if code != 0 || strings.Count(errOut, "physa skill setup") != 1 || !strings.Contains(errOut, "physa init: "+line) {
+		t.Errorf("code %d, stderr %q", code, errOut)
+	}
+	if !strings.Contains(out, "## Physa's skill\n\n"+line) {
+		t.Errorf("stdout has no skill section: %q", out)
+	}
+}
+
+func TestInitSaysNothingWhenTheSkillIsCurrent(t *testing.T) {
+	code, out, errOut := skillInit(t, func(home string) {
+		if err := skillstub.Write(claude.SkillFile(home, "physa")); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if code != 0 || strings.Contains(out+errOut, "physa skill") || strings.Contains(out, "Physa's skill") {
+		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+}
+
+func TestInitSaysNothingWhenTheSkillCannotBeRead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads any directory")
+	}
+	code, out, errOut := skillInit(t, func(home string) {
+		path := claude.SkillFile(home, "physa")
+		if err := skillstub.Write(path); err != nil {
+			t.Fatal(err)
+		}
+		dir := filepath.Dir(path)
+		if err := os.Chmod(dir, 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	})
+	if code != 0 || strings.Contains(out+errOut, "physa skill") || strings.Contains(out, "Physa's skill") {
+		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }

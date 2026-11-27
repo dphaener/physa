@@ -28,6 +28,7 @@ func (r *run) writeStored() int {
 	if err != nil {
 		return failed(r.stderr, err)
 	}
+	m.Summary.Skill = r.skill
 	return writeMap(m, r.o, r.env, r.p, r.stderr)
 }
 
@@ -111,9 +112,10 @@ func withRecovery(c initbranch.Capability, r store.Recovered) (initbranch.Capabi
 	return c, nil
 }
 
-// newMap is a new codebase's map: the person's name, promise and terms.
-func newMap(a newcodebase.Answers, env Env) initbranch.Map {
-	return initbranch.Map{ProductName: a.Name, ProductPromise: a.Promise, Terms: a.GlossaryTerms(), Date: env.Now()}
+// newMap is a new codebase's map: the person's name, promise, terms and skill line.
+func newMap(a newcodebase.Answers, env Env, skill string) initbranch.Map {
+	return initbranch.Map{ProductName: a.Name, ProductPromise: a.Promise, Terms: a.GlossaryTerms(), Date: env.Now(),
+		Summary: initbranch.Summary{Skill: skill}}
 }
 
 // writeMap writes m to physa/init through initbranch, pushing it with

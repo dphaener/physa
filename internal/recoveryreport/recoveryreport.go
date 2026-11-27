@@ -1,6 +1,6 @@
 // Package recoveryreport prints what recovering a map's capabilities did, as
-// text for people or as one JSON document for tools. It reads a
-// recovery.Report and changes nothing.
+// text for people or as one JSON document for tools, and the exit code it
+// ends with. It reads a recovery.Report and changes nothing.
 package recoveryreport
 
 import (
@@ -58,6 +58,21 @@ func WriteText(w io.Writer, r recovery.Report) error {
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// ExitCode is how a recovery run ends: 2 when any capability failed, else 1
+// when any is not yet recovered, else 0.
+func ExitCode(r recovery.Report) int {
+	code := 0
+	for _, o := range r.Capabilities {
+		switch o.Status {
+		case recovery.StatusFailed:
+			return 2
+		case recovery.StatusNotYet:
+			code = 1
+		}
+	}
+	return code
 }
 
 // count says how many of the report's capabilities ended with status.

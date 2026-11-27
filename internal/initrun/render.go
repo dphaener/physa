@@ -129,21 +129,6 @@ func (p *printer) done(code int, stderr io.Writer) int {
 	return code
 }
 
-// exitCode is how a recovery run ends: 2 when any capability failed, else 1
-// when any is not yet recovered, else 0.
-func exitCode(r recovery.Report) int {
-	code := 0
-	for _, o := range r.Capabilities {
-		switch o.Status {
-		case recovery.StatusFailed:
-			return 2
-		case recovery.StatusNotYet:
-			code = 1
-		}
-	}
-	return code
-}
-
 func plural(n int, one, many string) string {
 	if n == 1 {
 		return "1 " + one

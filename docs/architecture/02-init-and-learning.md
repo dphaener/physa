@@ -161,7 +161,7 @@ Init commits to a branch `physa/init` and opens a PR (Q3) containing exactly:
 
 With `--hooks`, init installs the `Session:` hook after its commit and before its PR, the way `physa map hooks` does (01 §8, 08 §5). In a repo that ships no hook, that is `.git/hooks/prepare-commit-msg`, written when `core.hooksPath` is unset and no such hook exists, with `core.hooksPath` left alone so every hook already there keeps running. Otherwise init refuses and says how to add the hook by hand. The branch is kept and the PR still opens, its body naming the refusal, and the run exits 2. The hook is local, so it is not part of the PR.
 
-The PR description summarises: capabilities proposed, entries recovered with their sources, questions raised, entries dropped, and the tokens spent. The person edits, deletes or merges it like any PR.
+The PR description summarises: capabilities proposed, entries recovered with their sources, questions raised, entries dropped, and the tokens spent. When the agent a full run uses has no current Physa skill, the description ends with a `## Physa's skill` section carrying the line to run, the same one init prints last (13 §5); built, decided by Myxo for the owner to review (2026-11-26). The person edits, deletes or merges it like any PR.
 
 Settled as built with `physa init --write` (decided by Claude as arbiter for the owner to review):
 

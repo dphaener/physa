@@ -21,6 +21,7 @@ import (
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/preflight"
 	"github.com/dphaener/physa/internal/recovery"
+	"github.com/dphaener/physa/internal/recoveryreport"
 	"github.com/dphaener/physa/internal/shares"
 	"github.com/dphaener/physa/internal/spend"
 	"github.com/dphaener/physa/internal/store"
@@ -34,6 +35,8 @@ import (
 // whether to go on past the estimate, when IsTerminal. PRExists resolves #N
 // anchors; nil checks them for form only. Spend is the file of the
 // machine's spend cache (spend.Path); empty keeps prices for the run only.
+// Skill is the line saying the agent a name selects has no current Physa
+// skill, empty for none; nil says nothing.
 type Env struct {
 	Store      func(dir string) (*store.Store, error)
 	Repo       func(dir string) (vcs.Repo, error)
@@ -47,6 +50,7 @@ type Env struct {
 	IsTerminal func() bool
 	Confirm    func(question string) (bool, error)
 	Spend      string
+	Skill      func(agent string) string
 }
 
 // Run runs physa init on the repo in the current directory: the phase named,
@@ -107,7 +111,11 @@ func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 		r.p.gather(sum)
 		preflight.Warn(stderr, preflight.Gather(sum))
 	}
-	return r.p.done(code, stderr)
+	code = r.p.done(code, stderr)
+	if r.skill != "" { // said last, so it is the line left on the screen; it never changes the code
+		fmt.Fprintf(stderr, "physa init: %s\n", r.skill)
+	}
+	return code
 }
 
 // run is one physa init: its flags, seams, store, root, arguments, output
@@ -121,6 +129,7 @@ type run struct {
 	stderr io.Writer
 	cache  *spend.Cache
 	p      *printer
+	skill  string // the full run's line on the agent's Physa skill, empty for none
 
 	once   sync.Once
 	meter  *spend.Meter
@@ -252,7 +261,7 @@ func (r *run) recoverPhase(only []string, done func(recovery.Report)) int {
 		done(rep)
 	}
 	r.p.recovery(rep)
-	code := exitCode(rep)
+	code := recoveryreport.ExitCode(rep)
 	if r.o.Write {
 		code = max(code, r.writeStored())
 	}

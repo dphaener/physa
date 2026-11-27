@@ -9,21 +9,25 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/coverage"
 	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/pathlint"
+	"github.com/dphaener/physa/internal/place"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/recovering"
+	"github.com/dphaener/physa/internal/recoverinput"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
+	"github.com/dphaener/physa/internal/walk"
 )
 
 var (
@@ -63,6 +67,9 @@ type fakeAdapter struct {
 	started chan struct{} // receives once per attempt started, when set
 	gate    chan struct{} // attempts wait for it to close, when set
 	onStart func(name string, attempt int)
+	// noResume makes every resumed attempt fail with adapter.ErrNoResume
+	// before it runs, as an agent that cannot resume does.
+	noResume bool
 }
 
 func newFake(scripts map[string][]step) *fakeAdapter {
@@ -74,6 +81,9 @@ func (f *fakeAdapter) Name() string { return "fake" }
 func (f *fakeAdapter) Start(_ context.Context, s adapter.Spec) (adapter.Session, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if s.Resume && f.noResume {
+		return nil, fmt.Errorf("fake: %w", adapter.ErrNoResume)
+	}
 	name := f.byID[s.SessionID]
 	if !s.Resume {
 		for n := range f.scripts {
@@ -137,11 +147,42 @@ func (s *fakeSession) Wait() (adapter.Result, error) {
 	return adapter.Result{Text: s.step.text, Model: "fake-1", SessionID: s.spec.SessionID, Tokens: t}, s.step.err
 }
 
-// fakeStore holds a gather and a proposal, and what was put in it.
+// fakeStore holds a gather, a proposal, a walk with its placement and a
+// seed, each nil when not stored, and what was put in it.
 type fakeStore struct {
 	gather   store.Gather
 	proposal *initrecord.Proposal
+	walk     *initrecord.Walk
+	place    *initrecord.Place
+	seed     *uint64
+	seeds    []uint64
 	puts     [][]initrecord.Recovered
+}
+
+func (s *fakeStore) Walk() (initrecord.Walk, bool, error) {
+	if s.walk == nil {
+		return initrecord.Walk{}, false, nil
+	}
+	return *s.walk, true, nil
+}
+
+func (s *fakeStore) Place() (initrecord.Place, bool, error) {
+	if s.place == nil {
+		return initrecord.Place{}, false, nil
+	}
+	return *s.place, true, nil
+}
+
+func (s *fakeStore) RecoverSeed() (uint64, bool, error) {
+	if s.seed == nil {
+		return 0, false, nil
+	}
+	return *s.seed, true, nil
+}
+
+func (s *fakeStore) PutRecoverSeed(seed uint64, _ time.Time) error {
+	s.seed, s.seeds = &seed, append(s.seeds, seed)
+	return nil
 }
 
 func (s *fakeStore) Gathered() (store.Gather, bool, error) { return s.gather, true, nil }
@@ -306,11 +347,11 @@ func TestHappyPathStoresBothCapabilities(t *testing.T) {
 	}
 
 	spec := h.agent.specs["export"][0]
-	if !spec.PromptOnly || spec.Resume || spec.SessionID != ex.SessionID || spec.Dir == "" || strings.HasPrefix(spec.Dir, h.root) {
+	if !spec.ReadOnly || spec.PromptOnly || spec.Resume || spec.SessionID != ex.SessionID || spec.Dir != h.root {
 		t.Errorf("spec %+v", spec)
 	}
-	if _, err := os.Stat(spec.Dir); !os.IsNotExist(err) {
-		t.Errorf("the session's directory %s is still there", spec.Dir)
+	if rep.From != "proposal" || !strings.Contains(h.progress.String(), "at most 3 at once, from the proposal\n") || len(h.store.seeds) != 0 {
+		t.Errorf("from %q, seeds %v, progress:\n%s", rep.From, h.store.seeds, h.progress)
 	}
 	if !strings.Contains(spec.Prompt, "#12, merged") || strings.Contains(spec.Prompt, "#7, merged") || !strings.Contains(spec.System, "Today's date: 2026-11-21") {
 		t.Error("export's prompt should hold its own PR, not search's, and its system the run's date")
@@ -358,7 +399,7 @@ func TestRetryFixesTheFileOnTheSameSession(t *testing.T) {
 		t.Fatalf("%d attempts", len(specs))
 	}
 	first, second := specs[0], specs[1]
-	if first.Resume || !second.Resume || !second.PromptOnly || second.SessionID != first.SessionID || second.Dir != first.Dir {
+	if first.Resume || !second.Resume || !second.ReadOnly || second.SessionID != first.SessionID || second.Dir != first.Dir {
 		t.Errorf("first %+v\nsecond %+v", first, second)
 	}
 	for _, want := range []string{"a rule needs a `Because:` line", `the rules, at "### The rule export-deleted"`, "Write your whole answer again"} {
@@ -619,40 +660,6 @@ func TestScaffoldAloneChecksClean(t *testing.T) {
 	}
 }
 
-func TestSourcesAreTheCapabilitysOwn(t *testing.T) {
-	g := testGather()
-	sub := sources(g, mapping.Capability{Name: "export", ShownBy: []string{"#12"},
-		Questions: []mapping.Question{{Question: "Was it reverted?", SuggestedBy: []string{"b1b2c3d"}}}}, coverage.Placement{})
-	if len(sub.Docs) != 1 || len(sub.PRs) != 1 || sub.PRs[0].Number != 12 {
-		t.Errorf("docs %d, PRs %+v", len(sub.Docs), sub.PRs)
-	}
-	// b1b2c3d is linked; a1b2c3d comes with it as the change it reverts.
-	if len(sub.Changes) != 2 || sub.Changes[0].ID != idA || sub.Changes[1].ID != idB {
-		t.Errorf("changes %+v", sub.Changes)
-	}
-	// And the other way: the revert comes with the change it reverts.
-	sub = sources(g, mapping.Capability{ShownBy: []string{"a1b2c3d"}}, coverage.Placement{})
-	if len(sub.Changes) != 2 || len(sub.PRs) != 0 {
-		t.Errorf("changes %+v, PRs %+v", sub.Changes, sub.PRs)
-	}
-}
-
-// TestSourcesHoldWhatIsPlacedWithTheCapability checks that a capability
-// reads the PRs and changes placed with it by their files, besides what it
-// cites, and not those placed with another.
-func TestSourcesHoldWhatIsPlacedWithTheCapability(t *testing.T) {
-	g := testGather()
-	pl := coverage.Placement{PRs: map[string][]int{"export": {12}, "search": {7}}, Changes: map[string][]string{"export": {idA}}}
-	sub := sources(g, mapping.Capability{Name: "export"}, pl)
-	if len(sub.PRs) != 1 || sub.PRs[0].Number != 12 {
-		t.Errorf("PRs %+v, want #12 alone", sub.PRs)
-	}
-	// a1b2c3d is placed; b1b2c3d, its revert, comes with it.
-	if len(sub.Changes) != 2 {
-		t.Errorf("changes %+v", sub.Changes)
-	}
-}
-
 // fakeRepo is a history holding one change.
 type fakeRepo struct{ vcs.Repo }
 
@@ -761,7 +768,7 @@ func TestProgressLineCountsCapabilitiesAndTokens(t *testing.T) {
 	h.session.Only = []string{"export"}
 	h.run(t)
 	line := strings.SplitN(h.progress.String(), "\n", 2)[0]
-	if want := "physa init: recovering 1 capability, at most 3 at once"; line != want {
+	if want := "physa init: recovering 1 capability, at most 3 at once, from the proposal"; line != want {
 		t.Errorf("progress = %q, want %q", line, want)
 	}
 }
@@ -832,23 +839,6 @@ func TestOverviewOverItsLimitIsReplacedByThePromise(t *testing.T) {
 	}
 	if retry := h.agent.specs["export"][1].Prompt; !strings.Contains(retry, "the title and overview: 33 lines, budget is 30") {
 		t.Errorf("the retry lacks the overview's problem:\n%s", retry)
-	}
-}
-
-func TestSourcesHoldOnlyTheCapabilitysDocs(t *testing.T) {
-	g := testGather()
-	g.Docs = []store.Doc{
-		{Path: "AGENTS.md", Kind: "agent"}, {Path: "README.md", Kind: "readme"}, {Path: "CONTRIBUTING.md", Kind: "contributing"},
-		{Path: "docs/export.md", Kind: "overview"}, {Path: "docs/search.md", Kind: "overview"}, {Path: "docs/decisions.md", Kind: "decisions"},
-	}
-	sub := sources(g, mapping.Capability{Name: "export", Docs: []string{"docs/export.md", "docs/decisions.md"}}, coverage.Placement{})
-	var got []string
-	for _, d := range sub.Docs {
-		got = append(got, d.Path)
-	}
-	want := []string{"AGENTS.md", "README.md", "CONTRIBUTING.md", "docs/export.md", "docs/decisions.md"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("docs = %v, want %v", got, want)
 	}
 }
 
@@ -962,5 +952,292 @@ func TestASourceLargerThanAShareFailsItsCapabilityNamed(t *testing.T) {
 	o := h.run(t).Capabilities[0]
 	if o.Status != StatusFailed || !strings.HasPrefix(o.Error, "PR #2") || !strings.Contains(o.Error, "nothing is cut") || h.agent.starts() != 0 {
 		t.Errorf("outcome %+v, %d sessions", o, h.agent.starts())
+	}
+}
+
+var walkedAt = time.Date(2026, 11, 20, 11, 0, 0, 0, time.UTC)
+
+// walkCaps are the walk's capabilities and their areas, across three areas.
+var walkCaps = [][2]string{{"export", "notes-out"}, {"search", "finding"}, {"tags", "finding"}, {"sharing", "people"}}
+
+// walkHarness is a harness whose store holds a walk and its placement, and
+// a proposal only when proposed: export owns internal/export/export.go, of
+// 40 lines, with #12 and a1b2c3d placed on it, and search has #7.
+func walkHarness(t *testing.T, scripts map[string][]step, proposed bool) *harness {
+	t.Helper()
+	h := newHarness(t, scripts)
+	if !proposed {
+		h.store.proposal = nil
+	}
+	var wr walk.Record
+	for _, c := range walkCaps {
+		src := "internal/" + c[0] + "/" + c[0] + ".go"
+		wr.Capabilities = append(wr.Capabilities, walk.CapabilityRecord{Area: c[1],
+			Capability: walk.Capability{Name: c[0], Promise: "People can rely on " + c[0] + ".", Sources: []string{src}, Tests: []string{"internal/" + c[0] + "/" + c[0] + "_test.go"}},
+			Entries:    walk.Entries{Tests: []string{"internal/" + c[0] + "/"}, Docs: []string{"docs/" + c[0] + ".md"}}})
+	}
+	if err := os.MkdirAll(filepath.Join(h.root, "internal", "export"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h.root, "internal", "export", "export.go"), []byte(strings.Repeat("package export\n", 40)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pr := place.Record{ByCapability: []place.CapabilityPlaced{
+		{Capability: "export", Area: "notes-out", PRs: []int{12}, Changes: []string{idA}},
+		{Capability: "search", Area: "finding", PRs: []int{7}},
+	}}
+	wb, err := json.Marshal(wr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pb, err := json.Marshal(pr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.store.walk = &initrecord.Walk{AreasAt: gatherAt, At: walkedAt, Body: wb}
+	h.store.place = &initrecord.Place{WalkAt: walkedAt, At: walkedAt.Add(time.Minute), Body: pb}
+	return h
+}
+
+// goodScripts answers every walk capability with a rule that checks clean,
+// n times.
+func goodScripts(n int) map[string][]step {
+	scripts := map[string][]step{}
+	for _, c := range walkCaps {
+		for range n {
+			scripts[c[0]] = append(scripts[c[0]], step{text: reply(good(c[0]+"-rule"), "")})
+		}
+	}
+	return scripts
+}
+
+// walkOrder is the walk harness's capabilities in recovery's order for seed.
+func walkOrder(t *testing.T, h *harness, seed uint64) []string {
+	t.Helper()
+	var wr walk.Record
+	if err := json.Unmarshal(h.store.walk.Body, &wr); err != nil {
+		t.Fatal(err)
+	}
+	pr, _, err := place.Load(h.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, w := range recoverinput.Order(recoverinput.Walk(h.root, wr, pr, h.store.gather), seed) {
+		out = append(out, w.Name)
+	}
+	return out
+}
+
+func runNames(rep Report) []string {
+	var out []string
+	for _, o := range rep.Capabilities {
+		out = append(out, o.Name)
+	}
+	return out
+}
+
+// TestWalkRecoversEveryCapabilityReadOnly checks that with a walk and its
+// placement stored, every walk capability is recovered from them, each in a
+// read-only session in the repo's root, given its area, files and placed
+// PRs and changes.
+func TestWalkRecoversEveryCapabilityReadOnly(t *testing.T) {
+	h := walkHarness(t, goodScripts(1), true)
+	before := h.rootFiles(t)
+	rep := h.run(t)
+
+	if len(rep.Capabilities) != len(walkCaps) || rep.From != "walk" {
+		t.Fatalf("from %q, outcomes %v", rep.From, statuses(rep))
+	}
+	for _, o := range rep.Capabilities {
+		if o.Status != StatusRecovered {
+			t.Errorf("%s: %+v", o.Name, o)
+		}
+		spec := h.agent.specs[o.Name][0]
+		if !spec.ReadOnly || spec.PromptOnly || spec.Dir != h.root || spec.SessionID == "" || spec.SessionID != o.SessionID {
+			t.Errorf("%s: spec ReadOnly %v, PromptOnly %v, Dir %q, session %q", o.Name, spec.ReadOnly, spec.PromptOnly, spec.Dir, spec.SessionID)
+		}
+	}
+	ex := h.agent.specs["export"][0]
+	for _, want := range []string{"The area of the code it was found in:", "notes-out", "## Its files", "internal/export/export.go (40 lines)",
+		"internal/export/\n", "docs/export.md", "#12, merged", "Export every note", "Revert"} {
+		if !strings.Contains(ex.Prompt, want) {
+			t.Errorf("export's message lacks %q:\n%s", want, ex.Prompt)
+		}
+	}
+	if strings.Contains(ex.Prompt, "#7, merged") || strings.Contains(ex.Prompt, "The proposal's questions") {
+		t.Error("export's message holds search's PR or the proposal's form")
+	}
+	if !strings.Contains(ex.System, "People keep their notes and find them again.") {
+		t.Error("the product's promise is the stored proposal's")
+	}
+	if !strings.Contains(h.progress.String(), "physa init: recovering 4 capabilities, at most 3 at once, from the walk and placements\n") {
+		t.Errorf("progress:\n%s", h.progress)
+	}
+	for _, row := range h.store.puts[0] {
+		if !row.ProposalAt.Equal(walkedAt) {
+			t.Errorf("%s: ProposalAt %v, want the walk's time", row.Capability, row.ProposalAt)
+		}
+	}
+	if got := h.rootFiles(t); !reflect.DeepEqual(got, before) {
+		t.Errorf("the repo changed: %v", got)
+	}
+	t.Logf("from %q: %v; export's spec ReadOnly %v, Dir is root %v", rep.From, statuses(rep), ex.ReadOnly, ex.Dir == h.root)
+}
+
+// TestWalkWithoutProposalUsesTheStandIn checks that the walk path runs with
+// no proposal stored, with "Not yet stated." for the product's promise.
+func TestWalkWithoutProposalUsesTheStandIn(t *testing.T) {
+	h := walkHarness(t, goodScripts(1), false)
+	rep := h.run(t)
+	if rep.From != "walk" || !rep.Whole() || len(rep.Capabilities) != len(walkCaps) {
+		t.Fatalf("from %q, %v", rep.From, statuses(rep))
+	}
+	if sys := h.agent.specs["export"][0].System; !strings.Contains(sys, "Not yet stated.") {
+		t.Error("the product's promise is not the stand-in")
+	}
+}
+
+// TestWalkOrderFollowsTheStoredSeed checks that a walk run goes in
+// recovery's order for the gather's seed, stored before the first session,
+// and that a later run reads the stored seed and keeps its order.
+func TestWalkOrderFollowsTheStoredSeed(t *testing.T) {
+	h := walkHarness(t, goodScripts(1), true)
+	h.agent.onStart = func(string, int) {
+		if h.store.seed == nil {
+			t.Error("a session started before the seed was stored")
+		}
+	}
+	rep := h.run(t)
+	want := walkOrder(t, h, recoverinput.Seed(h.store.gather))
+	if got := runNames(rep); !reflect.DeepEqual(got, want) {
+		t.Errorf("order %v, want %v", got, want)
+	}
+	if !slices.Equal(h.store.seeds, []uint64{recoverinput.Seed(h.store.gather)}) {
+		t.Errorf("seeds stored %v", h.store.seeds)
+	}
+
+	// A seed stored earlier is read and kept: pick one whose order differs.
+	var other uint64
+	for other = 1; slices.Equal(walkOrder(t, h, other), want); other++ {
+	}
+	h.store.seed, h.store.seeds = &other, nil
+	h.agent = newFake(goodScripts(1))
+	rep = h.run(t)
+	if got, want := runNames(rep), walkOrder(t, h, other); !reflect.DeepEqual(got, want) || len(h.store.seeds) != 0 {
+		t.Errorf("order %v, want %v for the stored seed %d; seeds stored %v", got, want, other, h.store.seeds)
+	}
+	t.Logf("seed %d: %v; stored seed %d: %v", recoverinput.Seed(h.store.gather), want, other, runNames(rep))
+}
+
+// TestWalkOnlyKeepsItsOrder checks that Only names walk capabilities, in
+// its order and each once, and that a name the walk lacks starts nothing.
+func TestWalkOnlyKeepsItsOrder(t *testing.T) {
+	h := walkHarness(t, goodScripts(1), true)
+	h.session.Only = []string{"tags", "export", "tags"}
+	rep := h.run(t)
+	if got := statuses(rep); !reflect.DeepEqual(got, []string{"tags: recovered", "export: recovered"}) || rep.From != "walk" {
+		t.Fatalf("statuses %v, from %q", got, rep.From)
+	}
+	if h.agent.starts() != 2 || len(h.store.seeds) != 0 {
+		t.Errorf("%d sessions, seeds %v", h.agent.starts(), h.store.seeds)
+	}
+
+	h = walkHarness(t, nil, true)
+	h.session.Only = []string{"export", "billing"}
+	_, err := Run(context.Background(), h.store, h.session)
+	if err == nil || !strings.Contains(err.Error(), `no capability "billing" in the walk; it found: export, search, tags, sharing`) {
+		t.Errorf("error %v", err)
+	}
+	if h.resolved != 0 || h.agent.starts() != 0 || len(h.store.puts) != 0 || len(h.store.seeds) != 0 {
+		t.Errorf("resolved %d, started %d, puts %d, seeds %v", h.resolved, h.agent.starts(), len(h.store.puts), h.store.seeds)
+	}
+}
+
+// TestWalkWithoutPlacementRecoversFromTheProposal checks that a walk with
+// no placement stored leaves recovery on the proposal.
+func TestWalkWithoutPlacementRecoversFromTheProposal(t *testing.T) {
+	h := walkHarness(t, map[string][]step{"export": {{text: reply(good("export-rule"), "")}}}, true)
+	h.store.place = nil
+	h.session.Only = []string{"export"}
+	rep := h.run(t)
+	if rep.From != "proposal" || strings.Contains(h.agent.specs["export"][0].Prompt, "## Its files") {
+		t.Errorf("from %q", rep.From)
+	}
+	h.store.proposal = nil
+	if _, err := Run(context.Background(), h.store, h.session); !errors.Is(err, ErrNoProposal) {
+		t.Errorf("a walk with no placement and no proposal: %v", err)
+	}
+}
+
+// TestWalkRetryDropsBadAnchorAndPath checks the failure case: an entry
+// whose anchor names no file in the repo and one that names a file path in
+// its body go back to the same session with both problems, and when every
+// retry answers the same, both are dropped with their reasons and the rest
+// of the file is kept.
+func TestWalkRetryDropsBadAnchorAndPath(t *testing.T) {
+	bad := reply("# Export\n\n## Rules\n\n"+rule("export-deleted")+
+		"\n### Exports are zipped\n`export-zipped` · from internal/export/zip.go\nAn export is one zip file.\nBecause: the code writes one.\n"+
+		"\n### Exports hold every note\n`export-every` · #12\nThe writer in internal/export/export.go reads every note.\nBecause: a reviewer asked for it in #12.\n", "")
+	h := walkHarness(t, map[string][]step{"export": {{text: bad}, {text: bad}, {text: bad}}}, true)
+	h.session.Only = []string{"export"}
+	rep := h.run(t)
+
+	o := rep.Capabilities[0]
+	specs := h.agent.specs["export"]
+	if o.Status != StatusRecovered || o.Attempts != 1+MaxRetries || len(specs) != 1+MaxRetries {
+		t.Fatalf("outcome %+v", o)
+	}
+	for _, s := range specs[1:] {
+		if !s.Resume || s.SessionID != specs[0].SessionID || !s.ReadOnly {
+			t.Errorf("a retry went to another session: %+v", s)
+		}
+	}
+	anchor := `anchor "internal/export/zip.go" does not name a file in the repo`
+	path := pathlint.Message("internal/export/export.go")
+	for _, want := range []string{anchor, path, "at \"`export-zipped` · from internal/export/zip.go\"", `at "The writer in internal/export/export.go reads every note."`} {
+		if !strings.Contains(strings.Join(strings.Fields(specs[1].Prompt), " "), want) {
+			t.Errorf("the retry lacks %q:\n%s", want, specs[1].Prompt)
+		}
+	}
+	var got []string
+	for _, d := range o.Dropped {
+		got = append(got, d.Kind+" "+d.Slug+": "+strings.Join(d.Reasons, "; "))
+	}
+	if want := []string{"rule export-zipped: " + anchor, "rule export-every: " + path}; !reflect.DeepEqual(got, want) {
+		t.Errorf("dropped\n%q\nwant\n%q", got, want)
+	}
+	if o.Counts.Rules != 1 || !strings.Contains(o.File, "export-deleted") || strings.Contains(o.File, "export-zipped") || strings.Contains(o.File, "export-every") {
+		t.Errorf("counts %+v, file:\n%s", o.Counts, o.File)
+	}
+	t.Logf("after %d retries, dropped with their reasons: %q", MaxRetries, got)
+}
+
+// TestRetryWithoutResumeStartsAFreshSession checks that when the agent
+// cannot resume, a retry starts a new session on the capability's prompt
+// followed by the retry.
+func TestRetryWithoutResumeStartsAFreshSession(t *testing.T) {
+	h := walkHarness(t, map[string][]step{"export": {
+		{text: reply("# Export\n\n## Rules\n\n"+bare("export-deleted"), "")},
+		{text: reply(good("export-deleted"), "")},
+	}}, true)
+	h.agent.noResume = true
+	h.session.Only = []string{"export"}
+	rep := h.run(t)
+
+	o := rep.Capabilities[0]
+	specs := h.agent.specs["export"]
+	if o.Status != StatusRecovered || o.Attempts != 2 || len(specs) != 2 {
+		t.Fatalf("outcome %+v, %d specs", o, len(specs))
+	}
+	first, second := specs[0], specs[1]
+	if second.Resume || second.SessionID == first.SessionID || o.SessionID != second.SessionID || second.System != first.System || !second.ReadOnly {
+		t.Errorf("first %+v\nsecond %+v", first, second)
+	}
+	if !strings.HasPrefix(second.Prompt, first.Prompt+"\n\n") || !strings.Contains(second.Prompt, "a rule needs a `Because:` line") {
+		t.Errorf("the fresh session's prompt:\n%s", second.Prompt)
+	}
+	if !strings.Contains(h.progress.String(), "the agent cannot resume, so the retry starts a new session") {
+		t.Errorf("progress:\n%s", h.progress)
 	}
 }

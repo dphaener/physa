@@ -1,16 +1,18 @@
-// Package recovery is init's recover and check phases: one prompt-only
-// session per capability, or one per share, one after another, when its
-// sources are more than one session holds, at most Concurrency
-// capabilities at once, reading what it cites
-// and what coverage places with it by files; each capability's
-// text, split into its folder, goes through the map check and back to the
-// same session with the problems, up to MaxRetries times, before failing
-// entries are dropped. Sessions read their sources whole, with no appetite
+// Package recovery is init's recover and check phases: one session per
+// capability, read-only over the repo, or one per share, one after another,
+// when its sources are more than one session holds, at most Concurrency
+// capabilities at once. A capability the walk found reads its area, its
+// files and the PRs and changes placed with it; one proposed from the
+// history reads what it cites and what coverage places with it by files.
+// Each capability's text, split into its folder, goes through the map check
+// and the path lint and back to the same session with the problems, up to
+// MaxRetries times, before failing entries are dropped. Sessions read their sources whole, with no appetite
 // and no circuit breaker: init is never bounded (design 10 Q6). It writes
 // the store, never the repo.
 package recovery
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -26,6 +28,7 @@ import (
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/recovering"
+	"github.com/dphaener/physa/internal/recoverinput"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
 )
@@ -47,14 +50,18 @@ const (
 	StatusFailed    = "failed"
 )
 
-// ErrNoProposal is returned by Run when the store holds no proposal.
+// ErrNoProposal is returned by Run when nothing is proposed, or walked and placed.
 var ErrNoProposal = errors.New("nothing proposed yet; run physa init --propose first")
 
-// Store is what Run needs of the store: the gather and the proposal to read,
-// and a place for what was recovered.
+// Store is what Run needs of the store: the gather, the proposal or the walk
+// and placements, the seed of recovery's order, and what was recovered.
 type Store interface {
 	Gathered() (store.Gather, bool, error)
 	Proposed() (initrecord.Proposal, bool, error)
+	Walk() (initrecord.Walk, bool, error)
+	Place() (initrecord.Place, bool, error)
+	RecoverSeed() (uint64, bool, error)
+	PutRecoverSeed(uint64, time.Time) error
 	PutRecovered([]initrecord.Recovered) error
 }
 
@@ -63,11 +70,11 @@ type Session struct {
 	// Agent resolves the agent to recover with, once, and only when nothing
 	// refuses the run first.
 	Agent func() (adapter.Adapter, error)
-	// Only names the capabilities to recover, in the order to run them;
-	// empty means every proposed capability, in the proposal's order.
+	// Only names the capabilities to recover, in the order to run them; empty
+	// means all: the walk's in recovery's seeded order, the proposal's in its.
 	Only []string
-	// Root is the repo's root, where `from <path>` anchors resolve. Nothing
-	// is written under it.
+	// Root is the repo's root, where sessions read and `from <path>` anchors
+	// resolve. Nothing is written under it.
 	Root string
 	// PRExists tells whether a PR exists, asked only for numbers the gather
 	// does not hold. Nil checks #N anchors for form only.
@@ -82,9 +89,10 @@ type Session struct {
 	Now func() time.Time
 }
 
-// Report is how one run ended: what its sessions used together, and one
-// outcome per capability, in run order.
+// Report is how one run ended: its source ("walk" or "proposal"), what its
+// sessions used together, and one outcome per capability, in run order.
 type Report struct {
+	From         string         `json:"from"`
 	Used         adapter.Tokens `json:"used"`
 	Capabilities []Outcome      `json:"capabilities"`
 }
@@ -119,7 +127,7 @@ type Outcome struct {
 	Error     string               `json:"error,omitempty"`
 }
 
-// job is one capability ready to run: its proposal, its prompt and the
+// job is one capability ready to run: its name and promise, its prompt and the
 // input the prompt was written from. When the prompt is more than one
 // session holds, parts are its sources laid into shares of room estimated
 // tokens each, or err says why they could not be.
@@ -144,22 +152,28 @@ func tooLong(err error, system, message string, read reading.Report) error {
 		err, reading.Thousands(int64(reading.Tokens(system))), reading.Thousands(int64(reading.Tokens(message))), strings.Join(read.Lines(), "; "))
 }
 
-// Run is init's recover and check phases end to end. For each capability
-// (those of s.Only, or all the proposal holds) it runs one prompt-only
-// session with the recovering skill on its linked sources, whole, checks the
-// text it writes, sends problems back up to MaxRetries times, then drops
-// what is still at fault; its row replaces the capability's earlier one.
+// Run is init's recover and check phases end to end, from the walk and the
+// placements when both are stored (a new gather, new areas or a new walk
+// clears the later ones, so both are of the current gather), else from the
+// stored proposal. For each capability of s.Only, or of the source, it runs
+// one session, read-only in s.Root, with the recovering skill on its
+// sources, whole, checks the text it writes, sends problems back up to
+// MaxRetries times, then drops what is still at fault; its row replaces the
+// capability's earlier one.
 //
-// No proposal (ErrNoProposal) and a name in s.Only the proposal lacks are
-// errors that resolve no agent and store nothing. A capability that fails,
-// or that a cancelled run never reaches, is not an error: the Report says so.
+// Neither a walk with its placements nor a proposal (ErrNoProposal), and a
+// name in s.Only the source lacks, are errors that resolve no agent and
+// store nothing. A capability that fails, or that a cancelled run never
+// reaches, is not an error: the Report says so.
 func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	var rep Report
-	p, ok, err := st.Proposed()
-	if err != nil {
+	p, proposed, err := st.Proposed()
+	w, walked, werr := st.Walk()
+	_, placed, perr := st.Place()
+	if err = cmp.Or(err, werr, perr); err != nil {
 		return rep, err
 	}
-	if !ok {
+	if walked = walked && placed; !walked && !proposed {
 		return rep, ErrNoProposal
 	}
 	g, ok, err := st.Gathered()
@@ -170,28 +184,29 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 		return rep, mapping.ErrNoGather
 	}
 	var stored mapping.Stored
-	if err := json.Unmarshal(p.Body, &stored); err != nil {
-		return rep, fmt.Errorf("the stored proposal cannot be read: %w", err)
-	}
-	chosen, err := choose(stored.Proposal.Capabilities, s.Only)
-	if err != nil {
-		return rep, err
+	if proposed {
+		if err := json.Unmarshal(p.Body, &stored); err != nil {
+			return rep, fmt.Errorf("the stored proposal cannot be read: %w", err)
+		}
 	}
 	now := s.Now
 	if now == nil {
 		now = time.Now
 	}
 	date := now().UTC()
-
-	// Placed over every capability proposed, so --only reads what a full run would.
-	pl, _ := coverage.Place(g, stored.Proposal.Capabilities)
-	jobs := make([]job, len(chosen))
-	for i, c := range chosen {
-		rec := recovering.Input{
-			Product: stored.Proposal.Product.Promise, Name: c.Name, Promise: c.Promise,
-			Questions: c.Questions, Date: date, Sources: reading.Of(sources(g, c, pl), recovering.Reads)}
-		system, prompt := recovering.Split(rec)
-		jobs[i] = job{capability: c, system: system, prompt: prompt, rec: rec}
+	product, at, what := stored.Proposal.Product.Promise, p.At, "the proposal"
+	var jobs []job
+	if rep.From = "proposal"; walked {
+		if !proposed {
+			product = noPromise
+		}
+		at, rep.From, what = w.At, "walk", "the walk and placements"
+		jobs, err = walkJobs(st, w, g, s, product, date)
+	} else {
+		jobs, err = proposalJobs(g, stored.Proposal.Capabilities, s.Only, product, date)
+	}
+	if err != nil {
+		return rep, err
 	}
 	if s.Agent == nil {
 		return rep, errors.New("no agent to recover with")
@@ -212,10 +227,10 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	}
 	r := &runner{
 		agent: a, progress: s.Progress,
-		check: checker{product: stored.Proposal.Product.Promise, root: s.Root, prExists: resolver(g, s.PRExists), openRepo: s.OpenRepo},
+		check: checker{product: product, root: s.Root, prExists: resolver(g, s.PRExists), openRepo: s.OpenRepo},
 	}
 	if s.Progress != nil {
-		fmt.Fprintf(s.Progress, "physa init: recovering %s, at most %d at once\n", plural(len(jobs), "capability", "capabilities"), Concurrency)
+		fmt.Fprintf(s.Progress, "physa init: recovering %s, at most %d at once, from %s\n", plural(len(jobs), "capability", "capabilities"), Concurrency, what)
 	}
 	rep.Capabilities = r.all(ctx, jobs)
 	if err := dedupe(r.check, rep.Capabilities); err != nil {
@@ -238,7 +253,7 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 			return rep, err
 		}
 		rows[i] = initrecord.Recovered{
-			Capability: o.Name, ProposalAt: p.At, At: now().UTC(), Status: o.Status, File: o.File, Terms: o.Terms, KeepEarlier: o.Status != StatusRecovered,
+			Capability: o.Name, ProposalAt: at, At: now().UTC(), Status: o.Status, File: o.File, Terms: o.Terms, KeepEarlier: o.Status != StatusRecovered,
 			Details: details, SessionID: o.SessionID, Model: o.Model, Attempts: o.Attempts,
 			Input: o.Tokens.Input, CachedInput: o.Tokens.CachedInput, Output: o.Tokens.Output,
 		}
@@ -249,33 +264,64 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	return rep, ctx.Err()
 }
 
-// choose returns the capabilities to recover: those only names, in its
-// order and each once, or all of them. A name the proposal lacks is an
-// error naming it and the names proposed.
-func choose(proposed []mapping.Capability, only []string) ([]mapping.Capability, error) {
+// newJob is the job of capability c, recovered from rec.
+func newJob(c mapping.Capability, rec recovering.Input) job {
+	system, prompt := recovering.Split(rec)
+	return job{capability: c, system: system, prompt: prompt, rec: rec}
+}
+
+// proposalJobs are the jobs of the proposed capabilities only names, or all
+// of them, in the proposal's order, each reading what it cites and what
+// coverage places with it.
+func proposalJobs(g store.Gather, proposed []mapping.Capability, only []string, product string, date time.Time) ([]job, error) {
 	if len(proposed) == 0 {
 		return nil, errors.New("the proposal holds no capability; run physa init --propose again")
 	}
-	if len(only) == 0 {
-		return proposed, nil
-	}
-	var out []mapping.Capability
 	names := make([]string, len(proposed))
 	for i, c := range proposed {
 		names[i] = c.Name
 	}
-	seen := map[string]bool{}
-	for _, name := range only {
-		i := slices.Index(names, name)
-		if i < 0 {
-			return nil, fmt.Errorf("no capability %q in the proposal; it proposes: %s", name, strings.Join(names, ", "))
-		}
-		if !seen[name] {
-			seen[name] = true
-			out = append(out, proposed[i])
-		}
+	chosen, err := recoverinput.Choose(names, only, "no capability %q in the proposal; it proposes: %s")
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+	// Placed over every capability proposed, so --only reads what a full run would.
+	pl, _ := coverage.Place(g, proposed)
+	jobs := make([]job, len(chosen))
+	for k, i := range chosen {
+		c := proposed[i]
+		jobs[k] = newJob(c, recovering.Input{Product: product, Name: c.Name, Promise: c.Promise,
+			Questions: c.Questions, Date: date, Sources: reading.Of(recoverinput.Proposed(g, c, pl), recovering.Reads)})
+	}
+	return jobs, nil
+}
+
+// walkJobs are the jobs of the walk's capabilities s.Only names, in its
+// order, or of all of them in recovery's order, each reading its area, its
+// footprint and what the stored placement places with it. The seed of the
+// order is the stored one, or the gather's, stored before any session
+// starts, so a later run takes the same order.
+func walkJobs(st Store, w initrecord.Walk, g store.Gather, s Session, product string, date time.Time) ([]job, error) {
+	seed, ok, err := st.RecoverSeed()
+	if !ok {
+		seed = recoverinput.Seed(g)
+	}
+	var caps []recoverinput.Walked
+	if err == nil {
+		caps, err = recoverinput.Chosen(st, s.Root, w, g, s.Only, seed)
+	}
+	if err == nil && !ok && len(s.Only) == 0 {
+		err = st.PutRecoverSeed(seed, date)
+	}
+	if err != nil {
+		return nil, err
+	}
+	jobs := make([]job, len(caps))
+	for i, c := range caps {
+		jobs[i] = newJob(mapping.Capability{Name: c.Name, Promise: c.Promise}, recovering.Input{Product: product, Name: c.Name,
+			Promise: c.Promise, Area: c.Area, Footprint: &c.Footprint, Date: date, Sources: reading.Of(c.Sources, recovering.Reads)})
+	}
+	return jobs, nil
 }
 
 // plural counts n things: "1 rule", "3 rules".

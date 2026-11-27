@@ -888,7 +888,15 @@ type windowedAgent struct {
 	ids     []string
 }
 
-func (w *windowedAgent) Window() int { return w.window }
+// Window is the window the test sets while propose reads its shares, and a
+// whole one once the merge has run: recovering's skill is larger than the
+// room a share leaves, and only propose is meant to be cramped here.
+func (w *windowedAgent) Window() int {
+	if slices.Contains(w.propose, "merge") {
+		return 1_000_000
+	}
+	return w.window
+}
 
 func (w *windowedAgent) Start(ctx context.Context, s adapter.Spec) (adapter.Session, error) {
 	if !s.Resume && !strings.Contains(s.Prompt, discoveryMarker) && !strings.Contains(s.Prompt, "\nname: delivery\n") && !strings.Contains(s.Prompt, "\nname: search\n") {

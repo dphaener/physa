@@ -1,0 +1,5 @@
+CREATE TABLE init_recover (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    seed INTEGER NOT NULL,
+    at TEXT NOT NULL
+) STRICT;

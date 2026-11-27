@@ -21,10 +21,19 @@ var Reads = reading.Options{Messages: true}
 type Input struct {
 	// Product is the product's promise, as the proposal holds it.
 	Product string
-	// Name and Promise are the capability's, as the proposal holds them.
+	// Name and Promise are the capability's, as the proposal or the walk
+	// holds them.
 	Name, Promise string
-	// Questions are the proposal's questions about this capability.
+	// Questions are the proposal's questions about this capability; a
+	// capability found in the code has none.
 	Questions []mapping.Question
+	// Area is the area of the code a capability found in the code was found
+	// in; empty for one proposed from the history.
+	Area string
+	// Footprint is set for a capability found in the code, and nil for one
+	// proposed from the history. When it is set, the prompt is the walk's
+	// form: the area, the capability's files, and its placed PRs and changes.
+	Footprint *Footprint
 	// Date is the day of recovery: the date its questions are raised on.
 	Date time.Time
 	// Sources are the capability's linked sources, whole, or one share of
@@ -36,6 +45,25 @@ type Input struct {
 	// sessions on the shares before it recovered.
 	Share, Shares         int
 	Earlier, EarlierTerms string
+}
+
+// Footprint is the files a capability found in the code owns and those that
+// bear on it, as the walk named them, each a path from the repo root; a path
+// ending in "/" is a folder. Every share of the capability's sources is given
+// all of it.
+type Footprint struct {
+	// Sources are the source files the capability owns.
+	Sources []SourceFile
+	// Tests, Docs and Other are the tests, the docs and guides, and the other
+	// files (configuration, fixtures, assets and the like) that bear on it.
+	Tests, Docs, Other []string
+}
+
+// SourceFile is one source file of a footprint, with its line count; Lines is 0
+// when the count is not known, and then none is written.
+type SourceFile struct {
+	Path  string
+	Lines int
 }
 
 // Reply is what the session wrote, in shape only: the capability's single

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,7 +24,6 @@ import (
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/reading"
-	"github.com/dphaener/physa/internal/spend"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
@@ -228,7 +228,7 @@ func TestFullWritePushPR(t *testing.T) {
 	before := personState(t, dir)
 	f := &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}
 	a := newRoutedAgent()
-	code, out, errOut := runInit(fullEnv(t, f, a), "--write", "--push", "--pr", "--yes")
+	code, out, errOut := runInit(fullEnv(t, f, a), "--write", "--push", "--pr")
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -265,7 +265,7 @@ func TestFullWritePushPR(t *testing.T) {
 
 // noPricesLine is the full run's first line on a machine that knows no
 // prices yet.
-const noPricesLine = "physa init: no appetite and no circuit breaker: init is never bounded, and is up front about its cost instead: once it has gathered it estimates the rest of the run and asks before going on. Spend is shown in tokens; no prices are known yet, so they count raw and no cost is shown.\n"
+const noPricesLine = "physa init: no appetite and no circuit breaker: init runs to the end. Spend is shown in tokens; no prices are known yet, so they count raw and no cost is shown.\n"
 
 func TestFullPlanLineComesFirst(t *testing.T) {
 	remoteRepo(t)
@@ -273,7 +273,7 @@ func TestFullPlanLineComesFirst(t *testing.T) {
 	a := newRoutedAgent()
 	var seen string
 	a.first = func() { seen = stderr.String() }
-	code := runInitTo(&bytes.Buffer{}, &stderr, fullEnv(t, onePR(), a), "--yes")
+	code := runInitTo(&bytes.Buffer{}, &stderr, fullEnv(t, onePR(), a))
 	if code != 0 {
 		t.Fatalf("code %d, stderr %s", code, stderr.String())
 	}
@@ -284,13 +284,8 @@ func TestFullPlanLineComesFirst(t *testing.T) {
 		t.Errorf("sessions %v (discovery read-only: %v); want discovery first, read-only", a.started, a.readOnly)
 	}
 	after := strings.TrimPrefix(stderr.String(), seen)
-	for _, want := range []string{"physa init: discovery spent 1k tokens. The rest of the run should spend about ",
-		" tokens: propose's prompt of about ", " tokens plus 16k for its reply, at 2.05 times as weighed, and recovering at 6.25 to 18.75 times the sources' ",
-		" tokens (nebari's measured ratio of 12.5, until a run is recorded on this machine). An estimate, not a limit.\n",
-		"physa init: this run spent "} {
-		if !strings.Contains(after, want) {
-			t.Errorf("after gathering, stderr lacks %q:\n%s", want, after)
-		}
+	if !strings.Contains(after, "physa init: this run spent ") || regexp.MustCompile(`(?i)estimat`).MatchString(stderr.String()) {
+		t.Errorf("after gathering, stderr lacks the spend line or names an estimate:\n%s", after)
 	}
 	if strings.Contains(stderr.String(), "$") || strings.Contains(stderr.String(), "appetite of") {
 		t.Errorf("with no prices a cost was shown, or an appetite named:\n%s", stderr.String())
@@ -300,202 +295,41 @@ func TestFullPlanLineComesFirst(t *testing.T) {
 	}
 }
 
-// asking records the questions Confirm was asked and the sessions started
-// by then, and answers each with yes.
-type asking struct {
-	a         *routedAgent
-	yes       bool
-	questions []string
-	before    []string
+// readFails is a Stdin that fails the test when it is read.
+type readFails struct{ t *testing.T }
+
+func (r readFails) Read([]byte) (int, error) {
+	r.t.Error("init read the person's input")
+	return 0, io.EOF
 }
 
-func (k *asking) confirm(q string) (bool, error) {
-	k.questions = append(k.questions, q)
-	k.before = slices.Clone(k.a.started)
-	return k.yes, nil
-}
-
-// TestFullEstimateWaitsForAYesOnATerminal checks that on a terminal the run
-// shows its estimate after gathering and waits for a yes before proposing.
-func TestFullEstimateWaitsForAYesOnATerminal(t *testing.T) {
+// TestBareRunAsksNothingAboutCost checks that a bare run on a terminal prints
+// no estimate and asks no question: it proposes and recovers without being
+// asked, and the next run's first line names what a token is worth.
+func TestBareRunAsksNothingAboutCost(t *testing.T) {
 	remoteRepo(t)
 	a := newRoutedAgent()
 	a.priced = true
-	k := &asking{a: a, yes: true}
 	env := fullEnv(t, onePR(), a)
 	env.IsTerminal = func() bool { return true }
-	env.Confirm = k.confirm
-	code, out, errOut := runInit(env)
-	if code != 0 || !strings.Contains(out, "## delivery: recovered") {
-		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	env.Stdin = readFails{t}
+	code, out, errOut := runInit(env, "--write")
+	if code != 0 || !strings.Contains(out, "## delivery: recovered") || !slices.Contains(a.started, "propose") {
+		t.Fatalf("code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
 	}
-	if len(k.questions) != 1 || !slices.Equal(k.before, []string{"discover"}) {
-		t.Fatalf("asked %q with sessions %v started", k.questions, k.before)
+	if regexp.MustCompile(`(?i)estimat`).MatchString(errOut) || regexp.MustCompile(`(?m)\?$`).MatchString(errOut) {
+		t.Errorf("stderr holds an estimate or a question:\n%s", errOut)
 	}
-	if q := k.questions[0]; !regexp.MustCompile(`^Go on to propose and recover, about [0-9.]+k to [0-9.]+k tokens \(about \$0\.[0-9]{2} to \$0\.[0-9]{2}\)\?$`).MatchString(q) {
-		t.Errorf("question %q", q)
-	}
-	if !strings.HasPrefix(errOut, noPricesLine) || !strings.Contains(errOut, "physa init: discovery spent 1.1k tokens (under $0.01).") {
-		t.Errorf("stderr names no priced discovery:\n%s", errOut)
-	}
-
-	// Declining stops before proposing, with nothing spent on it.
-	a2 := newRoutedAgent()
-	k2 := &asking{a: a2}
-	env.Agent = func(string) (adapter.Adapter, error) { return a2, nil }
-	env.Confirm = k2.confirm
-	code, out, errOut = runInit(env, "--write")
-	if code != 1 || !slices.Equal(a2.started, []string{"discover"}) || strings.Contains(out, "# Proposed map") ||
-		!strings.Contains(errOut, "physa init: stopped before proposing, as asked; nothing was spent on proposing or recovering. The gather is stored: physa init --propose continues, then physa init --recover.\n") {
-		t.Errorf("declined: code %d, sessions %v\nstdout %s\nstderr %s", code, a2.started, out, errOut)
+	if !strings.HasPrefix(errOut, noPricesLine) {
+		t.Errorf("stderr starts %q", errOut)
 	}
 	// The first run's prices are kept for the next one, whose first line
 	// names what a token is worth.
-	if !strings.Contains(errOut, "Spend is shown in tokens weighted by price, each worth an input token of claude-opus-5-5 ($4.00 a million), with the cost estimate beside it.\n") {
+	a2 := newRoutedAgent()
+	env.Agent = func(string) (adapter.Adapter, error) { return a2, nil }
+	_, _, errOut = runInit(env, "--write")
+	if !strings.Contains(errOut, "physa init: no appetite and no circuit breaker: init runs to the end. Spend is shown in tokens weighted by price, each worth an input token of claude-opus-5-5 ($4.00 a million), with about what they cost beside them.\n") {
 		t.Errorf("the second run's first line names no unit:\n%s", errOut)
-	}
-}
-
-// TestFullOffATerminalNeedsYes checks that with no terminal and no --yes
-// the run stops before proposing, naming the estimate and the command that
-// goes on, and that --yes then runs through without asking.
-func TestFullOffATerminalNeedsYes(t *testing.T) {
-	remoteRepo(t)
-	a := newRoutedAgent()
-	env := fullEnv(t, onePR(), a)
-	env.Confirm = func(string) (bool, error) { t.Error("asked off a terminal"); return false, nil }
-	code, out, errOut := runInit(env, "--write", "--agent", "fake")
-	if code != 1 || !slices.Equal(a.started, []string{"discover"}) || strings.Contains(out, "# Proposed map") {
-		t.Fatalf("code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
-	}
-	want := regexp.MustCompile(`physa init: stopped before proposing: the rest of the run is estimated at about [0-9.]+k to [0-9.]+k tokens, and with no terminal to ask on, init goes on only when told to\. The gather is stored; rerun with --yes to go on without asking: physa init --write --agent fake --yes\n$`)
-	if !want.MatchString(errOut) {
-		t.Errorf("stderr:\n%s", errOut)
-	}
-	if gitIn(t, ".", "branch", "--list", "physa/init") != "" {
-		t.Error("a branch was written")
-	}
-	code, out, errOut = runInit(env, "--write", "--agent", "fake", "--yes")
-	if code != 0 || !strings.Contains(out, "Wrote physa/init at ") || strings.Contains(errOut, "stopped before proposing") {
-		t.Errorf("--yes: code %d\nstdout %s\nstderr %s", code, out, errOut)
-	}
-}
-
-// TestFullOverrunWarnsOnceAndGoesOn checks that a run whose spend passes the
-// top of its estimate says so once and still recovers and writes.
-func TestFullOverrunWarnsOnceAndGoesOn(t *testing.T) {
-	remoteRepo(t)
-	a := newRoutedAgent()
-	a.recovers = 5_000_000
-	code, out, errOut := runInit(fullEnv(t, onePR(), a), "--write", "--yes")
-	if code != 0 || !strings.Contains(out, "Recovered 2, not yet recovered 0") || !strings.Contains(out, "Wrote physa/init at ") {
-		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
-	}
-	warn := regexp.MustCompile(`physa init: past the estimate: proposing and recovering have spent [0-9.]+M tokens, more than its top of [0-9.]+k tokens; init is never bounded, so it goes on\.\n`)
-	if n := len(warn.FindAllString(errOut, -1)); n != 1 {
-		t.Errorf("%d warnings, want 1:\n%s", n, errOut)
-	}
-}
-
-// TestPhasesRecordTheRatioToo checks that --recover over every capability
-// records the ratio, with propose's spend from the earlier --propose, and
-// that --recover --only records nothing.
-func TestPhasesRecordTheRatioToo(t *testing.T) {
-	remoteRepo(t)
-	a := newRoutedAgent()
-	a.priced, a.writes1h = true, true
-	env := fullEnv(t, onePR(), a)
-	for _, args := range [][]string{{"--gather"}, {"--propose"}, {"--recover", "--only", "search"}} {
-		if code, _, errOut := runInit(env, args...); code != 0 || len(spend.Open(env.Spend).Ratios) != 0 {
-			t.Fatalf("%v: code %d, ratios %+v\n%s", args, code, spend.Open(env.Spend).Ratios, errOut)
-		}
-	}
-	if code, _, errOut := runInit(env, "--recover"); code != 0 {
-		t.Fatalf("--recover: code %d\n%s", code, errOut)
-	}
-	st, err := env.Store(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows, err := initrecord.Of(st).Spending()
-	st.Close()
-	if err != nil || len(rows) != 3 {
-		t.Fatalf("spent %+v, %v", rows, err)
-	}
-	got := spend.Open(env.Spend).Ratios
-	if prop := rows[1]; len(got) != 1 || got[0].Recover <= 0 || got[0].Propose != prop.Spend.Tokens*1000/(prop.Raw.Input+prop.Raw.Output) {
-		t.Errorf("ratios %+v from propose's %+v", got, prop)
-	}
-}
-
-// TestAFailedCapabilityStillRecordsTheRatio checks that a run where one
-// capability fails records the ratio from what the others spent.
-func TestAFailedCapabilityStillRecordsTheRatio(t *testing.T) {
-	remoteRepo(t)
-	a := newRoutedAgent()
-	a.priced, a.writes1h = true, true
-	a.replies["search"] = "not a capability's text"
-	env := fullEnv(t, onePR(), a)
-	if code, _, errOut := runInit(env, "--yes"); code == 0 || len(spend.Open(env.Spend).Ratios) != 1 {
-		t.Fatalf("code %d, ratios %+v\n%s", code, spend.Open(env.Spend).Ratios, errOut)
-	}
-}
-
-// TestFullRecordsTheRatioForTheNextRun checks that a finished run records
-// its ratio of recovered input to sources in the machine's spend cache, and
-// that once two are recorded the next estimate uses their range.
-func TestFullRecordsTheRatioForTheNextRun(t *testing.T) {
-	remoteRepo(t)
-	a := newRoutedAgent()
-	a.priced, a.writes1h = true, true
-	env := fullEnv(t, onePR(), a)
-	// An unpriced run records nothing: its raw tokens would mix units.
-	b := newRoutedAgent()
-	env.Agent = func(string) (adapter.Adapter, error) { return b, nil }
-	if code, _, errOut := runInit(env, "--yes"); code != 0 || len(spend.Open(env.Spend).Ratios) != 0 {
-		t.Fatalf("unpriced run: code %d, ratios %+v\n%s", code, spend.Open(env.Spend).Ratios, errOut)
-	}
-	env.Agent = func(string) (adapter.Adapter, error) { return a, nil }
-	want := []spend.Ratio{}
-	for i, recovers := range []int64{10_000, 30_000} {
-		a.recovers = recovers
-		code, out, errOut := runInit(env, "--yes", "--json")
-		var doc struct{ Gather gather.Summary }
-		if code != 0 || json.Unmarshal([]byte(out), &doc) != nil {
-			t.Fatalf("run %d: code %d\nstderr %s", i, code, errOut)
-		}
-		st, err := env.Store(".")
-		if err != nil {
-			t.Fatal(err)
-		}
-		rows, err := initrecord.Of(st).Spending()
-		st.Close()
-		if err != nil || len(rows) != 3 {
-			t.Fatalf("run %d spent %+v, %v", i, rows, err)
-		}
-		prop, rec := rows[1], rows[2]
-		want = append(want, spend.Ratio{Recover: rec.Spend.Tokens * 1000 / int64(doc.Gather.EstimatedTokens),
-			Propose: prop.Spend.Tokens * 1000 / (prop.Raw.Input + prop.Raw.Output)})
-		got := spend.Open(env.Spend).Ratios
-		if len(got) != i+1 || got[i].Recover != want[i].Recover || got[i].Propose != want[i].Propose {
-			t.Fatalf("after run %d, ratios %+v, want %+v", i, got, want)
-		}
-	}
-	// 1-hour writes at twice input: propose weighs about twice its raw tokens.
-	if p := want[0].Propose; p < 1900 || p > 2100 {
-		t.Errorf("propose's factor %d, want about 2000", p)
-	}
-	r := spend.Open(env.Spend).RatioRange()
-	if r.Measured != 2 || r.RecoverLo != want[0].Recover || r.RecoverHi != want[1].Recover {
-		t.Fatalf("range %+v from %+v", r, want)
-	}
-	_, _, errOut := runInit(env, "--yes")
-	times := func(m int64) string {
-		return strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%.2f", float64(m)/1000), "0"), ".")
-	}
-	if want := fmt.Sprintf("and recovering at %s to %s times the sources' ", times(r.RecoverLo), times(r.RecoverHi)); !strings.Contains(errOut, want) ||
-		!strings.Contains(errOut, "(the smallest and largest of 2 runs recorded on this machine)") {
-		t.Errorf("third run's estimate lacks %q:\n%s", want, errOut)
 	}
 }
 
@@ -508,7 +342,7 @@ func TestFullTableAgreesWithTheRunAt1HourWrites(t *testing.T) {
 	a := newRoutedAgent()
 	a.priced, a.writes1h = true, true
 	env := fullEnv(t, onePR(), a)
-	code, out, errOut := runInit(env, "--write", "--yes")
+	code, out, errOut := runInit(env, "--write")
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -545,7 +379,7 @@ func TestFullWithPricesShowsCost(t *testing.T) {
 	remoteRepo(t)
 	a := newRoutedAgent()
 	a.priced = true
-	code, out, errOut := runInit(fullEnv(t, onePR(), a), "--write", "--yes")
+	code, out, errOut := runInit(fullEnv(t, onePR(), a), "--write")
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -562,7 +396,7 @@ func TestFullWithPricesShowsCost(t *testing.T) {
 
 func TestFullJSONIsOneDocument(t *testing.T) {
 	remoteRepo(t)
-	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--json", "--yes")
+	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--json")
 	var doc struct {
 		Gather struct {
 			Version   int
@@ -706,7 +540,7 @@ func TestFullHooksKeepsOtherHooks(t *testing.T) {
 	if err := os.WriteFile(pre, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--hooks", "--yes")
+	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--hooks")
 	if code != 0 || !strings.Contains(out, "Hook: installed: ") {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -727,7 +561,7 @@ func TestFullHooksKeepsOtherHooks(t *testing.T) {
 func TestFullHooksRefusedKeepsBranch(t *testing.T) {
 	dir, _ := remoteRepo(t)
 	gitIn(t, dir, "config", "core.hooksPath", "elsewhere")
-	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--hooks", "--yes")
+	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--hooks")
 	if code != 2 || !strings.Contains(errOut, "physa init: the branch was written, but the hook was not installed: core.hooksPath is already") {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -861,7 +695,7 @@ func TestGatherChoosesTheDiscoveryAgent(t *testing.T) {
 	if code != 0 || json.Unmarshal([]byte(out), &sum) != nil {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
-	if !strings.HasPrefix(errOut, "physa init: gather, with the discovery agent; init is never bounded, so it has no appetite and no circuit breaker\n") || !slices.Equal(names, []string{"x"}) ||
+	if !strings.HasPrefix(errOut, "physa init: gather, with the discovery agent; init has no appetite and no circuit breaker\n") || !slices.Equal(names, []string{"x"}) ||
 		!slices.Equal(a.started, []string{"discover"}) || !a.readOnly {
 		t.Errorf("stderr %q, agents %v, sessions %v", errOut, names, a.started)
 	}
@@ -931,7 +765,7 @@ func bigPRs(tokens int) forge.Forge {
 func TestFullProposesInSharesWhenOneSessionCannotHoldTheSources(t *testing.T) {
 	remoteRepo(t)
 	a := &windowedAgent{routedAgent: newRoutedAgent(), window: shareWindow}
-	code, out, errOut := runInit(fullEnv(t, bigPRs(4_000), a), "--write", "--yes")
+	code, out, errOut := runInit(fullEnv(t, bigPRs(4_000), a), "--write")
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -941,14 +775,13 @@ func TestFullProposesInSharesWhenOneSessionCannotHoldTheSources(t *testing.T) {
 	if got := a.started[:5]; !slices.Equal(got, []string{"discover", "propose", "propose", "propose", "propose"}) || len(a.started) != 7 {
 		t.Errorf("sessions %v: want discovery, the shares and the merge, then recovering", a.started)
 	}
-	for _, want := range []string{"tokens: propose's 3 shares and their merge, prompts of about ", " for their replies, at 2.05 times as weighed, and recovering at ",
-		"physa init: propose reads share 1 of 3 whole, ", "physa init: propose reads share 3 of 3 whole, ", "physa init: propose merges the proposals of its 3 shares"} {
+	for _, want := range []string{"physa init: propose reads share 1 of 3 whole, ", "physa init: propose reads share 3 of 3 whole, ", "physa init: propose merges the proposals of its 3 shares"} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, errOut)
 		}
 	}
-	if strings.Contains(errOut, "propose's prompt of about") {
-		t.Errorf("the estimate counts one session:\n%s", errOut)
+	if strings.Contains(errOut, "propose reads its sources whole") || regexp.MustCompile(`(?i)estimat`).MatchString(errOut) {
+		t.Errorf("stderr names one session or an estimate:\n%s", errOut)
 	}
 	for _, want := range []string{"in 3 shares and a merge", "Share 1 of 3, about ", "The merge read only the shares' proposals", "## delivery: recovered", "Wrote physa/init at "} {
 		if !strings.Contains(out, want) {
@@ -971,8 +804,8 @@ func TestFullProposesInSharesWhenOneSessionCannotHoldTheSources(t *testing.T) {
 func TestFullOneSessionWithinTheWindowIsUnchanged(t *testing.T) {
 	remoteRepo(t)
 	a := &windowedAgent{routedAgent: newRoutedAgent(), window: 1_000_000}
-	code, out, errOut := runInit(fullEnv(t, bigPRs(4_000), a), "--yes")
-	if code != 0 || !slices.Equal(a.propose, []string{"share"}) || !strings.Contains(errOut, "tokens: propose's prompt of about ") ||
+	code, out, errOut := runInit(fullEnv(t, bigPRs(4_000), a))
+	if code != 0 || !slices.Equal(a.propose, []string{"share"}) || !strings.Contains(errOut, "propose reads its sources whole") ||
 		strings.Contains(errOut, "shares") || strings.Contains(out, "Share 1 of") {
 		t.Errorf("code %d, propose sessions %v\nstdout %s\nstderr %s", code, a.propose, out, errOut)
 	}
@@ -987,7 +820,7 @@ func TestFullStopsOnASourceLargerThanAShare(t *testing.T) {
 	env := fullEnv(t, bigPRs(10_000), a)
 	stop := regexp.MustCompile(`physa init: PR #3 takes about [0-9,]+ estimated tokens, and with the skill it is more than one share of propose holds \(about [0-9,]+ tokens\)\. ` +
 		`Nothing is cut, so init stops before spending on propose\. To leave it out of the gather, gather again with --since a date after it merged on [0-9-]+ \(physa init --gather --since [0-9-]+\), or with a smaller --max-prs\.\n$`)
-	code, out, errOut := runInit(env, "--yes")
+	code, out, errOut := runInit(env)
 	t.Logf("bare run: exit %d\nstderr:\n%s", code, errOut)
 	if code != 1 || !slices.Equal(a.started, []string{"discover"}) || len(a.propose) != 0 || !stop.MatchString(errOut) || strings.Contains(out, "# Proposed map") {
 		t.Errorf("bare run: code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
@@ -1025,7 +858,7 @@ func TestFullSkillLineIsSaidOnceLastAndInThePRBody(t *testing.T) {
 	env := fullEnv(t, f, newRoutedAgent())
 	spy := &skillSpy{line: skillLine}
 	env.Skill = spy.skill
-	code, out, errOut := runInit(env, "--write", "--push", "--pr", "--yes", "--agent", "fake")
+	code, out, errOut := runInit(env, "--write", "--push", "--pr", "--agent", "fake")
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -1051,7 +884,7 @@ func TestFullSkillLineIsInTheJSONBody(t *testing.T) {
 	remoteRepo(t)
 	env := fullEnv(t, onePR(), newRoutedAgent())
 	env.Skill = (&skillSpy{line: skillLine}).skill
-	code, out, errOut := runInit(env, "--write", "--yes", "--json")
+	code, out, errOut := runInit(env, "--write", "--json")
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -1076,7 +909,7 @@ func TestFullSkillCurrentOrNilSaysNothing(t *testing.T) {
 			f := &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}
 			env := fullEnv(t, f, newRoutedAgent())
 			env.Skill = skill
-			code, out, errOut := runInit(env, "--write", "--push", "--pr", "--yes")
+			code, out, errOut := runInit(env, "--write", "--push", "--pr")
 			if code != 0 || len(f.bodies) != 1 {
 				t.Fatalf("code %d, bodies %d\nstdout %s\nstderr %s", code, len(f.bodies), out, errOut)
 			}
@@ -1110,22 +943,25 @@ func TestNewCodebaseSkillLineIsInTheBody(t *testing.T) {
 
 func TestFullSkillLineKeepsTheExitCode(t *testing.T) {
 	cases := map[string]struct {
-		repo func(t *testing.T)
-		args []string
+		repo  func(t *testing.T)
+		forge forge.Forge
+		agent func() adapter.Adapter
+		args  []string
 	}{
-		"stopped before proposing":  {func(t *testing.T) { remoteRepo(t) }, []string{"--write"}},
-		"a new codebase unanswered": {func(t *testing.T) { newCodebaseRepo(t) }, []string{"--write"}},
+		"stopped before proposing": {func(t *testing.T) { remoteRepo(t) }, bigPRs(10_000),
+			func() adapter.Adapter { return &windowedAgent{routedAgent: newRoutedAgent(), window: shareWindow} }, []string{"--write"}},
+		"a new codebase unanswered": {func(t *testing.T) { newCodebaseRepo(t) }, nil, func() adapter.Adapter { return newRoutedAgent() }, []string{"--write"}},
 		"a hook refused": {func(t *testing.T) {
 			dir, _ := remoteRepo(t)
 			gitIn(t, dir, "config", "core.hooksPath", "elsewhere")
-		}, []string{"--write", "--hooks", "--yes"}},
+		}, onePR(), func() adapter.Adapter { return newRoutedAgent() }, []string{"--write", "--hooks"}},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			codes := map[string]int{}
 			for _, line := range []string{"", skillLine} {
 				c.repo(t)
-				env := fullEnv(t, onePR(), newRoutedAgent())
+				env := fullEnv(t, c.forge, c.agent())
 				env.Skill = (&skillSpy{line: line}).skill
 				code, _, errOut := runInit(env, c.args...)
 				codes[line] = code

@@ -3,7 +3,6 @@ package initrun
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/dphaener/physa/internal/initcost"
 	"github.com/dphaener/physa/internal/newcodebase"
@@ -13,12 +12,10 @@ import (
 )
 
 // full is bare physa init (design 02 section 2.1). Init is never bounded
-// (design 10 Q6): it says so before any token is spent, then gathers, with the discovery agent,
-// and for a new codebase takes the person's answers instead. Otherwise it estimates the rest of
-// the run and asks to go on (initcost), or stops, before spending on propose, when a source is
-// larger than one share of it (shares.TooLarge); with a yes it proposes, recovers, saying once if
-// the spend passes the top of the estimate, records what proposing and recovering spent, weighed,
-// against their prompt and sources for the next estimate (record), and with --write writes physa/init.
+// (design 10 Q6) unless given a --cap: it says so, or the cap, before any token is spent, then gathers, with the discovery agent,
+// and for a new codebase takes the person's answers instead. Otherwise it proposes, stopping
+// before it spends on propose when a source is larger than one share of it (shares.TooLarge),
+// recovers, says what the run spent, and with --write writes physa/init.
 // Every run starts fresh: it replaces the stored gather, proposal and recoveries.
 // Before it writes, it asks Env.Skill for the line on the agent's Physa skill, which the PR body carries and Run says last.
 func (r *run) full() int {
@@ -26,10 +23,10 @@ func (r *run) full() int {
 		r.skill = r.env.Skill(r.o.Agent)
 	}
 	r.agent() // resolved here so the first line can say what a token is worth; gather reports a failure
-	fmt.Fprintf(r.stderr, "physa init: no appetite and no circuit breaker: init is never bounded, and is up front about its cost instead: once it has gathered it estimates the rest of the run and asks before going on. %s\n", initcost.Unit(r.cache, r.meter.Name()))
+	fmt.Fprintf(r.stderr, "physa init: %s %s\n", r.guard.StartLine(), initcost.Unit(r.cache, r.meter.Name()))
 	g, sum, err := r.gatherInto("")
 	if err != nil {
-		return failed(r.stderr, err)
+		return r.fail(err)
 	}
 	r.p.gather(sum)
 	if newcodebase.New(g) {
@@ -39,33 +36,12 @@ func (r *run) full() int {
 	if _, err := r.agent(); err != nil {
 		return failed(r.stderr, err)
 	}
-	est, err := initcost.For(r.cache, r.meter, g, sum.EstimatedTokens)
-	if err != nil {
-		return failed(r.stderr, err)
-	}
-	fmt.Fprintf(r.stderr, "physa init: %s\n", est.Line())
-	ask := initcost.Ask{Yes: r.o.Yes, Rerun: strings.Join(append([]string{"physa init"}, append(r.args, "--yes")...), " ")}
-	if r.env.IsTerminal != nil && r.env.IsTerminal() {
-		ask.Confirm = r.env.Confirm
-	}
-	if !initcost.Proceed(r.stderr, est, ask) {
-		return 1
-	}
-	initcost.WarnPast(r.stderr, r.meter, est.Hi)
 	if code := r.propose(); code != 0 {
 		return code
 	}
-	return r.recoverPhase(nil, func(rep recovery.Report) {
-		r.record(rep)
-		fmt.Fprintf(r.stderr, "physa init: this run spent %s.\n", r.meter.Spent())
+	return r.recoverPhase(nil, func(recovery.Report) {
+		fmt.Fprintf(r.stderr, "physa init: this run spent %s.\n", r.o.Cap.Show(r.meter.Spent())) // in the cap's unit
 	})
-}
-
-// record keeps the ratio of a recovery of every capability (initcost.Record).
-func (r *run) record(rep recovery.Report) {
-	if len(r.o.Only) == 0 && rep.Whole() { // some capabilities say nothing of the whole
-		initcost.Record(r.cache, r.st, r.counts["recover"], r.env.Now())
-	}
 }
 
 // recoverySession is how recovering runs: on the capabilities of only (none

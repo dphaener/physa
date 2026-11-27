@@ -12,6 +12,7 @@ import (
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/recovering"
+	"github.com/dphaener/physa/internal/recoverinput"
 	"github.com/dphaener/physa/internal/shares"
 )
 
@@ -84,20 +85,21 @@ func (r *runner) say(o Outcome) {
 		if o.Shares > 0 {
 			in = fmt.Sprintf(" in %d shares", o.Shares)
 		}
-		line += fmt.Sprintf(" (%s; %s%s; %s)", kept(o.Counts), plural(o.Attempts, "attempt", "attempts"), in, o.Tokens)
+		line += fmt.Sprintf(" (%s; %s%s; %s)", kept(o.Counts), recoverinput.Plural(o.Attempts, "attempt", "attempts"), in, o.Tokens)
 	}
 	fmt.Fprintln(r.progress, line)
 }
 
 // kept reads like "3 rules, 1 decision, 2 questions, 0 terms".
 func kept(c recovering.Counts) string {
-	return plural(c.Rules, "rule", "rules") + ", " + plural(c.Decisions, "decision", "decisions") + ", " +
-		plural(c.Questions, "question", "questions") + ", " + plural(c.Terms, "term", "terms")
+	return recoverinput.Plural(c.Rules, "rule", "rules") + ", " + recoverinput.Plural(c.Decisions, "decision", "decisions") + ", " +
+		recoverinput.Plural(c.Questions, "question", "questions") + ", " + recoverinput.Plural(c.Terms, "term", "terms")
 }
 
 // capability runs one capability to its end: in one session, or, when its
 // sources are more than one session holds, in shares, one session after
-// another (shares.go), then settles its last answer.
+// another (shares.go), then settles its last answer. A session the cap
+// refuses (adapter.ErrCapped) leaves it not yet recovered, not failed.
 func (r *runner) capability(ctx context.Context, j job) Outcome {
 	c := j.capability
 	out := Outcome{Name: c.Name, Shares: len(j.parts)}
@@ -123,7 +125,7 @@ func (r *runner) capability(ctx context.Context, j job) Outcome {
 		a, problems, err := r.turns(ctx, c, adapter.Spec{Prompt: prompt, System: system, ReadOnly: true, Dir: r.check.root}, &out)
 		if errors.Is(err, adapter.ErrTooLong) {
 			if room = recovering.Half(room, prompt); room < recovering.MinRoom {
-				return fail(fmt.Errorf("%w; with the room for a share halved to about %s tokens it still did not fit", tooLong(err, system, prompt, read), reading.Thousands(int64(room*2))))
+				return fail(fmt.Errorf("%w; with the room for a share halved to about %s tokens it still did not fit", recoverinput.TooLong(err, system, prompt, read), reading.Thousands(int64(room*2))))
 			}
 			laid, lerr := j.rec.Lay(shares.JoinCapability(parts[min(k, len(parts)):], j.rec.Sources), room)
 			if lerr != nil {
@@ -133,6 +135,10 @@ func (r *runner) capability(ctx context.Context, j job) Outcome {
 			parts, k = append(parts[:min(k, len(parts))], laid...), k-1
 			out.Shares = len(parts)
 			continue
+		}
+		if errors.Is(err, adapter.ErrCapped) { // the cap refused this session before it ran: nothing of it is recovered
+			out.Status, out.Attempts = StatusNotYet, out.Attempts-1
+			return out
 		}
 		if err != nil {
 			return fail(err)
@@ -171,7 +177,7 @@ func (r *runner) turns(ctx context.Context, c mapping.Capability, spec adapter.S
 			res, err = attempt(ctx, r.agent, spec)
 		}
 		out.Attempts++
-		add(&out.Tokens, res.Tokens)
+		recoverinput.Add(&out.Tokens, res.Tokens)
 		if res.Model != "" {
 			out.Model = res.Model
 		}

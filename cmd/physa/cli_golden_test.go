@@ -121,6 +121,8 @@ var goldenLines = []string{
 	"init --gather --propose",
 	"init --areas --propose",
 	"init --areas --write",
+	"init --cap 120%",
+	"init --place --cap 5usd",
 	"pursuit show --json=maybe",
 	"pursuit list --json=maybe",
 	"evidence --limit 0",

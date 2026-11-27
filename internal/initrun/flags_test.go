@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/dphaener/physa/internal/command"
+	"github.com/dphaener/physa/internal/initcap"
 )
 
 var now = time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
@@ -267,12 +268,12 @@ func TestLineRecoverRejections(t *testing.T) {
 
 func TestLineFull(t *testing.T) {
 	f, ok := parseLine(nil, now)
-	if !ok || !f.Full() || f.Write || f.Yes {
+	if !ok || !f.Full() || f.Write {
 		t.Fatalf("bare: %+v %v", f, ok)
 	}
-	f, ok = parseLine([]string{"--write", "--push", "--pr", "--hooks", "--yes", "--agent=x",
+	f, ok = parseLine([]string{"--write", "--push", "--pr", "--hooks", "--agent=x",
 		"--answers", "a.txt", "--since", "2026-01-02", "--max-prs=5", "--json"}, now)
-	if !ok || !f.Full() || !f.Write || !f.Push || !f.PR || !f.Hooks || !f.Yes || f.Agent != "x" ||
+	if !ok || !f.Full() || !f.Write || !f.Push || !f.PR || !f.Hooks || f.Agent != "x" ||
 		f.Answers != "a.txt" || !f.SinceSet || f.MaxPRs != 5 || !f.JSON {
 		t.Errorf("every flag: %+v %v", f, ok)
 	}
@@ -296,12 +297,29 @@ func TestLineFullRejections(t *testing.T) {
 		{"--answers="},
 		{"--write=1"},
 		{"--appetite", "300000"},
+		{"--yes"},
 		{"--yes=1"},
 		{"--recover", "--push"},
 		{"--recover", "--hooks"},
 	} {
 		if _, ok := parseLine(args, now); ok {
 			t.Errorf("%v accepted", args)
+		}
+	}
+}
+
+func TestLineCap(t *testing.T) {
+	for _, args := range [][]string{{"--cap", "$5"}, {"--recover", "--cap=80%"}, {"--walk", "--cap", "2m"}, {"--gather", "--cap", "5usd"}} {
+		if o, ok := parseLine(args, now); !ok || o.Cap.Kind == initcap.None {
+			t.Errorf("%v: ok %v, cap %+v", args, ok, o.Cap)
+		}
+	}
+	if o, ok := parseLine(nil, now); !ok || o.Cap.Kind != initcap.None {
+		t.Errorf("no --cap: ok %v, cap %+v", ok, o.Cap)
+	}
+	for _, args := range [][]string{{"--cap", "abc"}, {"--place", "--cap", "5usd"}, {"--cap", "101%"}} {
+		if _, ok := parseLine(args, now); ok {
+			t.Errorf("%v: accepted", args)
 		}
 	}
 }

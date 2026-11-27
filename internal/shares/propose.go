@@ -276,26 +276,3 @@ func tokens(n int) string {
 	}
 	return fmt.Sprintf("%d tokens", n)
 }
-
-// Estimate is what init's estimate counts for propose of g with an agent
-// whose window is window: the prompts' estimated tokens together, the reply
-// reserves, and the number of shares. When the prompt fits one session (or
-// window is 0) that is mapping.Estimate, one reply reserve and 0 shares.
-// Otherwise it is every share's prompt and the merge's (MergeTokens), a
-// reply reserve for each share and the merge, and the shares Propose would
-// run. A source too large for one share gives the *TooLarge.
-func Estimate(g store.Gather, window int) (prompt, reply, shares int, err error) {
-	in := mapping.Read(g)
-	if Fits(in, window) {
-		return mapping.Estimate(g), mapping.ReplyReserve, 0, nil
-	}
-	laid, err := Lay(in, window-mapping.ReplyReserve)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-	for _, s := range laid {
-		prompt += reading.Tokens(mapping.Prompt(s))
-	}
-	k := len(laid)
-	return prompt + MergeTokens(k), (k + 1) * mapping.ReplyReserve, k, nil
-}

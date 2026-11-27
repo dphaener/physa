@@ -28,7 +28,7 @@ func TestWriteTextWordsCounts(t *testing.T) {
 	for _, want := range []string{
 		"Recovered 1, not yet recovered 1, failed 0; used 1 token.",
 		"Kept 3 rules, 1 decision, 0 questions, 1 term.", "Attempts: 1; session none;",
-		"run again with --only search", "- search",
+		"physa init --recover continues with them", "- search",
 	} {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("missing %q in\n%s", want, b.String())

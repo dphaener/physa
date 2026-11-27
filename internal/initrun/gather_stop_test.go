@@ -225,7 +225,7 @@ func TestFullRunStoppedByRateLimitDoesNotPropose(t *testing.T) {
 	f, _ := stoppingForge(fixedNow(&env))
 	env.Forge = func(string) forge.Forge { return f }
 	var stdout, stderr bytes.Buffer
-	code := runInitTo(&stdout, &stderr, env, "--yes")
+	code := runInitTo(&stdout, &stderr, env)
 	if code != 2 || !strings.Contains(stderr.String(), "physa init: the forge stopped the gather") || !strings.Contains(stderr.String(), "rate limit") {
 		t.Errorf("code %d, stderr %s", code, stderr.String())
 	}

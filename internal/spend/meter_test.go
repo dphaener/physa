@@ -65,40 +65,26 @@ func TestInputAndRange(t *testing.T) {
 	}
 }
 
-func TestRatioRangeDefaultThenMeasured(t *testing.T) {
+func TestSaveDropsTheRatioRecords(t *testing.T) {
 	path := filepath.Join(t.TempDir(), File)
-	// A cache from before holds raw ratios under the old key: ignored.
-	if err := os.WriteFile(path, []byte(`{"init_ratios":[{"milli":5900,"at":"2026-11-22T00:00:00Z"},{"milli":6100,"at":"2026-11-23T00:00:00Z"}]}`), 0o600); err != nil {
+	// A cache from before holds ratios under both older keys: ignored and dropped.
+	old := `{"models":{"m":{"micro_usd_per_million_input":4000000,"at":"2026-11-22T00:00:00Z"}},"init_ratios":[{"milli":5900,"at":"2026-11-22T00:00:00Z"}],"init_weighted_ratios":[{"recover":6250,"at":"2026-11-23T00:00:00Z"}]}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	c := Open(path)
-	defaults := Ratios{RecoverLo: 6250, RecoverHi: 18750, ProposeLo: 2050, ProposeHi: 2050}
-	if got := c.RatioRange(); got != defaults {
-		t.Errorf("with only old raw ratios: %+v, want %+v", got, defaults)
-	}
-	c.RecordRatio(1250, 100, 205, 100, day)
-	c.RecordRatio(0, 100, 205, 100, day)  // nothing recovered: not a ratio
-	c.RecordRatio(1250, 100, 0, 100, day) // nothing proposed: not a ratio
-	if got, want := c.RatioRange(), (Ratios{RecoverLo: 6250, RecoverHi: 18750, ProposeLo: 2050, ProposeHi: 2050, Measured: 1}); got != want {
-		t.Errorf("with one run: %+v, want its own ratios %+v", got, want)
-	}
 	if err := c.Save(); err != nil {
 		t.Fatal(err)
 	}
-	other := Open(path)
-	other.RecordRatio(800, 100, 190, 100, day.Add(time.Hour))
-	if err := other.Save(); err != nil {
+	b, err := os.ReadFile(path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Save(); err != nil { // an older copy saved again keeps the newer run
-		t.Fatal(err)
+	if strings.Contains(string(b), "init_weighted_ratios") || strings.Contains(string(b), "init_ratios") {
+		t.Errorf("the ratio records were kept:\n%s", b)
 	}
-	want := Ratios{RecoverLo: 8000, RecoverHi: 12500, ProposeLo: 1900, ProposeHi: 2050, Measured: 2}
-	if got := Open(path).RatioRange(); got != want {
-		t.Errorf("with two runs: %+v, want %+v", got, want)
-	}
-	if b, _ := os.ReadFile(path); strings.Contains(string(b), `"init_ratios"`) {
-		t.Errorf("the old raw ratios were kept:\n%s", b)
+	if _, ok := Open(path).Price("m"); !ok {
+		t.Errorf("the prices were lost:\n%s", b)
 	}
 }
 

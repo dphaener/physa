@@ -171,7 +171,7 @@ func TestGatherJSON(t *testing.T) {
 	write(t, dir, "README.md", "hello\n")
 	env := testEnv(t, onePR(), nil)
 	code, out, errOut := runInit(env, "--gather", "--json")
-	if code != 0 || errOut != "physa init: gather, with the discovery agent; init is never bounded, so it has no appetite and no circuit breaker\n" {
+	if code != 0 || errOut != "physa init: gather, with the discovery agent; init has no appetite and no circuit breaker\n" {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
 	var sum gather.Summary

@@ -9,7 +9,7 @@ Physa: product management for agents.
 Commands:
   check     Check the map and the changes of a range against it.
   map       Read the map: a bare map prints the index.
-  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+  init      Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
   idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
@@ -32,7 +32,7 @@ Physa: product management for agents.
 Commands:
   check     Check the map and the changes of a range against it.
   map       Read the map: a bare map prints the index.
-  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+  init      Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
   idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
@@ -55,7 +55,7 @@ Physa: product management for agents.
 Commands:
   check     Check the map and the changes of a range against it.
   map       Read the map: a bare map prints the index.
-  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+  init      Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
   idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
@@ -77,7 +77,7 @@ Physa: product management for agents.
 Commands:
   check     Check the map and the changes of a range against it.
   map       Read the map: a bare map prints the index.
-  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+  init      Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
   idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
@@ -100,7 +100,7 @@ Physa: product management for agents.
 Commands:
   check     Check the map and the changes of a range against it.
   map       Read the map: a bare map prints the index.
-  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+  init      Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
   idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
@@ -250,15 +250,15 @@ Point the repo's hooks at the one that stamps Session: on commits made in Claude
 $ physa init --help
 exit 0
 --- stdout
-usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]
-       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--json]
-       physa init --propose [--agent NAME] [--json]
-       physa init --areas [--agent NAME] [--json]
-       physa init --walk [--agent NAME] [--json]
+usage: physa init [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--cap <amount>] [--json]
+       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--cap <amount>] [--json]
+       physa init --propose [--agent NAME] [--cap <amount>] [--json]
+       physa init --areas [--agent NAME] [--cap <amount>] [--json]
+       physa init --walk [--agent NAME] [--cap <amount>] [--json]
        physa init --place [--json]
-       physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
+       physa init --recover [--only CAPABILITY]... [--agent NAME] [--cap <amount>] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
 --- stderr
 
 $ physa idea --help
@@ -746,15 +746,15 @@ $ physa init --bogus
 exit 2
 --- stdout
 --- stderr
-usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]
-       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--json]
-       physa init --propose [--agent NAME] [--json]
-       physa init --areas [--agent NAME] [--json]
-       physa init --walk [--agent NAME] [--json]
+usage: physa init [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--cap <amount>] [--json]
+       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--cap <amount>] [--json]
+       physa init --propose [--agent NAME] [--cap <amount>] [--json]
+       physa init --areas [--agent NAME] [--cap <amount>] [--json]
+       physa init --walk [--agent NAME] [--cap <amount>] [--json]
        physa init --place [--json]
-       physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
+       physa init --recover [--only CAPABILITY]... [--agent NAME] [--cap <amount>] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
 
 $ physa idea list extra
 exit 2
@@ -990,99 +990,129 @@ $ physa init --push
 exit 2
 --- stdout
 --- stderr
-usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]
-       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--json]
-       physa init --propose [--agent NAME] [--json]
-       physa init --areas [--agent NAME] [--json]
-       physa init --walk [--agent NAME] [--json]
+usage: physa init [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--cap <amount>] [--json]
+       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--cap <amount>] [--json]
+       physa init --propose [--agent NAME] [--cap <amount>] [--json]
+       physa init --areas [--agent NAME] [--cap <amount>] [--json]
+       physa init --walk [--agent NAME] [--cap <amount>] [--json]
        physa init --place [--json]
-       physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
+       physa init --recover [--only CAPABILITY]... [--agent NAME] [--cap <amount>] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
 
 $ physa init --max-prs 0
 exit 2
 --- stdout
 --- stderr
-usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]
-       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--json]
-       physa init --propose [--agent NAME] [--json]
-       physa init --areas [--agent NAME] [--json]
-       physa init --walk [--agent NAME] [--json]
+usage: physa init [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--cap <amount>] [--json]
+       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--cap <amount>] [--json]
+       physa init --propose [--agent NAME] [--cap <amount>] [--json]
+       physa init --areas [--agent NAME] [--cap <amount>] [--json]
+       physa init --walk [--agent NAME] [--cap <amount>] [--json]
        physa init --place [--json]
-       physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
+       physa init --recover [--only CAPABILITY]... [--agent NAME] [--cap <amount>] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
 
 $ physa init --since yesterday
 exit 2
 --- stdout
 --- stderr
-usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]
-       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--json]
-       physa init --propose [--agent NAME] [--json]
-       physa init --areas [--agent NAME] [--json]
-       physa init --walk [--agent NAME] [--json]
+usage: physa init [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--cap <amount>] [--json]
+       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--cap <amount>] [--json]
+       physa init --propose [--agent NAME] [--cap <amount>] [--json]
+       physa init --areas [--agent NAME] [--cap <amount>] [--json]
+       physa init --walk [--agent NAME] [--cap <amount>] [--json]
        physa init --place [--json]
-       physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
+       physa init --recover [--only CAPABILITY]... [--agent NAME] [--cap <amount>] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
 
 $ physa init --only a
 exit 2
 --- stdout
 --- stderr
-usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]
-       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--json]
-       physa init --propose [--agent NAME] [--json]
-       physa init --areas [--agent NAME] [--json]
-       physa init --walk [--agent NAME] [--json]
+usage: physa init [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--cap <amount>] [--json]
+       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--cap <amount>] [--json]
+       physa init --propose [--agent NAME] [--cap <amount>] [--json]
+       physa init --areas [--agent NAME] [--cap <amount>] [--json]
+       physa init --walk [--agent NAME] [--cap <amount>] [--json]
        physa init --place [--json]
-       physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
+       physa init --recover [--only CAPABILITY]... [--agent NAME] [--cap <amount>] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
 
 $ physa init --gather --propose
 exit 2
 --- stdout
 --- stderr
-usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]
-       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--json]
-       physa init --propose [--agent NAME] [--json]
-       physa init --areas [--agent NAME] [--json]
-       physa init --walk [--agent NAME] [--json]
+usage: physa init [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--cap <amount>] [--json]
+       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--cap <amount>] [--json]
+       physa init --propose [--agent NAME] [--cap <amount>] [--json]
+       physa init --areas [--agent NAME] [--cap <amount>] [--json]
+       physa init --walk [--agent NAME] [--cap <amount>] [--json]
        physa init --place [--json]
-       physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
+       physa init --recover [--only CAPABILITY]... [--agent NAME] [--cap <amount>] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
 
 $ physa init --areas --propose
 exit 2
 --- stdout
 --- stderr
-usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]
-       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--json]
-       physa init --propose [--agent NAME] [--json]
-       physa init --areas [--agent NAME] [--json]
-       physa init --walk [--agent NAME] [--json]
+usage: physa init [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--cap <amount>] [--json]
+       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--cap <amount>] [--json]
+       physa init --propose [--agent NAME] [--cap <amount>] [--json]
+       physa init --areas [--agent NAME] [--cap <amount>] [--json]
+       physa init --walk [--agent NAME] [--cap <amount>] [--json]
        physa init --place [--json]
-       physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
+       physa init --recover [--only CAPABILITY]... [--agent NAME] [--cap <amount>] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
 
 $ physa init --areas --write
 exit 2
 --- stdout
 --- stderr
-usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]
-       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--json]
-       physa init --propose [--agent NAME] [--json]
-       physa init --areas [--agent NAME] [--json]
-       physa init --walk [--agent NAME] [--json]
+usage: physa init [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--cap <amount>] [--json]
+       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--cap <amount>] [--json]
+       physa init --propose [--agent NAME] [--cap <amount>] [--json]
+       physa init --areas [--agent NAME] [--cap <amount>] [--json]
+       physa init --walk [--agent NAME] [--cap <amount>] [--json]
        physa init --place [--json]
-       physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
+       physa init --recover [--only CAPABILITY]... [--agent NAME] [--cap <amount>] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+
+$ physa init --cap 120%
+exit 2
+--- stdout
+--- stderr
+physa init: --cap "120%" must be above 0% and at most 100%: give an amount of money ($5 or 5usd), a share of the plan's usage (80%) or tokens (2m)
+usage: physa init [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--cap <amount>] [--json]
+       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--cap <amount>] [--json]
+       physa init --propose [--agent NAME] [--cap <amount>] [--json]
+       physa init --areas [--agent NAME] [--cap <amount>] [--json]
+       physa init --walk [--agent NAME] [--cap <amount>] [--json]
+       physa init --place [--json]
+       physa init --recover [--only CAPABILITY]... [--agent NAME] [--cap <amount>] [--write [--push [--pr]] [--hooks]] [--json]
+
+Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+
+$ physa init --place --cap 5usd
+exit 2
+--- stdout
+--- stderr
+physa init: --place starts no session, so it takes no --cap
+usage: physa init [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--cap <amount>] [--json]
+       physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--cap <amount>] [--json]
+       physa init --propose [--agent NAME] [--cap <amount>] [--json]
+       physa init --areas [--agent NAME] [--cap <amount>] [--json]
+       physa init --walk [--agent NAME] [--cap <amount>] [--json]
+       physa init --place [--json]
+       physa init --recover [--only CAPABILITY]... [--agent NAME] [--cap <amount>] [--write [--push [--pr]] [--hooks]] [--json]
+
+Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
 
 $ physa pursuit show --json=maybe
 exit 2
@@ -1183,7 +1213,7 @@ Physa: product management for agents.
 Commands:
   check     Check the map and the changes of a range against it.
   map       Read the map: a bare map prints the index.
-  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
+  init      Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal.
   idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.

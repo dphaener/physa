@@ -10,7 +10,6 @@ import (
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/initrun"
 	"github.com/dphaener/physa/internal/output"
-	"github.com/dphaener/physa/internal/picker"
 	"github.com/dphaener/physa/internal/skillcli"
 	"github.com/dphaener/physa/internal/spend"
 	"github.com/dphaener/physa/internal/vcs/git"
@@ -18,7 +17,7 @@ import (
 
 // initCommand builds physa init: every phase in order, or the one a flag names.
 func initCommand() *cobra.Command {
-	const summary = "Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal."
+	const summary = "Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase; --recover recovers from the walk and placements when both are stored, else from the proposal."
 	var f initrun.Flags
 	var c *cobra.Command
 	c = command.Declare(command.New("init", summary, initrun.Usage,
@@ -35,7 +34,6 @@ func initCommand() *cobra.Command {
 				Hooks:      git.OpenHooks,
 				Stdin:      os.Stdin,
 				IsTerminal: func() bool { return output.IsTerminal(os.Stdin) },
-				Confirm:    func(q string) (bool, error) { return picker.ConfirmOrNo(os.Stdin, os.Stderr, q) },
 				Spend:      cache,
 				Skill:      skillNotice,
 			})

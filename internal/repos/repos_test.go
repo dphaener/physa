@@ -1,6 +1,7 @@
 package repos
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
@@ -67,7 +68,7 @@ func TestAddRelativeRefused(t *testing.T) {
 
 func TestStoreDirRepo(t *testing.T) {
 	root := gitInit(t)
-	got, err := StoreDir(root)
+	got, err := StoreDir(root, os.Environ())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +85,7 @@ func TestStoreDirRepo(t *testing.T) {
 
 func TestStoreDirNotARepo(t *testing.T) {
 	d := t.TempDir()
-	_, err := StoreDir(d)
+	_, err := StoreDir(d, os.Environ())
 	if err == nil || !strings.Contains(err.Error(), d) {
 		t.Fatalf("StoreDir = %v; want an error naming %s", err, d)
 	}

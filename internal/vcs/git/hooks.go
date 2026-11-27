@@ -26,9 +26,9 @@ type hooks struct {
 var _ vcs.Hooks = (*hooks)(nil)
 
 // OpenHooks returns the hooks of the repository that contains dir. Its errors
-// are Open's.
-func OpenHooks(ctx context.Context, dir string) (vcs.Hooks, error) {
-	r, err := Open(ctx, dir)
+// are Open's; its git commands run in env.
+func OpenHooks(ctx context.Context, dir string, env []string) (vcs.Hooks, error) {
+	r, err := Open(ctx, dir, env)
 	if err != nil {
 		return nil, err
 	}
@@ -101,10 +101,10 @@ func (h *hooks) HooksDir(ctx context.Context) (string, error) {
 }
 
 // Email reads user.email from every scope git reads, for the repository at
-// dir or outside any. It is "" with no error when unset: git config exits 1,
-// printing nothing. It never reads user.name.
-func Email(ctx context.Context, dir string) (string, error) {
-	out, stderr, err := runGit(ctx, dir, "", os.Environ(), "config", "--get", "user.email")
+// dir or outside any, with git run in env. It is "" with no error when unset:
+// git config exits 1, printing nothing. It never reads user.name.
+func Email(ctx context.Context, dir string, env []string) (string, error) {
+	out, stderr, err := runGit(ctx, dir, "", env, "config", "--get", "user.email")
 	var exit *exec.ExitError
 	if ctx.Err() == nil && errors.As(err, &exit) && exit.ExitCode() == 1 && stderr == "" {
 		return "", nil

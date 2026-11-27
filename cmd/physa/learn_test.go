@@ -37,18 +37,20 @@ func runLearn(t *testing.T, d deps, args ...string) (int, string, string) {
 	return code, stdout.String(), stderr.String()
 }
 
-func learnRepo(t *testing.T) (dir, head string) {
+// learnRepo is trailersRepo, its commits made with kv, with origin/main at
+// its head; it returns the repo and the id of the change "feat: ok".
+func learnRepo(t *testing.T, kv ...string) (dir, head string) {
 	t.Helper()
-	dir = trailersRepo(t)
+	dir = trailersRepo(t, kv...)
 	gitIn(t, dir, "update-ref", "refs/remotes/origin/main", "HEAD")
 	gitIn(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
 	return dir, strings.TrimSpace(gitIn(t, dir, "rev-parse", "HEAD~3"))
 }
 
 func TestLearnText(t *testing.T) {
-	d := testDeps(t)
+	t.Parallel()
 	dir, id := learnRepo(t)
-	t.Chdir(dir)
+	d := depsIn(t, dir)
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	f := prForge{change: id, pr: forge.PR{
 		Number:   7,
@@ -68,9 +70,9 @@ func TestLearnText(t *testing.T) {
 }
 
 func TestLearnJSON(t *testing.T) {
-	d := testDeps(t)
+	t.Parallel()
 	dir, _ := learnRepo(t)
-	t.Chdir(dir)
+	d := depsIn(t, dir)
 	code, out, _ := runLearn(t, d, "--signals", "--json")
 	var got struct{ Version int }
 	if code != 0 || json.Unmarshal([]byte(out), &got) != nil || got.Version != 2 {
@@ -79,9 +81,9 @@ func TestLearnJSON(t *testing.T) {
 }
 
 func TestLearnForgeUnavailable(t *testing.T) {
-	d := testDeps(t)
+	t.Parallel()
 	dir, _ := learnRepo(t)
-	t.Chdir(dir)
+	d := depsIn(t, dir)
 	useNoGH(&d)
 	code, out, _ := runLearn(t, d, "--signals")
 	if code != 0 || !strings.Contains(out, "Forge: unavailable") {
@@ -90,17 +92,17 @@ func TestLearnForgeUnavailable(t *testing.T) {
 }
 
 func TestLearnOutsideRepo(t *testing.T) {
-	d := testDeps(t)
-	t.Chdir(t.TempDir())
+	t.Parallel()
+	d := depsIn(t, t.TempDir())
 	if code, _, errOut := runLearn(t, d, "--signals"); code != 2 || !strings.HasPrefix(errOut, "physa map learn: ") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
 func TestLearnBadSince(t *testing.T) {
-	d := testDeps(t)
+	t.Parallel()
 	dir, _ := learnRepo(t)
-	t.Chdir(dir)
+	d := depsIn(t, dir)
 	code, _, errOut := runLearn(t, d, "--signals", "--since=nosuch")
 	if code != 2 || !strings.HasPrefix(errOut, "physa map learn: ") {
 		t.Errorf("code %d, stderr %q", code, errOut)
@@ -172,12 +174,12 @@ func useAgent(d *deps, name string, f *fakeAgent) {
 }
 
 // signalRepo is a learn repo where the change "feat: ok" has a correction
-// signal, with d's forge answering it; it returns the repo and that change's
-// short id.
+// signal, with d working in it and d's forge answering it; it returns the
+// repo and that change's short id.
 func signalRepo(t *testing.T, d *deps) (dir, short string) {
 	t.Helper()
 	dir, id := learnRepo(t)
-	t.Chdir(dir)
+	*d = inDir(t, *d, dir)
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	f := prForge{change: id, pr: forge.PR{
 		Number:   7,
@@ -206,9 +208,9 @@ func answer(short string) string {
 func branches(t *testing.T, dir string) string { return gitIn(t, dir, "branch", "--list") }
 
 func TestLearnNoSignals(t *testing.T) {
-	d := testDeps(t)
+	t.Parallel()
 	dir, _ := learnRepo(t)
-	t.Chdir(dir) // the default fake GitHub knows no PR, so no signal; claude must never start
+	d := depsIn(t, dir) // the default fake GitHub knows no PR, so no signal; claude must never start
 	code, out, errOut := runLearn(t, d)
 	if code != 0 || !strings.Contains(out, "no session started") || strings.Contains(errOut, "appetite") {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
@@ -216,6 +218,7 @@ func TestLearnNoSignals(t *testing.T) {
 }
 
 func TestLearnDraftKeepsAndDrops(t *testing.T) {
+	t.Parallel()
 	d := testDeps(t)
 	dir, short := signalRepo(t, &d)
 	before, status := branches(t, dir), gitIn(t, dir, "status", "--porcelain")
@@ -246,6 +249,7 @@ func TestLearnDraftKeepsAndDrops(t *testing.T) {
 }
 
 func TestLearnDraftJSON(t *testing.T) {
+	t.Parallel()
 	d := testDeps(t)
 	_, short := signalRepo(t, &d)
 	useAgent(&d, "claude", &fakeAgent{result: adapter.Result{Text: answer(short), Tokens: adapter.Tokens{Input: 100, Output: 20}}})
@@ -266,6 +270,7 @@ func TestLearnDraftJSON(t *testing.T) {
 }
 
 func TestLearnUnreadableAnswer(t *testing.T) {
+	t.Parallel()
 	d := testDeps(t)
 	signalRepo(t, &d)
 	useAgent(&d, "claude", &fakeAgent{result: adapter.Result{Text: "no block here"}})
@@ -276,6 +281,7 @@ func TestLearnUnreadableAnswer(t *testing.T) {
 }
 
 func TestLearnBreaker(t *testing.T) {
+	t.Parallel()
 	d := testDeps(t)
 	dir, short := signalRepo(t, &d)
 	before := branches(t, dir)
@@ -293,14 +299,12 @@ func TestLearnBreaker(t *testing.T) {
 }
 
 func TestLearnAgentChoice(t *testing.T) {
+	t.Parallel()
 	d := testDeps(t)
-	signalRepo(t, &d)
+	dir, _ := signalRepo(t, &d)
 	for name, run := range map[string]func(t *testing.T) (int, string, string){
 		"flag": func(t *testing.T) (int, string, string) { return runLearn(t, d, "--agent", "nosuch") },
-		"env": func(t *testing.T) (int, string, string) {
-			t.Setenv("PHYSA_AGENT", "nosuch")
-			return runLearn(t, d)
-		},
+		"env":  func(t *testing.T) (int, string, string) { return runLearn(t, inDir(t, d, dir, "PHYSA_AGENT=nosuch")) },
 	} {
 		code, out, errOut := run(t)
 		if code != 2 || out != "" || !strings.Contains(errOut, `unknown agent "nosuch" (known: claude)`) {
@@ -315,6 +319,7 @@ func TestLearnAgentChoice(t *testing.T) {
 }
 
 func TestLearnAgentFailures(t *testing.T) {
+	t.Parallel()
 	d := testDeps(t)
 	signalRepo(t, &d)
 	for _, err := range []error{adapter.ErrNotInstalled, fmt.Errorf("%w: boom", adapter.ErrFailed)} {
@@ -373,6 +378,7 @@ func writeRepo(t *testing.T, d *deps) (dir, bare string, f *prsForge) {
 }
 
 func TestLearnWriteCommitsToTheBranch(t *testing.T) {
+	t.Parallel()
 	d := testDeps(t)
 	dir, _, _ := writeRepo(t, &d)
 	status := gitIn(t, dir, "status", "--porcelain")
@@ -400,6 +406,7 @@ func TestLearnWriteCommitsToTheBranch(t *testing.T) {
 }
 
 func TestLearnWritePushAndPR(t *testing.T) {
+	t.Parallel()
 	d := testDeps(t)
 	dir, bare, f := writeRepo(t, &d)
 	code, out, errOut := runLearn(t, d, "--write", "--push", "--pr", "--appetite=5000")
@@ -423,6 +430,7 @@ func TestLearnWritePushAndPR(t *testing.T) {
 }
 
 func TestLearnWriteJSONStaysValid(t *testing.T) {
+	t.Parallel()
 	d := testDeps(t)
 	writeRepo(t, &d)
 	code, out, errOut := runLearn(t, d, "--write", "--json", "--appetite=5000")
@@ -453,6 +461,7 @@ func (noPRs) OpenPR(context.Context, string) (int, string, bool, error) {
 }
 
 func TestLearnPRWithoutForgeIsReadyForReview(t *testing.T) {
+	t.Parallel()
 	d := testDeps(t)
 	_, _, f := writeRepo(t, &d)
 	d.newForge = func(string) forge.Forge { return noPRs{f} }
@@ -485,24 +494,14 @@ func copyTree(t *testing.T, src, dst string) {
 }
 
 func TestLearnSignalsReadSessionsByTrailer(t *testing.T) {
-	d := testDeps(t)
+	t.Parallel()
 	const session = "11111111-1111-4111-8111-111111111111"
-	t.Setenv("GIT_AUTHOR_DATE", "2026-11-20T09:00:00Z")
-	t.Setenv("GIT_COMMITTER_DATE", "2026-11-20T09:00:00Z")
-	dir, _ := learnRepo(t)
-	dir, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GIT_AUTHOR_DATE", "2026-11-20T10:45:00Z")
-	t.Setenv("GIT_COMMITTER_DATE", "2026-11-20T10:45:00Z")
-	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "feat: with a session\n\nSession: "+session+"\nCapability: a")
-	gitIn(t, dir, "update-ref", "refs/remotes/origin/main", "HEAD")
+	dir := sessionRepo(t, session)
+	claudeDir := t.TempDir()
 	project := regexp.MustCompile(`[^A-Za-z0-9]`).ReplaceAllString(dir, "-")
 	copyTree(t, filepath.Join("..", "..", "internal", "adapter", "claude", "claudelog", "testdata", "projects", "-fixture-repo"),
-		filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", project))
-	t.Chdir(dir)
-	code, out, errOut := runLearn(t, d, "--signals")
+		filepath.Join(claudeDir, "projects", project))
+	code, out, errOut := runLearn(t, depsIn(t, dir, "CLAUDE_CONFIG_DIR="+claudeDir), "--signals")
 	if code != 0 {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -519,13 +518,13 @@ func TestLearnSignalsReadSessionsByTrailer(t *testing.T) {
 }
 
 func TestMapHooksSetsThenFindsItSet(t *testing.T) {
-	d := testDeps(t)
+	t.Parallel()
 	dir := trailersRepo(t)
+	d := depsIn(t, dir)
 	write(t, dir, "tools/hooks/prepare-commit-msg", "#!/bin/sh\nexit 0\n")
 	if err := os.Chmod(filepath.Join(dir, "tools/hooks/prepare-commit-msg"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Chdir(dir)
 	for _, want := range []string{
 		"core.hooksPath set to tools/hooks: commits made in Claude Code now carry Session:.\n",
 		"core.hooksPath is already tools/hooks.\n",
@@ -541,14 +540,14 @@ func TestMapHooksSetsThenFindsItSet(t *testing.T) {
 }
 
 func TestMapHooksRefusesAnotherHooksPath(t *testing.T) {
-	d := testDeps(t)
+	t.Parallel()
 	dir := trailersRepo(t)
+	d := depsIn(t, dir)
 	write(t, dir, "tools/hooks/prepare-commit-msg", "#!/bin/sh\nexit 0\n")
 	if err := os.Chmod(filepath.Join(dir, "tools/hooks/prepare-commit-msg"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	gitIn(t, dir, "config", "core.hooksPath", ".githooks")
-	t.Chdir(dir)
 	var stdout, stderr bytes.Buffer
 	code := run(t.Context(), d, []string{"map", "hooks"}, &stdout, &stderr)
 	if code != 2 || stdout.Len() != 0 || !strings.HasPrefix(stderr.String(), "physa map hooks: ") ||
@@ -578,40 +577,48 @@ func askLine(id, at, question, answer string) string {
 `, id, question, opts, at, id, id, question, opts, question, answer, at, id)
 }
 
-// attributionRepo is a learn repo whose one session answered three asks: one
-// picked by the person and two by the arbiter, one typed and one picked.
-func attributionRepo(t *testing.T) string {
+// sessionRepo is a learn repo, its path free of symlinks, whose changes were
+// made at 09:00 on 2026-11-20 but for a last one at 10:45 that names session
+// in its Session: trailer, with origin/main at it.
+func sessionRepo(t *testing.T, session string) string {
 	t.Helper()
-	const session = "22222222-2222-4222-8222-222222222222"
-	t.Setenv("GIT_AUTHOR_DATE", "2026-11-20T09:00:00Z")
-	t.Setenv("GIT_COMMITTER_DATE", "2026-11-20T09:00:00Z")
-	dir, _ := learnRepo(t)
+	dir, _ := learnRepo(t, "GIT_AUTHOR_DATE=2026-11-20T09:00:00Z", "GIT_COMMITTER_DATE=2026-11-20T09:00:00Z")
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("GIT_AUTHOR_DATE", "2026-11-20T10:45:00Z")
-	t.Setenv("GIT_COMMITTER_DATE", "2026-11-20T10:45:00Z")
-	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "feat: with a session\n\nSession: "+session+"\nCapability: a")
+	at := []string{"GIT_AUTHOR_DATE=2026-11-20T10:45:00Z", "GIT_COMMITTER_DATE=2026-11-20T10:45:00Z"}
+	gitWith(t, at, dir, "commit", "-q", "--allow-empty", "-m", "feat: with a session\n\nSession: "+session+"\nCapability: a")
 	gitIn(t, dir, "update-ref", "refs/remotes/origin/main", "HEAD")
+	return dir
+}
+
+// attributionRepo is a learn repo whose one session answered three asks: one
+// picked by the person and two by the arbiter, one typed and one picked. It
+// returns the repo and the Claude config directory that holds the session's log.
+func attributionRepo(t *testing.T) (dir, claudeDir string) {
+	t.Helper()
+	const session = "22222222-2222-4222-8222-222222222222"
+	dir, claudeDir = sessionRepo(t, session), t.TempDir()
 	project := regexp.MustCompile(`[^A-Za-z0-9]`).ReplaceAllString(dir, "-")
 	log := `{"type":"user","origin":{"kind":"human"},"turnPosition":{"promptIndex":1,"turnIndex":1},"message":{"role":"user","content":"Export the report."},"sessionId":"` + session + `","timestamp":"2026-11-20T10:00:00.000Z","uuid":"u1"}
 ` + askLine("t1", "2026-11-20T10:05:00.000Z", "Which format for the plain export?", "CSV") +
 		askLine("t2", "2026-11-20T10:10:00.000Z", "Which format for the nested export?", "Answered on behalf of dphaener by the arbiter: keep both, CSV first") +
 		askLine("t3", "2026-11-20T10:15:00.000Z", "Which format for the archive export?", "Answered on behalf of dphaener by the arbiter: CSV")
-	logs := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", project)
+	logs := filepath.Join(claudeDir, "projects", project)
 	if err := os.MkdirAll(logs, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(logs, session+".jsonl"), []byte(log), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Chdir(dir)
-	return dir
+	return dir, claudeDir
 }
 
 // fakeGh puts a gh on PATH that prints login for api user and fails the
-// rest, and makes d's forge the GitHub client that runs it.
+// rest, and makes d's forge the GitHub client that runs it. It moves the
+// process's PATH, since the GitHub client runs gh with the process's
+// environment and exec looks gh up on its PATH.
 func fakeGh(t *testing.T, d *deps, login string) {
 	t.Helper()
 	bin := t.TempDir()
@@ -624,9 +631,9 @@ func fakeGh(t *testing.T, d *deps, login string) {
 }
 
 func TestLearnNamesThePersonAndCreditsTheArbiter(t *testing.T) {
-	d := testDeps(t)
-	attributionRepo(t)
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir, claudeDir := attributionRepo(t)
+	config := t.TempDir()
+	d := depsIn(t, dir, "CLAUDE_CONFIG_DIR="+claudeDir, "XDG_CONFIG_HOME="+config)
 	fakeGh(t, &d, "dphaener")
 	f := &fakeAgent{result: adapter.Result{Text: "```json\n{\"proposals\":[]}\n```\n"}}
 	useAgent(&d, "claude", f)
@@ -658,16 +665,16 @@ func TestLearnNamesThePersonAndCreditsTheArbiter(t *testing.T) {
 			t.Errorf("prompt holds %q", bad)
 		}
 	}
-	got, err := os.ReadFile(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "physa", "person"))
+	got, err := os.ReadFile(filepath.Join(config, "physa", "person"))
 	if err != nil || strings.TrimSpace(string(got)) != "dphaener" {
 		t.Errorf("person setting %q, %v", got, err)
 	}
 }
 
 func TestLearnWithNoPersonSaysWhy(t *testing.T) {
-	d := testDeps(t)
-	attributionRepo(t)
-	// A PATH with git and without gh.
+	dir, claudeDir := attributionRepo(t)
+	d := depsIn(t, dir, "CLAUDE_CONFIG_DIR="+claudeDir, "XDG_CONFIG_HOME="+t.TempDir())
+	// A PATH with git and without gh: exec looks gh up on the process's PATH.
 	bin := t.TempDir()
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
@@ -677,7 +684,6 @@ func TestLearnWithNoPersonSaysWhy(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	d.newForge = func(dir string) forge.Forge { return github.New(dir) }
 	f := &fakeAgent{result: adapter.Result{Text: "```json\n{\"proposals\":[]}\n```\n"}}
 	useAgent(&d, "claude", f)

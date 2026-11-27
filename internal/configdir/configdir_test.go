@@ -6,35 +6,39 @@ import (
 	"testing"
 )
 
+// lookup is a getenv over vars, standing in for the command's environment.
+func lookup(vars map[string]string) func(string) string {
+	return func(k string) string { return vars[k] }
+}
+
 func TestDirXDGAbsolute(t *testing.T) {
+	t.Parallel()
 	x := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", x)
-	t.Setenv("HOME", t.TempDir())
-	got, err := Dir()
+	got, err := Dir(lookup(map[string]string{"XDG_CONFIG_HOME": x, "HOME": t.TempDir()}))
 	if err != nil || got != filepath.Join(x, "physa") {
 		t.Fatalf("got %q, %v", got, err)
 	}
 }
 
 func TestDirXDGRelative(t *testing.T) {
+	t.Parallel()
 	h := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", "relative/path")
-	t.Setenv("HOME", h)
-	got, err := Dir()
+	got, err := Dir(lookup(map[string]string{"XDG_CONFIG_HOME": "relative/path", "HOME": h}))
 	if err != nil || got != filepath.Join(h, ".config", "physa") {
 		t.Fatalf("relative XDG must be ignored, got %q, %v", got, err)
 	}
 }
 
 func TestDirNoHome(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", "")
-	t.Setenv("HOME", "")
-	if got, err := Dir(); err == nil {
-		t.Fatalf("want error, got %q", got)
+	t.Parallel()
+	got, err := Dir(lookup(map[string]string{"XDG_CONFIG_HOME": "", "HOME": ""}))
+	if err == nil || err.Error() != "no XDG_CONFIG_HOME and no HOME" {
+		t.Fatalf("want the error naming both, got %q, %v", got, err)
 	}
 }
 
 func TestEnsureCreates(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "physa")
 	if err := Ensure(dir); err != nil {
 		t.Fatal(err)
@@ -46,6 +50,7 @@ func TestEnsureCreates(t *testing.T) {
 }
 
 func TestEnsureMissingParent(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "a", "b", "physa")
 	if err := Ensure(dir); err != nil {
 		t.Fatal(err)
@@ -56,6 +61,7 @@ func TestEnsureMissingParent(t *testing.T) {
 }
 
 func TestEnsureTightens(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "physa")
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -73,6 +79,7 @@ func TestEnsureTightens(t *testing.T) {
 }
 
 func TestEnsureRefusesOther(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -87,6 +94,7 @@ func TestEnsureRefusesOther(t *testing.T) {
 }
 
 func TestEnsureRelativeRefused(t *testing.T) {
+	t.Parallel()
 	if err := Ensure("relative/physa"); err == nil {
 		t.Fatal("want error for relative dir")
 	}

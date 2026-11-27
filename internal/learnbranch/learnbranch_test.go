@@ -20,22 +20,22 @@ import (
 	"github.com/dphaener/physa/internal/vcs/git"
 )
 
-// isolate gives git an identity and no signing from a config of the test's
-// own, so no commit reads the machine's config.
-func isolate(t *testing.T) {
-	t.Helper()
-	cfg := filepath.Join(t.TempDir(), "gitconfig")
-	body := "[user]\n\tname = W\n\temail = w@example.com\n[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = main\n"
-	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-}
+// gitEnv is the environment of every git a test runs, its own and the ones
+// the repo and writer open: the test process's, with an identity, no signing
+// and main as the first branch, given as command-line config, so no commit
+// reads the machine's config.
+var gitEnv = append(os.Environ(),
+	"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_COUNT=4",
+	"GIT_CONFIG_KEY_0=user.name", "GIT_CONFIG_VALUE_0=W",
+	"GIT_CONFIG_KEY_1=user.email", "GIT_CONFIG_VALUE_1=w@example.com",
+	"GIT_CONFIG_KEY_2=commit.gpgsign", "GIT_CONFIG_VALUE_2=false",
+	"GIT_CONFIG_KEY_3=init.defaultBranch", "GIT_CONFIG_VALUE_3=main")
 
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = gitEnv
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -77,7 +77,6 @@ func writeFolder(t *testing.T, root, dir, text string) {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	isolate(t)
 	f := &fixture{t: t, dir: t.TempDir(), bare: t.TempDir(), forge: &fakeForge{prs: map[string]forge.PR{}, errFor: map[string]error{}}}
 	gitIn(t, f.bare, "init", "-q", "--bare", "-b", "main")
 	gitIn(t, f.dir, "init", "-q", "-b", "main")
@@ -120,7 +119,9 @@ func (f *fixture) opts(a *fakeAgent, push, pr bool) Options {
 		Session: propose.Session{
 			Agent:    func() (adapter.Adapter, error) { return a, nil },
 			Appetite: 40000,
-			Check:    propose.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }},
+			Check: propose.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) {
+				return git.Open(context.Background(), d, gitEnv)
+			}},
 		}}
 }
 
@@ -144,7 +145,7 @@ func (f *fixture) run(o Options, w vcs.Writer) (Outcome, error) {
 
 func (f *fixture) writer() vcs.Writer {
 	f.t.Helper()
-	w, err := git.OpenWriter(context.Background(), f.dir)
+	w, err := git.OpenWriter(context.Background(), f.dir, gitEnv)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -157,7 +158,9 @@ func (f *fixture) state() string {
 
 // ref returns what ref names in dir, or "" when it names nothing.
 func ref(dir, name string) string {
-	out, err := exec.Command("git", "-C", dir, "rev-parse", "--verify", "--quiet", name).Output()
+	cmd := exec.Command("git", "-C", dir, "rev-parse", "--verify", "--quiet", name)
+	cmd.Env = gitEnv
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
@@ -320,6 +323,7 @@ func (f *fixture) learnOnce() string {
 }
 
 func TestLearningCommitCarriesTheDraftSession(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	c := f.change("feat: Retry sends")
 	f.corrected(c)
@@ -334,6 +338,7 @@ func TestLearningCommitCarriesTheDraftSession(t *testing.T) {
 }
 
 func TestCorrectionIsCommittedPushedAndOpened(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	c := f.change("feat: Retry sends")
 	f.corrected(c)
@@ -389,6 +394,7 @@ func TestCorrectionIsCommittedPushedAndOpened(t *testing.T) {
 }
 
 func TestTrailersOnlyCommitReplaysTheEarlierOne(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	c := f.learnOnce()
 	line := "- rule retry-on-review in delivery, from correction on " + short(c)
@@ -427,6 +433,7 @@ func TestTrailersOnlyCommitReplaysTheEarlierOne(t *testing.T) {
 }
 
 func TestSquashMergeNeitherRelearnsNorReplays(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	f.learnOnce()
 	learned := message(t, f.bare, Branch)
@@ -472,6 +479,7 @@ func twoCorrections(t *testing.T) (*fixture, string, string, *fakeAgent) {
 }
 
 func TestLeaseLostOnceIsRedoneOnce(t *testing.T) {
+	t.Parallel()
 	f, retry, sign, a := twoCorrections(t)
 	otherLine := "- rule signed-payloads in delivery, from correction on " + short(sign)
 	rw := &racingWriter{Writer: f.writer(), races: 1, race: func(int) {
@@ -510,6 +518,7 @@ func TestLeaseLostOnceIsRedoneOnce(t *testing.T) {
 }
 
 func TestLeaseLostTwiceStops(t *testing.T) {
+	t.Parallel()
 	f, _, sign, a := twoCorrections(t)
 	var theirs string
 	rw := &racingWriter{Writer: f.writer(), races: 2, race: func(n int) {
@@ -537,6 +546,7 @@ func TestLeaseLostTwiceStops(t *testing.T) {
 }
 
 func TestCheckedOutIsRefused(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	c := f.change("feat: Retry sends")
 	f.corrected(c)
@@ -554,6 +564,7 @@ func TestCheckedOutIsRefused(t *testing.T) {
 }
 
 func TestBreakerStopsAndWritesNothing(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	c := f.change("feat: Retry sends")
 	f.corrected(c)
@@ -572,6 +583,7 @@ func TestBreakerStopsAndWritesNothing(t *testing.T) {
 }
 
 func TestDroppedRecordKeepsItsLearnedIDs(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	held := f.change("chore: Held back")
 	f.forge.errFor[held] = fmt.Errorf("the forge stumbled")
@@ -601,6 +613,7 @@ func TestDroppedRecordKeepsItsLearnedIDs(t *testing.T) {
 }
 
 func TestFirstRunWithoutForgeStillRecordsLearnedThrough(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	writeFile(t, f.dir, "send.txt", "send\n")
 	gitIn(t, f.dir, "add", "send.txt")
@@ -634,6 +647,7 @@ func TestFirstRunWithoutForgeStillRecordsLearnedThrough(t *testing.T) {
 // TestIDWithASlashNamesOnlyItself shows a Learned id that names no commit,
 // as older learning records hold, matches only itself, never a change.
 func TestIDWithASlashNamesOnlyItself(t *testing.T) {
+	t.Parallel()
 	if sameChange("old/quiet-mode", "old/quiet-mode-2") || !sameChange("old/quiet-mode", " Old/Quiet-Mode ") {
 		t.Error("an id with a slash does not name exactly itself")
 	}

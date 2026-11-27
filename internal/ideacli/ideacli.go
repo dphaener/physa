@@ -16,13 +16,14 @@ import (
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/output"
+	"github.com/dphaener/physa/internal/proc"
 	"github.com/dphaener/physa/internal/tokens"
 )
 
-// Command returns the idea group, naming people through the forge newForge
-// builds for a repo.
-func Command(newForge func(dir string) forge.Forge) *cobra.Command {
-	return New(newForge).command()
+// Command returns the idea group for the process st, naming people through
+// the forge newForge builds for a repo.
+func Command(st proc.State, newForge func(dir string) forge.Forge) *cobra.Command {
+	return New(st, newForge).command()
 }
 
 func (e *Env) command() *cobra.Command {

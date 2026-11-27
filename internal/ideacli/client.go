@@ -18,6 +18,7 @@ import (
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/person"
 	"github.com/dphaener/physa/internal/picker"
+	"github.com/dphaener/physa/internal/proc"
 )
 
 // callTimeout bounds every API call a command makes, as in the engine
@@ -35,8 +36,10 @@ type Env struct {
 	Person func(dir string, f forge.Forge, stderr io.Writer) string
 	// Start says how an engine is started when none answers.
 	Start enginestart.Options
-	// Getenv reads the environment: agent sessions, $VISUAL and $EDITOR.
-	Getenv func(string) string
+	// Proc is the process the command runs in: the working directory the
+	// repo is found from, and the environment (the settings directory,
+	// agent sessions, NO_COLOR, $VISUAL and $EDITOR).
+	Proc proc.State
 	// IsInteractive says whether a person is at the terminal; nil asks
 	// output.Interactive about stdin and stdout.
 	IsInteractive func() bool
@@ -49,15 +52,15 @@ type Env struct {
 	Stdio [3]*os.File
 }
 
-// New returns the Env of a real run: the forge newForge builds, the person's
-// usual name, the real environment, terminal and pickers.
-func New(newForge func(dir string) forge.Forge) *Env {
+// New returns the Env of a real run in the process st: the forge newForge
+// builds, the person's usual name, the real terminal and pickers.
+func New(st proc.State, newForge func(dir string) forge.Forge) *Env {
 	return &Env{
 		Forge: newForge,
 		Person: func(dir string, f forge.Forge, stderr io.Writer) string {
-			return person.ForRepo(context.TODO(), dir, f, stderr) // Who has no ctx yet
+			return person.ForRepo(context.TODO(), st, dir, f, stderr) // Who has no ctx yet
 		},
-		Getenv:  os.Getenv,
+		Proc:    st,
 		Pick:    func(t string, items []picker.Item) (string, error) { return picker.Pick(os.Stdin, os.Stdout, t, items) },
 		Confirm: func(q string) (bool, error) { return picker.Confirm(os.Stdin, os.Stdout, q) },
 		Stdin:   os.Stdin,
@@ -73,8 +76,14 @@ func (e *Env) Interactive() bool {
 		return e.IsInteractive()
 	}
 	_, agent := agentenv.Detect(e.Getenv)
-	return output.Interactive(os.Stdin, os.Stdout, agent)
+	return output.Interactive(os.Stdin, os.Stdout, e.Getenv, agent)
 }
+
+// printer is output's Printer on w, plain when NO_COLOR is set.
+func (e *Env) printer(w io.Writer) *output.Printer { return output.For(w, e.Proc.LookupEnv) }
+
+// Getenv reads the process's environment.
+func (e *Env) Getenv(key string) string { return e.Proc.Getenv(key) }
 
 // Agent names the agent whose session Physa runs inside, if any.
 func (e *Env) Agent() (string, bool) { return agentenv.Detect(e.Getenv) }
@@ -82,11 +91,11 @@ func (e *Env) Agent() (string, bool) { return agentenv.Detect(e.Getenv) }
 // Repo returns the absolute root of the repo holding the working directory:
 // the nearest directory upwards with a .git entry.
 func (e *Env) Repo() (string, error) {
-	wd, err := os.Getwd()
+	wd, err := e.Proc.Getwd()
 	if err != nil {
 		return "", err
 	}
-	if wd, err = filepath.Abs(wd); err != nil {
+	if wd, err = e.Proc.Abs(wd); err != nil {
 		return "", err
 	}
 	for dir := wd; ; dir = filepath.Dir(dir) {
@@ -112,7 +121,7 @@ func (e *Env) Who(dir string, stderr io.Writer) string {
 // Call connects to the engine in the settings directory, starting it when it
 // is not running, and calls method within callTimeout.
 func (e *Env) Call(method string, params, result any) error {
-	dir, err := configdir.Dir()
+	dir, err := configdir.Dir(e.Getenv)
 	if err != nil {
 		return err
 	}

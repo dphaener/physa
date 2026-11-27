@@ -49,7 +49,7 @@ type engine struct {
 }
 
 func newEngine(o Options, now time.Time) *engine {
-	return &engine{o: o, set: repos.NewSet(o.Dir, o.State), started: now, last: now, stopped: make(chan struct{})}
+	return &engine{o: o, set: repos.NewSet(o.Dir, o.Env, o.State), started: now, last: now, stopped: make(chan struct{})}
 }
 
 // hooks count connected clients and note each activity.

@@ -59,7 +59,7 @@ func areasEnv(t *testing.T, a adapter.Adapter) Env {
 	write(t, dir, "README.md", "# App\n")
 	gitIn(t, dir, "add", ".")
 	gitIn(t, dir, "commit", "-q", "-m", "feat: Add files")
-	env := testEnv(t, onePR(), nil)
+	env := testEnv(t, dir, onePR(), nil)
 	if code, _, errOut := runInit(env, "--gather"); code != 0 {
 		t.Fatalf("gather: %d %q", code, errOut)
 	}
@@ -68,6 +68,7 @@ func areasEnv(t *testing.T, a adapter.Adapter) Env {
 }
 
 func TestAreasPrintsTheAreas(t *testing.T) {
+	t.Parallel()
 	a := &areaAgent{}
 	env := areasEnv(t, a)
 	code, out, errOut := runInit(env, "--areas")
@@ -82,7 +83,7 @@ func TestAreasPrintsTheAreas(t *testing.T) {
 	if strings.Contains(out, "session") {
 		t.Errorf("stdout names a session:\n%s", out)
 	}
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,6 +97,7 @@ func TestAreasPrintsTheAreas(t *testing.T) {
 }
 
 func TestAreasJSON(t *testing.T) {
+	t.Parallel()
 	env := areasEnv(t, &areaAgent{})
 	code, out, errOut := runInit(env, "--areas", "--json")
 	var doc struct {
@@ -111,18 +113,20 @@ func TestAreasJSON(t *testing.T) {
 }
 
 func TestAreasWithoutAGatherSaysToGatherFirst(t *testing.T) {
-	newRepo(t)
+	t.Parallel()
+	dir := newRepo(t)
 	a := &areaAgent{}
-	code, out, errOut := runInit(testEnv(t, nil, a), "--areas")
+	code, out, errOut := runInit(testEnv(t, dir, nil, a), "--areas")
 	if code == 0 || out != "" || a.starts != 0 || !strings.Contains(errOut, "run physa init --gather first") {
 		t.Errorf("code %d, %d sessions\nstdout %s\nstderr %s", code, a.starts, out, errOut)
 	}
 }
 
 func TestAreasOnAStoppedGatherWarnsAndRuns(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	a := &areaAgent{}
-	env := fullEnv(t, nil, a)
+	env := fullEnv(t, dir, nil, a)
 	shortWait(&env, 3*time.Minute)
 	f, _ := stoppingForge(fixedNow(&env))
 	env.Forge = func(string) forge.Forge { return f }
@@ -136,9 +140,10 @@ func TestAreasOnAStoppedGatherWarnsAndRuns(t *testing.T) {
 }
 
 func TestAreasRefusesAMappedRepoBeforeAnySession(t *testing.T) {
-	mappedRepo(t, ".physa/product/index.md")
+	t.Parallel()
+	dir := mappedRepo(t, ".physa/product/index.md")
 	a := &areaAgent{}
-	code, out, errOut := runInit(fullEnv(t, onePR(), a), "--areas")
+	code, out, errOut := runInit(fullEnv(t, dir, onePR(), a), "--areas")
 	if code != 2 || out != "" || a.starts != 0 || !strings.Contains(errOut, "the repo already has a map") {
 		t.Errorf("code %d, %d sessions\nstdout %s\nstderr %s", code, a.starts, out, errOut)
 	}
@@ -148,7 +153,7 @@ func TestAreasIsBadUsageWithOtherFlags(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{{"--gather"}, {"--propose"}, {"--recover"}, {"--write"}, {"--push"}, {"--pr"}, {"--hooks"},
 		{"--answers", "x"}, {"--yes"}, {"--only", "x"}, {"--since", "2026-01-01"}, {"--max-prs", "3"}} {
-		if code, _, _ := runInit(testEnv(t, nil, nil), append([]string{"--areas"}, args...)...); code != command.BadUsage {
+		if code, _, _ := runInit(testEnv(t, t.TempDir(), nil, nil), append([]string{"--areas"}, args...)...); code != command.BadUsage {
 			t.Errorf("--areas %v: code %d, want bad usage", args, code)
 		}
 	}
@@ -158,12 +163,13 @@ func TestAreasIsBadUsageWithOtherFlags(t *testing.T) {
 // distinctive names and promises leave the repo untouched, and the map
 // written from what init stored holds none of their words.
 func TestAreasNeverReachTheMap(t *testing.T) {
+	t.Parallel()
 	dir, _ := remoteRepo(t)
 	write(t, dir, "web/app.js", "let a\n")
 	gitIn(t, dir, "add", "web/app.js")
 	gitIn(t, dir, "commit", "-q", "-m", "feat: Add web", "--", "web/app.js")
 	a := &areaAgent{next: newRoutedAgent()}
-	env := fullEnv(t, &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}, a)
+	env := fullEnv(t, dir, &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}, a)
 	if code, _, errOut := runInit(env, "--gather"); code != 0 {
 		t.Fatalf("gather: %d %s", code, errOut)
 	}
@@ -185,7 +191,7 @@ func TestAreasNeverReachTheMap(t *testing.T) {
 			t.Fatalf("%v: %d %s", args, code, errOut)
 		}
 	}
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}

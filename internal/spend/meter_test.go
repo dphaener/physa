@@ -23,6 +23,7 @@ type session1 struct{ r adapter.Result }
 func (s session1) Wait() (adapter.Result, error) { return s.r, nil }
 
 func TestMeterLearnsWeighsAndAdds(t *testing.T) {
+	t.Parallel()
 	c := Open("")
 	var seen []Spend
 	m := &Meter{Adapter: oneResult{session()}, Cache: c, Now: func() time.Time { return day }, Ended: func(s Spend) { seen = append(seen, s) }}
@@ -53,6 +54,7 @@ func TestMeterLearnsWeighsAndAdds(t *testing.T) {
 }
 
 func TestInputAndRange(t *testing.T) {
+	t.Parallel()
 	c := Open("")
 	lo, hi := c.Input("claude-code", 1_000_000), c.Input("claude-code", 3_000_000)
 	if lo != (Spend{Tokens: 1_000_000, Unpriced: true}) || Range(lo, hi) != "1M to 3M tokens" {
@@ -66,6 +68,7 @@ func TestInputAndRange(t *testing.T) {
 }
 
 func TestSaveDropsTheRatioRecords(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), File)
 	// A cache from before holds ratios under both older keys: ignored and dropped.
 	old := `{"models":{"m":{"micro_usd_per_million_input":4000000,"at":"2026-11-22T00:00:00Z"}},"init_ratios":[{"milli":5900,"at":"2026-11-22T00:00:00Z"}],"init_weighted_ratios":[{"recover":6250,"at":"2026-11-23T00:00:00Z"}]}`
@@ -93,6 +96,7 @@ type windowedResult struct{ oneResult }
 func (windowedResult) Window() int { return 1_000_000 }
 
 func TestMeterWindow(t *testing.T) {
+	t.Parallel()
 	if got := (&Meter{Adapter: windowedResult{}}).Window(); got != 1_000_000 {
 		t.Errorf("Window through a meter = %d, want 1000000", got)
 	}

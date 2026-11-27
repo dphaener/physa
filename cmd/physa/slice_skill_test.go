@@ -22,12 +22,12 @@ func skillMap(t *testing.T) string {
 }
 
 func TestSliceSkillIsPrintedAndItsCommandsRun(t *testing.T) {
+	t.Parallel()
 	skill, err := os.ReadFile("../../internal/mapslice/skill.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Chdir(skillMap(t))
-	d := testDeps(t)
+	d := depsIn(t, skillMap(t))
 	var out, errb bytes.Buffer
 	if code := run(t.Context(), d, []string{"map", "slice", "a"}, &out, &errb); code != 0 {
 		t.Fatalf("bare slice = %d; stderr %q", code, errb.String())

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -50,7 +49,7 @@ func (g group) apiList(f *flags, args []string, stdout, stderr io.Writer) int {
 	for _, m := range methods {
 		rows = append(rows, []string{m.Name, m.Summary})
 	}
-	output.For(stdout).Table([]string{"Method", "Summary"}, rows)
+	g.printer(stdout).Table([]string{"Method", "Summary"}, rows)
 	return 0
 }
 
@@ -70,7 +69,7 @@ func (g group) apiDescribe(f *flags, args []string, stdout, stderr io.Writer) in
 	// A schema always marshals: it holds only strings, bools and schemas.
 	in, _ := json.Marshal(d.Input)
 	out, _ := json.Marshal(d.Output)
-	p := output.For(stdout)
+	p := g.printer(stdout)
 	p.Heading(d.Summary)
 	p.Line("")
 	p.Line("Method: " + d.Name)
@@ -108,7 +107,7 @@ func (g group) apiCall(_ *flags, args []string, stdout, stderr io.Writer) int {
 	}
 	params := []byte("{}")
 	if len(args) == 2 && args[1] == "-" {
-		b, err := io.ReadAll(os.Stdin)
+		b, err := io.ReadAll(g.stdin)
 		if err != nil {
 			return failed(stderr, "api call", err)
 		}

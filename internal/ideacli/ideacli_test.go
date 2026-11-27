@@ -22,6 +22,7 @@ import (
 	"github.com/dphaener/physa/internal/enginestart"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/picker"
+	"github.com/dphaener/physa/internal/proc"
 	"github.com/dphaener/physa/internal/workapi"
 )
 
@@ -37,14 +38,16 @@ func TestMain(m *testing.M) {
 type tenv struct {
 	t    *testing.T
 	e    *Env
-	env  map[string]string
 	repo string
 	tmp  string
 }
 
 // newTest runs an engine with the idea and pursuit methods in this process on a
-// short temporary settings directory, makes a git repo and works in it. The
-// person is "tester", nothing is interactive and nothing may spawn an engine.
+// short temporary settings directory, makes a git repo and works in its
+// subdirectory sub, both passed in the Env's process state. The person is
+// "tester", nothing is interactive and nothing may spawn an engine. It sets
+// TMPDIR, which the editor's temporary files are made in, so its tests are
+// serial.
 func newTest(t *testing.T) *tenv {
 	t.Helper()
 	tmp, err := os.MkdirTemp("", "px")
@@ -52,7 +55,6 @@ func newTest(t *testing.T) *tenv {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(tmp) })
-	t.Setenv("XDG_CONFIG_HOME", tmp)
 	t.Setenv("TMPDIR", filepath.Join(tmp, "tmp"))
 	if err := os.Mkdir(filepath.Join(tmp, "tmp"), 0o700); err != nil {
 		t.Fatal(err)
@@ -67,12 +69,11 @@ func newTest(t *testing.T) *tenv {
 	if err := os.Mkdir(filepath.Join(repo, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Chdir(filepath.Join(repo, "sub"))
 	dir := filepath.Join(tmp, "physa")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- engine.Run(ctx, engine.Options{Dir: dir, Idle: time.Minute, Version: "test", Methods: workapi.Methods(func(context.Context, string) string { return "" })})
+		done <- engine.Run(ctx, engine.Options{Env: os.Environ(), Dir: dir, Idle: time.Minute, Version: "test", Methods: workapi.Methods(os.Environ(), func(context.Context, string) string { return "" })})
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -101,14 +102,14 @@ func newTest(t *testing.T) *tenv {
 			t.Fatalf("the engine did not answer within 5s: %v", err)
 		}
 	}
-	te := &tenv{t: t, env: map[string]string{}, repo: repo, tmp: tmp}
-	e := New(nil)
+	te := &tenv{t: t, repo: repo, tmp: tmp}
+	sub := filepath.Join(repo, "sub")
+	e := New(proc.State{Dir: sub, Wd: sub, Env: []string{"XDG_CONFIG_HOME=" + tmp}}, nil)
 	e.Person = func(string, forge.Forge, io.Writer) string { return "tester" }
 	e.Start = enginestart.Options{Command: func(dir string, _ time.Duration) *exec.Cmd {
 		t.Errorf("a command tried to start an engine on %s", dir)
 		return exec.Command("false")
 	}}
-	e.Getenv = func(k string) string { return te.env[k] }
 	e.IsInteractive = func() bool { return false }
 	e.Pick = func(string, []picker.Item) (string, error) { t.Error("Pick called"); return "", picker.ErrAborted }
 	e.Confirm = func(string) (bool, error) { t.Error("Confirm called"); return false, picker.ErrAborted }
@@ -304,7 +305,7 @@ func TestRepoIsTheRootAbove(t *testing.T) {
 	if got, err := te.e.Repo(); err != nil || got != te.repo {
 		t.Errorf("Repo() = %q, %v; want %q", got, err, te.repo)
 	}
-	t.Chdir(te.tmp)
+	te.e.Proc.Dir, te.e.Proc.Wd = te.tmp, te.tmp
 	if _, err := te.e.Repo(); err == nil || !strings.Contains(err.Error(), "not inside a repo") {
 		t.Errorf("outside a repo: %v", err)
 	}

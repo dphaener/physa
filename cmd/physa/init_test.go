@@ -36,12 +36,15 @@ func useForge(d *deps, f forge.Forge) {
 	d.newForge = func(string) forge.Forge { return f }
 }
 
-// useRepoStore makes init write to the store of the repo in dir, as it does
-// outside the tests, which keep off the real store, and moves the test there.
-func useRepoStore(t *testing.T, d *deps, dir string) {
+// useRepoStore makes init work in the repo at dir, with testEnv(kv...) as
+// its environment, and write to that repo's store, as it does outside the
+// tests, which keep off the real store.
+func useRepoStore(t *testing.T, d *deps, dir string, kv ...string) {
 	t.Helper()
-	d.openStore = gitStore
-	t.Chdir(dir)
+	*d = inDir(t, *d, dir, kv...)
+	d.openStore = func(ctx context.Context, dir string) (*store.Store, error) {
+		return gitStore(ctx, dir, d.proc().Environ())
+	}
 }
 
 func runInit(d deps, args ...string) (int, string, string) {
@@ -52,7 +55,7 @@ func runInit(d deps, args ...string) (int, string, string) {
 
 func storedGather(t *testing.T, dir string) store.Gather {
 	t.Helper()
-	repo, err := git.Open(context.Background(), dir)
+	repo, err := git.Open(context.Background(), dir, testEnv())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,6 +76,7 @@ func storedGather(t *testing.T, dir string) store.Gather {
 }
 
 func TestInitGatherJSON(t *testing.T) {
+	t.Parallel()
 	d := testDeps(t)
 	dir := trailersRepo(t)
 	write(t, dir, "AGENTS.md", "rules\n")
@@ -97,13 +101,9 @@ func TestInitGatherJSON(t *testing.T) {
 }
 
 func TestInitBareNewCodebaseReadsAnswers(t *testing.T) {
+	t.Parallel()
 	d := testDeps(t)
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	t.Setenv("GIT_AUTHOR_NAME", "t")
-	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
-	t.Setenv("GIT_COMMITTER_NAME", "t")
-	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
+	config := t.TempDir()
 	dir := filepath.Join(t.TempDir(), "lathe")
 	write(t, dir, "README.md", "# Lathe\n")
 	gitIn(t, dir, "init", "-q")
@@ -112,7 +112,7 @@ func TestInitBareNewCodebaseReadsAnswers(t *testing.T) {
 	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "more")
 	answers := filepath.Join(t.TempDir(), "answers.txt")
 	write(t, filepath.Dir(answers), "answers.txt", "2: Lathe turns sketches into cut lists.\n")
-	useRepoStore(t, &d, dir)
+	useRepoStore(t, &d, dir, "XDG_CONFIG_HOME="+config)
 	useForge(&d, mergedFake{})
 	f := &fakeAgent{}
 	useAgent(&d, "claude", f)
@@ -122,14 +122,14 @@ func TestInitBareNewCodebaseReadsAnswers(t *testing.T) {
 		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
 	}
 	// The spend cache is kept machine-wide, in the settings directory.
-	if _, err := os.Stat(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "physa", "spend.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(config, "physa", "spend.json")); err != nil {
 		t.Errorf("no spend cache in the settings directory: %v", err)
 	}
 }
 
 func TestInitPushWithoutWriteIsBadUsage(t *testing.T) {
-	d := testDeps(t)
-	t.Chdir(trailersRepo(t))
+	t.Parallel()
+	d := depsIn(t, trailersRepo(t))
 	code, _, errOut := runInit(d, "--push")
 	if code != 2 || !strings.HasPrefix(errOut, "usage: physa init") {
 		t.Errorf("code %d, stderr %q", code, errOut)
@@ -137,8 +137,8 @@ func TestInitPushWithoutWriteIsBadUsage(t *testing.T) {
 }
 
 func TestInitBadSinceIsBadUsage(t *testing.T) {
-	d := testDeps(t)
-	t.Chdir(trailersRepo(t))
+	t.Parallel()
+	d := depsIn(t, trailersRepo(t))
 	code, _, errOut := runInit(d, "--gather", "--since", "yesterday")
 	if code != 2 || !strings.HasPrefix(errOut, "usage: physa init") {
 		t.Errorf("code %d, stderr %q", code, errOut)
@@ -162,9 +162,8 @@ func TestHelpListsInit(t *testing.T) {
 }
 
 func TestInitOutsideARepo(t *testing.T) {
-	d := testDeps(t)
-	t.Chdir(t.TempDir())
-	t.Setenv("GIT_CEILING_DIRECTORIES", "/")
+	t.Parallel()
+	d := depsIn(t, t.TempDir(), "GIT_CEILING_DIRECTORIES=/")
 	code, _, errOut := runInit(d, "--gather")
 	if code != 2 || !strings.HasPrefix(errOut, "physa init: ") {
 		t.Errorf("code %d, stderr %q", code, errOut)
@@ -172,8 +171,8 @@ func TestInitOutsideARepo(t *testing.T) {
 }
 
 func TestInitProposeWithGatherIsBadUsage(t *testing.T) {
-	d := testDeps(t)
-	t.Chdir(trailersRepo(t))
+	t.Parallel()
+	d := depsIn(t, trailersRepo(t))
 	code, _, errOut := runInit(d, "--propose", "--gather")
 	if code != 2 || !strings.HasPrefix(errOut, "usage: physa init") {
 		t.Errorf("code %d, stderr %q", code, errOut)
@@ -181,6 +180,7 @@ func TestInitProposeWithGatherIsBadUsage(t *testing.T) {
 }
 
 func TestInitProposeOnAMappedRepoIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDeps(t)
 	dir := trailersRepo(t)
 	useRepoStore(t, &d, dir)
@@ -200,20 +200,13 @@ type claudeFake struct{ *fakeAgent }
 func (claudeFake) Name() string { return claude.Name }
 
 // skillInit runs a new codebase's init with --write in a temp repo, with
-// HOME and CLAUDE_CONFIG_DIR in temp directories, after setup has prepared
-// the home, and returns the exit code, stdout, stderr and the home.
+// HOME, CLAUDE_CONFIG_DIR and XDG_CONFIG_HOME in temp directories, after
+// setup has prepared the home, and returns the exit code, stdout and stderr.
 func skillInit(t *testing.T, setup func(home string)) (int, string, string) {
 	t.Helper()
 	d := testDeps(t)
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	t.Setenv("GIT_AUTHOR_NAME", "t")
-	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
-	t.Setenv("GIT_COMMITTER_NAME", "t")
-	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(t.TempDir(), "claude"))
+	kv := []string{"HOME=" + home, "CLAUDE_CONFIG_DIR=" + filepath.Join(t.TempDir(), "claude"), "XDG_CONFIG_HOME=" + t.TempDir()}
 	setup(home)
 	dir := filepath.Join(t.TempDir(), "lathe")
 	write(t, dir, "README.md", "# Lathe\n")
@@ -223,13 +216,14 @@ func skillInit(t *testing.T, setup func(home string)) (int, string, string) {
 	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "more")
 	answers := filepath.Join(t.TempDir(), "answers.txt")
 	write(t, filepath.Dir(answers), "answers.txt", "2: Lathe turns sketches into cut lists.\n")
-	useRepoStore(t, &d, dir)
+	useRepoStore(t, &d, dir, kv...)
 	useForge(&d, mergedFake{})
 	d.agents["claude"] = func() adapter.Adapter { return claudeFake{&fakeAgent{}} }
 	return runInit(d, "--answers", answers, "--write")
 }
 
 func TestInitSaysWhenTheSkillIsMissing(t *testing.T) {
+	t.Parallel()
 	code, out, errOut := skillInit(t, func(string) {})
 	line := "Claude Code has no Physa skill on this account: run `physa skill setup`"
 	if code != 0 || strings.Count(errOut, "physa skill setup") != 1 || !strings.Contains(errOut, "physa init: "+line) {
@@ -241,6 +235,7 @@ func TestInitSaysWhenTheSkillIsMissing(t *testing.T) {
 }
 
 func TestInitSaysNothingWhenTheSkillIsCurrent(t *testing.T) {
+	t.Parallel()
 	code, out, errOut := skillInit(t, func(home string) {
 		if err := skillstub.Write(claude.SkillFile(home, "physa")); err != nil {
 			t.Fatal(err)
@@ -252,6 +247,7 @@ func TestInitSaysNothingWhenTheSkillIsCurrent(t *testing.T) {
 }
 
 func TestInitSaysNothingWhenTheSkillCannotBeRead(t *testing.T) {
+	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("root reads any directory")
 	}

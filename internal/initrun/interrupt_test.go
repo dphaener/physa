@@ -140,6 +140,7 @@ func fourProposedEnv(t *testing.T) Env {
 // session after the cancel, and says nothing of the cap when one is set. A
 // second --recover starts only the two left.
 func TestInterruptedRecoverKeepsWhatWasRecovered(t *testing.T) {
+	t.Parallel()
 	for _, extra := range [][]string{nil, {"--cap", "10m"}} {
 		t.Run(strings.Join(append([]string{"recover"}, extra...), " "), func(t *testing.T) {
 			env := fourProposedEnv(t)
@@ -201,6 +202,7 @@ func TestInterruptedRecoverKeepsWhatWasRecovered(t *testing.T) {
 // cancelled while proposing exits 130, says nothing of the proposal was
 // stored and that physa init --propose continues, and stores no proposal.
 func TestInterruptedProposeStoresNothing(t *testing.T) {
+	t.Parallel()
 	env := gatheredEnv(t, nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -214,7 +216,7 @@ func TestInterruptedProposeStoresNothing(t *testing.T) {
 	if strings.Contains(errOut, "context canceled") {
 		t.Errorf("stderr:\n%s", errOut)
 	}
-	st, err := env.Store(t.Context(), ".")
+	st, err := env.Store(t.Context(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,11 +230,12 @@ func TestInterruptedProposeStoresNothing(t *testing.T) {
 // bare run interrupted while recovering gives physa init --recover, with the
 // words of the line --recover takes, to continue, and exits 130.
 func TestInterruptedBareRunWhileRecoveringContinuesWithRecover(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	a := newCutAgent("recover", cancel)
-	env := fullEnv(t, onePR(), a)
+	env := fullEnv(t, dir, onePR(), a)
 	code, out, errOut := runInitCtx(ctx, env, "--since", "2025-01-01", "--json")
 	if code != 130 || len(a.after) != 0 {
 		t.Fatalf("code %d, sessions %v, after the cancel %v\nstdout %s\nstderr %s", code, a.started, a.after, out, errOut)

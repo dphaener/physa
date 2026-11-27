@@ -34,6 +34,7 @@ func messy() Result {
 }
 
 func TestJSONShape(t *testing.T) {
+	t.Parallel()
 	data, err := json.Marshal(Result{Version: Version, Range: "a..b"})
 	if err != nil {
 		t.Fatal(err)
@@ -66,6 +67,7 @@ func TestJSONShape(t *testing.T) {
 }
 
 func TestTitle(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		r    Result
 		want string
@@ -91,6 +93,7 @@ func md(t *testing.T, r Result) string {
 }
 
 func TestMarkdownClean(t *testing.T) {
+	t.Parallel()
 	got := md(t, clean())
 	for _, want := range []string{"## 1 commit", "| Commit | Subject | Capability |\n", "| abc1234 | feat: x | learning |", "No trailer findings.", "The map passes physa check map.", "checked against GitHub"} {
 		if !strings.Contains(got, want) {
@@ -100,6 +103,7 @@ func TestMarkdownClean(t *testing.T) {
 }
 
 func TestMarkdownMessy(t *testing.T) {
+	t.Parallel()
 	got := md(t, messy())
 	for _, want := range []string{"| def5678 | fix: y | - |", "- def5678: no Capability trailer", "- .physa/product/rules.md:4: bad anchor", "- x.md: whole file", "checked for form only (gh is not installed)"} {
 		if !strings.Contains(got, want) {
@@ -109,6 +113,7 @@ func TestMarkdownMessy(t *testing.T) {
 }
 
 func TestClean(t *testing.T) {
+	t.Parallel()
 	if !clean().Clean() {
 		t.Error("clean() should be clean")
 	}
@@ -156,10 +161,16 @@ func write(t *testing.T, root, rel, text string) {
 	}
 }
 
+// gitEnv is the environment every git here runs in: the process's, with the
+// person's git config off.
+var gitEnv = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	full := append([]string{"-C", dir, "-c", "user.name=T", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)
-	out, err := exec.Command("git", full...).CombinedOutput()
+	cmd := exec.Command("git", full...)
+	cmd.Env = gitEnv
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -169,8 +180,6 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 // mapRepo makes a repo whose first commit holds a sound map with capability a.
 func mapRepo(t *testing.T) (vcs.Repo, string) {
 	t.Helper()
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	root := t.TempDir()
 	folder(t, root, mapfolder.ProductDir, "")
 	write(t, root, ".physa/glossary.md", "# Glossary\n\n**Map**: a thing.\n")
@@ -179,7 +188,7 @@ func mapRepo(t *testing.T) (vcs.Repo, string) {
 	gitIn(t, root, "init", "-q")
 	gitIn(t, root, "add", ".")
 	gitIn(t, root, "commit", "-q", "-m", "base")
-	repo, err := git.Open(context.Background(), root)
+	repo, err := git.Open(context.Background(), root, gitEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,6 +196,7 @@ func mapRepo(t *testing.T) (vcs.Repo, string) {
 }
 
 func TestRunClean(t *testing.T) {
+	t.Parallel()
 	repo, root := mapRepo(t)
 	gitIn(t, root, "commit", "-q", "--allow-empty", "-m", "feat: a\n\nCapability: a")
 	folder(t, root, mapfolder.CapabilityDir("new"), "")
@@ -205,6 +215,7 @@ func TestRunClean(t *testing.T) {
 }
 
 func TestRunFindings(t *testing.T) {
+	t.Parallel()
 	repo, root := mapRepo(t)
 	gitIn(t, root, "commit", "-q", "--allow-empty", "-m", "feat: early\n\nCapability: later")
 	folder(t, root, mapfolder.CapabilityDir("later"), "")
@@ -225,6 +236,7 @@ func TestRunFindings(t *testing.T) {
 }
 
 func TestRunErrors(t *testing.T) {
+	t.Parallel()
 	repo, root := mapRepo(t)
 	if _, err := Run(t.Context(), root, repo, "nope..HEAD", nil); err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Errorf("bad range: want git's message, got %v", err)

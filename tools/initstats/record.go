@@ -282,7 +282,7 @@ const topExts = 10
 // ignored.
 func shape(dir string) (Repo, error) {
 	ctx := context.TODO()
-	repo, err := git.Open(ctx, dir)
+	repo, err := git.Open(ctx, dir, os.Environ())
 	if err != nil {
 		return Repo{}, err
 	}

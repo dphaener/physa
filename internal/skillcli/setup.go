@@ -18,6 +18,7 @@ import (
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/picker"
+	"github.com/dphaener/physa/internal/proc"
 	"github.com/dphaener/physa/internal/skillagent"
 	"github.com/dphaener/physa/internal/skillhook"
 	"github.com/dphaener/physa/internal/skillstub"
@@ -41,25 +42,31 @@ type env struct {
 	current         CurrentFunc
 	getwd           func() (string, error)
 	getenv          func(string) string
+	environ         func() []string // the environment git runs in
+	lookupEnv       func(string) (string, bool)
 	lookPath        func(string) (string, error)
 	stdin           io.Reader
 	stdinIsTerminal func() bool
 	deadline        time.Duration
 }
 
-func defaultEnv(current CurrentFunc) env {
+// defaultEnv is the env of a real run, reading the working directory, the
+// environment and the home directory from st, the command's process state.
+func defaultEnv(st proc.State, current CurrentFunc) env {
 	return env{
 		current:         current,
-		getwd:           os.Getwd,
-		getenv:          os.Getenv,
+		getwd:           st.Getwd,
+		getenv:          st.Getenv,
+		environ:         st.Environ,
+		lookupEnv:       st.LookupEnv,
 		lookPath:        exec.LookPath,
 		stdin:           os.Stdin,
 		stdinIsTerminal: func() bool { return isTerminal(os.Stdin) },
 		deadline:        defaultDeadline,
-		home:            os.UserHomeDir,
+		home:            st.Home,
 		interactive: func() bool {
-			_, agent := agentenv.Detect(os.Getenv)
-			return output.Interactive(os.Stdin, os.Stdout, agent)
+			_, agent := agentenv.Detect(st.Getenv)
+			return output.Interactive(os.Stdin, os.Stdout, st.Getenv, agent)
 		},
 		// The question goes to stderr, so stdout stays for the result.
 		confirm: func(q string) (bool, error) { return picker.Confirm(os.Stdin, os.Stderr, q) },
@@ -256,7 +263,7 @@ func (e env) status(args []string, asJSON bool, stdout, stderr io.Writer) int {
 			rows = append(rows, []string{a.a.Label, found, p.name, p.shown(), p.path})
 		}
 	}
-	output.For(stdout).Table([]string{"agent", "found", "part", "state", "path"}, rows)
+	output.For(stdout, e.lookupEnv).Table([]string{"agent", "found", "part", "state", "path"}, rows)
 	return 0
 }
 

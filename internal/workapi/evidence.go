@@ -15,9 +15,10 @@ import (
 )
 
 // StateOptions registers the evidence poll and its retention in every repo's
-// state, with GitHub as the forge, for the engine to run with.
-func StateOptions() state.Options {
-	timers, intents := stateevidence.Options(func(root string) forge.Forge { return github.New(root) })
+// state, with GitHub as the forge and git run in env, for the engine to run
+// with.
+func StateOptions(env []string) state.Options {
+	timers, intents := stateevidence.Options(env, func(root string) forge.Forge { return github.New(root) })
 	return state.Options{Timers: timers, Intents: intents}
 }
 

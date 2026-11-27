@@ -21,14 +21,15 @@ import (
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/output"
+	"github.com/dphaener/physa/internal/proc"
 )
 
 const usage = "physa evidence [--capability <slug>] [--pursuit <slug>] [--limit N] [--json]"
 
-// Command returns the evidence command, naming people through the forge
-// newForge builds for a repo.
-func Command(newForge func(dir string) forge.Forge) *cobra.Command {
-	return commandFor(ideacli.New(newForge))
+// Command returns the evidence command for the process st, naming people
+// through the forge newForge builds for a repo.
+func Command(st proc.State, newForge func(dir string) forge.Forge) *cobra.Command {
+	return commandFor(ideacli.New(st, newForge))
 }
 
 func commandFor(env *ideacli.Env) *cobra.Command {

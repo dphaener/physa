@@ -23,6 +23,7 @@ import (
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/picker"
+	"github.com/dphaener/physa/internal/proc"
 	"github.com/dphaener/physa/internal/workapi"
 )
 
@@ -44,13 +45,14 @@ func TestMain(m *testing.M) {
 type tenv struct {
 	t   *testing.T
 	e   *ideacli.Env
-	env map[string]string
 	tmp string
 }
 
 // newTest runs an engine with the idea and pursuit methods in this process on a
-// short temporary settings directory and works in a fresh git repo. The
-// person is "tester", nothing is interactive and nothing may spawn an engine.
+// short temporary settings directory and works in a fresh git repo, both
+// passed in the Env's process state. The person is "tester", nothing is
+// interactive and nothing may spawn an engine. It sets TMPDIR, which the
+// editor's temporary files are made in, so its tests are serial.
 func newTest(t *testing.T) *tenv {
 	t.Helper()
 	tmp, err := os.MkdirTemp("", "px")
@@ -58,7 +60,6 @@ func newTest(t *testing.T) *tenv {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(tmp) })
-	t.Setenv("XDG_CONFIG_HOME", tmp)
 	t.Setenv("TMPDIR", filepath.Join(tmp, "tmp"))
 	if err := os.Mkdir(filepath.Join(tmp, "tmp"), 0o700); err != nil {
 		t.Fatal(err)
@@ -67,12 +68,11 @@ func newTest(t *testing.T) *tenv {
 	if out, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, out)
 	}
-	t.Chdir(repo)
 	dir := filepath.Join(tmp, "physa")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- engine.Run(ctx, engine.Options{Dir: dir, Idle: time.Minute, Version: "test", Methods: workapi.Methods(func(context.Context, string) string { return "" })})
+		done <- engine.Run(ctx, engine.Options{Env: os.Environ(), Dir: dir, Idle: time.Minute, Version: "test", Methods: workapi.Methods(os.Environ(), func(context.Context, string) string { return "" })})
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -101,14 +101,13 @@ func newTest(t *testing.T) *tenv {
 			t.Fatalf("the engine did not answer within 5s: %v", err)
 		}
 	}
-	te := &tenv{t: t, env: map[string]string{}, tmp: tmp}
-	e := ideacli.New(nil)
+	te := &tenv{t: t, tmp: tmp}
+	e := ideacli.New(proc.State{Dir: repo, Wd: repo, Env: []string{"XDG_CONFIG_HOME=" + tmp}}, nil)
 	e.Person = func(string, forge.Forge, io.Writer) string { return "tester" }
 	e.Start = enginestart.Options{Command: func(dir string, _ time.Duration) *exec.Cmd {
 		t.Errorf("a command tried to start an engine on %s", dir)
 		return exec.Command("false")
 	}}
-	e.Getenv = func(k string) string { return te.env[k] }
 	e.IsInteractive = func() bool { return false }
 	e.Pick = func(string, []picker.Item) (string, error) { t.Error("Pick called"); return "", picker.ErrAborted }
 	e.Confirm = func(string) (bool, error) { t.Error("Confirm called"); return false, picker.ErrAborted }
@@ -116,6 +115,11 @@ func newTest(t *testing.T) *tenv {
 	e.Stdio = [3]*os.File{}
 	te.e = e
 	return te
+}
+
+// setenv sets key to value in the commands' environment; the last value set wins.
+func (te *tenv) setenv(key, value string) {
+	te.e.Proc.Env = append(te.e.Proc.Env, key+"="+value)
 }
 
 // run runs a command line under physa: "pursue ..." or "pursuit ...".
@@ -165,7 +169,7 @@ func (te *tenv) fails(args ...string) string {
 // pursueArgs is physa pursue with args, reading goodSignal from a file
 // unless args say where the signal comes from.
 func (te *tenv) pursueArgs(args ...string) []string {
-	if !slices.Contains(args, "--signal-from") && te.env["EDITOR"] == "" {
+	if !slices.Contains(args, "--signal-from") && te.e.Getenv("EDITOR") == "" {
 		args = append(args, "--signal-from", te.file("signal.md", goodSignal))
 	}
 	return append([]string{"pursue"}, args...)
@@ -287,7 +291,7 @@ func (te *tenv) editor(seen string, signals ...string) {
 		fmt.Fprintf(&b, "if [ ! -e %s ]; then touch %s; cp %s \"$2\"; exit 0; fi\n", mark, mark, te.file(fmt.Sprintf("signal-%d.md", i), sig))
 	}
 	b.WriteString("exit 1\n")
-	te.env["EDITOR"] = te.file("editor.sh", b.String()) + " --wait"
+	te.setenv("EDITOR", te.file("editor.sh", b.String())+" --wait")
 }
 
 func (te *tenv) temps() []string {
@@ -369,7 +373,7 @@ func TestPursueInEditorStopKeepsFile(t *testing.T) {
 		t.Errorf("kept file: %q", b)
 	}
 	// An editor that fails keeps the file too.
-	te.env["EDITOR"] = "false"
+	te.setenv("EDITOR", "false")
 	if errs := te.pursueFails("try-a-quiet-mode"); !strings.Contains(errs, "the editor false failed") || !strings.Contains(errs, "kept at") {
 		t.Errorf("failing editor: %q", errs)
 	}
@@ -470,7 +474,8 @@ func TestAgentSessionRefusedBeforeAnything(t *testing.T) {
 	te := newTest(t)
 	te.idea("Try a quiet mode", "")
 	te.pursue("try-a-quiet-mode", "--appetite", "1k")
-	te.env["CLAUDE_CODE_SESSION_ID"], te.env["CLAUDECODE"] = "x", "1"
+	te.setenv("CLAUDE_CODE_SESSION_ID", "x")
+	te.setenv("CLAUDECODE", "1")
 	te.e.Person = func(string, forge.Forge, io.Writer) string { t.Error("person asked"); return "" }
 	for _, args := range [][]string{{"try-a-quiet-mode", "--appetite", "1k"}, {"a", "b"}} {
 		if errs := te.pursueFails(args...); !strings.Contains(errs, "A person must start this pursuit: physa is running inside a Claude Code session.") {
@@ -635,7 +640,8 @@ func TestPlanSetMissingPursuitListsActivePursuits(t *testing.T) {
 func TestPlanAndWorkAllowedInAgentSessions(t *testing.T) {
 	te := newTest(t)
 	te.planRepo()
-	te.env["CLAUDE_CODE_SESSION_ID"], te.env["CLAUDECODE"] = "sess-1", "1"
+	te.setenv("CLAUDE_CODE_SESSION_ID", "sess-1")
+	te.setenv("CLAUDECODE", "1")
 	te.must("plan", "set", "try-a-quiet-mode", "--from", te.planFile(twoChanges))
 	te.must("work", "try-a-quiet-mode/first-step")
 }
@@ -644,7 +650,7 @@ func TestWorkAndCurrent(t *testing.T) {
 	te := newTest(t)
 	te.planRepo()
 	te.must("plan", "set", "try-a-quiet-mode", "--from", te.planFile(twoChanges))
-	te.env["CLAUDE_CODE_SESSION_ID"] = "sess-1"
+	te.setenv("CLAUDE_CODE_SESSION_ID", "sess-1")
 	if out := te.must("work", "--current"); out != "" {
 		t.Errorf("--current before work: %q", out)
 	}
@@ -661,15 +667,15 @@ func TestWorkAndCurrent(t *testing.T) {
 	if out := te.must("work", "--current"); out != "try-a-quiet-mode/second-step\n" {
 		t.Errorf("--current after a second work: %q", out)
 	}
-	te.env["CLAUDE_CODE_SESSION_ID"] = "other"
+	te.setenv("CLAUDE_CODE_SESSION_ID", "other")
 	if out := te.must("work", "--current"); out != "" {
 		t.Errorf("--current for another session: %q", out)
 	}
-	te.env["CLAUDE_CODE_SESSION_ID"] = "sess-1"
+	te.setenv("CLAUDE_CODE_SESSION_ID", "sess-1")
 	if errs := te.fails("work", "try-a-quiet-mode/nope"); !strings.Contains(errs, "nope") {
 		t.Errorf("unknown change: %q", errs)
 	}
-	te.env["CLAUDE_CODE_SESSION_ID"] = ""
+	te.setenv("CLAUDE_CODE_SESSION_ID", "")
 	if out := te.must("work", "--current"); out != "" {
 		t.Errorf("--current with no session: %q", out)
 	}
@@ -682,7 +688,7 @@ func TestWorkWithoutSessionAndBadArguments(t *testing.T) {
 	if errs := te.fails("work", "try-a-quiet-mode/first-step"); errs != want {
 		t.Errorf("no session: %q", errs)
 	}
-	te.env["CLAUDE_CODE_SESSION_ID"] = "sess-1"
+	te.setenv("CLAUDE_CODE_SESSION_ID", "sess-1")
 	for _, args := range [][]string{{"work"}, {"work", "nochange"}, {"work", "a/"}, {"work", "/b"}, {"work", "a/b/c"}, {"work", "a/b", "--current"}, {"work", "--current", "--json"}} {
 		code, out, _ := te.pursuit(args...)
 		if code != 2 || out != "" {
@@ -693,7 +699,7 @@ func TestWorkWithoutSessionAndBadArguments(t *testing.T) {
 
 func TestCurrentWithNoStoreOrRepoPrintsNothing(t *testing.T) {
 	te := newTest(t)
-	te.env["CLAUDE_CODE_SESSION_ID"] = "sess-1"
+	te.setenv("CLAUDE_CODE_SESSION_ID", "sess-1")
 	// A repo whose engine never ran has no store, and --current must not make one.
 	repo, err := te.e.Repo()
 	if err != nil {
@@ -706,7 +712,8 @@ func TestCurrentWithNoStoreOrRepoPrintsNothing(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repo, ".git", "physa")); !os.IsNotExist(err) {
 		t.Errorf("--current made a store: %v", err)
 	}
-	t.Chdir(t.TempDir())
+	notRepo := t.TempDir()
+	te.e.Proc.Dir, te.e.Proc.Wd = notRepo, notRepo
 	if code, out, errs := te.pursuit("work", "--current"); code != 0 || out != "" || errs != "" {
 		t.Errorf("not a repo: %d %q %q", code, out, errs)
 	}
@@ -720,7 +727,7 @@ func TestShowProgressAsFactsAndNeedsYou(t *testing.T) {
 		t.Errorf("no plan:\n%s", plain)
 	}
 	te.must("plan", "set", "try-a-quiet-mode", "--from", te.planFile(twoChanges))
-	te.env["CLAUDE_CODE_SESSION_ID"] = "sess-1"
+	te.setenv("CLAUDE_CODE_SESSION_ID", "sess-1")
 	te.must("work", "try-a-quiet-mode/first-step")
 	spend := func(change string, tokens int64) {
 		t.Helper()

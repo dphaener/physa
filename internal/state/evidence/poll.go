@@ -109,8 +109,8 @@ func readPoll(tx *state.Tx) (pollIn, error) {
 // root is the store directory's grandparent (.git/physa, design 03 section
 // 18). The forge is asked only when its backoff has run out. A failure of
 // version control fails the poll, so it is tried again; the forge's failure
-// is part of the result.
-func doPoll(ctx context.Context, in state.Intent, newForge func(string) forge.Forge) (string, error) {
+// is part of the result. Git runs in env.
+func doPoll(ctx context.Context, in state.Intent, env []string, newForge func(string) forge.Forge) (string, error) {
 	var p pollIn
 	if err := json.Unmarshal(in.Payload, &p); err != nil {
 		return "", err
@@ -119,7 +119,7 @@ func doPoll(ctx context.Context, in state.Intent, newForge func(string) forge.Fo
 		return "", err
 	}
 	root := filepath.Dir(filepath.Dir(p.Store))
-	repo, err := git.Open(ctx, root)
+	repo, err := git.Open(ctx, root, env)
 	if err != nil {
 		return "", fmt.Errorf("open the repo at %s: %w", root, err)
 	}

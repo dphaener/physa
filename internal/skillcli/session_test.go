@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -59,6 +60,7 @@ func (b sessionEnv) run(args ...string) (int, string, string) {
 		current:         b.current,
 		getwd:           func() (string, error) { return b.wd, nil },
 		getenv:          func(k string) string { return map[string]string{sessionVar: b.session}[k] },
+		environ:         os.Environ,
 		stdin:           strings.NewReader(b.stdin),
 		stdinIsTerminal: func() bool { return false },
 		deadline:        b.timeout,
@@ -69,6 +71,7 @@ func (b sessionEnv) run(args ...string) (int, string, string) {
 }
 
 func TestSessionInAMapRepoPrintsCountAndReminder(t *testing.T) {
+	t.Parallel()
 	code, out, errs := sessionEnv{wd: mapRepo(t, 3)}.run()
 	want := "This repo has a Physa map with 3 capabilities.\n" + reminder
 	if code != 0 || out != want || errs != "" {
@@ -77,6 +80,7 @@ func TestSessionInAMapRepoPrintsCountAndReminder(t *testing.T) {
 }
 
 func TestSessionSaysOneCapability(t *testing.T) {
+	t.Parallel()
 	_, out, _ := sessionEnv{wd: mapRepo(t, 1)}.run()
 	if !strings.HasPrefix(out, "This repo has a Physa map with 1 capability.\n") {
 		t.Errorf("stdout %q", out)
@@ -84,21 +88,24 @@ func TestSessionSaysOneCapability(t *testing.T) {
 }
 
 func TestSessionPrintsTheChangeWhenRecorded(t *testing.T) {
+	t.Parallel()
 	var gotWd, gotSession string
+	var gotEnv []string
 	wd := mapRepo(t, 2)
-	cur := func(w, s string) (string, string, error) {
-		gotWd, gotSession = w, s
+	cur := func(w, s string, e []string) (string, string, error) {
+		gotWd, gotSession, gotEnv = w, s, e
 		return "ship-it", "first-step", nil
 	}
 	code, out, _ := sessionEnv{wd: wd, session: "sess-1", current: cur}.run()
 	want := "This repo has a Physa map with 2 capabilities.\nThis session works on ship-it/first-step.\n" + reminder
-	if code != 0 || out != want || gotWd != wd || gotSession != "sess-1" {
-		t.Errorf("code %d, stdout %q, asked %q %q", code, out, gotWd, gotSession)
+	if code != 0 || out != want || gotWd != wd || gotSession != "sess-1" || !slices.Equal(gotEnv, os.Environ()) {
+		t.Errorf("code %d, stdout %q, asked %q %q with %d variables", code, out, gotWd, gotSession, len(gotEnv))
 	}
 }
 
 func TestSessionOmitsTheChangeLineWhenNoneIsRecorded(t *testing.T) {
-	cur := func(string, string) (string, string, error) { return "", "", nil }
+	t.Parallel()
+	cur := func(string, string, []string) (string, string, error) { return "", "", nil }
 	_, out, _ := sessionEnv{wd: mapRepo(t, 2), session: "sess-1", current: cur}.run()
 	if strings.Contains(out, "works on") || !strings.HasSuffix(out, reminder) {
 		t.Errorf("stdout %q", out)
@@ -106,8 +113,9 @@ func TestSessionOmitsTheChangeLineWhenNoneIsRecorded(t *testing.T) {
 }
 
 func TestSessionTakesTheSessionFromStdinWhenTheEnvironmentHasNone(t *testing.T) {
+	t.Parallel()
 	var got string
-	cur := func(_, s string) (string, string, error) { got = s; return "p", "c", nil }
+	cur := func(_, s string, _ []string) (string, string, error) { got = s; return "p", "c", nil }
 	_, out, _ := sessionEnv{wd: mapRepo(t, 2), stdin: `{"session_id":"from-stdin","cwd":"/x"}`, current: cur}.run()
 	if got != "from-stdin" || !strings.Contains(out, "p/c") {
 		t.Errorf("session %q, stdout %q", got, out)
@@ -120,6 +128,7 @@ func TestSessionTakesTheSessionFromStdinWhenTheEnvironmentHasNone(t *testing.T) 
 }
 
 func TestSessionPrintsNothingOutsideAMap(t *testing.T) {
+	t.Parallel()
 	notRepo := t.TempDir()
 	if err := os.Mkdir(filepath.Join(notRepo, ".physa"), 0o755); err != nil {
 		t.Fatal(err)
@@ -141,7 +150,8 @@ func TestSessionPrintsNothingOutsideAMap(t *testing.T) {
 }
 
 func TestSessionPrintsNothingWhenCurrentFails(t *testing.T) {
-	cur := func(string, string) (string, string, error) { return "p", "c", errors.New("broken store") }
+	t.Parallel()
+	cur := func(string, string, []string) (string, string, error) { return "p", "c", errors.New("broken store") }
 	code, out, errs := sessionEnv{wd: mapRepo(t, 2), session: "sess-1", current: cur}.run()
 	if code != 0 || out != "" || errs != "" {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errs)
@@ -149,9 +159,10 @@ func TestSessionPrintsNothingWhenCurrentFails(t *testing.T) {
 }
 
 func TestSessionPrintsNothingWhenCurrentBlocksPastTheDeadline(t *testing.T) {
+	t.Parallel()
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
-	cur := func(string, string) (string, string, error) { <-release; return "p", "c", nil }
+	cur := func(string, string, []string) (string, string, error) { <-release; return "p", "c", nil }
 	start := time.Now()
 	code, out, errs := sessionEnv{wd: mapRepo(t, 2), session: "sess-1", current: cur, timeout: 100 * time.Millisecond}.run()
 	if code != 0 || out != "" || errs != "" {
@@ -163,6 +174,7 @@ func TestSessionPrintsNothingWhenCurrentBlocksPastTheDeadline(t *testing.T) {
 }
 
 func TestSessionTakesNoArguments(t *testing.T) {
+	t.Parallel()
 	code, out, _ := sessionEnv{wd: mapRepo(t, 2)}.run("extra")
 	if code != 2 || out != "" {
 		t.Errorf("code %d, stdout %q", code, out)
@@ -170,6 +182,7 @@ func TestSessionTakesNoArguments(t *testing.T) {
 }
 
 func TestSessionIsHiddenFromHelp(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	for _, args := range [][]string{{"--help"}, {}} {
 		_, out, errs := h.run(args...)

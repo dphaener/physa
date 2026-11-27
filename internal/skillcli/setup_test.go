@@ -38,6 +38,10 @@ func (h *harness) run(args ...string) (int, string, string) {
 	e := env{
 		home:   func() (string, error) { return h.home, nil },
 		getenv: func(k string) string { return h.vars[k] },
+		lookupEnv: func(k string) (string, bool) {
+			v, ok := h.vars[k]
+			return v, ok
+		},
 		lookPath: func(name string) (string, error) {
 			if h.binaries[name] {
 				return "/bin/" + name, nil
@@ -119,6 +123,7 @@ func (h *harness) state(t *testing.T) string {
 }
 
 func TestSetupStatusRemoveRoundTrip(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	other := filepath.Join(h.home, ".claude", "skills", "other", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(other), 0o755); err != nil {
@@ -153,6 +158,7 @@ func TestSetupStatusRemoveRoundTrip(t *testing.T) {
 }
 
 func TestOlderStubIsStaleAndSetupReplacesIt(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	old := "---\nname: physa\nmetadata:\n  physa-stub: \"0\"\n---\nold\n"
 	if err := os.MkdirAll(filepath.Dir(h.path()), 0o755); err != nil {
@@ -176,6 +182,7 @@ func TestOlderStubIsStaleAndSetupReplacesIt(t *testing.T) {
 }
 
 func TestStatusJSONReportsClaudeCode(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	a := decode(t, func() string { _, out, _ := h.run("status", "--json"); return out }())
 	if a.Agent != "claude-code" || a.State != "missing" || a.Path != h.path() || a.Action != "" {
@@ -188,6 +195,7 @@ func TestStatusJSONReportsClaudeCode(t *testing.T) {
 }
 
 func TestSetupOffATerminalWithoutYesWritesNothing(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	code, out, errs := h.run("setup")
 	if code != 2 || strings.Contains(out, "written") || !strings.Contains(errs, "--yes") || !strings.Contains(errs, "nothing written") {
@@ -205,6 +213,7 @@ func TestSetupOffATerminalWithoutYesWritesNothing(t *testing.T) {
 }
 
 func TestSomeoneElsesSkillIsNeverTouched(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	if err := os.MkdirAll(filepath.Dir(h.path()), 0o755); err != nil {
 		t.Fatal(err)
@@ -230,6 +239,7 @@ func TestSomeoneElsesSkillIsNeverTouched(t *testing.T) {
 }
 
 func TestOnATerminalSetupListsThenAsks(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.interactive = true
 	h.answer = true
@@ -255,6 +265,7 @@ func TestOnATerminalSetupListsThenAsks(t *testing.T) {
 }
 
 func TestOnATerminalRemoveAsks(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.run("setup", "--yes")
 	h.interactive = true
@@ -269,6 +280,7 @@ func TestOnATerminalRemoveAsks(t *testing.T) {
 }
 
 func TestSetupWhenCurrentAsksNothing(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.interactive = true
 	h.run("setup", "--yes")
@@ -279,6 +291,7 @@ func TestSetupWhenCurrentAsksNothing(t *testing.T) {
 }
 
 func TestBareSkillRunsStatus(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	code, out, _ := h.run()
 	if code != 0 || !strings.Contains(out, "Claude Code") || !strings.Contains(out, "missing") {
@@ -293,6 +306,7 @@ func TestBareSkillRunsStatus(t *testing.T) {
 }
 
 func TestNoHomeIsAnIOError(t *testing.T) {
+	t.Parallel()
 	e := env{home: func() (string, error) { return "", errors.New("$HOME is not defined") }}
 	var out, errb bytes.Buffer
 	code := command.Execute(t.Context(), command.New("physa", "", nil, nil, newCommand(e)), []string{"skill", "setup", "--yes"}, &out, &errb)
@@ -302,6 +316,7 @@ func TestNoHomeIsAnIOError(t *testing.T) {
 }
 
 func TestPositionalArgumentsAreBadUsage(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	for _, v := range []string{"setup", "status", "remove"} {
 		if code, _, _ := h.run(v, "extra"); code != 2 {
@@ -353,6 +368,7 @@ func (h *harness) hookState(t *testing.T) string {
 }
 
 func TestSetupAddsOneHookKeepingEverythingElse(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.seed(t, prior)
 	if code, _, errs := h.run("setup", "--yes"); code != 0 {
@@ -387,6 +403,7 @@ func TestSetupAddsOneHookKeepingEverythingElse(t *testing.T) {
 }
 
 func TestRemoveLeavesTheOthers(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.seed(t, prior)
 	var want any
@@ -417,6 +434,7 @@ func TestRemoveLeavesTheOthers(t *testing.T) {
 }
 
 func TestStatusShowsTheHookCurrentStaleAndMissing(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	if h.hookState(t) != "missing" {
 		t.Fatal("not missing")
@@ -439,6 +457,7 @@ func TestStatusShowsTheHookCurrentStaleAndMissing(t *testing.T) {
 }
 
 func TestInvalidSettingsRefusesTheHookButWritesTheStub(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.seed(t, "{not json")
 	code, _, errs := h.run("setup", "--yes")
@@ -463,6 +482,7 @@ func TestInvalidSettingsRefusesTheHookButWritesTheStub(t *testing.T) {
 }
 
 func TestStatusJSONCarriesTheHookObject(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	_, out, _ := h.run("status", "--json")
 	if !strings.Contains(out, `"hook": {`) || !strings.Contains(out, h.settings()) {
@@ -493,6 +513,7 @@ func (h *harness) mkdir(t *testing.T, parts ...string) {
 }
 
 func TestStatusListsFourAgentsFoundOrNot(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.mkdir(t, ".codex")
 	_, out, _ := h.run("status", "--json")
@@ -522,6 +543,7 @@ func TestStatusListsFourAgentsFoundOrNot(t *testing.T) {
 }
 
 func TestSetupWithCodexFoundWritesTheSharedStubAndItsHook(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.mkdir(t, ".codex")
 	code, out, errs := h.run("setup", "--yes")
@@ -550,6 +572,7 @@ func TestSetupWithCodexFoundWritesTheSharedStubAndItsHook(t *testing.T) {
 }
 
 func TestSetupWithPiFoundByBinaryWritesTheStubAndNoCodexHook(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.binaries = map[string]bool{"pi": true}
 	code, out, _ := h.run("setup", "--yes")
@@ -571,6 +594,7 @@ func TestSetupWithPiFoundByBinaryWritesTheStubAndNoCodexHook(t *testing.T) {
 }
 
 func TestCodexHomeMovesTheHookFile(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.vars = map[string]string{"CODEX_HOME": filepath.Join(h.home, "elsewhere")}
 	h.mkdir(t, "elsewhere")
@@ -586,6 +610,7 @@ func TestCodexHomeMovesTheHookFile(t *testing.T) {
 }
 
 func TestSetupWithNoOtherAgentFoundWritesNothingForThem(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	code, out, _ := h.run("setup", "--yes")
 	if code != 0 {
@@ -617,6 +642,7 @@ func TestSetupWithNoOtherAgentFoundWritesNothingForThem(t *testing.T) {
 }
 
 func TestRemoveTakesOutOnlyPhysasFilesAndEntries(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.mkdir(t, ".codex")
 	h.seed(t, prior)
@@ -662,6 +688,7 @@ func TestRemoveTakesOutOnlyPhysasFilesAndEntries(t *testing.T) {
 }
 
 func TestASharedStubNotWrittenByPhysaIsRefusedOnce(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.mkdir(t, ".codex")
 	h.binaries = map[string]bool{"pi": true, "opencode": true}
@@ -681,6 +708,7 @@ func TestASharedStubNotWrittenByPhysaIsRefusedOnce(t *testing.T) {
 }
 
 func TestJSONShapeCarriesFoundAndUnsupported(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.mkdir(t, ".codex")
 	_, out, _ := h.run("setup", "--yes", "--json")
@@ -696,6 +724,7 @@ func TestJSONShapeCarriesFoundAndUnsupported(t *testing.T) {
 }
 
 func TestUnreadableSharedStubIsAnIOError(t *testing.T) {
+	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("root reads everything")
 	}

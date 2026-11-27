@@ -7,6 +7,7 @@ import (
 
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/initbranch"
+	"github.com/dphaener/physa/internal/proc"
 	"github.com/dphaener/physa/internal/vcs"
 )
 
@@ -28,6 +29,7 @@ func (f openingForge) CreatePR(context.Context, string, string, string, string) 
 func (f openingForge) EditPR(context.Context, int, string) error { return f.err }
 
 func TestOpenLeavesTheBranchReadyWithoutPRs(t *testing.T) {
+	t.Parallel()
 	pr, err := Open(t.Context(), nil, readOnlyForge{}, initbranch.Outcome{})
 	if err != nil || pr != (initbranch.PR{State: initbranch.PRReady, Reason: "the forge cannot open PRs"}) {
 		t.Fatalf("PR = %+v, %v", pr, err)
@@ -35,6 +37,7 @@ func TestOpenLeavesTheBranchReadyWithoutPRs(t *testing.T) {
 }
 
 func TestOpenLeavesTheBranchReadyWhenTheForgeIsUnavailable(t *testing.T) {
+	t.Parallel()
 	for _, cause := range []error{forge.ErrUnavailable, forge.ErrUnauthenticated} {
 		pr, err := Open(t.Context(), nil, openingForge{err: cause}, initbranch.Outcome{})
 		if err != nil {
@@ -47,6 +50,7 @@ func TestOpenLeavesTheBranchReadyWhenTheForgeIsUnavailable(t *testing.T) {
 }
 
 func TestOpenReportsAnyOtherForgeErrorWithTheBranch(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("boom")
 	_, err := Open(t.Context(), nil, openingForge{err: boom}, initbranch.Outcome{})
 	if !errors.Is(err, boom) {
@@ -55,9 +59,35 @@ func TestOpenReportsAnyOtherForgeErrorWithTheBranch(t *testing.T) {
 }
 
 func TestInstallHookRefusesWithItsReason(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("no hooks here")
-	h := InstallHook(t.Context(), func(context.Context, string) (vcs.Hooks, error) { return nil, boom })
+	h := InstallHook(t.Context(), proc.State{Dir: ".", Wd: "/repo"}, func(context.Context, string) (vcs.Hooks, error) { return nil, boom })
 	if h.State != initbranch.HookRefused || h.Detail != boom.Error() {
+		t.Fatalf("hook = %+v", h)
+	}
+}
+
+func TestInstallHookOpensTheHooksOfTheStatesDirectory(t *testing.T) {
+	t.Parallel()
+	var asked []string
+	boom := errors.New("no hooks here")
+	h := InstallHook(t.Context(), proc.State{Dir: "sub", Wd: "/repo"}, func(_ context.Context, dir string) (vcs.Hooks, error) {
+		asked = append(asked, dir)
+		return nil, boom
+	})
+	if len(asked) != 1 || asked[0] != "sub" || h.State != initbranch.HookRefused {
+		t.Fatalf("asked %v, hook %+v", asked, h)
+	}
+}
+
+func TestInstallHookRefusesWithoutAWorkingDirectory(t *testing.T) {
+	t.Parallel()
+	gone := errors.New("getwd: no such file or directory")
+	h := InstallHook(t.Context(), proc.State{Dir: ".", WdErr: gone}, func(context.Context, string) (vcs.Hooks, error) {
+		t.Error("the hooks were opened with no working directory")
+		return nil, nil
+	})
+	if h.State != initbranch.HookRefused || h.Detail != gone.Error() {
 		t.Fatalf("hook = %+v", h)
 	}
 }

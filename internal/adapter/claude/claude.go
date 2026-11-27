@@ -55,14 +55,25 @@ const apiKey = "ANTHROPIC_API_KEY"
 type Adapter struct {
 	// Command is the claude command to run; empty means "claude" on PATH.
 	Command string
-	// Getenv reads the environment sessions inherit; nil means os.Getenv.
+	// Env is the environment sessions inherit, a Spec's Env added to it. A
+	// session or usage read with no Env is refused, so claude never runs with
+	// no HOME or PATH, nor with the environment of whatever process holds
+	// the adapter.
+	Env []string
+	// Getenv reads the variables of Env; nil reads none as set.
 	Getenv func(string) string
 }
 
 var _ adapter.Adapter = (*Adapter)(nil)
 
-// New returns an adapter that runs "claude" from PATH.
-func New() *Adapter { return &Adapter{Command: "claude"} }
+// errNoEnv refuses to start claude with an empty environment.
+var errNoEnv = errors.New("claude cannot run with an empty environment")
+
+// New returns an adapter that runs "claude" from PATH in env, whose variables
+// getenv reads.
+func New(env []string, getenv func(string) string) *Adapter {
+	return &Adapter{Command: "claude", Env: env, Getenv: getenv}
+}
 
 // Window states 1,000,000 estimated tokens for one session.
 func (a *Adapter) Window() int { return window }
@@ -88,11 +99,7 @@ func (a *Adapter) keySet(env []string) bool {
 			return v != ""
 		}
 	}
-	getenv := a.Getenv
-	if getenv == nil {
-		getenv = os.Getenv
-	}
-	return getenv(apiKey) != ""
+	return a.Getenv != nil && a.Getenv(apiKey) != ""
 }
 
 // uuid is the form Claude Code takes a session id in: 8-4-4-4-12 hex.
@@ -130,6 +137,9 @@ func (a *Adapter) Start(ctx context.Context, s adapter.Spec) (adapter.Session, e
 	if s.SessionID != "" && !uuid.MatchString(s.SessionID) {
 		return nil, fmt.Errorf("session id %q is not a UUID", s.SessionID)
 	}
+	if len(a.Env) == 0 {
+		return nil, errNoEnv
+	}
 	command := a.Command
 	if command == "" {
 		command = "claude"
@@ -160,7 +170,7 @@ func (a *Adapter) Start(ctx context.Context, s adapter.Spec) (adapter.Session, e
 	}
 	cmd := exec.CommandContext(ctx, path, args(s, system)...)
 	cmd.Dir = s.Dir
-	cmd.Env = append(os.Environ(), s.Env...)
+	cmd.Env = slices.Concat(a.Env, s.Env)
 	cmd.Stdin = strings.NewReader(s.Prompt)
 	// A cancel asks the agent to end as a Ctrl-C does; WaitDelay has Go kill it
 	// if it has not ended by then.

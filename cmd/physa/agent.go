@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"maps"
-	"os"
 	"slices"
 	"strings"
 
@@ -18,7 +17,7 @@ const defaultAgent = "claude"
 // whatever it needs from the environment it inherits.
 func (d deps) agentFor(name string) (adapter.Adapter, error) {
 	if name == "" {
-		name = os.Getenv("PHYSA_AGENT")
+		name = d.proc().Getenv("PHYSA_AGENT")
 	}
 	if name == "" {
 		name = defaultAgent

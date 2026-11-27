@@ -28,6 +28,7 @@ import (
 	"github.com/dphaener/physa/internal/newcodebase"
 	"github.com/dphaener/physa/internal/place"
 	"github.com/dphaener/physa/internal/preflight"
+	"github.com/dphaener/physa/internal/proc"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/recoveryreport"
 	"github.com/dphaener/physa/internal/shares"
@@ -37,15 +38,15 @@ import (
 	"github.com/dphaener/physa/internal/walk"
 )
 
-// Env is what init reaches outside itself through, each a seam the caller
-// owns: the store, repo, forge, writer and hooks of the repo at a directory,
-// the agent a name selects (empty for the default), the clock, and the
-// person's input, where a new codebase's answers are asked when IsTerminal. PRExists resolves #N
-// anchors; nil checks them for form only. Spend is the file of the
-// machine's spend cache (spend.Path); empty keeps prices for the run only.
-// Skill is the line saying the agent a name selects has no current Physa
-// skill, empty for none; nil says nothing.
+// Env is what init reaches outside itself through, each a seam the caller owns: the process's
+// state, whose Dir is the repo's directory; the store, repo, forge, writer and hooks of the repo at
+// a directory; the agent a name selects (empty for the default); the clock; and the person's input,
+// where a new codebase's answers are asked when IsTerminal. PRExists resolves #N anchors; nil
+// checks them for form only. Spend is the file of the machine's spend cache (spend.Path); empty
+// keeps prices for the run only. Skill is the line saying the agent a name selects has no current
+// Physa skill, empty for none; nil says nothing.
 type Env struct {
+	Proc       proc.State
 	Store      func(ctx context.Context, dir string) (*store.Store, error)
 	Repo       func(ctx context.Context, dir string) (vcs.Repo, error)
 	Forge      func(dir string) forge.Forge
@@ -62,19 +63,18 @@ type Env struct {
 	Wait merged.Wait
 }
 
-// Run runs physa init on the repo in the current directory: the phase named, or every phase in
-// order; --write then writes the map to physa/init. No phase has an appetite or a circuit breaker
-// (design 10 Q6); a --cap holds every session to it (initcap). Every session is weighed through a
-// spend.Meter, and the prices it learns are saved to the machine's spend cache. It returns 0 when
-// all asked was done, 1 when it stopped before proposing for a source larger than one share of
-// propose, or before a session that would pass the cap, or some capabilities are not yet recovered
-// (still written with --write), or, for --consolidate, a
-// session of consolidation was left as it was (see consolidate.Result.ExitCode; a write then still
-// happens), 2 when it could not (a capability failed, the map failed its check,
-// the hook was refused, the cap needs usage the agent cannot report), interrupt.Code when ctx was
-// cancelled while a phase ran (it says what was kept and how to continue, in place of the cap's
-// line), and command.BadUsage for a bad line. o is the line's flags as Declare read them, args its positionals and words the words
-// typed after init, which a rerun hint repeats.
+// Run runs physa init on the repo in env.Proc.Dir: the phase named, or every phase in order; --write
+// then writes the map to physa/init. No phase has an appetite or a circuit breaker (design 10 Q6); a
+// --cap holds every session to it (initcap). Every session is weighed through a spend.Meter, and the
+// prices it learns are saved to the machine's spend cache. It returns 0 when all asked was done, 1
+// when it stopped before proposing for a source larger than one share of propose, or before a session
+// that would pass the cap, or some capabilities are not yet recovered (still written with --write),
+// or, for --consolidate, a session of consolidation was left as it was (see
+// consolidate.Result.ExitCode; a write then still happens), 2 when it could not (a capability failed,
+// the map failed its check, the hook was refused, the cap needs usage the agent cannot report),
+// interrupt.Code when ctx was cancelled while a phase ran (it says what was kept and how to continue,
+// in place of the cap's line), and command.BadUsage for a bad line. o is the line's flags as Declare
+// read them, args its positionals and words the words typed after init, which a rerun hint repeats.
 func Run(ctx context.Context, o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 	if !o.read(args, env.Now()) {
 		if o.bad != nil {
@@ -82,17 +82,17 @@ func Run(ctx context.Context, o Flags, args, words []string, stdout, stderr io.W
 		}
 		return command.BadUsage
 	}
-	root, err := filepath.Abs(".")
+	root, err := env.Proc.Abs(env.Proc.Dir)
 	if err != nil {
 		return failed(stderr, err)
 	}
 	off := ""
 	if o.Gather { // --gather alone runs on a mapped repo too, but starts no agent there
-		off = mapped.DiscoveryOff(ctx, env.Writer)
-	} else if err := mapped.Refuse(ctx, env.Writer); err != nil {
+		off = mapped.DiscoveryOff(ctx, env.Proc.Dir, env.Writer)
+	} else if err := mapped.Refuse(ctx, env.Proc.Dir, env.Writer); err != nil {
 		return failed(stderr, err)
 	}
-	st, err := env.Store(ctx, ".")
+	st, err := env.Store(ctx, env.Proc.Dir)
 	if err != nil {
 		return failed(stderr, err)
 	}
@@ -215,7 +215,7 @@ func (r *run) gatherInto(ctx context.Context, off string) (store.Gather, gather.
 	if off == "" {
 		d.Session = discovery.Session{Agent: r.agent, Progress: r.stderr}
 	}
-	repo, err := r.env.Repo(ctx, ".")
+	repo, err := r.env.Repo(ctx, r.env.Proc.Dir)
 	if err != nil {
 		return store.Gather{}, gather.Summary{}, err
 	}
@@ -226,7 +226,7 @@ func (r *run) gatherInto(ctx context.Context, off string) (store.Gather, gather.
 	wait := r.env.Wait
 	wait.Progress = r.stderr
 	bounds := gather.Bounds{Since: r.o.Since, SinceSet: r.o.SinceSet, MaxPRs: r.o.MaxPRs, Wait: wait}
-	g, sum, err := gather.Run(ctx, ".", repo, r.env.Forge("."), bounds, d, r.env.Now())
+	g, sum, err := gather.Run(ctx, r.env.Proc.Dir, repo, r.env.Forge(r.env.Proc.Dir), bounds, d, r.env.Now())
 	if stop := (*gather.Stopped)(nil); r.guard.Stopped() || err != nil && !errors.As(err, &stop) { // the cap refused discovery: nothing is stored
 		return g, sum, cmp.Or(err, adapter.ErrCapped)
 	}
@@ -258,7 +258,7 @@ func (r *run) propose(ctx context.Context) int {
 
 // areas divides the stored gather's source files into areas, stores them in init's record and prints them.
 func (r *run) areas(ctx context.Context) int {
-	repo, err := r.env.Repo(ctx, ".")
+	repo, err := r.env.Repo(ctx, r.env.Proc.Dir)
 	if err != nil {
 		return failed(r.stderr, err)
 	}

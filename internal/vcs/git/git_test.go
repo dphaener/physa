@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,10 +16,19 @@ import (
 	"github.com/dphaener/physa/internal/vcs"
 )
 
-func run(t *testing.T, dir string, args ...string) string {
+// env is the test process's environment with kv after it, so the last of a
+// name wins, as for any child started with it. It is a new slice each call.
+func env(kv ...string) []string { return slices.Concat(os.Environ(), kv) }
+
+// with is e with kv after it, in a new slice.
+func with(e []string, kv ...string) []string { return slices.Concat(e, kv) }
+
+// run runs git in dir with the environment e.
+func run(t *testing.T, e []string, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir,
 		"-c", "user.name=T", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
+	cmd.Env = e
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
@@ -26,34 +36,37 @@ func run(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func newRepo(t *testing.T) (vcs.Repo, string) {
+// newRepo returns a new repo, its dir and the environment its git runs in.
+func newRepo(t *testing.T) (vcs.Repo, string, []string) {
 	t.Helper()
-	dir := t.TempDir()
-	run(t, dir, "init", "-q", "-b", "main")
-	r, err := Open(t.Context(), dir)
+	dir, e := t.TempDir(), env()
+	run(t, e, dir, "init", "-q", "-b", "main")
+	r, err := Open(t.Context(), dir, e)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return r, dir
+	return r, dir, e
 }
 
-func commit(t *testing.T, dir, message string) string {
+func commit(t *testing.T, e []string, dir, message string) string {
 	t.Helper()
-	run(t, dir, "commit", "-q", "--allow-empty", "-m", message)
-	return run(t, dir, "rev-parse", "HEAD")
+	run(t, e, dir, "commit", "-q", "--allow-empty", "-m", message)
+	return run(t, e, dir, "rev-parse", "HEAD")
 }
 
 func TestOpenNotRepo(t *testing.T) {
-	_, err := Open(t.Context(), t.TempDir())
+	t.Parallel()
+	_, err := Open(t.Context(), t.TempDir(), env())
 	if !errors.Is(err, vcs.ErrNotRepo) {
 		t.Fatalf("err = %v, want ErrNotRepo", err)
 	}
 }
 
 func TestChanges(t *testing.T) {
-	r, dir := newRepo(t)
-	first := commit(t, dir, "feat: First\n\nbody one\n\nCapability: map")
-	second := commit(t, dir, "fix: Second")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	first := commit(t, e, dir, "feat: First\n\nbody one\n\nCapability: map")
+	second := commit(t, e, dir, "fix: Second")
 	got, err := r.Changes(t.Context(), "HEAD")
 	if err != nil {
 		t.Fatal(err)
@@ -74,13 +87,14 @@ func TestChanges(t *testing.T) {
 }
 
 func TestChangesSkipsMerges(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "base")
-	run(t, dir, "checkout", "-q", "-b", "side")
-	commit(t, dir, "side")
-	run(t, dir, "checkout", "-q", "main")
-	commit(t, dir, "main work")
-	run(t, dir, "merge", "-q", "--no-ff", "-m", "merge side", "side")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commit(t, e, dir, "base")
+	run(t, e, dir, "checkout", "-q", "-b", "side")
+	commit(t, e, dir, "side")
+	run(t, e, dir, "checkout", "-q", "main")
+	commit(t, e, dir, "main work")
+	run(t, e, dir, "merge", "-q", "--no-ff", "-m", "merge side", "side")
 	got, err := r.Changes(t.Context(), "HEAD")
 	if err != nil {
 		t.Fatal(err)
@@ -96,8 +110,9 @@ func TestChangesSkipsMerges(t *testing.T) {
 }
 
 func TestChangesBadRange(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "one")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commit(t, e, dir, "one")
 	_, err := r.Changes(t.Context(), "nope..HEAD")
 	if err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Fatalf("err = %v, want git's own message naming the range", err)
@@ -105,8 +120,9 @@ func TestChangesBadRange(t *testing.T) {
 }
 
 func TestHasChange(t *testing.T) {
-	r, dir := newRepo(t)
-	id := commit(t, dir, "one")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	id := commit(t, e, dir, "one")
 	if !r.HasChange(t.Context(), id) || !r.HasChange(t.Context(), id[:8]) {
 		t.Error("full and abbreviated id should name the change")
 	}
@@ -116,15 +132,16 @@ func TestHasChange(t *testing.T) {
 }
 
 func TestPartial(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "one")
-	commit(t, dir, "two")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commit(t, e, dir, "one")
+	commit(t, e, dir, "two")
 	if r.Partial(t.Context()) {
 		t.Error("a full repo is not partial")
 	}
 	clone := filepath.Join(t.TempDir(), "clone")
-	run(t, dir, "clone", "-q", "--depth", "1", "file://"+dir, clone)
-	c, err := Open(t.Context(), clone)
+	run(t, e, dir, "clone", "-q", "--depth", "1", "file://"+dir, clone)
+	c, err := Open(t.Context(), clone, e)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,8 +151,9 @@ func TestPartial(t *testing.T) {
 }
 
 func TestStoreDir(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "one")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commit(t, e, dir, "one")
 	got, err := r.StoreDir(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -146,8 +164,8 @@ func TestStoreDir(t *testing.T) {
 		t.Errorf("StoreDir = %q, want %q", got, want)
 	}
 	wt := filepath.Join(t.TempDir(), "wt")
-	run(t, dir, "worktree", "add", "-q", "-b", "other", wt)
-	w, err := Open(t.Context(), wt)
+	run(t, e, dir, "worktree", "add", "-q", "-b", "other", wt)
+	w, err := Open(t.Context(), wt, e)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,8 +176,9 @@ func TestStoreDir(t *testing.T) {
 }
 
 func TestFiles(t *testing.T) {
-	r, dir := newRepo(t)
-	before := commit(t, dir, "empty")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	before := commit(t, e, dir, "empty")
 	if got, err := r.Files(t.Context(), before, "d"); err != nil || len(got) != 0 {
 		t.Fatalf("absent dir: %v, %v", got, err)
 	}
@@ -171,8 +190,8 @@ func TestFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	run(t, dir, "add", ".")
-	after := commit(t, dir, "add")
+	run(t, e, dir, "add", ".")
+	after := commit(t, e, dir, "add")
 	got, err := r.Files(t.Context(), after, "d")
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +208,8 @@ func TestFiles(t *testing.T) {
 }
 
 func TestListed(t *testing.T) {
-	r, dir := newRepo(t)
+	t.Parallel()
+	r, dir, e := newRepo(t)
 	write := func(p, body string) {
 		t.Helper()
 		full := filepath.Join(dir, p)
@@ -202,8 +222,8 @@ func TestListed(t *testing.T) {
 	}
 	write(".gitignore", "ignored.log\n")
 	write("tracked.md", "t")
-	run(t, dir, "add", ".")
-	commit(t, dir, "tracked")
+	run(t, e, dir, "add", ".")
+	commit(t, e, dir, "tracked")
 	write("untracked.md", "u")
 	write("sub/deep.md", "d")
 	write("ignored.log", "i")
@@ -225,7 +245,7 @@ func TestListed(t *testing.T) {
 		t.Errorf("the ignored file should exist on disk: %v", err)
 	}
 	sub := filepath.Join(dir, "sub")
-	fromSub, err := Open(t.Context(), sub)
+	fromSub, err := Open(t.Context(), sub, e)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +256,8 @@ func TestListed(t *testing.T) {
 }
 
 func TestTracked(t *testing.T) {
-	r, dir := newRepo(t)
+	t.Parallel()
+	r, dir, e := newRepo(t)
 	write := func(p, body string) {
 		t.Helper()
 		full := filepath.Join(dir, p)
@@ -256,8 +277,8 @@ func TestTracked(t *testing.T) {
 	write("dir with space/my file.go", "s")
 	write("both/.gitattributes", "* linguist-vendored linguist-generated\n")
 	write("both/z.txt", "b")
-	run(t, dir, "add", ".")
-	commit(t, dir, "tracked")
+	run(t, e, dir, "add", ".")
+	commit(t, e, dir, "tracked")
 	write("untracked.go", "u")
 	tracker, ok := r.(vcs.Tracker)
 	if !ok {
@@ -278,7 +299,7 @@ func TestTracked(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("Tracked = %v, %v; want %v", got, err, want)
 	}
-	fromSub, err := Open(t.Context(), filepath.Join(dir, "gen"))
+	fromSub, err := Open(t.Context(), filepath.Join(dir, "gen"), e)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +310,8 @@ func TestTracked(t *testing.T) {
 }
 
 func TestTrackedEmpty(t *testing.T) {
-	r, _ := newRepo(t)
+	t.Parallel()
+	r, _, _ := newRepo(t)
 	got, err := r.(vcs.Tracker).Tracked(t.Context())
 	if err != nil || len(got) != 0 {
 		t.Fatalf("Tracked = %v, %v; want none", got, err)
@@ -297,7 +319,8 @@ func TestTrackedEmpty(t *testing.T) {
 }
 
 func TestTrackedNotRepo(t *testing.T) {
-	r := &repo{dir: t.TempDir()}
+	t.Parallel()
+	r := &repo{dir: t.TempDir(), env: env()}
 	got, err := r.Tracked(t.Context())
 	t.Logf("Tracked in a folder that is no repo: %v", err)
 	if err == nil || got != nil || !strings.Contains(err.Error(), "not a git repository") {
@@ -306,9 +329,10 @@ func TestTrackedNotRepo(t *testing.T) {
 }
 
 func TestChangeTime(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "one")
-	commit(t, dir, "two")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commit(t, e, dir, "one")
+	commit(t, e, dir, "two")
 	got, err := r.Changes(t.Context(), "HEAD")
 	if err != nil || len(got) != 2 {
 		t.Fatalf("%v, %v", got, err)
@@ -322,10 +346,11 @@ func TestChangeTime(t *testing.T) {
 }
 
 func TestLatest(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "one")
-	commit(t, dir, "two")
-	three := commit(t, dir, "three")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commit(t, e, dir, "one")
+	commit(t, e, dir, "two")
+	three := commit(t, e, dir, "three")
 	got, err := r.Latest(t.Context(), "HEAD", 2)
 	if err != nil || len(got) != 2 || got[0].ID != three || got[1].Subject != "two" {
 		t.Fatalf("Latest(2) = %+v, %v", got, err)
@@ -340,8 +365,9 @@ func TestLatest(t *testing.T) {
 }
 
 func TestLatestBadRef(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "one")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commit(t, e, dir, "one")
 	_, err := r.Latest(t.Context(), "nope", 5)
 	if err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Fatalf("err = %v, want git's own message naming the ref", err)
@@ -349,13 +375,14 @@ func TestLatestBadRef(t *testing.T) {
 }
 
 func TestReverts(t *testing.T) {
-	r, dir := newRepo(t)
+	t.Parallel()
+	r, dir, e := newRepo(t)
 	if err := os.WriteFile(filepath.Join(dir, "f"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	run(t, dir, "add", ".")
-	target := commit(t, dir, "feat: Thing")
-	run(t, dir, "revert", "--no-edit", "HEAD")
+	run(t, e, dir, "add", ".")
+	target := commit(t, e, dir, "feat: Thing")
+	run(t, e, dir, "revert", "--no-edit", "HEAD")
 	got, err := r.Latest(t.Context(), "HEAD", 1)
 	if err != nil || len(got) != 1 {
 		t.Fatal(got, err)
@@ -363,7 +390,7 @@ func TestReverts(t *testing.T) {
 	if id, ok := r.Reverts(got[0]); !ok || id != target {
 		t.Errorf("Reverts = %q, %v; want %q", id, ok, target)
 	}
-	run(t, dir, "revert", "--no-edit", "HEAD")
+	run(t, e, dir, "revert", "--no-edit", "HEAD")
 	again, _ := r.Latest(t.Context(), "HEAD", 1)
 	if id, ok := r.Reverts(again[0]); !ok || id != got[0].ID {
 		t.Errorf("revert of a revert = %q, %v; want %q", id, ok, got[0].ID)
@@ -371,7 +398,8 @@ func TestReverts(t *testing.T) {
 }
 
 func TestRevertsMessages(t *testing.T) {
-	r, _ := newRepo(t)
+	t.Parallel()
+	r, _, _ := newRepo(t)
 	cases := []struct {
 		name, msg, id string
 		ok            bool
@@ -392,14 +420,15 @@ func TestRevertsMessages(t *testing.T) {
 }
 
 func TestDefaultBranch(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "one")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commit(t, e, dir, "one")
 	if got, err := r.DefaultBranch(t.Context()); err != nil || got != "main" {
 		t.Errorf("no remote: %q, %v; want main", got, err)
 	}
 	clone := filepath.Join(t.TempDir(), "clone")
-	run(t, dir, "clone", "-q", dir, clone)
-	c, err := Open(t.Context(), clone)
+	run(t, e, dir, "clone", "-q", dir, clone)
+	c, err := Open(t.Context(), clone, e)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,16 +436,17 @@ func TestDefaultBranch(t *testing.T) {
 		t.Errorf("clone: %q, %v; want origin/main", got, err)
 	}
 	// Without origin/HEAD the remote's main still wins.
-	run(t, clone, "remote", "set-head", "origin", "--delete")
+	run(t, e, clone, "remote", "set-head", "origin", "--delete")
 	if got, err := c.DefaultBranch(t.Context()); err != nil || got != "origin/main" {
 		t.Errorf("clone without HEAD: %q, %v; want origin/main", got, err)
 	}
 }
 
 func TestDefaultBranchMissing(t *testing.T) {
-	r, dir := newRepo(t)
-	run(t, dir, "checkout", "-q", "-b", "trunk")
-	commit(t, dir, "one")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	run(t, e, dir, "checkout", "-q", "-b", "trunk")
+	commit(t, e, dir, "one")
 	got, err := r.DefaultBranch(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "default branch cannot be found") {
 		t.Fatalf("DefaultBranch = %q, %v; want an error", got, err)
@@ -424,34 +454,37 @@ func TestDefaultBranchMissing(t *testing.T) {
 }
 
 func TestBranch(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "one")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commit(t, e, dir, "one")
 	if got := r.Branch(t.Context(), "physa/x"); len(got) != 0 {
 		t.Errorf("neither: %v", got)
 	}
 	remote := t.TempDir()
-	run(t, remote, "init", "-q", "--bare", "-b", "main")
-	run(t, dir, "remote", "add", "origin", remote)
-	run(t, dir, "branch", "physa/x")
+	run(t, e, remote, "init", "-q", "--bare", "-b", "main")
+	run(t, e, dir, "remote", "add", "origin", remote)
+	run(t, e, dir, "branch", "physa/x")
 	if got := r.Branch(t.Context(), "physa/x"); !reflect.DeepEqual(got, []string{"physa/x"}) {
 		t.Errorf("local only: %v", got)
 	}
-	run(t, dir, "push", "-q", "origin", "physa/x")
-	run(t, dir, "fetch", "-q", "origin")
+	run(t, e, dir, "push", "-q", "origin", "physa/x")
+	run(t, e, dir, "fetch", "-q", "origin")
 	if got := r.Branch(t.Context(), "physa/x"); !reflect.DeepEqual(got, []string{"physa/x", "origin/physa/x"}) {
 		t.Errorf("both: %v", got)
 	}
-	run(t, dir, "branch", "-q", "-D", "physa/x")
+	run(t, e, dir, "branch", "-q", "-D", "physa/x")
 	if got := r.Branch(t.Context(), "physa/x"); !reflect.DeepEqual(got, []string{"origin/physa/x"}) {
 		t.Errorf("origin only: %v", got)
 	}
 }
 
 func TestChangeAuthor(t *testing.T) {
-	r, dir := newRepo(t)
+	t.Parallel()
+	r, dir, e := newRepo(t)
 	for _, name := range []string{"Dörte van Berg", "李 雷"} {
 		cmd := exec.Command("git", "-C", dir, "-c", "user.name="+name, "-c", "user.email=a@example.com",
 			"-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "by "+name+"\n\nbody")
+		cmd.Env = e
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("commit: %v\n%s", err, out)
 		}
@@ -468,16 +501,16 @@ func TestChangeAuthor(t *testing.T) {
 	}
 }
 
-func commitAt(t *testing.T, dir, message, when string) string {
+func commitAt(t *testing.T, e []string, dir, message, when string) string {
 	t.Helper()
-	t.Setenv("GIT_COMMITTER_DATE", when)
-	return commit(t, dir, message)
+	return commit(t, with(e, "GIT_COMMITTER_DATE="+when), dir, message)
 }
 
 func TestSince(t *testing.T) {
-	r, dir := newRepo(t)
-	commitAt(t, dir, "old", "2024-01-01T00:00:00Z")
-	newer := commitAt(t, dir, "new", "2024-03-01T00:00:00Z")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commitAt(t, e, dir, "old", "2024-01-01T00:00:00Z")
+	newer := commitAt(t, e, dir, "new", "2024-03-01T00:00:00Z")
 	cut := time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)
 	got, err := r.Since(t.Context(), "HEAD", cut)
 	if err != nil || len(got) != 1 || got[0].ID != newer {
@@ -486,9 +519,10 @@ func TestSince(t *testing.T) {
 }
 
 func TestSinceZeroTime(t *testing.T) {
-	r, dir := newRepo(t)
-	first := commitAt(t, dir, "old", "2001-01-01T00:00:00Z")
-	second := commitAt(t, dir, "new", "2024-03-01T00:00:00Z")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	first := commitAt(t, e, dir, "old", "2001-01-01T00:00:00Z")
+	second := commitAt(t, e, dir, "new", "2024-03-01T00:00:00Z")
 	got, err := r.Since(t.Context(), "HEAD", time.Time{})
 	if err != nil || len(got) != 2 || got[0].ID != second || got[1].ID != first {
 		t.Fatalf("since = %+v, %v", got, err)
@@ -496,20 +530,22 @@ func TestSinceZeroTime(t *testing.T) {
 }
 
 func TestSinceBadRef(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "one")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commit(t, e, dir, "one")
 	if got, err := r.Since(t.Context(), "nope", time.Time{}); err == nil {
 		t.Fatalf("since = %+v, want an error", got)
 	}
 }
 
 func TestAlteredRootCommit(t *testing.T) {
-	r, dir := newRepo(t)
+	t.Parallel()
+	r, dir, e := newRepo(t)
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	run(t, dir, "add", ".")
-	id := commit(t, dir, "root")
+	run(t, e, dir, "add", ".")
+	id := commit(t, e, dir, "root")
 	got, err := r.Altered(t.Context(), id)
 	if err != nil || !reflect.DeepEqual(got, []string{"a.txt"}) {
 		t.Fatalf("altered = %v, %v", got, err)
@@ -517,8 +553,9 @@ func TestAlteredRootCommit(t *testing.T) {
 }
 
 func TestAlteredSubdirectories(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "base")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commit(t, e, dir, "base")
 	for _, p := range []string{"z/deep/b.go", "a/c.go"} {
 		full := filepath.Join(dir, p)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -528,39 +565,88 @@ func TestAlteredSubdirectories(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	run(t, dir, "add", ".")
-	id := commit(t, dir, "two files")
+	run(t, e, dir, "add", ".")
+	id := commit(t, e, dir, "two files")
 	got, err := r.Altered(t.Context(), id)
 	if err != nil || !reflect.DeepEqual(got, []string{"a/c.go", "z/deep/b.go"}) {
 		t.Fatalf("altered = %v, %v", got, err)
 	}
-	empty, err := r.Altered(t.Context(), commit(t, dir, "empty"))
+	empty, err := r.Altered(t.Context(), commit(t, e, dir, "empty"))
 	if err != nil || empty == nil || len(empty) != 0 {
 		t.Fatalf("empty commit altered = %#v, %v", empty, err)
 	}
 }
 
 func TestAlteredBadID(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "one")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commit(t, e, dir, "one")
 	if got, err := r.Altered(t.Context(), "deadbeefdeadbeef"); err == nil {
 		t.Fatalf("altered = %v, want an error", got)
 	}
 }
 
 func TestEmail(t *testing.T) {
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	_, dir := newRepo(t)
-	got, err := Email(t.Context(), dir)
+	t.Parallel()
+	_, dir, e := newRepo(t)
+	e = with(e, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	got, err := Email(t.Context(), dir, e)
 	if err != nil || got != "" {
 		t.Errorf("unset: %q, %v", got, err)
 	}
-	if out, err := exec.Command("git", "-C", dir, "config", "--local", "user.email", "Darin.H@example.com").CombinedOutput(); err != nil {
-		t.Fatalf("%v\n%s", err, out)
-	}
-	if got, err = Email(t.Context(), dir); err != nil || got != "Darin.H@example.com" {
+	run(t, e, dir, "config", "--local", "user.email", "Darin.H@example.com")
+	if got, err = Email(t.Context(), dir, e); err != nil || got != "Darin.H@example.com" {
 		t.Errorf("set: %q, %v", got, err)
+	}
+}
+
+// TestEnvReachesGit shows that the environment passed in is the one git
+// runs in: a global config named only there gives Email its address.
+func TestEnvReachesGit(t *testing.T) {
+	t.Parallel()
+	_, dir, e := newRepo(t)
+	cfg := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(cfg, []byte("[user]\n\temail = passed@example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Email(t.Context(), dir, with(e, "GIT_CONFIG_GLOBAL="+cfg, "GIT_CONFIG_NOSYSTEM=1"))
+	if err != nil || got != "passed@example.com" {
+		t.Errorf("Email = %q, %v; want the address from the passed GIT_CONFIG_GLOBAL", got, err)
+	}
+}
+
+// TestEmptyEnvIsRefused shows that git never runs with no environment, which
+// would leave it no HOME or PATH, whichever way it is opened.
+func TestEmptyEnvIsRefused(t *testing.T) {
+	t.Parallel()
+	_, dir, _ := newRepo(t)
+	for _, e := range [][]string{nil, {}} {
+		if _, err := Open(t.Context(), dir, e); !errors.Is(err, errNoEnv) || errors.Is(err, vcs.ErrNotRepo) {
+			t.Errorf("Open(%#v) = %v, want the empty environment refused", e, err)
+		}
+		if _, err := OpenWriter(t.Context(), dir, e); !errors.Is(err, errNoEnv) {
+			t.Errorf("OpenWriter(%#v) = %v, want the empty environment refused", e, err)
+		}
+		if _, err := OpenHooks(t.Context(), dir, e); !errors.Is(err, errNoEnv) {
+			t.Errorf("OpenHooks(%#v) = %v, want the empty environment refused", e, err)
+		}
+		if got, err := Email(t.Context(), dir, e); !errors.Is(err, errNoEnv) || got != "" {
+			t.Errorf("Email(%#v) = %q, %v, want the empty environment refused", e, got, err)
+		}
+	}
+}
+
+// TestEnvIsNotAppendedInPlace shows that git's own LC_ALL=C goes in a copy:
+// the caller's slice, with room to grow, is left as it was.
+func TestEnvIsNotAppendedInPlace(t *testing.T) {
+	t.Parallel()
+	_, dir, e := newRepo(t)
+	roomy := append(make([]string, 0, len(e)+4), e...)
+	if _, err := Email(t.Context(), dir, roomy); err != nil {
+		t.Fatal(err)
+	}
+	if spare := roomy[len(roomy):cap(roomy)]; slices.ContainsFunc(spare, func(kv string) bool { return kv != "" }) {
+		t.Errorf("the caller's slice was written past its length: %q", spare)
 	}
 }
 
@@ -570,9 +656,9 @@ func TestEmail(t *testing.T) {
 // It returns the repo, its dir and the merge of each PR.
 func mergeHistory(t *testing.T) (vcs.Repo, string, map[int]string) {
 	t.Helper()
-	r, dir := newRepo(t)
-	day := 0
-	at := func() { day++; t.Setenv("GIT_COMMITTER_DATE", fmt.Sprintf("2024-01-%02dT00:00:00Z", day)) }
+	r, dir, base := newRepo(t)
+	e, day := base, 0
+	at := func() { day++; e = with(base, fmt.Sprintf("GIT_COMMITTER_DATE=2024-01-%02dT00:00:00Z", day)) }
 	file := func(p string) {
 		full := filepath.Join(dir, p)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -581,34 +667,35 @@ func mergeHistory(t *testing.T) (vcs.Repo, string, map[int]string) {
 		if err := os.WriteFile(full, []byte(p), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		run(t, dir, "add", ".")
+		run(t, e, dir, "add", ".")
 		at()
-		commit(t, dir, "Add "+p)
+		commit(t, e, dir, "Add "+p)
 	}
 	merge := func(branch, message string) string {
 		at()
-		run(t, dir, "merge", "-q", "--no-ff", "-m", message, branch)
-		return run(t, dir, "rev-parse", "HEAD")
+		run(t, e, dir, "merge", "-q", "--no-ff", "-m", message, branch)
+		return run(t, e, dir, "rev-parse", "HEAD")
 	}
 	file("README.md")
-	run(t, dir, "checkout", "-q", "-b", "notes")
+	run(t, e, dir, "checkout", "-q", "-b", "notes")
 	file("notes/model.rb")
 	file("notes/view.rb")
-	run(t, dir, "checkout", "-q", "main")
+	run(t, e, dir, "checkout", "-q", "main")
 	file("CHANGELOG.md")
 	prs := map[int]string{3: merge("notes", "Merge pull request #3 from dana/notes\n\nKeep notes")}
-	run(t, dir, "checkout", "-q", "-b", "tags")
+	run(t, e, dir, "checkout", "-q", "-b", "tags")
 	file("tags/tag.rb")
 	merge("main", "Merge branch 'main' into tags")
-	run(t, dir, "checkout", "-q", "-b", "stable", "main")
+	run(t, e, dir, "checkout", "-q", "-b", "stable", "main")
 	file("stable.txt")
-	run(t, dir, "checkout", "-q", "main")
+	run(t, e, dir, "checkout", "-q", "main")
 	prs[4] = merge("tags", "Merge pull request #4 from sam/tags")
 	merge("stable", "Merge branch 'stable'")
 	return r, dir, prs
 }
 
 func TestMergesFollowTheFirstParent(t *testing.T) {
+	t.Parallel()
 	r, _, prs := mergeHistory(t)
 	got, err := r.(vcs.Merges).Merges(t.Context(), "main", time.Time{})
 	var subjects []string
@@ -626,6 +713,7 @@ func TestMergesFollowTheFirstParent(t *testing.T) {
 }
 
 func TestSinceWithPRMergesAddsOnlyPRMerges(t *testing.T) {
+	t.Parallel()
 	r, _, prs := mergeHistory(t)
 	got, err := vcs.SinceWithPRMerges(t.Context(), r, "main", time.Time{})
 	if err != nil {
@@ -653,23 +741,26 @@ func cancelled(t *testing.T) context.Context {
 }
 
 func TestChangesCancel(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "feat: First")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commit(t, e, dir, "feat: First")
 	if _, err := r.Changes(cancelled(t), "HEAD"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }
 
 func TestDefaultBranchCancel(t *testing.T) {
-	r, dir := newRepo(t)
-	commit(t, dir, "feat: First")
+	t.Parallel()
+	r, dir, e := newRepo(t)
+	commit(t, e, dir, "feat: First")
 	if _, err := r.DefaultBranch(cancelled(t)); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }
 
 func TestOpenCancel(t *testing.T) {
-	_, err := Open(cancelled(t), t.TempDir())
+	t.Parallel()
+	_, err := Open(cancelled(t), t.TempDir(), env())
 	if !errors.Is(err, context.Canceled) || errors.Is(err, vcs.ErrNotRepo) {
 		t.Fatalf("err = %v, want context.Canceled and not ErrNotRepo", err)
 	}

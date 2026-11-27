@@ -21,22 +21,27 @@ import (
 	"github.com/dphaener/physa/internal/vcs/git"
 )
 
-// isolate gives git an identity and no signing from a config of the test's
-// own, so no commit reads the machine's config.
-func isolate(t *testing.T) {
-	t.Helper()
-	cfg := filepath.Join(t.TempDir(), "gitconfig")
-	body := "[user]\n\tname = W\n\temail = w@example.com\n[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = main\n"
-	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+// gitEnv is the environment of every git a test runs, its own and the one
+// the writer opens: the test process's, with an identity, no signing and
+// main as the first branch, given as command-line config, so no commit
+// reads the machine's config.
+var gitEnv = append(os.Environ(),
+	"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_COUNT=4",
+	"GIT_CONFIG_KEY_0=user.name", "GIT_CONFIG_VALUE_0=W",
+	"GIT_CONFIG_KEY_1=user.email", "GIT_CONFIG_VALUE_1=w@example.com",
+	"GIT_CONFIG_KEY_2=commit.gpgsign", "GIT_CONFIG_VALUE_2=false",
+	"GIT_CONFIG_KEY_3=init.defaultBranch", "GIT_CONFIG_VALUE_3=main")
+
+// gitCmd is git with args, run in dir with gitEnv.
+func gitCmd(dir string, args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	cmd.Dir, cmd.Env = dir, gitEnv
+	return cmd
 }
 
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	out, err := gitCmd(dir, args...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -56,7 +61,7 @@ func writeFile(t *testing.T, root, rel, text string) {
 
 // ref returns what ref names in dir, or "" when it names nothing.
 func ref(dir, name string) string {
-	out, err := exec.Command("git", "-C", dir, "rev-parse", "--verify", "--quiet", name).Output()
+	out, err := gitCmd(dir, "rev-parse", "--verify", "--quiet", name).Output()
 	if err != nil {
 		return ""
 	}
@@ -76,7 +81,6 @@ type fixture struct {
 
 func newFixture(t *testing.T, agents *string) *fixture {
 	t.Helper()
-	isolate(t)
 	f := &fixture{t: t, dir: t.TempDir(), bare: t.TempDir(), forge: &fakeForge{}}
 	gitIn(t, f.bare, "init", "-q", "--bare", "-b", "main")
 	gitIn(t, f.dir, "init", "-q", "-b", "main")
@@ -99,7 +103,7 @@ func newFixture(t *testing.T, agents *string) *fixture {
 
 func (f *fixture) writer() vcs.Writer {
 	f.t.Helper()
-	w, err := git.OpenWriter(context.Background(), f.dir)
+	w, err := git.OpenWriter(context.Background(), f.dir, gitEnv)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -220,7 +224,7 @@ var mapPaths = []string{".physa/README.md", ".physa/capabilities/billing/index.m
 
 func show(t *testing.T, dir, rev, p string) string {
 	t.Helper()
-	out, err := exec.Command("git", "-C", dir, "show", rev+":"+p).Output()
+	out, err := gitCmd(dir, "show", rev+":"+p).Output()
 	if err != nil {
 		t.Fatalf("git show %s:%s: %v", rev, p, err)
 	}
@@ -228,6 +232,7 @@ func show(t *testing.T, dir, rev, p string) string {
 }
 
 func TestWritesExactlyTheMapFiles(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	out, err := f.run(sample(f), Options{}, nil)
 	if err != nil {
@@ -283,6 +288,7 @@ func TestWritesExactlyTheMapFiles(t *testing.T) {
 }
 
 func TestBranchTreePassesTheMapCheck(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	if _, err := f.run(sample(f), Options{}, nil); err != nil {
 		t.Fatal(err)
@@ -290,13 +296,16 @@ func TestBranchTreePassesTheMapCheck(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "check")
 	gitIn(t, f.dir, "worktree", "add", "-q", "--detach", dir, Branch)
 	defer gitIn(t, f.dir, "worktree", "remove", "--force", dir)
-	res, err := mapcheck.CheckWith(t.Context(), dir, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
+	res, err := mapcheck.CheckWith(t.Context(), dir, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) {
+		return git.Open(context.Background(), d, gitEnv)
+	}})
 	if err != nil || len(res.Problems) > 0 || res.Capabilities != 2 {
 		t.Fatalf("check = %+v, %v", res, err)
 	}
 }
 
 func TestMapFailingTheCheckWritesNothing(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	m := sample(f)
 	m.Capabilities[0].File = "---\npromise: Webhooks reach customers at least once.\n---\n\n# Delivery\n\n## Rules\n\n### Sends are queued\nno meta line here\n"
@@ -320,6 +329,7 @@ func TestMapFailingTheCheckWritesNothing(t *testing.T) {
 }
 
 func TestPushOpensThePRThenRefreshesIt(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	out, err := f.run(sample(f), f.opts(true, true), nil)
 	if err != nil {
@@ -367,6 +377,7 @@ func TestPushOpensThePRThenRefreshesIt(t *testing.T) {
 }
 
 func TestLostLeaseIsAnErrorNamingTheBranch(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	other := filepath.Join(t.TempDir(), "other")
 	gitIn(t, f.dir, "clone", "-q", f.bare, other)
@@ -388,6 +399,7 @@ func TestLostLeaseIsAnErrorNamingTheBranch(t *testing.T) {
 }
 
 func TestCheckedOutBranchIsRefused(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	gitIn(t, f.dir, "branch", Branch, f.first)
 	dir := filepath.Join(t.TempDir(), "wt")
@@ -403,6 +415,7 @@ func TestCheckedOutBranchIsRefused(t *testing.T) {
 }
 
 func TestExistingMapIsRefused(t *testing.T) {
+	t.Parallel()
 	for _, p := range mapfolder.Products {
 		t.Run(p, func(t *testing.T) {
 			f := newFixture(t, nil)
@@ -424,6 +437,7 @@ func TestExistingMapIsRefused(t *testing.T) {
 }
 
 func TestPRWithoutForgeIsReady(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	out, err := f.run(sample(f), Options{Push: true, PR: true, ForgeReason: "no remote on a forge"}, nil)
 	if err != nil || out.PR != (PR{State: PRReady, Reason: "no remote on a forge"}) {
@@ -436,6 +450,7 @@ func TestPRWithoutForgeIsReady(t *testing.T) {
 }
 
 func TestPRNeedsPush(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	if _, err := f.run(sample(f), Options{PR: true, PRs: f.forge}, nil); err == nil {
 		t.Fatal("a PR without a push was allowed")
@@ -443,6 +458,7 @@ func TestPRNeedsPush(t *testing.T) {
 }
 
 func TestNewCodebaseHasNoCapabilities(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	m := Map{ProductName: "Woodshop", ProductPromise: "Woodworkers plan their cuts.", Terms: "**Cut**: One pass of the saw."}
 	out, err := f.run(m, Options{}, nil)
@@ -470,6 +486,7 @@ func TestNewCodebaseHasNoCapabilities(t *testing.T) {
 }
 
 func TestInvalidMapIsRefusedBeforeAnyCopy(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	for _, m := range []Map{
 		{ProductPromise: "P."},
@@ -483,6 +500,7 @@ func TestInvalidMapIsRefusedBeforeAnyCopy(t *testing.T) {
 }
 
 func TestBodySummarisesTheRun(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	m := sample(f)
 	out, err := f.run(m, Options{}, nil)
@@ -522,6 +540,7 @@ func TestBodySummarisesTheRun(t *testing.T) {
 }
 
 func TestBodySkillSection(t *testing.T) {
+	t.Parallel()
 	const line = "Claude Code has no Physa skill on this account: run `physa skill setup` to install it, so its sessions learn Physa's commands and terms."
 	f := newFixture(t, nil)
 	m := sample(f)
@@ -534,6 +553,7 @@ func TestBodySkillSection(t *testing.T) {
 }
 
 func TestBodyWithoutSkillHasNoSection(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	m := sample(f)
 	if body := Body(m); strings.Contains(body, "Physa's skill") {
@@ -542,6 +562,7 @@ func TestBodyWithoutSkillHasNoSection(t *testing.T) {
 }
 
 func TestHasMap(t *testing.T) {
+	t.Parallel()
 	for _, p := range mapfolder.Products {
 		t.Run(p, func(t *testing.T) {
 			f := newFixture(t, nil)
@@ -568,13 +589,16 @@ func checkBranch(t *testing.T, f *fixture, capabilities int) {
 	dir := filepath.Join(t.TempDir(), "check")
 	gitIn(t, f.dir, "worktree", "add", "-q", "--detach", dir, Branch)
 	defer gitIn(t, f.dir, "worktree", "remove", "--force", dir)
-	res, err := mapcheck.CheckWith(t.Context(), dir, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
+	res, err := mapcheck.CheckWith(t.Context(), dir, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) {
+		return git.Open(context.Background(), d, gitEnv)
+	}})
 	if err != nil || len(res.Problems) > 0 || res.Capabilities != capabilities {
 		t.Fatalf("check = %+v, %v", res, err)
 	}
 }
 
 func TestWriteDropsWhatTheCheckWouldReject(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	m := sample(f)
 	m.ProductQuestions = append(m.ProductQuestions,
@@ -620,6 +644,7 @@ func TestWriteDropsWhatTheCheckWouldReject(t *testing.T) {
 }
 
 func TestWriteOverviewFromTheText(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	m := sample(f)
 	m.Capabilities[0].File = strings.Replace(m.Capabilities[0].File, "# Delivery\n", "# Delivery\n\nWebhooks are queued and sent again until they land.\n", 1)
@@ -636,6 +661,7 @@ func TestWriteOverviewFromTheText(t *testing.T) {
 // TestReadmeMatchesTheMapsOwn keeps init's README text the same as Physa's
 // own .physa/README.md, so the map describes the layout it is written in.
 func TestReadmeMatchesTheMapsOwn(t *testing.T) {
+	t.Parallel()
 	own, err := os.ReadFile("../../.physa/README.md")
 	if err != nil {
 		t.Fatal(err)
@@ -649,6 +675,7 @@ const productRule1 = "### Plans come first\n`plans-first` · from docs/vision.md
 const productRule2 = "### Offcuts are kept\n`offcuts-kept` · from docs/vision.md\nOffcuts go to the shelf.\nBecause: they save the next cut.\n"
 
 func TestProductRulesAreWrittenAndPassTheCheck(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	m := sample(f)
 	m.ProductRules = []string{productRule1, productRule2}
@@ -665,13 +692,16 @@ func TestProductRulesAreWrittenAndPassTheCheck(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "check")
 	gitIn(t, f.dir, "worktree", "add", "-q", "--detach", dir, Branch)
 	defer gitIn(t, f.dir, "worktree", "remove", "--force", dir)
-	res, err := mapcheck.CheckWith(t.Context(), dir, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
+	res, err := mapcheck.CheckWith(t.Context(), dir, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) {
+		return git.Open(context.Background(), d, gitEnv)
+	}})
 	if err != nil || len(res.Problems) > 0 {
 		t.Fatalf("check = %+v, %v", res, err)
 	}
 }
 
 func TestProductRulesSlugsAreTaken(t *testing.T) {
+	t.Parallel()
 	m := Map{ProductName: "Woodshop", ProductPromise: "Woodworkers plan.",
 		ProductRules:     []string{"### Plans first\n`plans-first` · from docs/vision.md\nBody.\nBecause: reasons.\n"},
 		ProductQuestions: []Question{{Question: "Plans first"}}}
@@ -683,11 +713,12 @@ func TestProductRulesSlugsAreTaken(t *testing.T) {
 }
 
 func TestNoProductRulesWritesNoRulesFile(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil)
 	if _, err := f.run(sample(f), Options{}, nil); err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.Command("git", "-C", f.dir, "cat-file", "-e", Branch+":.physa/product/rules.md").CombinedOutput()
+	out, err := gitCmd(f.dir, "cat-file", "-e", Branch+":.physa/product/rules.md").CombinedOutput()
 	t.Logf("cat-file: %v %s", err, out)
 	if err == nil {
 		t.Error("a rules file was written with no product rules")

@@ -10,7 +10,6 @@ import (
 
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/mapcheck"
-	"github.com/dphaener/physa/internal/vcs/git"
 )
 
 // checkCommand builds the check group on d.
@@ -26,14 +25,14 @@ func checkCommand(d deps) *cobra.Command {
 			if !bare.takeRange(args) {
 				return command.BadUsage
 			}
-			return d.checkBare(ctx, ".", bare, stdout, stderr)
+			return d.checkBare(ctx, d.proc().Dir, bare, stdout, stderr)
 		},
 		command.New("map", "Check the map: 0 when sound, 1 with problems, 2 when it cannot be read.", []string{"physa check map [dir]"},
 			func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 				if len(args) > 1 {
 					return command.BadUsage
 				}
-				dir := "."
+				dir := d.proc().Dir
 				if len(args) == 1 {
 					dir = args[0]
 				}
@@ -44,7 +43,7 @@ func checkCommand(d deps) *cobra.Command {
 				if !sub.takeRange(args) {
 					return command.BadUsage
 				}
-				return d.checkChanges(ctx, ".", "physa check changes", sub, stdout, stderr)
+				return d.checkChanges(ctx, d.proc().Dir, "physa check changes", sub, stdout, stderr)
 			}), func(fs *pflag.FlagSet) { sub = changesOptions{}; sub.declare(fs, true) }),
 	), func(fs *pflag.FlagSet) { bare = changesOptions{}; bare.declare(fs, false) })
 }
@@ -54,7 +53,7 @@ func checkCommand(d deps) *cobra.Command {
 func (d deps) checkBare(ctx context.Context, dir string, o changesOptions, stdout, stderr io.Writer) int {
 	const name = "physa check"
 	if !o.given {
-		repo, err := git.Open(ctx, dir)
+		repo, err := d.openRepo(ctx, dir)
 		if err != nil {
 			return d.checkMap(ctx, dir, name, stdout, stderr)
 		}
@@ -75,7 +74,7 @@ func (d deps) checkBare(ctx context.Context, dir string, o changesOptions, stdou
 // checkMap reports the map in dir: 0 when it is sound, 1 with problems, 2 when
 // it cannot be read. Its messages start with name.
 func (d deps) checkMap(ctx context.Context, dir, name string, stdout, stderr io.Writer) int {
-	res, err := mapcheck.CheckWith(ctx, dir, mapcheck.Options{PRExists: d.prResolver(dir), OpenRepo: openRepo})
+	res, err := mapcheck.CheckWith(ctx, dir, mapcheck.Options{PRExists: d.prResolver(dir), OpenRepo: d.openRepo})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 2

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/proc"
 )
 
 const (
@@ -22,7 +23,7 @@ const (
 // fixtureLogs reads the testdata transcripts, never the real ~/.claude.
 func fixtureLogs(t *testing.T) *Logs {
 	t.Helper()
-	l := New("/fixture/repo")
+	l := New("/fixture/repo", proc.State{})
 	l.Root = "testdata"
 	return l
 }
@@ -45,6 +46,7 @@ func at(s string) time.Time {
 }
 
 func TestLogsInterventions(t *testing.T) {
+	t.Parallel()
 	log := readFixture(t)
 	want := []adapter.Message{
 		{At: at("2026-11-20T10:02:00Z"), Text: "Keep the old --write flag working too."},
@@ -56,6 +58,7 @@ func TestLogsInterventions(t *testing.T) {
 }
 
 func TestLogsRedactsKeys(t *testing.T) {
+	t.Parallel()
 	s := fmt.Sprintf("%+v", readFixture(t))
 	for _, secret := range []string{"sk-ant-", "hunter2x9"} {
 		if strings.Contains(s, secret) {
@@ -68,6 +71,7 @@ func TestLogsRedactsKeys(t *testing.T) {
 }
 
 func TestLogsAnsweredAsk(t *testing.T) {
+	t.Parallel()
 	log := readFixture(t)
 	want := []adapter.Ask{{
 		At:      at("2026-11-20T10:09:00Z"),
@@ -81,6 +85,7 @@ func TestLogsAnsweredAsk(t *testing.T) {
 }
 
 func TestLogsReports(t *testing.T) {
+	t.Parallel()
 	log := readFixture(t)
 	want := []adapter.Report{
 		{
@@ -110,6 +115,7 @@ func TestLogsReports(t *testing.T) {
 }
 
 func TestLogsNeverReturnToolOutput(t *testing.T) {
+	t.Parallel()
 	log := readFixture(t)
 	s := fmt.Sprintf("%+v", log)
 	for _, secret := range []string{fakeSecret, "FIXTURE_SECRET_FILE_CONTENTS", "/fixture/repo/.env"} {
@@ -120,12 +126,14 @@ func TestLogsNeverReturnToolOutput(t *testing.T) {
 }
 
 func TestLogsSkipsMalformedLines(t *testing.T) {
+	t.Parallel()
 	if log := readFixture(t); log.Skipped < 1 {
 		t.Errorf("skipped = %d, want at least 1", log.Skipped)
 	}
 }
 
 func TestLogsSessionInAnotherProject(t *testing.T) {
+	t.Parallel()
 	log, err := fixtureLogs(t).ReadSession(fixtureOther)
 	if err != nil {
 		t.Fatal(err)
@@ -137,6 +145,7 @@ func TestLogsSessionInAnotherProject(t *testing.T) {
 }
 
 func TestLogsMissingIsUnavailable(t *testing.T) {
+	t.Parallel()
 	l := fixtureLogs(t)
 	for _, id := range []string{"33333333-3333-4333-8333-333333333333", "../x", "", "a/b"} {
 		_, err := l.ReadSession(id)
@@ -151,6 +160,7 @@ func TestLogsMissingIsUnavailable(t *testing.T) {
 }
 
 func TestProjectName(t *testing.T) {
+	t.Parallel()
 	for dir, want := range map[string]string{
 		"/home/a.b/c_d":          "-home-a-b-c-d",
 		"/home/rhiza/code/physa": "-home-rhiza-code-physa",
@@ -163,14 +173,17 @@ func TestProjectName(t *testing.T) {
 }
 
 func TestNewLogsRoot(t *testing.T) {
-	t.Setenv("CLAUDE_CONFIG_DIR", "/cfg")
-	if l := New("."); l.Root != "/cfg" || !filepath.IsAbs(l.dir) {
+	t.Parallel()
+	st := proc.State{Dir: ".", Wd: "/work/repo", Env: []string{"CLAUDE_CONFIG_DIR=/cfg", "HOME=/home/someone"}}
+	if l := New(".", st); l.Root != "/cfg" || l.dir != "/work/repo" {
 		t.Errorf("logs = %+v", l)
 	}
-	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	t.Setenv("HOME", "/home/someone")
-	if l := New("/x"); l.Root != "/home/someone/.claude" {
-		t.Errorf("root = %q", l.Root)
+	st.Env = []string{"CLAUDE_CONFIG_DIR=", "HOME=/home/someone"}
+	if l := New("/x", st); l.Root != "/home/someone/.claude" || l.dir != "/x" {
+		t.Errorf("root = %q, dir %q", l.Root, l.dir)
+	}
+	if l := New("/x", proc.State{}); l.Root != "" {
+		t.Errorf("with no CLAUDE_CONFIG_DIR and no HOME, root = %q, want none", l.Root)
 	}
 }
 
@@ -202,6 +215,7 @@ func copyFixture(t *testing.T) string {
 }
 
 func TestLogsReadsOnlyTranscripts(t *testing.T) {
+	t.Parallel()
 	root := copyFixture(t)
 	sub := filepath.Join(root, "projects", "-fixture-repo", fixtureLead, "subagents")
 	report := `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"x","name":"StructuredOutput","input":{"verdict":"FAIL","discrepancies":["from a file never read"]}}]},"timestamp":"2026-11-20T11:00:00Z"}` + "\n"
@@ -216,7 +230,7 @@ func TestLogsReadsOnlyTranscripts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	l := New("/fixture/repo")
+	l := New("/fixture/repo", proc.State{})
 	l.Root = root
 	log, err := l.ReadSession(fixtureLead)
 	if err != nil {
@@ -228,6 +242,7 @@ func TestLogsReadsOnlyTranscripts(t *testing.T) {
 }
 
 func TestLogsBadSubagentFileIsSkipped(t *testing.T) {
+	t.Parallel()
 	root := copyFixture(t)
 	sub := filepath.Join(root, "projects", "-fixture-repo", fixtureLead, "subagents")
 	if err := os.WriteFile(filepath.Join(sub, "agent-abad.meta.json"), []byte("{not json"), 0o644); err != nil {
@@ -237,7 +252,7 @@ func TestLogsBadSubagentFileIsSkipped(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sub, "agent-abad.jsonl"), []byte(line), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	l := New("/fixture/repo")
+	l := New("/fixture/repo", proc.State{})
 	l.Root = root
 	log, err := l.ReadSession(fixtureLead)
 	if err != nil {
@@ -255,6 +270,7 @@ func TestLogsBadSubagentFileIsSkipped(t *testing.T) {
 }
 
 func TestLogsLongLinesAndBounds(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	dir := filepath.Join(root, "projects", "-r")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -265,7 +281,7 @@ func TestLogsLongLinesAndBounds(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "s.jsonl"), []byte(lines), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	l := New("/r")
+	l := New("/r", proc.State{})
 	l.Root = root
 	log, err := l.ReadSession("s")
 	if err != nil {
@@ -277,6 +293,7 @@ func TestLogsLongLinesAndBounds(t *testing.T) {
 }
 
 func TestCleanRedactsBeforeBounding(t *testing.T) {
+	t.Parallel()
 	s := strings.Repeat("x", maxText-10) + " sk-ant-api03-AbCdEfGh12345678"
 	if got := clean(s); strings.Contains(got, "sk-ant") || strings.Contains(got, "AbCdEf") {
 		t.Errorf("clean kept part of a key: %q", got[len(got)-20:])

@@ -1,6 +1,7 @@
 package client
 
 import (
+	"os"
 	"path/filepath"
 
 	"github.com/dphaener/physa/internal/configdir"
@@ -29,9 +30,10 @@ type Error struct {
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
 
 // Socket returns the path of the machine's engine socket: SocketName in
-// Physa's settings directory. It does not check that an engine listens.
+// Physa's settings directory, found from the process's environment. It
+// does not check that an engine listens.
 func Socket() (string, error) {
-	dir, err := configdir.Dir()
+	dir, err := configdir.Dir(os.Getenv)
 	if err != nil {
 		return "", err
 	}

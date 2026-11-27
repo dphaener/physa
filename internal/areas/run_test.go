@@ -83,9 +83,16 @@ func (f *fakeAgent) of(k string) []adapter.Spec {
 	return out
 }
 
+// gitEnv is the environment every git here runs in: the process's, with the
+// person's git config off and a fixed identity.
+var gitEnv = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
+	"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
+
 func gitIn(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	out, err := exec.Command("git", append([]string{"-C", dir, "-c", "commit.gpgsign=false"}, args...)...).CombinedOutput()
+	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "commit.gpgsign=false"}, args...)...)
+	cmd.Env = gitEnv
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -108,12 +115,6 @@ var leftOut = map[string]string{
 // folders, tests, docs, other files, and files to leave out.
 func fixture(t *testing.T) string {
 	t.Helper()
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	t.Setenv("GIT_AUTHOR_NAME", "t")
-	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
-	t.Setenv("GIT_COMMITTER_NAME", "t")
-	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
 	dir := t.TempDir()
 	gitIn(t, dir, "init", "-q")
 	files := map[string]string{
@@ -160,7 +161,7 @@ func setup(t *testing.T, dir string, f *fakeAgent) (*initrecord.Store, Session) 
 	if err := st.PutGather(context.Background(), store.Gather{Run: store.GatherRun{At: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}}); err != nil {
 		t.Fatal(err)
 	}
-	repo, err := git.Open(context.Background(), dir)
+	repo, err := git.Open(context.Background(), dir, gitEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,6 +214,7 @@ const firstAreas = `{"areas":[
 const fixAnswer = `{"add":{"sign-in":["web/login/form.js"],"build":["./Makefile"]},"new_areas":[{"name":"build","promise":"The app builds.","sources":["Makefile"]}]}`
 
 func TestRunFixRoundResumesTheSession(t *testing.T) {
+	t.Parallel()
 	dir := fixture(t)
 	f := &fakeAgent{reply: func(s adapter.Spec, n int) string {
 		switch kind(s) {
@@ -275,6 +277,7 @@ func TestRunFixRoundResumesTheSession(t *testing.T) {
 }
 
 func TestRunNeverFixedStoresNothing(t *testing.T) {
+	t.Parallel()
 	dir := fixture(t)
 	f := &fakeAgent{reply: func(s adapter.Spec, n int) string {
 		switch kind(s) {
@@ -305,6 +308,7 @@ func TestRunNeverFixedStoresNothing(t *testing.T) {
 }
 
 func TestRunSplitIsWhatCodeExpands(t *testing.T) {
+	t.Parallel()
 	dir := fixture(t)
 	f := &fakeAgent{reply: func(s adapter.Spec, n int) string {
 		if kind(s) == "split" {
@@ -357,7 +361,9 @@ func TestRunSplitIsWhatCodeExpands(t *testing.T) {
 			t.Errorf("result left %s: %d", reason, res.Left[reason])
 		}
 	}
-	out, err := exec.Command("git", "-C", dir, "status", "--porcelain").CombinedOutput()
+	status := exec.Command("git", "-C", dir, "status", "--porcelain")
+	status.Env = gitEnv
+	out, err := status.CombinedOutput()
 	if err != nil || len(out) != 0 {
 		t.Errorf("working tree changed: %s %v", out, err)
 	}
@@ -371,6 +377,7 @@ const partsAnswer = `{"areas":[
  {"name":"build","promise":"The app builds.","sources":["Makefile","cmd/"]}]}`
 
 func TestRunInParts(t *testing.T) {
+	t.Parallel()
 	dir := fixture(t)
 	f := &fakeAgent{reply: func(s adapter.Spec, n int) string {
 		switch kind(s) {
@@ -421,6 +428,7 @@ func TestRunInParts(t *testing.T) {
 }
 
 func TestRunInPartsKeepsAreasApartOnABadMerge(t *testing.T) {
+	t.Parallel()
 	dir := fixture(t)
 	f := &fakeAgent{reply: func(s adapter.Spec, n int) string {
 		switch kind(s) {
@@ -445,6 +453,7 @@ func TestRunInPartsKeepsAreasApartOnABadMerge(t *testing.T) {
 }
 
 func TestRunWindowCutsParts(t *testing.T) {
+	t.Parallel()
 	if got := partSize(0, 0, ""); got != DefaultPartChars {
 		t.Errorf("default: %d", got)
 	}
@@ -461,6 +470,7 @@ func TestRunWindowCutsParts(t *testing.T) {
 }
 
 func TestRunFixWithoutResumeStartsAFreshSession(t *testing.T) {
+	t.Parallel()
 	dir := fixture(t)
 	f := &fakeAgent{noResume: true, reply: func(s adapter.Spec, n int) string {
 		switch kind(s) {
@@ -487,6 +497,7 @@ func TestRunFixWithoutResumeStartsAFreshSession(t *testing.T) {
 }
 
 func TestRunNoSourceLeft(t *testing.T) {
+	t.Parallel()
 	t.Run("only pattern matches everything", func(t *testing.T) {
 		dir := fixture(t)
 		f := &fakeAgent{reply: func(s adapter.Spec, n int) string {
@@ -525,6 +536,7 @@ func TestRunNoSourceLeft(t *testing.T) {
 }
 
 func TestRunNeedsAGather(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -540,6 +552,7 @@ func TestRunNeedsAGather(t *testing.T) {
 // A cancel during the split session starts no grouping session, and nothing
 // is stored.
 func TestRunCancelStartsNoSessionAfter(t *testing.T) {
+	t.Parallel()
 	dir := fixture(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()

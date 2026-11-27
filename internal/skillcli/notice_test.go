@@ -11,6 +11,7 @@ import (
 )
 
 func TestNotice(t *testing.T) {
+	t.Parallel()
 	const setup = "`physa skill setup`"
 	write := func(t *testing.T, home, content string) {
 		t.Helper()

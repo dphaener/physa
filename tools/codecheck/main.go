@@ -11,6 +11,11 @@
 // It also checks that no test file assigns a package variable of a non-test
 // file, its own package's or another package's of the module through its
 // import: a test passes its fake in instead of swapping one.
+// It also checks that no non-test file under internal/ reads the process's
+// working directory or environment itself, with os.Getwd, os.Getenv,
+// os.LookupEnv, os.Environ, os.UserHomeDir, os.UserConfigDir,
+// os.UserCacheDir or os.ExpandEnv: the command reads them once and passes
+// them down. procAllowlist names each exception and why.
 package main
 
 import (
@@ -94,6 +99,7 @@ const (
 	ruleTables   = "engine-tables-writer"
 	ruleContext  = "context-from-command"
 	ruleTestSwap = "tests-inject-fakes"
+	ruleProcess  = "process-from-command"
 )
 
 // stateDir is the one package, with its subdirectories, that may write the
@@ -280,6 +286,9 @@ func checkPackage(root, module string, pk *pkg, budgets map[string]int) ([]Viola
 			for _, pos := range freshContexts(f) {
 				out = append(out, Violation{pk.dir, ruleContext, fmt.Sprintf("%s:%d makes a fresh context; take the command's ctx instead", name, fset.Position(pos).Line)})
 			}
+		}
+		if inCore {
+			out = append(out, procViolations(pk.dir, name, f, fset, procAllowlist)...)
 		}
 		if pk.dir != stateDir && !strings.HasPrefix(pk.dir, stateDir+"/") {
 			for _, w := range tableWrites(f, fset) {
@@ -601,6 +610,73 @@ func freshContexts(f *ast.File) []token.Pos {
 		}
 		return true
 	})
+	return out
+}
+
+// procAllowlist maps "<path from the module root> os.<Name>" to the reason
+// that call is allowed. A listed call is not reported; another call in the
+// same file still is.
+var procAllowlist = map[string]string{}
+
+// procFuncs are the functions of os that read the process's working
+// directory or environment.
+var procFuncs = map[string]bool{
+	"Getwd": true, "Getenv": true, "LookupEnv": true, "Environ": true,
+	"UserHomeDir": true, "UserConfigDir": true, "UserCacheDir": true, "ExpandEnv": true,
+}
+
+// procRead is one use of a function of os in procFuncs, called or handed on
+// as a value.
+type procRead struct {
+	pos  token.Pos
+	name string
+}
+
+// procReads returns the uses in f of the functions of procFuncs, called or
+// passed as a value (os.Getenv handed to a function), honouring an import
+// alias of "os". A method of the same name on another value is
+// not one.
+func procReads(f *ast.File) []procRead {
+	names := map[string]bool{}
+	for _, imp := range f.Imports {
+		if ip, err := strconv.Unquote(imp.Path.Value); err != nil || ip != "os" {
+			continue
+		}
+		name := "os"
+		if imp.Name != nil {
+			name = imp.Name.Name
+		}
+		if name != "_" && name != "." {
+			names[name] = true
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	var out []procRead
+	ast.Inspect(f, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if id, ok := sel.X.(*ast.Ident); ok && names[id.Name] && procFuncs[sel.Sel.Name] {
+			out = append(out, procRead{sel.Pos(), sel.Sel.Name})
+		}
+		return true
+	})
+	return out
+}
+
+// procViolations reports the reads of f, the file name in the package dir,
+// that allow does not list.
+func procViolations(dir, name string, f *ast.File, fset *token.FileSet, allow map[string]string) []Violation {
+	var out []Violation
+	for _, r := range procReads(f) {
+		if _, ok := allow[dir+"/"+name+" os."+r.name]; ok {
+			continue
+		}
+		out = append(out, Violation{dir, ruleProcess, fmt.Sprintf("%s:%d calls os.%s; take it from the command's process state instead", name, fset.Position(r.pos).Line, r.name)})
+	}
 	return out
 }
 

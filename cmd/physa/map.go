@@ -16,7 +16,6 @@ import (
 	"github.com/dphaener/physa/internal/mapfolder"
 	"github.com/dphaener/physa/internal/mapindex"
 	"github.com/dphaener/physa/internal/mapslice"
-	"github.com/dphaener/physa/internal/vcs/git"
 )
 
 // mapCommand builds the map group on d.
@@ -42,14 +41,14 @@ func mapCommand(d deps) *cobra.Command {
 			if len(args) > 0 {
 				return command.BadUsage
 			}
-			return index(".", stdout, stderr)
+			return index(d.proc().Dir, stdout, stderr)
 		},
 		command.New("index", "List the capabilities of the map with their promises.", []string{"physa map index [dir]"},
 			func(_ context.Context, args []string, stdout, stderr io.Writer) int {
 				if len(args) > 1 {
 					return command.BadUsage
 				}
-				dir := "."
+				dir := d.proc().Dir
 				if len(args) == 1 {
 					dir = args[0]
 				}
@@ -61,28 +60,28 @@ func mapCommand(d deps) *cobra.Command {
 				if !ok {
 					return command.BadUsage
 				}
-				return d.slice(ctx, ".", opts, stdout, stderr)
+				return d.slice(ctx, d.proc().Dir, opts, stdout, stderr)
 			}), sl.Declare),
 		command.Declare(command.New("changes", "List the capability each change of a range names, with the findings.", []string{"physa map changes [<range>] [--json] [--strict]"},
 			func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 				if !cs.takeRange(args) {
 					return command.BadUsage
 				}
-				return changes(ctx, ".", cs, stdout, stderr)
+				return d.changes(ctx, d.proc().Dir, cs, stdout, stderr)
 			}), func(fs *pflag.FlagSet) { cs = changesOptions{}; cs.declare(fs, true) }),
 		command.Declare(command.New("records", "List the slice records, newest first.", []string{"physa map records [--json]"},
 			func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 				if len(args) > 0 {
 					return command.BadUsage
 				}
-				return d.records(ctx, ".", asJSON, stdout, stderr)
+				return d.records(ctx, d.proc().Dir, asJSON, stdout, stderr)
 			}), func(fs *pflag.FlagSet) { command.Switch(fs, "json", &asJSON, "") }),
 		command.Declare(command.New("fmt", "Rewrite the map's folders to their format: contents, index links and spacing (--check writes nothing and exits 1 when a file would change).", []string{"physa map fmt [--check] [dir]"},
 			func(_ context.Context, args []string, stdout, stderr io.Writer) int {
 				if len(args) > 1 {
 					return command.BadUsage
 				}
-				dir := "."
+				dir := d.proc().Dir
 				if len(args) == 1 {
 					dir = args[0]
 				}
@@ -93,14 +92,14 @@ func mapCommand(d deps) *cobra.Command {
 				if len(args) > 0 || !lf.Valid() {
 					return command.BadUsage
 				}
-				return d.learnMap(ctx, ".", lf, stdout, stderr)
+				return d.learnMap(ctx, d.proc().Dir, lf, stdout, stderr)
 			}), lf.Declare),
 		command.Declare(command.New("hooks", "Point the repo's hooks at the one that stamps Session: on commits made in Claude Code, so learning can join a change to its session.", []string{"physa map hooks"},
 			func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 				if len(args) > 0 {
 					return command.BadUsage
 				}
-				return hooks(ctx, ".", stdout, stderr)
+				return d.hooks(ctx, d.proc().Dir, stdout, stderr)
 			}), nil),
 	), nil)
 }
@@ -143,13 +142,13 @@ func (d deps) slice(ctx context.Context, dir string, o mapslice.Flags, stdout, s
 // findings against the map as each commit leaves it. It returns 0 whatever the
 // findings, 1 when o.strict and there are findings, and 2 when the map or the
 // history cannot be read or the output cannot be written.
-func changes(ctx context.Context, dir string, o changesOptions, stdout, stderr io.Writer) int {
+func (d deps) changes(ctx context.Context, dir string, o changesOptions, stdout, stderr io.Writer) int {
 	_, problems, err := mapfile.Read(dir)
 	if err != nil {
 		return failed(stderr, "changes", err)
 	}
 	noteProblems(stderr, "changes", len(problems))
-	repo, err := git.Open(ctx, dir)
+	repo, err := d.openRepo(ctx, dir)
 	if err != nil {
 		return failed(stderr, "changes", err)
 	}

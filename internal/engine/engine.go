@@ -45,8 +45,7 @@ func PathsIn(dir string) (Paths, error) {
 		Log:    filepath.Join(dir, "engine.log"),
 	}
 	if len(p.Socket) >= maxSocket {
-		return Paths{}, fmt.Errorf("the engine's socket path %s is %d bytes; a Unix socket path must be under %d bytes (the limit on macOS)",
-			p.Socket, len(p.Socket), maxSocket)
+		return Paths{}, fmt.Errorf("the engine's socket path %s is %d bytes; a Unix socket path must be under %d bytes (the limit on macOS)", p.Socket, len(p.Socket), maxSocket)
 	}
 	return p, nil
 }
@@ -57,6 +56,7 @@ type Options struct {
 	Idle    time.Duration // how long to wait with nothing pending; ≤ 0 means DefaultIdle
 	Version string        // the version engine.status reports
 	State   state.Options // kinds (and in tests a clock) for every repo; StoreDir is set per repo
+	Env     []string      // the environment git runs in, to find each repo's store
 	// Methods (nil by default) is how tests add methods; get opens a repo's state.
 	Methods func(get func(ctx context.Context, repo string) (*state.State, error)) []api.Method
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -28,8 +29,13 @@ type env struct {
 	t    *testing.T
 	c    *client.Client
 	repo string
+	env  []string // the environment of the engine's git and of e.git
 }
 
+// Tests that start an engine stay serial: started together under -race on a
+// loaded machine, an engine's first call can pass the 5s call deadlines
+// (enginecli's, ideacli's and enginestart's).
+//
 // newEnv runs an engine with the eight methods in this process, on a short
 // temporary directory, with a new git repo, and dials it.
 func newEnv(t *testing.T) *env {
@@ -53,15 +59,18 @@ func (*fakeForge) MergedPRs(context.Context, time.Time, int) ([]forge.PR, bool, 
 // person-namer idea.add uses when the person is left out.
 func newEnvNaming(t *testing.T, ff forge.Forge, name func(context.Context, string) string) *env {
 	t.Helper()
-	timers, intents := stateevidence.Options(func(string) forge.Forge { return ff })
 	tmp, err := os.MkdirTemp("", "px")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(tmp) })
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "config"))
+	// git's settings are kept in the temporary directory too.
+	genv := append(slices.Clip(os.Environ()), "XDG_CONFIG_HOME="+filepath.Join(tmp, "config"))
+	timers, intents := stateevidence.Options(genv, func(string) forge.Forge { return ff })
 	repo := filepath.Join(tmp, "repo")
-	if out, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
+	mk := exec.Command("git", "init", "-q", repo)
+	mk.Env = genv
+	if out, err := mk.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, out)
 	}
 	if repo, err = filepath.EvalSymlinks(repo); err != nil {
@@ -71,7 +80,7 @@ func newEnvNaming(t *testing.T, ff forge.Forge, name func(context.Context, strin
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- engine.Run(ctx, engine.Options{Dir: dir, Idle: time.Minute, Version: "test", Methods: Methods(name),
+		done <- engine.Run(ctx, engine.Options{Env: genv, Dir: dir, Idle: time.Minute, Version: "test", Methods: Methods(genv, name),
 			State: state.Options{Timers: timers, Intents: intents}})
 	}()
 	t.Cleanup(func() {
@@ -99,7 +108,7 @@ func newEnvNaming(t *testing.T, ff forge.Forge, name func(context.Context, strin
 		}
 	}
 	t.Cleanup(func() { c.Close() })
-	return &env{t, c, repo}
+	return &env{t, c, repo, genv}
 }
 
 func (e *env) call(method string, params map[string]any, out any) error {
@@ -292,7 +301,7 @@ func planEnv(t *testing.T) *env {
 func (e *env) git(args ...string) {
 	e.t.Helper()
 	cmd := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
-	cmd.Dir = e.repo
+	cmd.Dir, cmd.Env = e.repo, e.env
 	if out, err := cmd.CombinedOutput(); err != nil {
 		e.t.Fatalf("git %v: %v: %s", args, err, out)
 	}
@@ -462,7 +471,7 @@ func TestEvidenceBadRepo(t *testing.T) {
 
 func TestProductionRegistersThePoll(t *testing.T) {
 	t.Parallel()
-	o := StateOptions()
+	o := StateOptions(os.Environ())
 	var timers, intents []string
 	for _, k := range o.Timers {
 		timers = append(timers, k.Name)

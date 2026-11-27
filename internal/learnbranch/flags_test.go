@@ -25,6 +25,7 @@ func parse(args ...string) (Flags, bool) {
 }
 
 func TestFlagsBadUsage(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"--since"}, {"--nosuch"}, {"x"}, {"--appetite", "0"}, {"--appetite=x"}, {"--appetite"},
 		{"--appetite=-3"}, {"--agent"}, {"--agent="}, {"--since="}, {"--signals", "--appetite", "5"}, {"--signals", "--agent=claude"},
@@ -37,6 +38,7 @@ func TestFlagsBadUsage(t *testing.T) {
 }
 
 func TestFlagsValues(t *testing.T) {
+	t.Parallel()
 	o, ok := parse("--signals", "--since", "abc", "--json")
 	if !ok || o.Since != "abc" || !o.JSON || !o.Signals {
 		t.Errorf("got %+v, %v", o, ok)
@@ -50,6 +52,7 @@ func TestFlagsValues(t *testing.T) {
 // TestFlagsStartAfresh runs two lines on one command: the second must not
 // see the first's flags.
 func TestFlagsStartAfresh(t *testing.T) {
+	t.Parallel()
 	var f Flags
 	var seen []Flags
 	c := command.Declare(command.New("learn", "", []string{"learn"},

@@ -153,7 +153,7 @@ func renderGolden(d deps) string {
 func TestCommandLineGolden(t *testing.T) {
 	t.Parallel()
 	const path = "testdata/cli.golden"
-	got := renderGolden(testDeps(t))
+	got := renderGolden(depsIn(t, t.TempDir()))
 	if *update {
 		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
 			t.Fatal(err)

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -24,6 +23,9 @@ var _ adapter.UsageReader = (*Adapter)(nil)
 // Claude Code that prints a usage_report; the text it also prints is never
 // read.
 func (a *Adapter) Usage(ctx context.Context) (adapter.Usage, error) {
+	if len(a.Env) == 0 {
+		return adapter.Usage{}, errNoEnv
+	}
 	command := a.Command
 	if command == "" {
 		command = "claude"
@@ -36,7 +38,8 @@ func (a *Adapter) Usage(ctx context.Context) (adapter.Usage, error) {
 		return adapter.Usage{}, err
 	}
 	cmd := exec.CommandContext(ctx, path, "-p", "/usage", "--output-format", "stream-json", "--verbose")
-	for _, e := range os.Environ() {
+	cmd.Env = []string{} // never nil, which would hand claude this process's environment
+	for _, e := range a.Env {
 		if !strings.HasPrefix(e, apiKey+"=") {
 			cmd.Env = append(cmd.Env, e)
 		}

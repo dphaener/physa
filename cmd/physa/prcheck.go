@@ -9,7 +9,6 @@ import (
 
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/prcheck"
-	"github.com/dphaener/physa/internal/vcs/git"
 )
 
 // prResolver returns the function physa check map uses to resolve #N anchors
@@ -36,7 +35,7 @@ func (d deps) runChanges(ctx context.Context, dir, name string, o changesOptions
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return prcheck.Result{}, false
 	}
-	repo, err := git.Open(ctx, dir)
+	repo, err := d.openRepo(ctx, dir)
 	if err != nil {
 		return fail(err)
 	}

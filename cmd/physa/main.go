@@ -30,6 +30,7 @@ import (
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/forge/github"
 	"github.com/dphaener/physa/internal/ideacli"
+	"github.com/dphaener/physa/internal/proc"
 	"github.com/dphaener/physa/internal/pursuitcli"
 	"github.com/dphaener/physa/internal/skillcli"
 	"github.com/dphaener/physa/internal/store"
@@ -54,22 +55,26 @@ func main() {
 	os.Exit(code)
 }
 
-// deps are what the commands reach beyond the process through: the forge
-// hosting the repo in a directory, that repo's store, and the agents Physa
-// drafts with, by name. main passes the real ones; the tests pass fakes.
+// deps are what the commands reach through: the forge hosting the repo in a
+// directory, that repo's store, the agents Physa drafts with, by name, and
+// the process's state. main passes the real ones; the tests pass fakes.
 type deps struct {
 	newForge  func(dir string) forge.Forge
 	openStore func(ctx context.Context, dir string) (*store.Store, error)
 	agents    map[string]func() adapter.Adapter
+	proc      func() proc.State
 }
 
-// realDeps are the commands' real dependencies: GitHub read through gh, the
-// store in the repo's git directory, and Claude Code.
+// realDeps are the real ones: GitHub through gh, the store in the repo's git
+// directory, Claude Code, and the working directory and environment, read once.
 func realDeps() deps {
+	wd, err := os.Getwd()
+	st := proc.State{Dir: ".", Wd: wd, WdErr: err, Env: os.Environ()}
 	return deps{
+		proc:      func() proc.State { return st },
 		newForge:  func(dir string) forge.Forge { return github.New(dir) },
-		openStore: gitStore,
-		agents:    map[string]func() adapter.Adapter{"claude": func() adapter.Adapter { return claude.New() }},
+		openStore: func(ctx context.Context, dir string) (*store.Store, error) { return gitStore(ctx, dir, st.Environ()) },
+		agents:    map[string]func() adapter.Adapter{"claude": func() adapter.Adapter { return claude.New(st.Environ(), st.Getenv) }},
 	}
 }
 
@@ -81,11 +86,11 @@ func run(ctx context.Context, d deps, args []string, stdout, stderr io.Writer) i
 // rootCommand builds the tree of commands on d.
 func rootCommand(d deps) *cobra.Command {
 	root := command.New("physa", "Physa: product management for agents.", []string{"physa <command> [--help]"}, nil,
-		checkCommand(d), mapCommand(d), initCommand(d), ideacli.Command(d.newForge))
-	root.AddCommand(pursuitcli.Commands(d.newForge)...)
-	root.AddCommand(evidencecli.Command(d.newForge))
-	root.AddCommand(skillcli.Command(pursuitcli.Current))
-	root.AddCommand(enginecli.Commands(version)...)
+		checkCommand(d), mapCommand(d), initCommand(d), ideacli.Command(d.proc(), d.newForge))
+	root.AddCommand(pursuitcli.Commands(d.proc(), d.newForge)...)
+	root.AddCommand(evidencecli.Command(d.proc(), d.newForge))
+	root.AddCommand(skillcli.Command(d.proc(), pursuitcli.Current))
+	root.AddCommand(enginecli.Commands(version, d.proc())...)
 	root.AddCommand(
 		command.New("sync", "Not built yet: it returns with digests, after the engine.", []string{"physa sync"},
 			func(_ context.Context, _ []string, _, stderr io.Writer) int {

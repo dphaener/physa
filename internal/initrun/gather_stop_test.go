@@ -86,8 +86,9 @@ func fixedNow(env *Env) time.Time {
 // the forge for the twelve months before now with no PR limit, and keeps
 // every PR of every page, more than the 1,000 it once stopped at.
 func TestBareGatherAsksTwelveMonthsAndNoPRLimit(t *testing.T) {
-	newRepo(t)
-	env := testEnv(t, nil, nil)
+	t.Parallel()
+	dir := newRepo(t)
+	env := testEnv(t, dir, nil, nil)
 	shortWait(&env, time.Minute)
 	now := fixedNow(&env)
 	newest := now.Add(-time.Hour)
@@ -127,8 +128,9 @@ func TestBareGatherAsksTwelveMonthsAndNoPRLimit(t *testing.T) {
 // TestGatherMaxPRsStillCaps checks that --max-prs N asks for at most N and
 // keeps exactly N.
 func TestGatherMaxPRsStillCaps(t *testing.T) {
-	newRepo(t)
-	env := testEnv(t, nil, nil)
+	t.Parallel()
+	dir := newRepo(t)
+	env := testEnv(t, dir, nil, nil)
 	shortWait(&env, time.Minute)
 	now := fixedNow(&env)
 	rec := &recordingFake{}
@@ -174,8 +176,9 @@ func stoppingForge(now time.Time) (f *pagesFake, reached time.Time) {
 // store, says each wait and then the date reached and the rate limit on
 // stderr, and makes --gather exit 2.
 func TestGatherStoppedByRateLimitIsStoredAndExitsNonZero(t *testing.T) {
-	newRepo(t)
-	env := testEnv(t, nil, nil)
+	t.Parallel()
+	dir := newRepo(t)
+	env := testEnv(t, dir, nil, nil)
 	slept := shortWait(&env, 3*time.Minute) // 60s and 120s are slept; 240s more is refused
 	now := fixedNow(&env)
 	f, reached := stoppingForge(now)
@@ -217,9 +220,10 @@ func TestGatherStoppedByRateLimitIsStoredAndExitsNonZero(t *testing.T) {
 // TestFullRunStoppedByRateLimitDoesNotPropose checks that the full run
 // stores a stopped gather, exits 2 and starts no session to propose.
 func TestFullRunStoppedByRateLimitDoesNotPropose(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	a := newRoutedAgent()
-	env := fullEnv(t, nil, a)
+	env := fullEnv(t, dir, nil, a)
 	shortWait(&env, 3*time.Minute)
 	f, _ := stoppingForge(fixedNow(&env))
 	env.Forge = func(string) forge.Forge { return f }
@@ -236,7 +240,7 @@ func TestFullRunStoppedByRateLimitDoesNotPropose(t *testing.T) {
 	if g := storedGather(t, env); len(g.PRs) != 3 {
 		t.Errorf("stored %d PRs, want the 3 fetched", len(g.PRs))
 	}
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,8 +253,9 @@ func TestFullRunStoppedByRateLimitDoesNotPropose(t *testing.T) {
 // TestGatherForgeErrorExitsNonZero checks that a forge's plain error on the
 // first page makes --gather exit 2 and say so, never 0 with zero PRs.
 func TestGatherForgeErrorExitsNonZero(t *testing.T) {
-	newRepo(t)
-	env := testEnv(t, &pagesFake{answers: []pageAnswer{{err: errors.New("boom")}}}, nil)
+	t.Parallel()
+	dir := newRepo(t)
+	env := testEnv(t, dir, &pagesFake{answers: []pageAnswer{{err: errors.New("boom")}}}, nil)
 	shortWait(&env, time.Minute)
 	now := fixedNow(&env)
 	code, out, errOut := runInit(env, "--gather")
@@ -269,9 +274,10 @@ func TestGatherForgeErrorExitsNonZero(t *testing.T) {
 // the date it reached and the reason, and a later --propose and --recover on
 // it say so on stderr, still run, and exit as on a complete gather.
 func TestStoppedGatherThenProposeWarnsAndStillProposes(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	a := newRoutedAgent()
-	env := fullEnv(t, nil, a)
+	env := fullEnv(t, dir, nil, a)
 	shortWait(&env, 3*time.Minute)
 	now := fixedNow(&env)
 	f, reached := stoppingForge(now)
@@ -299,7 +305,7 @@ func TestStoppedGatherThenProposeWarnsAndStillProposes(t *testing.T) {
 			t.Errorf("--propose stderr lacks %q", want)
 		}
 	}
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,8 +326,9 @@ func TestStoppedGatherThenProposeWarnsAndStillProposes(t *testing.T) {
 // TestCompleteGatherThenProposeHasNoStoppedWarning checks that --propose on
 // a complete gather says nothing of a stopped one.
 func TestCompleteGatherThenProposeHasNoStoppedWarning(t *testing.T) {
-	remoteRepo(t)
-	env := fullEnv(t, onePR(), newRoutedAgent())
+	t.Parallel()
+	dir, _ := remoteRepo(t)
+	env := fullEnv(t, dir, onePR(), newRoutedAgent())
 	if code, _, errOut := runInit(env, "--gather"); code != 0 {
 		t.Fatalf("--gather: code %d\n%s", code, errOut)
 	}

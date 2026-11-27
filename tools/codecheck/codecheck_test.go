@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -288,5 +290,53 @@ func TestTestSwapReportsSwappedPackageVariables(t *testing.T) {
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestProcessReadsReportedInInternal(t *testing.T) {
+	vs := mustCheck(t, "testdata/procread")
+	var got []string
+	for _, v := range vs {
+		got = append(got, v.Dir+" "+v.Rule+" "+v.Message)
+	}
+	const tail = "; take it from the command's process state instead"
+	want := []string{
+		"internal/reader process-from-command reader.go:16 calls os.Getwd" + tail,
+		"internal/reader process-from-command reader.go:17 calls os.Environ" + tail,
+		"internal/reader process-from-command reader.go:17 calls os.Getenv" + tail,
+		"internal/reader process-from-command reader.go:22 calls os.LookupEnv" + tail,
+		"internal/reader process-from-command reader.go:27 calls os.UserHomeDir" + tail,
+		"internal/reader process-from-command reader.go:28 calls os.UserConfigDir" + tail,
+		"internal/reader process-from-command reader.go:29 calls os.UserCacheDir" + tail,
+		"internal/reader process-from-command reader.go:30 calls os.ExpandEnv" + tail,
+		"internal/reader process-from-command reader.go:46 calls os.Getenv" + tail,
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestProcessAllowlistSkipsOnlyTheListedCall(t *testing.T) {
+	src := "package p\n\nimport \"os\"\n\nfunc a() string { return os.Getenv(\"A\") }\n\nfunc b() string { return os.Getenv(\"B\") + os.Getenv(\"C\") }\n\nfunc c() (string, error) { return os.Getwd() }\n"
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "p.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allow := map[string]string{"internal/p/p.go os.Getenv": "test: an allowed read"}
+	vs := procViolations("internal/p", "p.go", f, fset, allow)
+	if len(vs) != 1 || !strings.Contains(vs[0].Message, "p.go:9 calls os.Getwd") {
+		t.Fatalf("want only the Getwd call reported, got %v", vs)
+	}
+	if got := procViolations("internal/p", "p.go", f, fset, nil); len(got) != 4 {
+		t.Fatalf("with no allowlist want 4 reports, got %v", got)
+	}
+}
+
+func TestProcessAllowlistReasonsAreLasting(t *testing.T) {
+	for k, reason := range procAllowlist {
+		if strings.TrimSpace(reason) == "" || strings.HasPrefix(reason, "temporary:") {
+			t.Errorf("%s: reason %q must say why the read stays, and not be temporary", k, reason)
+		}
 	}
 }

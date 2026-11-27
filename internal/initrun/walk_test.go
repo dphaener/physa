@@ -64,6 +64,7 @@ func walkEnv(t *testing.T) (Env, *walkAgent) {
 }
 
 func TestWalkPrintsTheFootprints(t *testing.T) {
+	t.Parallel()
 	env, a := walkEnv(t)
 	code, out, errOut := runInit(env, "--walk")
 	if code != 0 || a.starts != 2 {
@@ -74,7 +75,7 @@ func TestWalkPrintsTheFootprints(t *testing.T) {
 			t.Errorf("stdout lacks %q:\n%s", want, out)
 		}
 	}
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,6 +89,7 @@ func TestWalkPrintsTheFootprints(t *testing.T) {
 }
 
 func TestWalkJSON(t *testing.T) {
+	t.Parallel()
 	env, _ := walkEnv(t)
 	code, out, errOut := runInit(env, "--walk", "--json")
 	var doc map[string]any
@@ -97,6 +99,7 @@ func TestWalkJSON(t *testing.T) {
 }
 
 func TestWalkWithoutAreasSaysToRunAreasFirst(t *testing.T) {
+	t.Parallel()
 	env := areasEnv(t, &areaAgent{})
 	a := &areaAgent{}
 	env.Agent = func(string) (adapter.Adapter, error) { a.starts++; return a, nil }
@@ -107,9 +110,10 @@ func TestWalkWithoutAreasSaysToRunAreasFirst(t *testing.T) {
 }
 
 func TestWalkOnAStoppedGatherWarnsAndRuns(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	a := &walkAgent{next: &areaAgent{}}
-	env := fullEnv(t, nil, a)
+	env := fullEnv(t, dir, nil, a)
 	shortWait(&env, 3*time.Minute)
 	f, _ := stoppingForge(fixedNow(&env))
 	env.Forge = func(string) forge.Forge { return f }
@@ -129,7 +133,7 @@ func TestWalkIsBadUsageWithOtherFlags(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{{"--areas"}, {"--gather"}, {"--propose"}, {"--recover"}, {"--write"}, {"--push"}, {"--hooks"},
 		{"--answers", "x"}, {"--yes"}, {"--only", "x"}, {"--since", "2026-01-01"}, {"--max-prs", "3"}} {
-		if code, _, _ := runInit(testEnv(t, nil, nil), append([]string{"--walk"}, args...)...); code != command.BadUsage {
+		if code, _, _ := runInit(testEnv(t, t.TempDir(), nil, nil), append([]string{"--walk"}, args...)...); code != command.BadUsage {
 			t.Errorf("--walk %v: code %d, want bad usage", args, code)
 		}
 	}
@@ -139,12 +143,13 @@ func TestWalkIsBadUsageWithOtherFlags(t *testing.T) {
 // words are kept in init's record under .git/physa, the repo is untouched, and
 // the map written from what init stored holds none of them.
 func TestWalkNeverReachesTheMap(t *testing.T) {
+	t.Parallel()
 	dir, _ := remoteRepo(t)
 	write(t, dir, "web/app.js", "let a\n")
 	gitIn(t, dir, "add", "web/app.js")
 	gitIn(t, dir, "commit", "-q", "-m", "feat: Add web", "--", "web/app.js")
 	a := &walkAgent{next: &areaAgent{next: newRoutedAgent()}}
-	env := fullEnv(t, &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}, a)
+	env := fullEnv(t, dir, &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}, a)
 	env.Store = func(context.Context, string) (*store.Store, error) {
 		return store.Open(context.Background(), filepath.Join(dir, ".git", "physa"))
 	}
@@ -171,7 +176,7 @@ func TestWalkNeverReachesTheMap(t *testing.T) {
 			t.Fatalf("%v: %d %s", args, code, errOut)
 		}
 	}
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}

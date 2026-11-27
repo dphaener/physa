@@ -15,12 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/dphaener/physa/client"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/engine"
 	"github.com/dphaener/physa/internal/enginestart"
+	"github.com/dphaener/physa/internal/proc"
 )
 
 // TestMain never lets the test binary act as an engine, and gives the
@@ -38,11 +37,15 @@ func TestMain(m *testing.M) {
 
 // testEngine is an engine run in this process for one test.
 type testEngine struct {
-	dir  string // the engine's directory, $XDG_CONFIG_HOME/physa
-	root *cobra.Command
+	dir string // the engine's directory, $XDG_CONFIG_HOME/physa
+	g   group  // the commands' group, built afresh for each run
 }
 
-// newEngine points XDG_CONFIG_HOME at a new short temporary directory,
+// Tests that start an engine stay serial: started together under -race on a
+// loaded machine, an engine's first call can pass the 5s call deadlines
+// (enginecli's, ideacli's and enginestart's).
+//
+// newEngine points the commands' XDG_CONFIG_HOME at a new short temporary directory,
 // runs an engine on its physa directory and waits until it answers.
 // Cleanup stops it and waits for Run to return. The commands' start
 // Command fails the test: nothing may be spawned.
@@ -51,7 +54,9 @@ func newEngine(t *testing.T) *testEngine {
 	te := idleDir(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- engine.Run(ctx, engine.Options{Dir: te.dir, Idle: time.Minute, Version: "test"}) }()
+	go func() {
+		done <- engine.Run(ctx, engine.Options{Env: os.Environ(), Dir: te.dir, Idle: time.Minute, Version: "test"})
+	}()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -86,32 +91,32 @@ func newEngine(t *testing.T) *testEngine {
 // idleDir sets up the directory and commands with no engine running.
 func idleDir(t *testing.T) *testEngine {
 	t.Helper()
-	return idleDirEnv(t, os.Getenv)
+	return idleDirEnv(t)
 }
 
-// idleDirEnv is idleDir with getenv as how the commands find an agent's
-// session.
-func idleDirEnv(t *testing.T, getenv func(string) string) *testEngine {
+// idleDirEnv is idleDir with env, as "key=value" entries, added to the
+// commands' environment, which otherwise holds only XDG_CONFIG_HOME.
+func idleDirEnv(t *testing.T, env ...string) *testEngine {
 	t.Helper()
 	tmp, err := os.MkdirTemp("", "px")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(tmp) })
-	t.Setenv("XDG_CONFIG_HOME", tmp)
+	st := proc.State{Env: append([]string{"XDG_CONFIG_HOME=" + tmp}, env...)}
 	opts := enginestart.Options{Command: func(dir string, _ time.Duration) *exec.Cmd {
 		t.Errorf("a command tried to start an engine on %s", dir)
 		cmd := exec.Command(os.Args[0], "-test.run=^$")
 		cmd.Env = append(os.Environ(), "PHYSA_ENGINECLI_EXIT1=1")
 		return cmd
 	}}
-	root := command.New("physa", "", nil, nil, commands("test", opts, getenv)...)
-	return &testEngine{dir: filepath.Join(tmp, "physa"), root: root}
+	return &testEngine{dir: filepath.Join(tmp, "physa"), g: group{"test", opts, st, strings.NewReader("")}}
 }
 
 func (te *testEngine) run(args ...string) (int, string, string) {
 	var out, errb bytes.Buffer
-	code := command.Execute(context.Background(), te.root, args, &out, &errb)
+	root := command.New("physa", "", nil, nil, te.g.commands()...)
+	code := command.Execute(context.Background(), root, args, &out, &errb)
 	return code, out.String(), errb.String()
 }
 
@@ -220,15 +225,7 @@ func TestAPICall(t *testing.T) {
 
 func TestCallStdin(t *testing.T) {
 	te := newEngine(t)
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	w.WriteString("{}")
-	w.Close()
-	old := os.Stdin
-	os.Stdin = r
-	t.Cleanup(func() { os.Stdin = old; r.Close() })
+	te.g.stdin = strings.NewReader("{}")
 	code, out, errs := te.run("api", "call", "engine.status", "-")
 	var s engine.Status
 	if code != 0 || errs != "" || json.Unmarshal([]byte(out), &s) != nil || s.Version != "test" {
@@ -261,6 +258,7 @@ func TestStopTwice(t *testing.T) {
 }
 
 func TestUsage(t *testing.T) {
+	t.Parallel()
 	te := idleDir(t)
 	for _, args := range [][]string{
 		{"engine", "status", "extra"}, {"engine", "--bogus"}, {"engine", "status", "-j"},
@@ -311,6 +309,7 @@ func TestRunAlreadyRunning(t *testing.T) {
 }
 
 func TestStopNeverStarts(t *testing.T) {
+	t.Parallel()
 	te := idleDir(t)
 	code, out, errs := te.run("engine", "stop")
 	if code != 0 || out != "No engine running\n" || errs != "" {
@@ -321,13 +320,9 @@ func TestStopNeverStarts(t *testing.T) {
 // TestAPICallRefusesPursuitsInASession shows a pursuit is refused, before any engine
 // starts, inside an agent's session, and that other methods are not.
 func TestAPICallRefusesPursuitsInASession(t *testing.T) {
+	t.Parallel()
 	// idleDirEnv fails the test if anything tries to start an engine.
-	te := idleDirEnv(t, func(k string) string {
-		if k == "CLAUDE_CODE_SESSION_ID" {
-			return "abc"
-		}
-		return ""
-	})
+	te := idleDirEnv(t, "CLAUDE_CODE_SESSION_ID=abc")
 	for method, want := range map[string]string{
 		"pursuit.start": "physa api call: A person must start this pursuit: physa is running inside a Claude Code session.\n",
 		"pursuit.stop":  "physa api call: A person must stop this pursuit: physa is running inside a Claude Code session.\n",

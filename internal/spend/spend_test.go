@@ -15,6 +15,7 @@ const opus = "claude-opus-5-5"
 var day = time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
 
 func TestReadRatioByFamily(t *testing.T) {
+	t.Parallel()
 	for model, want := range map[string]int64{
 		"claude-opus-5-5": 50, "claude-sonnet-5-5": 50, "claude-opus-5-5[1m]": 50, "Claude-Sonnet-5.5": 50,
 		"claude-fable-5": 25, "claude-fable-5-1": 25, "claude-mythos-5-2": 25,
@@ -30,6 +31,7 @@ func TestReadRatioByFamily(t *testing.T) {
 // dollars ÷ (uncached + reads × r + 5-minute writes × 1.25 + 1-hour writes
 // × 2 + output × 5).
 func TestInputPriceUsesThePublishedRatios(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		c    adapter.ModelCost
 		want int64
@@ -70,6 +72,7 @@ func session() adapter.Result {
 }
 
 func TestWeightedIsDollarsOverTheDefaultModelsInput(t *testing.T) {
+	t.Parallel()
 	c := Open("")
 	r := session()
 	c.Learn("claude-code", r, day)
@@ -92,6 +95,7 @@ func TestWeightedIsDollarsOverTheDefaultModelsInput(t *testing.T) {
 // TestWeightedFromCachedPrices weighs a session that reported no dollars by
 // its tokens by kind at its model's cached price.
 func TestWeightedFromCachedPrices(t *testing.T) {
+	t.Parallel()
 	c := Open("")
 	c.Learn("claude-code", session(), day)
 	r := adapter.Result{Model: opus, Tokens: adapter.Tokens{Input: 2_000_000, CachedInput: 1_000_000, Output: 100_000}}
@@ -104,6 +108,7 @@ func TestWeightedFromCachedPrices(t *testing.T) {
 // TestWeightedWithNoPriceIsRaw is Q9: a model with no cached price counts at
 // raw tokens, weight 1, and no dollar figure is shown for it.
 func TestWeightedWithNoPriceIsRaw(t *testing.T) {
+	t.Parallel()
 	c := Open("")
 	r := adapter.Result{Model: opus, Tokens: adapter.Tokens{Input: 2_000_000, CachedInput: 1_000_000, Output: 100_000}}
 	got := c.Weighted("claude-code", r)
@@ -129,6 +134,7 @@ func TestWeightedWithNoPriceIsRaw(t *testing.T) {
 }
 
 func TestLearnNewestWins(t *testing.T) {
+	t.Parallel()
 	c := Open("")
 	cheap := session()
 	cheap.Cost[0].MicroUSD = 2_100_000 // $2 a million
@@ -144,6 +150,7 @@ func TestLearnNewestWins(t *testing.T) {
 }
 
 func TestSaveKeepsBothRunsNewestWins(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "physa", File)
 	a, b := Open(path), Open(path)
 	a.Learn("claude-code", session(), day)
@@ -168,6 +175,7 @@ func TestSaveKeepsBothRunsNewestWins(t *testing.T) {
 }
 
 func TestOpenBadFileIsEmpty(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), File)
 	if err := os.WriteFile(path, []byte("not json"), 0o600); err != nil {
 		t.Fatal(err)
@@ -189,6 +197,7 @@ func TestOpenBadFileIsEmpty(t *testing.T) {
 }
 
 func TestFormatting(t *testing.T) {
+	t.Parallel()
 	for n, want := range map[int64]string{0: "0", 980: "980", 1000: "1k", 7_449: "7.4k", 74_135: "74k", 999_499: "999k", 999_500: "1M", 2_100_000: "2.1M", 6_770_000: "6.8M"} {
 		if got := Tokens(n); got != want {
 			t.Errorf("Tokens(%d) = %q, want %q", n, got, want)
@@ -209,5 +218,17 @@ func TestFormatting(t *testing.T) {
 	}
 	if got := (Spend{Tokens: 1, MicroUSD: 2}).Add(Spend{Tokens: 3, Unpriced: true}); got != (Spend{Tokens: 4, MicroUSD: 2, Unpriced: true}) {
 		t.Errorf("Add = %+v", got)
+	}
+}
+
+func TestPathIsFileInTheSettingsDirectory(t *testing.T) {
+	t.Parallel()
+	x := t.TempDir()
+	getenv := func(k string) string { return map[string]string{"XDG_CONFIG_HOME": x}[k] }
+	if got, err := Path(getenv); err != nil || got != filepath.Join(x, "physa", File) {
+		t.Errorf("Path = %q, %v, want %s", got, err, filepath.Join(x, "physa", File))
+	}
+	if got, err := Path(func(string) string { return "" }); err == nil || err.Error() != "no XDG_CONFIG_HOME and no HOME" {
+		t.Errorf("Path with no settings directory = %q, %v, want the configdir error", got, err)
 	}
 }

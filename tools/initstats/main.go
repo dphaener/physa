@@ -100,7 +100,7 @@ type Phase struct {
 // A phase that fails ends the run, since the next one reads what it stored.
 func run(dir, physa, agent, since, maxPRs string) (string, error) {
 	ctx := context.TODO()
-	repo, err := git.Open(ctx, dir)
+	repo, err := git.Open(ctx, dir, os.Environ())
 	if err != nil {
 		return "", err
 	}
@@ -193,7 +193,7 @@ func clone() string {
 		return ""
 	}
 	ctx := context.TODO()
-	repo, err := git.Open(ctx, filepath.Dir(file))
+	repo, err := git.Open(ctx, filepath.Dir(file), os.Environ())
 	if err != nil {
 		return ""
 	}

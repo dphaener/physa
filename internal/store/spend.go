@@ -19,11 +19,11 @@ func (s *Store) AddSpent(p Spent) error {
 	return err
 }
 
-// Spending returns what each init phase has spent, in run order: discover,
+// Spending returns what each init phase has spent, in run order: discover, areas,
 // propose, recover.
 func (s *Store) Spending() ([]Spent, error) {
 	rows, err := s.db.Query(`SELECT phase, input, cached_input, output, weighted, micro_usd, unpriced FROM init_spend
-		ORDER BY CASE phase WHEN 'discover' THEN 0 WHEN 'propose' THEN 1 WHEN 'recover' THEN 2 ELSE 3 END, phase`)
+		ORDER BY CASE phase WHEN 'discover' THEN 0 WHEN 'areas' THEN 1 WHEN 'propose' THEN 2 WHEN 'recover' THEN 3 ELSE 4 END, phase`)
 	if err != nil {
 		return nil, err
 	}

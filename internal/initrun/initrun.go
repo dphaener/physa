@@ -2,6 +2,7 @@ package initrun
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/areas"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/coverage"
 	"github.com/dphaener/physa/internal/discovery"
@@ -90,12 +92,12 @@ func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 	}()
 	r := &run{o: o, env: env, st: st, root: root, args: words, stderr: stderr, cache: cache, p: newPrinter(o, stdout), counts: map[string]spend.Count{}}
 	code := 0
-	if o.Propose || o.Recover { // the phases on a stored gather say when the forge stopped it, and still run
-		if g, ok, err := st.Gathered(); err == nil && ok {
-			preflight.Warn(stderr, preflight.Stopped(g.Run))
-		}
+	if o.Propose || o.Recover || o.Areas { // the phases on a stored gather say when the forge stopped it, and still run
+		preflight.Stored(stderr, st)
 	}
 	switch {
+	case o.Areas:
+		code = r.areas()
 	case o.Propose:
 		code = r.propose()
 	case o.Recover:
@@ -214,6 +216,22 @@ func (r *run) propose() int {
 			r.p.value("coverage", coverage.Text(c), c)
 		}
 	}
+	return 0
+}
+
+// areas divides the stored gather's source files into areas, stores them in init's record and prints them.
+func (r *run) areas() int {
+	repo, err := r.env.Repo(".")
+	if err != nil {
+		return failed(r.stderr, err)
+	}
+	from := r.meter.Count()
+	res, err := areas.Run(context.Background(), r.st, areas.Session{Agent: r.agent, Root: r.root, Repo: repo, Progress: r.stderr, Now: r.env.Now})
+	r.spent("areas", from)
+	if err != nil {
+		return failed(r.stderr, err)
+	}
+	r.p.emit("areas", func(w io.Writer) error { return areas.Text(w, res) }, func(w io.Writer) error { return json.NewEncoder(w).Encode(res) })
 	return 0
 }
 

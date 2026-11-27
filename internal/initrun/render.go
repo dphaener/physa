@@ -71,18 +71,8 @@ func (p *printer) recovery(r recovery.Report) {
 
 // newCodebase prints what a new codebase's map will hold.
 func (p *printer) newCodebase(a newcodebase.Answers, write bool) {
-	names, terms := []string{}, []map[string]string{}
-	for _, t := range a.Terms {
-		names = append(names, t.Name)
-		terms = append(terms, map[string]string{"name": t.Name, "meaning": t.Meaning})
-	}
-	text := fmt.Sprintf("A new codebase: nothing to recover, so the map starts from your answers.\n"+
-		"- .physa/product/index.md: %s, promising: %s\n- .physa/glossary.md: %s (%s)\n- .physa/README.md, and the pointer in AGENTS.md\n",
-		a.Name, a.Promise, plural(len(a.Terms), "term", "terms"), strings.Join(names, ", "))
-	if !write {
-		text += "Nothing is written without --write.\n"
-	}
-	p.value("new_codebase", text, map[string]any{"name": a.Name, "promise": a.Promise, "terms": terms})
+	text, v := a.Describe(write)
+	p.value("new_codebase", text, v)
 }
 
 // wrote prints what writing physa/init did, then in text the PR body.
@@ -127,11 +117,4 @@ func (p *printer) done(code int, stderr io.Writer) int {
 		return failed(stderr, p.err)
 	}
 	return code
-}
-
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return "1 " + one
-	}
-	return fmt.Sprintf("%d %s", n, many)
 }

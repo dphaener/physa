@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/dphaener/physa/internal/store"
 )
 
 // The answers file read by ReadAnswers has one answer per line, as
@@ -163,4 +165,44 @@ func ReadAnswers(path string, qs ...Question) (Answers, error) {
 		}
 	}
 	return a, nil
+}
+
+// Describe is what a new codebase's map will hold, in text and as the value
+// --json prints; write says the map is being written, and without it the text
+// adds that nothing is written without --write.
+func (a Answers) Describe(write bool) (string, map[string]any) {
+	names, terms := []string{}, []map[string]string{}
+	for _, t := range a.Terms {
+		names = append(names, t.Name)
+		terms = append(terms, map[string]string{"name": t.Name, "meaning": t.Meaning})
+	}
+	n := fmt.Sprintf("%d terms", len(a.Terms))
+	if len(a.Terms) == 1 {
+		n = "1 term"
+	}
+	text := fmt.Sprintf("A new codebase: nothing to recover, so the map starts from your answers.\n"+
+		"- .physa/product/index.md: %s, promising: %s\n- .physa/glossary.md: %s (%s)\n- .physa/README.md, and the pointer in AGENTS.md\n",
+		a.Name, a.Promise, n, strings.Join(names, ", "))
+	if !write {
+		text += "Nothing is written without --write.\n"
+	}
+	return text, map[string]any{"name": a.Name, "promise": a.Promise, "terms": terms}
+}
+
+// Obtain gets a new codebase's answers: read from file when given, asked on
+// out and read from in when terminal says a person is there, and otherwise
+// an error saying how to answer. It starts no session.
+func Obtain(g store.Gather, repoName, file string, terminal bool, in io.Reader, out io.Writer) (Answers, error) {
+	qs := Questions(g, repoName)
+	switch {
+	case file != "":
+		return ReadAnswers(file, qs...)
+	case terminal:
+		return Ask(in, out, qs)
+	}
+	n := fmt.Sprintf("%d changes", len(g.Changes))
+	if len(g.Changes) == 1 {
+		n = "1 change"
+	}
+	return Answers{}, fmt.Errorf("this looks like a new codebase (no agent docs, contributing guide, decisions or PRs, and %s); answer its questions on a terminal or with --answers FILE", n)
 }

@@ -16,8 +16,7 @@ type GatherRun struct {
 	PRsLimited  bool
 	Forge       string
 	ForgeReason string
-	// Stopped is true when the forge stopped the gather early.
-	Stopped bool
+	Stopped     bool // true when the forge stopped the gather early
 	// Reached is the oldest merge date of the PRs kept; zero when none.
 	Reached time.Time
 	// StopReason is why the forge stopped the gather.
@@ -85,82 +84,65 @@ type Gather struct {
 
 func ts(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
-func jsonText(v any) (string, error) {
-	b, err := json.Marshal(v)
-	return string(b), err
-}
-
 // PutGather replaces the stored gather with g in one transaction: on any
 // error the earlier gather is left intact. It also deletes the stored init
-// proposal, recoveries and spend, which belong to one gather.
+// areas, proposal, recoveries and spend, which belong to one gather.
 func (s *Store) PutGather(g Gather) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	for _, t := range []string{"gather_comments", "gather_prs", "gather_changes", "gather_docs", "gather_runs", "init_proposal", "init_recovery", "init_spend"} {
-		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
-			return err
+	// ex runs a statement unless an earlier one failed; err keeps the first failure.
+	ex := func(q string, args ...any) {
+		if err == nil {
+			_, err = tx.Exec(q, args...)
 		}
+	}
+	js := func(v any) string {
+		b, e := json.Marshal(v)
+		if err == nil {
+			err = e
+		}
+		return string(b)
+	}
+	for _, t := range []string{"gather_comments", "gather_prs", "gather_changes", "gather_docs", "gather_runs", "init_areas", "init_proposal", "init_recovery", "init_spend"} {
+		ex("DELETE FROM " + t)
 	}
 	r := g.Run
 	reached := ""
 	if !r.Reached.IsZero() {
 		reached = ts(r.Reached)
 	}
-	if _, err := tx.Exec(`INSERT INTO gather_runs (id, at, since, max_prs, prs_limited, forge, forge_reason, stopped, stopped_reached, stopped_reason) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		ts(r.At), ts(r.Since), r.MaxPRs, b2i(r.PRsLimited), r.Forge, r.ForgeReason, b2i(r.Stopped), reached, r.StopReason); err != nil {
-		return err
-	}
+	ex(`INSERT INTO gather_runs (id, at, since, max_prs, prs_limited, forge, forge_reason, stopped, stopped_reached, stopped_reason) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ts(r.At), ts(r.Since), r.MaxPRs, b2i(r.PRsLimited), r.Forge, r.ForgeReason, b2i(r.Stopped), reached, r.StopReason)
 	for _, d := range g.Docs {
-		if _, err := tx.Exec(`INSERT INTO gather_docs (path, kind, body, reason) VALUES (?, ?, ?, ?)`, d.Path, d.Kind, d.Body, d.Reason); err != nil {
-			return err
-		}
+		ex(`INSERT INTO gather_docs (path, kind, body, reason) VALUES (?, ?, ?, ?)`, d.Path, d.Kind, d.Body, d.Reason)
 	}
 	for i, c := range g.Changes {
-		trailers := c.Trailers
-		if trailers == nil {
-			trailers = []Trailer{}
-		}
-		files := c.Files
-		if files == nil {
-			files = []string{}
-		}
-		tj, err := jsonText(trailers)
-		if err != nil {
-			return err
-		}
-		fj, err := jsonText(files)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`INSERT INTO gather_changes (id, short, subject, message, author, at, trailers, reverts, files, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			c.ID, c.Short, c.Subject, c.Message, c.Author, ts(c.At), tj, c.Reverts, fj, i); err != nil {
-			return err
-		}
+		ex(`INSERT INTO gather_changes (id, short, subject, message, author, at, trailers, reverts, files, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			c.ID, c.Short, c.Subject, c.Message, c.Author, ts(c.At), js(orEmpty(c.Trailers)), c.Reverts, js(orEmpty(c.Files)), i)
 	}
 	for i, p := range g.PRs {
-		issues := p.Issues
-		if issues == nil {
-			issues = []string{}
-		}
-		ij, err := jsonText(issues)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`INSERT INTO gather_prs (number, title, body, author, merged_by, merged_at, issues, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			p.Number, p.Title, p.Body, p.Author, p.MergedBy, ts(p.MergedAt), ij, i); err != nil {
-			return err
-		}
+		ex(`INSERT INTO gather_prs (number, title, body, author, merged_by, merged_at, issues, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			p.Number, p.Title, p.Body, p.Author, p.MergedBy, ts(p.MergedAt), js(orEmpty(p.Issues)), i)
 		for j, c := range p.Comments {
-			if _, err := tx.Exec(`INSERT INTO gather_comments (pr, author, at, kind, requests_changes, body, seq) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-				p.Number, c.Author, ts(c.At), c.Kind, b2i(c.RequestsChanges), c.Body, j); err != nil {
-				return err
-			}
+			ex(`INSERT INTO gather_comments (pr, author, at, kind, requests_changes, body, seq) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				p.Number, c.Author, ts(c.At), c.Kind, b2i(c.RequestsChanges), c.Body, j)
 		}
 	}
+	if err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+// orEmpty makes a nil slice empty, so it stores as [] and not null.
+func orEmpty[T any](v []T) []T {
+	if v == nil {
+		return []T{}
+	}
+	return v
 }
 
 func b2i(b bool) int {
@@ -177,138 +159,123 @@ func (s *Store) Gathered() (Gather, bool, error) {
 	var limited, stopped int
 	err := s.db.QueryRow(`SELECT at, since, max_prs, prs_limited, forge, forge_reason, stopped, stopped_reached, stopped_reason FROM gather_runs WHERE id = 1`).
 		Scan(&at, &since, &g.Run.MaxPRs, &limited, &g.Run.Forge, &g.Run.ForgeReason, &stopped, &reached, &g.Run.StopReason)
-	if err == sql.ErrNoRows {
-		return Gather{}, false, nil
-	}
 	if err != nil {
+		if err == sql.ErrNoRows {
+			err = nil
+		}
 		return Gather{}, false, err
 	}
 	g.Run.PRsLimited = limited != 0
 	g.Run.Stopped = stopped != 0
-	if reached != "" {
-		if g.Run.Reached, err = time.Parse(time.RFC3339, reached); err != nil {
-			return Gather{}, false, err
+	parse := func(t *time.Time, v string) {
+		if err == nil && v != "" {
+			*t, err = time.Parse(time.RFC3339, v)
 		}
 	}
-	if g.Run.At, err = time.Parse(time.RFC3339, at); err != nil {
-		return Gather{}, false, err
+	parse(&g.Run.Reached, reached)
+	parse(&g.Run.At, at)
+	parse(&g.Run.Since, since)
+	if err == nil {
+		g.Docs, err = s.gatheredDocs()
 	}
-	if g.Run.Since, err = time.Parse(time.RFC3339, since); err != nil {
-		return Gather{}, false, err
+	if err == nil {
+		g.Changes, err = s.gatheredChanges()
 	}
-	if g.Docs, err = s.gatheredDocs(); err != nil {
-		return Gather{}, false, err
+	if err == nil {
+		g.PRs, err = s.gatheredPRs()
 	}
-	if g.Changes, err = s.gatheredChanges(); err != nil {
-		return Gather{}, false, err
-	}
-	if g.PRs, err = s.gatheredPRs(); err != nil {
+	if err != nil {
 		return Gather{}, false, err
 	}
 	return g, true, nil
 }
 
-func (s *Store) gatheredDocs() ([]Doc, error) {
-	rows, err := s.db.Query(`SELECT path, kind, body, reason FROM gather_docs ORDER BY path`)
+// each runs a query and calls scan for every row, closing the rows.
+func (s *Store) each(q string, scan func(*sql.Rows) error, args ...any) error {
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
-	var out []Doc
 	for rows.Next() {
-		var d Doc
-		if err := rows.Scan(&d.Path, &d.Kind, &d.Body, &d.Reason); err != nil {
-			return nil, err
+		if err := scan(rows); err != nil {
+			return err
 		}
-		out = append(out, d)
 	}
-	return out, rows.Err()
+	return rows.Err()
 }
 
-func (s *Store) gatheredChanges() ([]GatheredChange, error) {
-	rows, err := s.db.Query(`SELECT id, short, subject, message, author, at, trailers, reverts, files FROM gather_changes ORDER BY seq`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []GatheredChange
-	for rows.Next() {
+func (s *Store) gatheredDocs() (out []Doc, err error) {
+	err = s.each(`SELECT path, kind, body, reason FROM gather_docs ORDER BY path`, func(r *sql.Rows) error {
+		var d Doc
+		err := r.Scan(&d.Path, &d.Kind, &d.Body, &d.Reason)
+		out = append(out, d)
+		return err
+	})
+	return out, err
+}
+
+func (s *Store) gatheredChanges() (out []GatheredChange, err error) {
+	err = s.each(`SELECT id, short, subject, message, author, at, trailers, reverts, files FROM gather_changes ORDER BY seq`, func(r *sql.Rows) error {
 		var c GatheredChange
 		var at, tj, fj string
-		if err := rows.Scan(&c.ID, &c.Short, &c.Subject, &c.Message, &c.Author, &at, &tj, &c.Reverts, &fj); err != nil {
-			return nil, err
+		if err := r.Scan(&c.ID, &c.Short, &c.Subject, &c.Message, &c.Author, &at, &tj, &c.Reverts, &fj); err != nil {
+			return err
 		}
-		if c.At, err = time.Parse(time.RFC3339, at); err != nil {
-			return nil, err
+		var err error
+		if c.At, err = time.Parse(time.RFC3339, at); err == nil {
+			err = json.Unmarshal([]byte(tj), &c.Trailers)
 		}
-		if err := json.Unmarshal([]byte(tj), &c.Trailers); err != nil {
-			return nil, err
+		if err == nil {
+			err = json.Unmarshal([]byte(fj), &c.Files)
 		}
-		if err := json.Unmarshal([]byte(fj), &c.Files); err != nil {
-			return nil, err
+		if err != nil {
+			return err
 		}
 		out = append(out, c)
-	}
-	return out, rows.Err()
+		return nil
+	})
+	return out, err
 }
 
-func (s *Store) gatheredPRs() ([]GatheredPR, error) {
-	rows, err := s.db.Query(`SELECT number, title, body, author, merged_by, merged_at, issues FROM gather_prs ORDER BY seq`)
-	if err != nil {
-		return nil, err
-	}
-	var out []GatheredPR
-	for rows.Next() {
+func (s *Store) gatheredPRs() (out []GatheredPR, err error) {
+	err = s.each(`SELECT number, title, body, author, merged_by, merged_at, issues FROM gather_prs ORDER BY seq`, func(r *sql.Rows) error {
 		var p GatheredPR
 		var at, ij string
-		if err := rows.Scan(&p.Number, &p.Title, &p.Body, &p.Author, &p.MergedBy, &at, &ij); err != nil {
-			rows.Close()
-			return nil, err
+		if err := r.Scan(&p.Number, &p.Title, &p.Body, &p.Author, &p.MergedBy, &at, &ij); err != nil {
+			return err
 		}
-		if p.MergedAt, err = time.Parse(time.RFC3339, at); err != nil {
-			rows.Close()
-			return nil, err
+		var err error
+		if p.MergedAt, err = time.Parse(time.RFC3339, at); err == nil {
+			err = json.Unmarshal([]byte(ij), &p.Issues)
 		}
-		if err := json.Unmarshal([]byte(ij), &p.Issues); err != nil {
-			rows.Close()
-			return nil, err
+		if err != nil {
+			return err
 		}
 		out = append(out, p)
+		return nil
+	})
+	for i := 0; err == nil && i < len(out); i++ {
+		out[i].Comments, err = s.gatheredComments(out[i].Number)
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, err
-	}
-	rows.Close()
-	for i := range out {
-		cs, err := s.gatheredComments(out[i].Number)
-		if err != nil {
-			return nil, err
-		}
-		out[i].Comments = cs
-	}
-	return out, nil
+	return out, err
 }
 
-func (s *Store) gatheredComments(pr int) ([]GatheredComment, error) {
-	rows, err := s.db.Query(`SELECT author, at, kind, requests_changes, body FROM gather_comments WHERE pr = ? ORDER BY seq`, pr)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []GatheredComment
-	for rows.Next() {
+func (s *Store) gatheredComments(pr int) (out []GatheredComment, err error) {
+	err = s.each(`SELECT author, at, kind, requests_changes, body FROM gather_comments WHERE pr = ? ORDER BY seq`, func(r *sql.Rows) error {
 		var c GatheredComment
 		var at string
 		var rc int
-		if err := rows.Scan(&c.Author, &at, &c.Kind, &rc, &c.Body); err != nil {
-			return nil, err
+		if err := r.Scan(&c.Author, &at, &c.Kind, &rc, &c.Body); err != nil {
+			return err
 		}
 		c.RequestsChanges = rc != 0
+		var err error
 		if c.At, err = time.Parse(time.RFC3339, at); err != nil {
-			return nil, err
+			return err
 		}
 		out = append(out, c)
-	}
-	return out, rows.Err()
+		return nil
+	}, pr)
+	return out, err
 }

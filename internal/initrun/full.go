@@ -82,19 +82,8 @@ func (r *run) recoverySession(only []string) recovery.Session {
 // from --answers or asked on a terminal; with neither it fails, saying how
 // to answer. It starts no session. --write writes the promise and terms.
 func (r *run) newCodebase(g store.Gather) int {
-	qs := newcodebase.Questions(g, filepath.Base(r.root))
-	var a newcodebase.Answers
-	var err error
-	switch {
-	case r.o.Answers != "":
-		a, err = newcodebase.ReadAnswers(r.o.Answers, qs...)
-	case r.env.IsTerminal != nil && r.env.IsTerminal() && r.env.Stdin != nil:
-		a, err = newcodebase.Ask(r.env.Stdin, r.stderr, qs)
-	default:
-		fmt.Fprintf(r.stderr, "physa init: this looks like a new codebase (no agent docs, contributing guide, decisions or PRs, and %s); answer its questions on a terminal or with --answers FILE\n",
-			plural(len(g.Changes), "change", "changes"))
-		return 2
-	}
+	terminal := r.env.IsTerminal != nil && r.env.IsTerminal() && r.env.Stdin != nil
+	a, err := newcodebase.Obtain(g, filepath.Base(r.root), r.o.Answers, terminal, r.env.Stdin, r.stderr)
 	if err != nil {
 		return failed(r.stderr, err)
 	}

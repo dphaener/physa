@@ -100,52 +100,29 @@ type mergedResponse struct {
 // MergedPRs returns the PRs merged at or after since, newest merge first, at
 // most max, with their people's review and the issues they close. more is
 // true when max stopped the list before since did. A max below 1 returns
-// nothing. GitHub orders pages by update time, and a PR merged after since was
-// updated after it, so paging stops at the first page that reaches back past
-// since.
+// nothing. It asks MergedPage page after page and never waits: a rate limit
+// comes back as its *forge.RateLimit.
 func (c *Client) MergedPRs(since time.Time, max int) ([]forge.PR, bool, error) {
 	if max < 1 {
 		return []forge.PR{}, false, nil
-	}
-	owner, name, err := c.repo()
-	if err != nil {
-		return nil, false, err
 	}
 	var prs []forge.PR
 	more := false
 	cursor := ""
 	for {
-		args := []string{"api", "graphql", "-f", "query=" + mergedQuery, "-f", "owner=" + owner, "-f", "name=" + name}
-		if cursor != "" {
-			args = append(args, "-f", "cursor="+cursor)
-		}
-		out, err := c.gh(args...)
-		var resp mergedResponse
-		if jerr := json.Unmarshal(out, &resp); jerr == nil && len(resp.Errors) > 0 {
-			return nil, false, fmt.Errorf("GitHub GraphQL: %s", resp.Errors[0].Message)
-		} else if err != nil {
+		page, err := c.MergedPage(since, cursor)
+		if err != nil {
 			return nil, false, err
-		} else if jerr != nil {
-			return nil, false, fmt.Errorf("GitHub GraphQL: %w", jerr)
 		}
-		if resp.Data.Repository == nil {
-			return nil, false, fmt.Errorf("GitHub GraphQL: no repository %s/%s", owner, name)
-		}
-		page := resp.Data.Repository.PullRequests
-		for _, n := range page.Nodes {
-			if !n.MergedAt.Before(since) {
-				prs = append(prs, n.pr())
-			}
-		}
-		crossed := len(page.Nodes) == 0 || page.Nodes[len(page.Nodes)-1].UpdatedAt.Before(since)
-		exhausted := crossed || !page.PageInfo.HasNextPage || page.PageInfo.EndCursor == ""
+		prs = append(prs, page.PRs...)
+		exhausted := page.Next == ""
 		if len(prs) > max || (len(prs) == max && !exhausted) {
 			more = true
 		}
 		if exhausted || len(prs) >= max {
 			break
 		}
-		cursor = page.PageInfo.EndCursor
+		cursor = page.Next
 	}
 	sort.SliceStable(prs, func(i, j int) bool { return prs[i].MergedAt.After(prs[j].MergedAt) })
 	if len(prs) > max {
@@ -155,6 +132,55 @@ func (c *Client) MergedPRs(since time.Time, max int) ([]forge.PR, bool, error) {
 		prs = []forge.PR{}
 	}
 	return prs, more, nil
+}
+
+// MergedPage returns one page of the PRs merged at or after since, starting
+// at cursor ("" for the first page), in GitHub's order: most recently
+// updated first. GitHub orders pages by update time, and a PR merged after
+// since was updated after it, so Next is "" at the first page that reaches
+// back past since, at an empty page and at the last page. A rate limit,
+// whether GitHub names it in the response or gh names it on stderr, is a
+// *forge.RateLimit; MergedPage never waits or retries.
+func (c *Client) MergedPage(since time.Time, cursor string) (forge.Page, error) {
+	owner, name, err := c.repo()
+	if err != nil {
+		return forge.Page{}, err
+	}
+	args := []string{"api", "graphql", "--include", "-f", "query=" + mergedQuery, "-f", "owner=" + owner, "-f", "name=" + name}
+	if cursor != "" {
+		args = append(args, "-f", "cursor="+cursor)
+	}
+	out, err := c.run(c.dir, nil, args...)
+	r := splitInclude(out)
+	if limit := rateLimit(r); limit != nil {
+		return forge.Page{}, limit
+	}
+	var resp mergedResponse
+	if jerr := json.Unmarshal(r.body, &resp); jerr == nil && len(resp.Errors) > 0 {
+		return forge.Page{}, fmt.Errorf("GitHub GraphQL: %s", resp.Errors[0].Message)
+	} else if err != nil {
+		if limit := stderrLimit(err); r.status == 0 && limit != nil {
+			return forge.Page{}, limit
+		}
+		return forge.Page{}, classify(err)
+	} else if jerr != nil {
+		return forge.Page{}, fmt.Errorf("GitHub GraphQL: %w", jerr)
+	}
+	if resp.Data.Repository == nil {
+		return forge.Page{}, fmt.Errorf("GitHub GraphQL: no repository %s/%s", owner, name)
+	}
+	page := resp.Data.Repository.PullRequests
+	pg := forge.Page{PRs: []forge.PR{}}
+	for _, n := range page.Nodes {
+		if !n.MergedAt.Before(since) {
+			pg.PRs = append(pg.PRs, n.pr())
+		}
+	}
+	crossed := len(page.Nodes) == 0 || page.Nodes[len(page.Nodes)-1].UpdatedAt.Before(since)
+	if !crossed && page.PageInfo.HasNextPage {
+		pg.Next = page.PageInfo.EndCursor
+	}
+	return pg, nil
 }
 
 func (n mergedNode) pr() forge.PR {

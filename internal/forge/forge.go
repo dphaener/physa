@@ -4,6 +4,8 @@
 // refresh one PR, through PRs, and never merge, approve or auto-merge one.
 // A forge that offers Merged also lists the PRs merged since a time, each
 // with its review (marked when it requests changes) and its linked issues.
+// A forge that offers MergedPages lists them one page at a time, and a forge
+// that limits how fast it answers says so with a RateLimit error.
 // Version control, never the
 // forge, is the source of every fact (design 07 section 7); the forge only
 // adds the review around a change. A forge that cannot answer says so with
@@ -14,6 +16,7 @@ package forge
 
 import (
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -58,6 +61,58 @@ type Merged interface {
 	// at most max. more is true when the limit stopped the list before the
 	// date did.
 	MergedPRs(since time.Time, max int) (prs []PR, more bool, err error)
+}
+
+// MergedPages lists merged PRs one page at a time, so a caller can keep the
+// pages it has when the forge stops answering. It is separate from Forge
+// because an adapter may not offer it.
+type MergedPages interface {
+	// MergedPage returns one page of the PRs merged at or after since,
+	// starting at cursor ("" for the first page), in the forge's own page
+	// order.
+	MergedPage(since time.Time, cursor string) (Page, error)
+}
+
+// Page is one page of merged PRs.
+type Page struct {
+	PRs []PR
+	// Next is the cursor of the following page, "" when no page is left
+	// (the list ended or reached back past since).
+	Next string
+}
+
+// RateLimit is the error a forge returns when it limits how fast it answers.
+// Callers find it with errors.As.
+type RateLimit struct {
+	// Secondary is true for the forge's secondary limit (a burst of
+	// requests), false for its primary limit (an hourly allowance).
+	Secondary bool
+	// RetryAfter is the forge's retry-after: how long to wait. It is 0 when
+	// the forge did not give one.
+	RetryAfter time.Duration
+	// Reset is the time the primary limit resets; zero when not given.
+	Reset time.Time
+	// Detail is what the forge said.
+	Detail string
+}
+
+// Error names the limit and, when known, when it resets or how long to wait.
+func (r *RateLimit) Error() string {
+	kind := "primary"
+	if r.Secondary {
+		kind = "secondary"
+	}
+	msg := kind + " rate limit of the forge"
+	if r.RetryAfter > 0 {
+		msg += fmt.Sprintf(", retry after %s", r.RetryAfter)
+	}
+	if !r.Reset.IsZero() {
+		msg += ", resets at " + r.Reset.UTC().Format(time.RFC3339)
+	}
+	if r.Detail != "" {
+		msg += ": " + r.Detail
+	}
+	return msg
 }
 
 // PR is a PR with the review around it.

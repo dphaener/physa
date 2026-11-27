@@ -16,6 +16,12 @@ type GatherRun struct {
 	PRsLimited  bool
 	Forge       string
 	ForgeReason string
+	// Stopped is true when the forge stopped the gather early.
+	Stopped bool
+	// Reached is the oldest merge date of the PRs kept; zero when none.
+	Reached time.Time
+	// StopReason is why the forge stopped the gather.
+	StopReason string
 }
 
 // Doc is one gathered document. Reason is why gather picked this source,
@@ -99,8 +105,12 @@ func (s *Store) PutGather(g Gather) error {
 		}
 	}
 	r := g.Run
-	if _, err := tx.Exec(`INSERT INTO gather_runs (id, at, since, max_prs, prs_limited, forge, forge_reason) VALUES (1, ?, ?, ?, ?, ?, ?)`,
-		ts(r.At), ts(r.Since), r.MaxPRs, b2i(r.PRsLimited), r.Forge, r.ForgeReason); err != nil {
+	reached := ""
+	if !r.Reached.IsZero() {
+		reached = ts(r.Reached)
+	}
+	if _, err := tx.Exec(`INSERT INTO gather_runs (id, at, since, max_prs, prs_limited, forge, forge_reason, stopped, stopped_reached, stopped_reason) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ts(r.At), ts(r.Since), r.MaxPRs, b2i(r.PRsLimited), r.Forge, r.ForgeReason, b2i(r.Stopped), reached, r.StopReason); err != nil {
 		return err
 	}
 	for _, d := range g.Docs {
@@ -163,10 +173,10 @@ func b2i(b bool) int {
 // Gathered returns the stored gather, false when nothing was gathered.
 func (s *Store) Gathered() (Gather, bool, error) {
 	var g Gather
-	var at, since string
-	var limited int
-	err := s.db.QueryRow(`SELECT at, since, max_prs, prs_limited, forge, forge_reason FROM gather_runs WHERE id = 1`).
-		Scan(&at, &since, &g.Run.MaxPRs, &limited, &g.Run.Forge, &g.Run.ForgeReason)
+	var at, since, reached string
+	var limited, stopped int
+	err := s.db.QueryRow(`SELECT at, since, max_prs, prs_limited, forge, forge_reason, stopped, stopped_reached, stopped_reason FROM gather_runs WHERE id = 1`).
+		Scan(&at, &since, &g.Run.MaxPRs, &limited, &g.Run.Forge, &g.Run.ForgeReason, &stopped, &reached, &g.Run.StopReason)
 	if err == sql.ErrNoRows {
 		return Gather{}, false, nil
 	}
@@ -174,6 +184,12 @@ func (s *Store) Gathered() (Gather, bool, error) {
 		return Gather{}, false, err
 	}
 	g.Run.PRsLimited = limited != 0
+	g.Run.Stopped = stopped != 0
+	if reached != "" {
+		if g.Run.Reached, err = time.Parse(time.RFC3339, reached); err != nil {
+			return Gather{}, false, err
+		}
+	}
 	if g.Run.At, err = time.Parse(time.RFC3339, at); err != nil {
 		return Gather{}, false, err
 	}

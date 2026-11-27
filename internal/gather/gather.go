@@ -1,21 +1,27 @@
 // Package gather collects the sources init reads, within a bound, and
 // summarises what it found: a repo's docs (agent docs, contributing guides,
 // readmes, decision records), its history through version control, and its
-// merged PRs through the forge when there is one. A forge that is missing,
-// cannot list merged PRs or cannot answer makes PRs unavailable, which is
-// reported and never a failure. The bound is a date and a most number of
-// PRs: when the PR limit is reached first, history starts where the PRs do,
-// and each area the PRs miss gets a few PRs of its own (quiet).
+// merged PRs through the forge when there is one, page by page, waiting out
+// the forge's rate limits (internal/gather/merged). A forge that is missing,
+// cannot list merged PRs, or is unavailable or unauthenticated before it
+// lists any PR makes PRs unavailable, which is reported and never a failure.
+// Any other forge error, or one after PRs were listed, fails the gather with
+// a Stopped error that still returns the gather with every PR listed. The
+// bound is a date and, when given, a most number of PRs: when the PR limit is
+// reached first, history starts where the PRs do, and each area the PRs miss
+// gets a few PRs of its own (quiet).
 // Gather reads the working tree and never writes to it; the caller keeps the
 // result in the store.
 package gather
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/gather/merged"
 	"github.com/dphaener/physa/internal/quiet"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
@@ -99,23 +105,28 @@ type PRsSummary struct {
 	Bytes             int    `json:"bytes"`
 }
 
-// DefaultMaxPRs is the most PRs gathered unless the bound says otherwise.
-const DefaultMaxPRs = 1000
-
 // Bounds is the bound of one gather: Since is its start, SinceSet is true
-// when the caller gave it rather than defaulting it, and MaxPRs is the most
-// merged PRs to list.
+// when the caller gave it rather than defaulting it, MaxPRs is the most
+// merged PRs to list (0 means no limit), and Wait is how the forge's rate
+// limits are waited out (zero means its defaults).
 type Bounds struct {
 	Since    time.Time
 	SinceSet bool
 	MaxPRs   int
+	Wait     merged.Wait
 }
+
+// Stopped is the error of a gather the forge stopped, returned with the
+// gather holding every PR listed; see merged.Stopped.
+type Stopped = merged.Stopped
 
 // Run gathers the docs under root, the history of repo and, through f, the
 // merged PRs, within the bound o sets, as of now. It returns the gather for
 // the caller to store and its summary, whose Store is left for the caller to
 // set. f may be nil. d asks for the agent's search for more sources, whose
-// finds join the docs; it never makes Run fail.
+// finds join the docs; it never makes Run fail. When the forge stops the
+// list, Run still returns the gather and its summary, with every PR listed
+// and the history of the whole bound, and a *Stopped error.
 func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now time.Time) (store.Gather, Summary, error) {
 	docs, skipped, err := Docs(root)
 	if err != nil {
@@ -138,20 +149,20 @@ func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now ti
 		s.Docs.Files = append(s.Docs.Files, DocFile{Path: d.Path, Kind: d.Kind, Reason: d.Reason})
 	}
 
-	prs, limited, reason := readPRs(f, o)
+	listed, limited, reason, stop := merged.Read(f, o.Since, o.MaxPRs, o.Wait)
 	if f != nil {
 		g.Run.Forge = f.Name()
 	}
 	g.Run.ForgeReason = reason
-	g.PRs = prs
+	if s := (*Stopped)(nil); errors.As(stop, &s) { // marked in the store, so later phases say so
+		g.Run.Stopped, g.Run.Reached, g.Run.StopReason = true, s.Reached, fmt.Sprint(s.Err)
+	}
+	for _, p := range listed {
+		g.PRs = append(g.PRs, quiet.PR(p))
+	}
 	histSince := o.Since
-	if limited && len(prs) > 0 {
-		oldest := prs[0].MergedAt
-		for _, p := range prs {
-			if p.MergedAt.Before(oldest) {
-				oldest = p.MergedAt
-			}
-		}
+	if limited && len(listed) > 0 {
+		oldest := merged.Oldest(listed)
 		histSince = oldest
 		g.Run.PRsLimited = true
 		s.Bound.PRLimitReached = true
@@ -173,27 +184,7 @@ func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now ti
 	s.History = summariseHistory(g.Changes)
 	s.History.Shallow = repo.Partial()
 	s.EstimatedTokens = reading.GatherTokens(g)
-	return g, s, nil
-}
-
-// readPRs lists the merged PRs within the bound. reason is empty when the
-// forge answered, and otherwise says why PRs are unavailable.
-func readPRs(f forge.Forge, o Bounds) (prs []store.GatheredPR, more bool, reason string) {
-	if f == nil {
-		return nil, false, "no forge"
-	}
-	m, ok := f.(forge.Merged)
-	if !ok {
-		return nil, false, "the forge cannot list merged PRs"
-	}
-	listed, more, err := m.MergedPRs(o.Since, o.MaxPRs)
-	if err != nil {
-		return nil, false, forge.Reason(err)
-	}
-	for _, p := range listed {
-		prs = append(prs, quiet.PR(p))
-	}
-	return prs, more, ""
+	return g, s, stop
 }
 
 func summarisePRs(prs []store.GatheredPR, reason string) PRsSummary {

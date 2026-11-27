@@ -15,6 +15,7 @@ import (
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/coverage"
 	"github.com/dphaener/physa/internal/forge"
+	"github.com/dphaener/physa/internal/gather/merged"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
@@ -104,10 +105,10 @@ func run(t *testing.T, r *testRepo, f forge.Forge, o Bounds) (Summary, int) {
 }
 
 // bounds is the bound of a default gather at gatherNow: twelve months back and
-// DefaultMaxPRs PRs, changed by with.
+// no PR limit, changed by with.
 func bounds(t *testing.T, with ...func(*Bounds)) Bounds {
 	t.Helper()
-	b := Bounds{Since: gatherNow(t).AddDate(-1, 0, 0), MaxPRs: DefaultMaxPRs}
+	b := Bounds{Since: gatherNow(t).AddDate(-1, 0, 0)}
 	for _, w := range with {
 		w(&b)
 	}
@@ -205,12 +206,214 @@ func TestRunUnavailableForgeError(t *testing.T) {
 	}
 }
 
-func TestRunOtherForgeErrorIsUnavailable(t *testing.T) {
+// pagesForge also implements forge.MergedPages: it replies with its answers
+// in order and records the cursors asked.
+type pagesForge struct {
+	plainForge
+	answers []pageAnswer
+	cursors []string
+}
+
+type pageAnswer struct {
+	page forge.Page
+	err  error
+}
+
+func (p *pagesForge) MergedPage(_ time.Time, cursor string) (forge.Page, error) {
+	p.cursors = append(p.cursors, cursor)
+	if len(p.answers) == 0 {
+		return forge.Page{}, errors.New("fake forge: no answer left")
+	}
+	a := p.answers[0]
+	p.answers = p.answers[1:]
+	return a.page, a.err
+}
+
+func onePage(next string, prs ...forge.PR) pageAnswer {
+	return pageAnswer{page: forge.Page{PRs: prs, Next: next}}
+}
+
+// fakeWait is a Wait whose sleeps are recorded and move a fake clock on.
+func fakeWait(limit time.Duration, slept *[]time.Duration) merged.Wait {
+	now := gatherNow(nil)
+	return merged.Wait{
+		Limit: limit,
+		Sleep: func(d time.Duration) { *slept = append(*slept, d); now = now.Add(d) },
+		Now:   func() time.Time { return now },
+	}
+}
+
+func TestRunWaitsOutRateLimitAndKeepsEveryPage(t *testing.T) {
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
-	s, _ := run(t, r, mergedForge{err: errors.New("boom")}, bounds(t))
-	if s.PRs.Available || s.PRs.Reason != "boom" {
-		t.Errorf("%+v", s.PRs)
+	secondary := &forge.RateLimit{Secondary: true, RetryAfter: time.Minute, Detail: "You have exceeded a secondary rate limit"}
+	f := &pagesForge{answers: []pageAnswer{
+		onePage("c1", forge.PR{Number: 5, MergedAt: r.at(5)}, forge.PR{Number: 4, MergedAt: r.at(4)}),
+		onePage("c2", forge.PR{Number: 3, MergedAt: r.at(3)}),
+		{err: secondary},
+		onePage("", forge.PR{Number: 2, MergedAt: r.at(2)}, forge.PR{Number: 1, MergedAt: r.at(1)}),
+	}}
+	var slept []time.Duration
+	g, s, err := Run(r.dir, r.open(), f, bounds(t, func(b *Bounds) { b.Wait = fakeWait(0, &slept) }), Discover{}, gatherNow(t))
+	if err != nil {
+		t.Fatalf("a rate limit waited out failed the run: %v", err)
+	}
+	if len(g.PRs) != 5 || s.PRs.Count != 5 || !s.PRs.Available || g.Run.ForgeReason != "" {
+		t.Errorf("%d PRs, summary %+v", len(g.PRs), s.PRs)
+	}
+	if want := []string{"", "c1", "c2", "c2"}; !reflect.DeepEqual(f.cursors, want) {
+		t.Errorf("cursors %q, want %q", f.cursors, want)
+	}
+	if want := []time.Duration{time.Minute}; !reflect.DeepEqual(slept, want) {
+		t.Errorf("slept %v, want %v", slept, want)
+	}
+}
+
+func TestRunStoppedPastRateLimitKeepsThePRs(t *testing.T) {
+	r := newTestRepo(t)
+	r.commit("feat: x", "a")
+	r.commit("feat: y", "b")
+	nohint := pageAnswer{err: &forge.RateLimit{Secondary: true, Detail: "API rate limit exceeded"}}
+	f := &pagesForge{answers: []pageAnswer{
+		onePage("c1", forge.PR{Number: 5, MergedAt: r.at(5)}, forge.PR{Number: 4, MergedAt: r.at(4)}),
+		onePage("c2", forge.PR{Number: 3, MergedAt: r.at(3)}),
+		nohint, nohint, nohint, nohint,
+	}}
+	var slept []time.Duration
+	limit := 3 * time.Minute // 60s and 120s are slept; 240s more is refused
+	g, s, err := Run(r.dir, r.open(), f, bounds(t, func(b *Bounds) { b.Wait = fakeWait(limit, &slept) }), Discover{}, gatherNow(t))
+	var stop *Stopped
+	if !errors.As(err, &stop) {
+		t.Fatalf("err = %v, want a *Stopped", err)
+	}
+	var rl *forge.RateLimit
+	if !errors.As(err, &rl) || !rl.Secondary {
+		t.Errorf("the stop does not wrap the rate limit: %v", err)
+	}
+	t.Logf("stopped: %v", err)
+	msg := err.Error()
+	reached := r.at(3).Format(time.DateOnly)
+	asked := gatherNow(t).AddDate(-1, 0, 0).Format(time.DateOnly)
+	for _, want := range []string{"rate limit", "the 3 PRs kept reach back to " + reached, "of the asked " + asked} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message %q lacks %q", msg, want)
+		}
+	}
+	if stop.PRs != 3 || !stop.Reached.Equal(r.at(3)) {
+		t.Errorf("stop %+v", stop)
+	}
+	if !g.Run.Stopped || !g.Run.Reached.Equal(r.at(3)) || g.Run.StopReason != stop.Err.Error() || !strings.Contains(g.Run.StopReason, "rate limit") {
+		t.Errorf("the gather is not marked stopped: %+v", g.Run)
+	}
+	if len(g.PRs) != 3 || g.PRs[0].Number != 5 || s.PRs.Count != 3 || !s.PRs.Available {
+		t.Errorf("%d PRs kept, summary %+v", len(g.PRs), s.PRs)
+	}
+	if g.Run.PRsLimited || s.Bound.PRLimitReached || s.Quiet != nil {
+		t.Errorf("a stop marked the PR limit reached: %+v %+v", g.Run, s.Bound)
+	}
+	if len(g.Changes) != 2 || s.History.Changes != 2 {
+		t.Errorf("history %d changes, want the whole bound's 2", len(g.Changes))
+	}
+	var total time.Duration
+	for _, d := range slept {
+		total += d
+	}
+	if total > limit {
+		t.Errorf("slept %v in all, past the limit %v", total, limit)
+	}
+}
+
+func TestRunStoppedOnPlainError(t *testing.T) {
+	r := newTestRepo(t)
+	r.commit("feat: x", "a")
+	for name, f := range map[string]forge.Forge{
+		"pages":     &pagesForge{answers: []pageAnswer{{err: errors.New("boom")}}},
+		"merged":    mergedForge{err: errors.New("boom")},
+		"not found": &pagesForge{answers: []pageAnswer{{err: &forge.Error{Class: forge.ErrNotFound, Reason: "the repo is not on GitHub"}}}},
+	} {
+		g, s, err := Run(r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
+		var stop *Stopped
+		if !errors.As(err, &stop) {
+			t.Fatalf("%s: err = %v, want a *Stopped", name, err)
+		}
+		t.Logf("%s: stopped: %v", name, err)
+		if stop.PRs != 0 || len(g.PRs) != 0 || !strings.Contains(err.Error(), "no PR was listed") {
+			t.Errorf("%s: %v, %d PRs", name, err, len(g.PRs))
+		}
+		if s.History.Changes != 1 {
+			t.Errorf("%s: history not gathered: %+v", name, s.History)
+		}
+		if !g.Run.Stopped || !g.Run.Reached.IsZero() || g.Run.StopReason != stop.Err.Error() {
+			t.Errorf("%s: mark %+v, want stopped with no date reached", name, g.Run)
+		}
+	}
+}
+
+func TestRunStoppedWhenUnavailableAfterPRs(t *testing.T) {
+	r := newTestRepo(t)
+	r.commit("feat: x", "a")
+	unauthenticated := pageAnswer{err: &forge.Error{Class: forge.ErrUnauthenticated, Reason: "gh is not logged in"}}
+	f := &pagesForge{answers: []pageAnswer{onePage("c1", forge.PR{Number: 2, MergedAt: r.at(1)}), unauthenticated}}
+	g, _, err := Run(r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
+	var stop *Stopped
+	if !errors.As(err, &stop) || len(g.PRs) != 1 {
+		t.Fatalf("err = %v, %d PRs", err, len(g.PRs))
+	}
+	g, s, err := Run(r.dir, r.open(), &pagesForge{answers: []pageAnswer{unauthenticated}}, bounds(t), Discover{}, gatherNow(t))
+	if err != nil || s.PRs.Available || s.PRs.Reason != "gh is not logged in" || len(g.PRs) != 0 {
+		t.Errorf("unauthenticated before any PR: %v %+v", err, s.PRs)
+	}
+}
+
+func TestRunNoRemoteBeforeAnyPRIsUnavailable(t *testing.T) {
+	r := newTestRepo(t)
+	r.commit("feat: x", "a")
+	noRemote := pageAnswer{err: &forge.Error{Class: forge.ErrUnavailable, Reason: "gh finds no GitHub remote", Detail: "no git remotes found"}}
+	g, s, err := Run(r.dir, r.open(), &pagesForge{answers: []pageAnswer{noRemote}}, bounds(t), Discover{}, gatherNow(t))
+	if err != nil {
+		t.Fatalf("a repo with no remote stopped the gather: %v", err)
+	}
+	if s.PRs.Available || s.PRs.Reason != "gh finds no GitHub remote" || len(g.PRs) != 0 || g.Run.ForgeReason != "gh finds no GitHub remote" {
+		t.Errorf("%+v %+v", s.PRs, g.Run)
+	}
+}
+
+// cappedForge is mergedForge that records the max it was asked for.
+type cappedForge struct {
+	mergedForge
+	max *int
+}
+
+func (c cappedForge) MergedPRs(since time.Time, max int) ([]forge.PR, bool, error) {
+	*c.max = max
+	return c.mergedForge.MergedPRs(since, max)
+}
+
+func TestRunNoLimitListsEveryPRSince(t *testing.T) {
+	r := newTestRepo(t)
+	r.commit("feat: x", "a")
+	pages := func() *pagesForge {
+		return &pagesForge{answers: []pageAnswer{
+			onePage("c1", forge.PR{Number: 4, MergedAt: r.at(4)}, forge.PR{Number: 3, MergedAt: r.at(3)}),
+			onePage("c2", forge.PR{Number: 2, MergedAt: r.at(2)}),
+			onePage("", forge.PR{Number: 1, MergedAt: r.at(1)}, forge.PR{Number: 0, MergedAt: r.at(-400)}),
+		}}
+	}
+	g, s, err := Run(r.dir, r.open(), pages(), bounds(t), Discover{}, gatherNow(t))
+	if err != nil || len(g.PRs) != 4 || s.Bound.MaxPRs != 0 || s.Bound.PRLimitReached {
+		t.Errorf("no limit: %v, %d PRs, bound %+v", err, len(g.PRs), s.Bound)
+	}
+	var buf bytes.Buffer
+	if err := WriteText(&buf, s); err != nil || !strings.Contains(buf.String(), "(the last 12 months), no PR limit.\n") {
+		t.Errorf("%v\n%s", err, buf.String())
+	}
+	g, s, err = Run(r.dir, r.open(), pages(), bounds(t, func(b *Bounds) { b.MaxPRs = 2 }), Discover{}, gatherNow(t))
+	if err != nil || len(g.PRs) != 2 || !s.Bound.PRLimitReached || s.Bound.MaxPRs != 2 {
+		t.Errorf("max 2: %v, %d PRs, bound %+v", err, len(g.PRs), s.Bound)
+	}
+	var asked int
+	if _, _, err := Run(r.dir, r.open(), cappedForge{max: &asked}, bounds(t), Discover{}, gatherNow(t)); err != nil || asked < 1<<30 {
+		t.Errorf("a forge offering only Merged was asked for at most %d PRs (%v)", asked, err)
 	}
 }
 
@@ -305,7 +508,7 @@ func TestRunDocsSkippedAndHistoryFallback(t *testing.T) {
 func fullSummary() Summary {
 	return Summary{
 		Version: 2, Store: "/s/physa.db",
-		Bound: BoundSummary{Since: "2025-11-21", MaxPRs: 1000},
+		Bound: BoundSummary{Since: "2025-11-21"},
 		Docs: DocsSummary{Count: 4, Bytes: 40, Skipped: []Skip{{"BIG.md", "over 2 MB (2097153 bytes)"}}, Files: []DocFile{
 			{"AGENTS.md", KindAgent, "an agent instructions file"}, {"docs/records/0001-a.md", KindDecisions, "a decision-record folder"}, {"docs/records/0002-b.md", KindDecisions, "a decision-record folder"}, {"decisions.md", KindDecisions, "a decisions file"},
 		}},
@@ -325,7 +528,7 @@ func TestWriteText(t *testing.T) {
 	t.Log("\n" + out)
 	for _, want := range []string{
 		"Gathered into /s/physa.db, replacing the previous gather.\n",
-		"Bound: since 2025-11-21 (the last 12 months), at most 1000 PRs.\n",
+		"Bound: since 2025-11-21 (the last 12 months), no PR limit.\n",
 		"Docs: 4 files\n",
 		"  AGENTS.md (agent): an agent instructions file\n",
 		"  decisions.md (decisions): a decisions file\n",
@@ -345,9 +548,9 @@ func TestWriteText(t *testing.T) {
 	}
 	s := fullSummary()
 	s.PRs = PRsSummary{Reason: "no forge"}
-	s.Bound.FromFlag = true
+	s.Bound.FromFlag, s.Bound.MaxPRs = true, 1000
 	buf.Reset()
-	if err := WriteText(&buf, s); err != nil || !strings.Contains(buf.String(), "PRs: unavailable (no forge)\n") || !strings.Contains(buf.String(), "(from --since)") {
+	if err := WriteText(&buf, s); err != nil || !strings.Contains(buf.String(), "PRs: unavailable (no forge)\n") || !strings.Contains(buf.String(), "(from --since), at most 1000 PRs.\n") {
 		t.Errorf("%v\n%s", err, buf.String())
 	}
 }
@@ -369,7 +572,7 @@ func TestWriteJSON(t *testing.T) {
 	if m["version"].(float64) != 2 || m["estimated_tokens"].(float64) != 35 {
 		t.Errorf("%v", m)
 	}
-	if b := m["bound"].(map[string]any); b["max_prs"].(float64) != 1000 || b["since"] != "2025-11-21" {
+	if b := m["bound"].(map[string]any); b["max_prs"].(float64) != 0 || b["since"] != "2025-11-21" {
 		t.Errorf("%v", b)
 	}
 	if d := m["docs"].(map[string]any); d["skipped"].([]any)[0].(map[string]any)["path"] != "BIG.md" || d["skipped"].([]any)[0].(map[string]any)["why"] == "" || d["files"].([]any)[0].(map[string]any)["reason"] != "an agent instructions file" || d["files"].([]any)[0].(map[string]any)["kind"] != "agent" {
@@ -545,5 +748,18 @@ func TestRunTiesPRsLandedAsMergesToTheirFiles(t *testing.T) {
 	}
 	if want := map[int][]string{7: {"ledger/model.rb", "ledger/view.rb"}, 8: {"notes/model.rb", "notes/view.rb"}}; !reflect.DeepEqual(files, want) {
 		t.Errorf("PRs' files %v, want %v", files, want)
+	}
+}
+
+func TestRunCompleteGatherIsNotMarkedStopped(t *testing.T) {
+	r := newTestRepo(t)
+	r.commit("feat: x", "a")
+	f := &pagesForge{answers: []pageAnswer{onePage("", forge.PR{Number: 2, MergedAt: r.at(1)})}}
+	g, _, err := Run(r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
+	if err != nil || len(g.PRs) != 1 {
+		t.Fatalf("err = %v, %d PRs", err, len(g.PRs))
+	}
+	if g.Run.Stopped || !g.Run.Reached.IsZero() || g.Run.StopReason != "" {
+		t.Errorf("a complete gather is marked stopped: %+v", g.Run)
 	}
 }

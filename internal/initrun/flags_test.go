@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dphaener/physa/internal/command"
 )
@@ -73,11 +74,21 @@ func TestLineFreshForEachLine(t *testing.T) {
 
 func TestLineDefaults(t *testing.T) {
 	f, ok := parseLine([]string{"--gather"}, now)
-	if !ok || !f.Gather || f.SinceSet || f.JSON || f.MaxPRs != 1000 {
+	if !ok || !f.Gather || f.SinceSet || f.JSON || f.MaxPRs != 0 { // 0: no PR limit
 		t.Fatalf("got %+v %v", f, ok)
 	}
 	if want := now.AddDate(-1, 0, 0); !f.Since.Equal(want) {
 		t.Errorf("since %v, want %v", f.Since, want)
+	}
+}
+
+// TestMaxPRsHelpStatesTheDefault checks that the flag's own help says a bare
+// gather has no PR limit.
+func TestMaxPRsHelpStatesTheDefault(t *testing.T) {
+	fs := pflag.NewFlagSet("init", pflag.ContinueOnError)
+	new(Flags).Declare(fs)
+	if got, want := fs.Lookup("max-prs").Usage, "gather at most this many merged PRs (default: every PR of the bound)"; got != want {
+		t.Errorf("--max-prs help %q, want %q", got, want)
 	}
 }
 

@@ -2,11 +2,10 @@ package initrun
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -16,8 +15,8 @@ import (
 	"github.com/dphaener/physa/internal/discovery"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
-	"github.com/dphaener/physa/internal/initbranch"
-	"github.com/dphaener/physa/internal/mapfolder"
+	"github.com/dphaener/physa/internal/gather/merged"
+	"github.com/dphaener/physa/internal/mapped"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/preflight"
 	"github.com/dphaener/physa/internal/recovery"
@@ -74,8 +73,8 @@ func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 	}
 	off := ""
 	if o.Gather { // --gather alone runs on a mapped repo too, but starts no agent there
-		off = discoveryOff(env)
-	} else if err := refuseMapped(env); err != nil {
+		off = mapped.DiscoveryOff(env.Writer)
+	} else if err := mapped.Refuse(env.Writer); err != nil {
 		return failed(stderr, err)
 	}
 	st, err := env.Store(".")
@@ -91,6 +90,11 @@ func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 	}()
 	r := &run{o: o, env: env, st: st, root: root, args: words, stderr: stderr, cache: cache, p: newPrinter(o, stdout), counts: map[string]spend.Count{}}
 	code := 0
+	if o.Propose || o.Recover { // the phases on a stored gather say when the forge stopped it, and still run
+		if g, ok, err := st.Gathered(); err == nil && ok {
+			preflight.Warn(stderr, preflight.Stopped(g.Run))
+		}
+	}
 	switch {
 	case o.Propose:
 		code = r.propose()
@@ -164,44 +168,11 @@ func (r *run) spent(phase string, from spend.Count) {
 	}
 }
 
-// refuseMapped is the early refusal: it errors, before anything is spent,
-// when the default branch already holds a map in either layout
-// (mapfolder.Products), naming the file found. With no default branch
-// to be found it checks the working tree instead, and leaves a missing
-// default branch for --write to report.
-func refuseMapped(env Env) error {
-	w, err := env.Writer(".")
-	if err != nil {
-		return err
-	}
-	if _, err := w.DefaultBranch(); err == nil {
-		return initbranch.HasMap(w)
-	}
-	for _, p := range mapfolder.Products {
-		if _, err := os.Stat(filepath.FromSlash(p)); err == nil {
-			return fmt.Errorf("the repo already has a map (%s in the working tree); init only starts a map, and learning keeps an existing one current: run physa map learn", p)
-		}
-	}
-	return nil
-}
-
-// discoveryOff is why --gather alone starts no discovery agent, or empty to
-// start one: the repo has a map, by the early refusal's check, or whether it
-// has one could not be told.
-func discoveryOff(env Env) string {
-	switch err := refuseMapped(env); {
-	case err == nil:
-		return ""
-	case strings.Contains(err.Error(), "already has a map"):
-		return "discovery not started: the repo has a map"
-	default:
-		return "discovery not started: could not tell whether the repo has a map: " + err.Error()
-	}
-}
-
 // gatherInto gathers the repo's sources under o's bounds, with the
 // discovery agent unless off says why not, and stores them, replacing the
-// earlier gather, and says what it gathered.
+// earlier gather, and says what it gathered. A gather the forge stopped
+// (*gather.Stopped) is stored like a complete one and returned with that
+// error; each wait for the forge's rate limit is said on stderr.
 func (r *run) gatherInto(off string) (store.Gather, gather.Summary, error) {
 	from, d := r.meter.Count(), gather.Discover{Off: off}
 	if off == "" {
@@ -215,17 +186,17 @@ func (r *run) gatherInto(off string) (store.Gather, gather.Summary, error) {
 	if err != nil {
 		return store.Gather{}, gather.Summary{}, err
 	}
-	bounds := gather.Bounds{Since: r.o.Since, SinceSet: r.o.SinceSet, MaxPRs: r.o.MaxPRs}
+	bounds := gather.Bounds{Since: r.o.Since, SinceSet: r.o.SinceSet, MaxPRs: r.o.MaxPRs, Wait: merged.Wait{Progress: r.stderr}}
 	g, sum, err := gather.Run(".", repo, r.env.Forge("."), bounds, d, r.env.Now())
-	if err != nil {
+	if stop := (*gather.Stopped)(nil); err != nil && !errors.As(err, &stop) {
 		return g, sum, err
 	}
 	sum.Store = dir
-	if err := r.st.PutGather(g); err != nil {
-		return g, sum, err
+	if perr := r.st.PutGather(g); perr != nil {
+		return g, sum, perr
 	}
 	r.spent("discover", from)
-	return g, sum, nil
+	return g, sum, err // nil, or the stop of a gather now stored
 }
 
 // propose proposes a map from the stored gather, in one session or in shares, and prints it.

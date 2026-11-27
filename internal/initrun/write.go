@@ -13,6 +13,7 @@ import (
 	"github.com/dphaener/physa/internal/initbranch"
 	"github.com/dphaener/physa/internal/initpr"
 	"github.com/dphaener/physa/internal/initrecord"
+	"github.com/dphaener/physa/internal/initreport"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/newcodebase"
 	"github.com/dphaener/physa/internal/recoverinput"
@@ -23,7 +24,7 @@ import (
 // text.
 const notReached = "recovering has not reached it yet"
 
-// writeStored writes what the store holds to physa/init; see storedMap. A current
+// writeStored writes what the store holds to physa/init; see storedMap, with init's report as the body's section and in --json. A current
 // stored consolidation takes the place of the recovered text; a stale one is said and ignored.
 func (r *run) writeStored(ctx context.Context) int {
 	m, err := storedMap(ctx, r.st, r.root, r.env)
@@ -37,8 +38,9 @@ func (r *run) writeStored(ctx context.Context) int {
 	if stale != "" {
 		fmt.Fprintf(r.stderr, "physa init: %s\n", stale)
 	}
-	m.Summary.Skill = r.skill
-	return writeMap(ctx, m, r.o, r.env, r.p, r.stderr)
+	rep := initreport.Load(ctx, r.st)
+	m.Summary.Skill, m.Summary.Measures = r.skill, initreport.Section(rep)
+	return writeMap(ctx, m, rep, r.o, r.env, r.p, r.stderr)
 }
 
 // storedMap builds init's map from the store: the capabilities of the source
@@ -142,8 +144,8 @@ func newMap(a newcodebase.Answers, env Env, skill string) initbranch.Map {
 // --push. With --hooks it then installs the Session: hook, after the commit
 // and before the PR, so the PR body says what happened to it; a refused
 // hook keeps the branch and makes the exit code 2. With --pr it then opens
-// the branch's PR, or refreshes the open one. It returns the exit code.
-func writeMap(ctx context.Context, m initbranch.Map, o Flags, env Env, p *printer, stderr io.Writer) int {
+// the branch's PR, or refreshes the open one. --json carries report when not nil. It returns the exit code.
+func writeMap(ctx context.Context, m initbranch.Map, report any, o Flags, env Env, p *printer, stderr io.Writer) int {
 	w, err := env.Writer(ctx, ".")
 	if err != nil {
 		return failed(stderr, err)
@@ -167,7 +169,7 @@ func writeMap(ctx context.Context, m initbranch.Map, o Flags, env Env, p *printe
 	if o.PR {
 		out.PR, err = initpr.Open(ctx, w, env.Forge("."), out)
 	}
-	p.wrote(out, m.Summary.Hook)
+	p.wrote(out, m.Summary.Hook, report)
 	if err != nil {
 		return failed(stderr, err)
 	}

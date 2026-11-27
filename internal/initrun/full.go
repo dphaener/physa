@@ -72,5 +72,5 @@ func (r *run) newCodebase(ctx context.Context, g store.Gather) int {
 	if !r.o.Write {
 		return 0
 	}
-	return writeMap(ctx, newMap(a, r.env, r.skill), r.o, r.env, r.p, r.stderr)
+	return writeMap(ctx, newMap(a, r.env, r.skill), nil, r.o, r.env, r.p, r.stderr)
 }

@@ -101,6 +101,8 @@ type Summary struct {
 	// Skill is the line saying the agent init ran with has no current Physa
 	// skill; empty when it has one or its state could not be read.
 	Skill string
+	// Measures is the report's section, from its heading on; empty for none.
+	Measures string
 }
 
 // Tokens are one phase's tokens, raw and weighted.

@@ -1,0 +1,183 @@
+{
+  "files": {
+    "source_files": 12,
+    "in_a_capability": {
+      "count": 8,
+      "of": 12,
+      "percent": 67
+    },
+    "shared": {
+      "count": 3,
+      "of": 12,
+      "percent": 25
+    },
+    "unclaimed": {
+      "count": 1,
+      "of": 12,
+      "percent": 8
+    }
+  },
+  "placed": {
+    "prs": {
+      "count": 3,
+      "of": 6,
+      "percent": 50,
+      "nowhere": [
+        {
+          "reason": "no files known from the gather",
+          "count": 1
+        },
+        {
+          "reason": "none of its files belongs to a capability",
+          "count": 2
+        }
+      ]
+    },
+    "changes_on_their_own": {
+      "count": 2,
+      "of": 4,
+      "percent": 50,
+      "nowhere": [
+        {
+          "reason": "no files known from the gather",
+          "count": 1
+        },
+        {
+          "reason": "none of its files belongs to a capability",
+          "count": 1
+        }
+      ]
+    },
+    "changes_following_their_pr": 6
+  },
+  "prs_in_one_capability": {
+    "count": 2,
+    "of": 3,
+    "percent": 67,
+    "left_out": 3
+  },
+  "capabilities_with_no_pr_or_change": {
+    "count": 2,
+    "of": 5,
+    "percent": 40
+  },
+  "rules_reasons": {
+    "rules": 12,
+    "by_anchor": [
+      {
+        "kind": "pr_or_change",
+        "count": 4,
+        "of": 12,
+        "percent": 33
+      },
+      {
+        "kind": "doc",
+        "count": 2,
+        "of": 12,
+        "percent": 17
+      },
+      {
+        "kind": "source_and_test",
+        "count": 1,
+        "of": 12,
+        "percent": 8
+      },
+      {
+        "kind": "test_only",
+        "count": 3,
+        "of": 12,
+        "percent": 25
+      },
+      {
+        "kind": "source_only",
+        "count": 1,
+        "of": 12,
+        "percent": 8
+      },
+      {
+        "kind": "none",
+        "count": 1,
+        "of": 12,
+        "percent": 8
+      }
+    ],
+    "test_only_with_because": {
+      "count": 2,
+      "of": 3,
+      "percent": 67
+    },
+    "product_rules": 1,
+    "product_rules_not_counted": 1
+  },
+  "consolidation": {
+    "capability_merges": 1,
+    "capabilities_merged_away": 1,
+    "entries_merged_exact": 1,
+    "entries_merged_near": 1,
+    "rules_moved": 1,
+    "questions_dropped": 1,
+    "rules_lifted": 2,
+    "refused": 2,
+    "entries_before": 19,
+    "entries_after": 12,
+    "product_rules_after": 2
+  },
+  "spend": {
+    "phases": [
+      {
+        "phase": "discover",
+        "input": 1200,
+        "cached_input": 300,
+        "output": 400,
+        "weighted_tokens": 3400,
+        "micro_usd": 51000,
+        "cost": "about $0.05"
+      },
+      {
+        "phase": "areas",
+        "input": 8000,
+        "cached_input": 2000,
+        "output": 1500,
+        "weighted_tokens": 15400,
+        "unpriced": true,
+        "cost": "none: no price yet"
+      },
+      {
+        "phase": "walk",
+        "input": 40000,
+        "cached_input": 10000,
+        "output": 6000,
+        "weighted_tokens": 70400,
+        "micro_usd": 1056000,
+        "cost": "about $1.06"
+      },
+      {
+        "phase": "recover",
+        "input": 90000,
+        "cached_input": 30000,
+        "output": 12000,
+        "weighted_tokens": 150000,
+        "micro_usd": 2250000,
+        "cost": "about $2.25"
+      },
+      {
+        "phase": "consolidate",
+        "input": 20000,
+        "cached_input": 5000,
+        "output": 3000,
+        "weighted_tokens": 35000,
+        "micro_usd": 528000,
+        "cost": "about $0.53"
+      }
+    ],
+    "total": {
+      "phase": "total",
+      "input": 159200,
+      "cached_input": 47300,
+      "output": 22900,
+      "weighted_tokens": 274200,
+      "unpriced": true,
+      "cost": "none: no price yet"
+    }
+  }
+}

@@ -22,6 +22,7 @@ import (
 	"github.com/dphaener/physa/internal/gather/merged"
 	"github.com/dphaener/physa/internal/initcap"
 	"github.com/dphaener/physa/internal/initrecord"
+	"github.com/dphaener/physa/internal/initreport"
 	"github.com/dphaener/physa/internal/interrupt"
 	"github.com/dphaener/physa/internal/mapped"
 	"github.com/dphaener/physa/internal/mapping"
@@ -316,7 +317,7 @@ func (r *run) place(ctx context.Context) int {
 // recoverPhase recovers the proposed capabilities into the store and prints
 // how each fared. Without --write it writes nothing to the repo; with it,
 // it then writes everything stored to physa/init, keeping what an
-// earlier run recovered. done, when set, is called with the report first.
+// earlier run recovered. done, set by the full run only, is called with the report first.
 func (r *run) recoverPhase(ctx context.Context, only []string, done func(recovery.Report)) int {
 	from := r.meter.Count()
 	r.inRec = true
@@ -332,6 +333,8 @@ func (r *run) recoverPhase(ctx context.Context, only []string, done func(recover
 	code := recoveryreport.ExitCode(rep)
 	if r.o.Write {
 		code = max(code, r.writeStored(ctx))
+	} else if done != nil { // the full run ends with init's report; with --write, the body and --json carry it
+		r.p.value(initreport.Part(ctx, r.st))
 	}
 	return code
 }

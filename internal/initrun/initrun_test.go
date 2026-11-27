@@ -4,25 +4,27 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/areas"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/initrecord"
-	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
+	"github.com/dphaener/physa/internal/walk"
 )
 
 // mergedFake is a forge that lists the merged PRs it was given.
@@ -160,7 +162,7 @@ func storedGather(t *testing.T, env Env) store.Gather {
 func oneAgent() *fakeAgent {
 	return &fakeAgent{
 		reports: []adapter.Tokens{{Input: 100, Output: 20}},
-		result:  adapter.Result{Text: proposeReply, Tokens: adapter.Tokens{Input: 100, Output: 20}},
+		result:  adapter.Result{Text: "```json\n{\"sources\":[]}\n```\n", Tokens: adapter.Tokens{Input: 100, Output: 20}},
 	}
 }
 
@@ -229,14 +231,8 @@ func TestOutsideARepo(t *testing.T) {
 	}
 }
 
-// proposeReply is a session's text with one capability shown by PR 3.
-const proposeReply = "Thinking.\n```json\n" +
-	`{"product":{"promise":"Teams keep what they learn about their product."},` +
-	`"capabilities":[{"name":"delivery","promise":"Changes reach users in order.","shown_by":["#3"],"questions":[]}],` +
-	`"questions":[]}` + "\n```\n"
-
 // gatheredEnv is an Env on a repo with a gather in its store, gathered with
-// no agent installed, ready to propose from with agent a.
+// no agent installed, with agent a for what follows.
 func gatheredEnv(t *testing.T, a adapter.Adapter) Env {
 	t.Helper()
 	newRepo(t)
@@ -248,83 +244,14 @@ func gatheredEnv(t *testing.T, a adapter.Adapter) Env {
 	return env
 }
 
-func TestProposeNoGather(t *testing.T) {
-	newRepo(t)
-	f := &fakeAgent{}
-	code, out, errOut := runInit(testEnv(t, nil, f), "--propose")
-	if code != 2 || out != "" || f.starts != 0 ||
-		!strings.Contains(errOut, "physa init: nothing gathered yet; run physa init --gather first") {
-		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
-	}
-}
-
-func TestProposeStoresAndPrintsMarkdown(t *testing.T) {
-	f := oneAgent()
-	env := gatheredEnv(t, f)
-	code, out, errOut := runInit(env, "--propose")
-	if code != 0 || f.starts != 1 || !strings.Contains(out, "delivery") || !strings.Contains(errOut, "propose reads its sources whole") {
-		t.Fatalf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
-	}
-	if strings.HasPrefix(strings.TrimSpace(out), "{") {
-		t.Errorf("stdout is JSON, not markdown:\n%s", out)
-	}
-	if !strings.Contains(out, "Coverage: the capabilities cite 1 of 1 gathered PRs;") || strings.Contains(errOut, "coverage is low") {
-		t.Errorf("the proposal's coverage:\n%s\n%s", out, errOut)
-	}
-	st, err := env.Store(context.Background(), ".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	p, ok, err := initrecord.Of(st).Proposed(context.Background())
-	if err != nil || !ok || !strings.Contains(string(p.Body), "delivery") {
-		t.Errorf("proposed: ok %v, err %v, body %s", ok, err, p.Body)
-	}
-}
-
-func TestProposeJSON(t *testing.T) {
-	env := gatheredEnv(t, oneAgent())
-	code, out, errOut := runInit(env, "--propose", "--json")
-	var v map[string]any
-	if code != 0 || json.Unmarshal([]byte(out), &v) != nil {
-		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
-	}
-}
-
-// TestProposeHasNoCircuitBreaker checks that --propose alone is unbounded:
-// a session far over any old appetite still proposes.
-func TestProposeHasNoCircuitBreaker(t *testing.T) {
-	env := gatheredEnv(t, &fakeAgent{
-		reports: []adapter.Tokens{{Input: 900_000, Output: 20}},
-		result:  adapter.Result{Text: proposeReply, Tokens: adapter.Tokens{Input: 900_000, Output: 20}},
-	})
-	if code, out, errOut := runInit(env, "--propose"); code != 0 || !strings.Contains(out, "delivery") {
-		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
-	}
-}
-
 func TestAppetiteIsBadUsage(t *testing.T) {
 	newRepo(t)
-	for _, args := range [][]string{{"--appetite", "1000"}, {"--gather", "--appetite", "1000"}, {"--propose", "--appetite=1000"}, {"--recover", "--appetite", "1000"}} {
+	for _, args := range [][]string{{"--appetite", "1000"}, {"--gather", "--appetite", "1000"}, {"--areas", "--appetite=1000"}, {"--recover", "--appetite", "1000"}} {
 		if code, _, _ := runInit(testEnv(t, nil, nil), args...); code != command.BadUsage {
 			t.Errorf("%v: code %d", args, code)
 		}
 	}
 }
-
-func TestProposeWithGatherIsBadUsage(t *testing.T) {
-	newRepo(t)
-	if code, _, _ := runInit(testEnv(t, nil, nil), "--propose", "--gather"); code != command.BadUsage {
-		t.Errorf("code %d", code)
-	}
-}
-
-// twoReply proposes two capabilities, each shown by PR 3.
-const twoReply = "Thinking.\n```json\n" +
-	`{"product":{"promise":"Teams keep what they learn about their product."},` +
-	`"capabilities":[{"name":"delivery","promise":"Changes reach users in order.","shown_by":["#3"],"questions":[]},` +
-	`{"name":"search","promise":"People find what they kept.","shown_by":["#3"],"questions":[]}],` +
-	`"questions":[]}` + "\n```\n"
 
 // recoverReply is a session's answer: a capability text with one rule
 // anchored to PR 3, and one term.
@@ -332,13 +259,16 @@ const recoverReply = "The sources show this.\n\n````markdown\n# Delivery\n\n## R
 	"### Changes ship in order\n`ship-in-order` · #3\nChanges reach users in the order merged.\n" +
 	"Because: a reviewer asked for it in #3.\n````\n\n```glossary\n**Delivery**: A change reaching users.\n```\n"
 
-// proposedEnv is an Env with a gather and a two-capability proposal in its
-// store, and a's agent for what follows.
-func proposedEnv(t *testing.T, a adapter.Adapter) Env {
+// walkedEnv is areasEnv with the areas, the walk of the capabilities delivery
+// and search and their placements in its store, and a's agent for what
+// follows.
+func walkedEnv(t *testing.T, a adapter.Adapter) Env {
 	t.Helper()
-	env := gatheredEnv(t, &fakeAgent{result: adapter.Result{Text: twoReply}})
-	if code, _, errOut := runInit(env, "--propose"); code != 0 {
-		t.Fatalf("propose: %d %q", code, errOut)
+	env := areasEnv(t, newRoutedAgent())
+	for _, phase := range []string{"--areas", "--walk", "--place"} {
+		if code, _, errOut := runInit(env, phase); code != 0 {
+			t.Fatalf("%s: %d %q", phase, code, errOut)
+		}
 	}
 	env.Agent = func(string) (adapter.Adapter, error) { return a, nil }
 	return env
@@ -349,19 +279,20 @@ func recoverAgent(in int64) *fakeAgent {
 	return &fakeAgent{reports: []adapter.Tokens{t}, result: adapter.Result{Text: recoverReply, Tokens: t}}
 }
 
-func TestRecoverNoProposal(t *testing.T) {
+// TestRecoverWithoutAWalk checks that --recover on a gather with no walk and
+// placements stored starts no session and says what to run first.
+func TestRecoverWithoutAWalk(t *testing.T) {
 	f := &fakeAgent{}
 	env := gatheredEnv(t, f)
 	code, out, errOut := runInit(env, "--recover")
-	if code != 2 || out != "" || f.starts != 0 ||
-		!strings.Contains(errOut, "physa init: nothing proposed yet; run physa init --propose first") {
+	if code != 2 || out != "" || f.starts != 0 || errOut != "physa init: "+recovery.ErrNoWalk.Error()+"\n" {
 		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
 	}
 }
 
 func TestRecoverUnknownOnly(t *testing.T) {
 	f := recoverAgent(100)
-	env := proposedEnv(t, f)
+	env := walkedEnv(t, f)
 	code, out, errOut := runInit(env, "--recover", "--only", "nope")
 	if code != 2 || out != "" || f.starts != 0 || !strings.Contains(errOut, `no capability "nope"`) {
 		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
@@ -370,7 +301,7 @@ func TestRecoverUnknownOnly(t *testing.T) {
 
 func TestRecoverBadCombinationsAreBadUsage(t *testing.T) {
 	newRepo(t)
-	for _, args := range [][]string{{"--recover", "--gather"}, {"--recover", "--propose"}, {"--only", "x"}} {
+	for _, args := range [][]string{{"--recover", "--gather"}, {"--recover", "--areas"}, {"--only", "x"}} {
 		if code, _, _ := runInit(testEnv(t, nil, nil), args...); code != command.BadUsage {
 			t.Errorf("%v: code %d", args, code)
 		}
@@ -379,7 +310,7 @@ func TestRecoverBadCombinationsAreBadUsage(t *testing.T) {
 
 func TestRecoverText(t *testing.T) {
 	f := recoverAgent(100)
-	env := proposedEnv(t, f)
+	env := walkedEnv(t, f)
 	code, out, errOut := runInit(env, "--recover", "--only", "delivery")
 	if code != 0 || f.starts != 1 {
 		t.Fatalf("code %d, starts %d, stderr %q", code, f.starts, errOut)
@@ -407,7 +338,7 @@ func TestRecoverText(t *testing.T) {
 }
 
 func TestRecoverJSON(t *testing.T) {
-	env := proposedEnv(t, recoverAgent(100))
+	env := walkedEnv(t, recoverAgent(100))
 	code, out, errOut := runInit(env, "--recover", "--only=delivery", "--json")
 	var rep struct {
 		Capabilities []struct{ Name, Status, File, Terms string }
@@ -425,7 +356,7 @@ func TestRecoverJSON(t *testing.T) {
 // however large the prompts, with no refusal.
 func TestRecoverHasNoAppetite(t *testing.T) {
 	f := recoverAgent(9_000_000)
-	env := proposedEnv(t, f)
+	env := walkedEnv(t, f)
 	code, out, errOut := runInit(env, "--recover", "--only", "delivery")
 	if code != 0 || f.starts != 1 || !strings.Contains(out, "## delivery: recovered") || strings.Contains(errOut, "appetite") {
 		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
@@ -434,41 +365,49 @@ func TestRecoverHasNoAppetite(t *testing.T) {
 
 func TestRecoverFailedExitsTwo(t *testing.T) {
 	f := &fakeAgent{result: adapter.Result{Text: "no block here"}}
-	env := proposedEnv(t, f)
+	env := walkedEnv(t, f)
 	code, out, _ := runInit(env, "--recover", "--only", "delivery")
 	if code != 2 || !strings.Contains(out, "## delivery: failed") {
 		t.Errorf("code %d, stdout %q", code, out)
 	}
 }
 
-func TestStoredMapGivesOneSessionPerShareAndTheMerge(t *testing.T) {
-	env := proposedEnv(t, nil)
+// TestStoredMapNamesTheAreasAndWalkSessionsBeforeTheRecoveries checks that
+// the map's sessions, which become the commit's Session: trailers, are the
+// stored areas' and the stored walk's, then each recovery's, and that its
+// product is the one the stored areas state.
+func TestStoredMapNamesTheAreasAndWalkSessionsBeforeTheRecoveries(t *testing.T) {
+	a := newRoutedAgent()
+	env := walkedEnv(t, a)
+	if code, _, errOut := runInit(env, "--recover"); code != 0 {
+		t.Fatalf("recover: %d %s", code, errOut)
+	}
 	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	prop, ok, err := initrecord.Of(st).Proposed(context.Background())
-	if err != nil || !ok {
-		t.Fatalf("proposed: ok %v, err %v", ok, err)
+	rec := initrecord.Of(st)
+	ar, _, errA := areas.Load(t.Context(), rec)
+	wr, _, errW := walk.Load(t.Context(), rec)
+	rows, errR := rec.Recovered(t.Context())
+	if err := errors.Join(errA, errW, errR); err != nil || len(ar.Sessions) != 2 || len(wr.Sessions) != 2 || len(rows) != 2 {
+		t.Fatalf("stored sessions: areas %v, walk %v, %d recovered: %v", ar.Sessions, wr.Sessions, len(rows), err)
 	}
-	m, err := storedMap(t.Context(), initrecord.Of(st), "repo", env)
-	if err != nil || len(m.Sessions) != 1 || m.Sessions[0] != prop.SessionID {
-		t.Fatalf("one session: %v, %v; want [%s]", m.Sessions, err, prop.SessionID)
+	want := slices.Concat(ar.Sessions, wr.Sessions)
+	byName := map[string]string{}
+	for _, r := range rows {
+		byName[r.Capability] = r.SessionID
 	}
-	var s mapping.Stored
-	if err := json.Unmarshal(prop.Body, &s); err != nil {
-		t.Fatal(err)
+	for _, c := range wr.Capabilities {
+		want = append(want, byName[c.Name])
 	}
-	s.Sessions = []string{"share-1", "share-2", "merge"}
-	if prop.Body, err = json.Marshal(s); err != nil {
-		t.Fatal(err)
+	m, err := storedMap(t.Context(), rec, "some-repo", env)
+	if err != nil || !slices.Equal(m.Sessions, want) || slices.Contains(want, "") {
+		t.Errorf("sessions %v, %v; want %v", m.Sessions, err, want)
 	}
-	if err := initrecord.Of(st).PutProposal(context.Background(), prop); err != nil {
-		t.Fatal(err)
-	}
-	if m, err = storedMap(t.Context(), initrecord.Of(st), "repo", env); err != nil || !reflect.DeepEqual(m.Sessions, s.Sessions) {
-		t.Errorf("in shares: %v, %v; want %v", m.Sessions, err, s.Sessions)
+	if m.ProductName != "Keeper" || m.ProductPromise != "Teams keep what they learn about their product." {
+		t.Errorf("product %q: %q", m.ProductName, m.ProductPromise)
 	}
 }
 
@@ -540,9 +479,10 @@ func TestStoredMapWritesTheWalksCapabilitiesAndSkipsRowsOfAnEarlierSource(t *tes
 	if err != nil || !ok {
 		t.Fatalf("walk: %v, %v", ok, err)
 	}
-	// A walk only: no proposal is stored, and the map still lists the walk's.
-	m, err := storedMap(t.Context(), rec, "repo", env)
-	if err != nil || len(m.Capabilities) != 2 || m.Capabilities[0].Name != "zz-cap-marker" || m.ProductPromise != "Not yet stated." {
+	// A walk with nothing recovered: the map lists the walk's capabilities, and
+	// the areas stated no product, so it is named after the folder.
+	m, err := storedMap(t.Context(), rec, "some-repo", env)
+	if err != nil || len(m.Capabilities) != 2 || m.Capabilities[0].Name != "zz-cap-marker" || m.ProductPromise != "Not yet stated." || m.ProductName != "Some Repo" {
 		t.Fatalf("walk only: %+v, %v", m, err)
 	}
 	rows := []initrecord.Recovered{

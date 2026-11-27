@@ -16,6 +16,7 @@ import (
 	"github.com/dphaener/physa/internal/areas"
 	"github.com/dphaener/physa/internal/draft"
 	"github.com/dphaener/physa/internal/initrecord"
+	"github.com/dphaener/physa/internal/productpromise"
 	"github.com/dphaener/physa/internal/sourceset"
 	"github.com/dphaener/physa/internal/vcs"
 )
@@ -90,7 +91,7 @@ func Run(ctx context.Context, st Store, s Session) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	r := &runner{a: a, s: s, split: from.Split, sizes: map[string]int{}}
+	r := &runner{a: a, s: s, split: from.Split, sizes: map[string]int{}, lead: productpromise.Lead(ctx, st)}
 	var jobs []*job
 	for _, ar := range from.Areas {
 		jobs = append(jobs, &job{system: Walk + "\n" + Split, area: Area{Name: ar.Name, Promise: ar.Promise, Files: ar.Files}})
@@ -134,6 +135,7 @@ type runner struct {
 	s     Session
 	split sourceset.Division
 	sizes map[string]int
+	lead  string // the product's promise block, ahead of each message; empty when none is stated
 
 	mu  sync.Mutex // guards progress, res and ids
 	res Result
@@ -208,7 +210,7 @@ func (r *runner) turn(ctx context.Context, j *job, sofar, prompt, what string) (
 // leaves in j the footprints, or the parts of a top-level area that split.
 func (r *runner) walk(ctx context.Context, j *job) error {
 	a := j.area
-	j.msg, j.unclaimed = Message(a, r.split, r.sizes), len(a.Files)
+	j.msg, j.unclaimed = r.lead+Message(a, r.split, r.sizes), len(a.Files)
 	text, err := r.turn(ctx, j, "", j.msg, "walking "+sourceset.FileCount(len(a.Files)))
 	if err != nil {
 		return err

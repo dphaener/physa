@@ -10,7 +10,8 @@ import (
 // Recovered is one capability's recovery the store keeps: the capability text
 // and glossary terms its session wrote, how it ended (Status is stored as
 // given), the session and what it used. ProposalAt is the time of the
-// proposal or the walk it was recovered from. Details is JSON.
+// walk it was recovered from (an earlier physa's rows hold the time of its
+// proposal). Details is JSON.
 type Recovered struct {
 	Capability  string
 	ProposalAt  time.Time

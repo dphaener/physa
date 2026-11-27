@@ -171,22 +171,52 @@ func TestInitOutsideARepo(t *testing.T) {
 	}
 }
 
-func TestInitProposeWithGatherIsBadUsage(t *testing.T) {
+func TestInitAreasWithGatherIsBadUsage(t *testing.T) {
 	d := testDeps(t)
 	t.Chdir(trailersRepo(t))
-	code, _, errOut := runInit(d, "--propose", "--gather")
+	code, _, errOut := runInit(d, "--areas", "--gather")
 	if code != 2 || !strings.HasPrefix(errOut, "usage: physa init") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
-func TestInitProposeOnAMappedRepoIsRefused(t *testing.T) {
+// TestInitProposeIsAnUnknownFlag checks that --propose, removed with init's
+// propose, is refused as any unknown flag is, before an agent is asked for.
+func TestInitProposeIsAnUnknownFlag(t *testing.T) {
+	d := testDeps(t)
+	t.Chdir(trailersRepo(t))
+	f := &fakeAgent{}
+	useAgent(&d, "claude", f)
+	code, out, errOut := runInit(d, "--propose")
+	if code != 2 || out != "" || f.starts != 0 || !strings.HasPrefix(errOut, "usage: physa init") {
+		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
+	}
+	if bogus, _, bogusErr := runInit(d, "--bogus"); bogus != code || bogusErr != errOut {
+		t.Errorf("--propose is refused differently from an unknown flag: code %d, stderr %q", bogus, bogusErr)
+	}
+}
+
+// TestInitHelpListsThePhasesAndNoPropose checks that physa init --help names
+// each phase a bare run runs and no longer names --propose.
+func TestInitHelpListsThePhasesAndNoPropose(t *testing.T) {
+	code, out, errOut := runInit(testDeps(t), "--help")
+	if code != 0 || strings.Contains(out+errOut, "--propose") {
+		t.Errorf("code %d, help names --propose:\n%s%s", code, out, errOut)
+	}
+	for _, phase := range []string{"--gather", "--areas", "--walk", "--place", "--recover", "--consolidate"} {
+		if !strings.Contains(out, phase) {
+			t.Errorf("help lacks %s:\n%s", phase, out)
+		}
+	}
+}
+
+func TestInitAreasOnAMappedRepoIsRefused(t *testing.T) {
 	d := testDeps(t)
 	dir := trailersRepo(t)
 	useRepoStore(t, &d, dir)
 	f := &fakeAgent{}
 	useAgent(&d, "claude", f)
-	code, out, errOut := runInit(d, "--propose")
+	code, out, errOut := runInit(d, "--areas")
 	if code != 2 || out != "" || f.starts != 0 ||
 		!strings.Contains(errOut, "physa init: the repo already has a map") || !strings.Contains(errOut, "physa map learn") {
 		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)

@@ -128,7 +128,7 @@ func TestTokensCapStopsBeforeThePassingSession(t *testing.T) {
 	if fmt.Sprint(refused) != "[3 4 5]" || a.started() != 3 || !g.Stopped() {
 		t.Fatalf("refused %v, started %d, stopped %v; want [3 4 5], 3, true", refused, a.started(), g.Stopped())
 	}
-	msg := g.Reached("physa init --recover")
+	msg := g.Reached(Lines{"physa init --recover"})
 	t.Log(msg)
 	for _, want := range []string{"200k tokens", "150k tokens", "run physa init --recover with a larger --cap, or none"} {
 		if !strings.Contains(msg, want) {
@@ -147,7 +147,7 @@ func TestMoneyCapStopsBeforeThePassingSession(t *testing.T) {
 	if fmt.Sprint(refused) != "[4 5]" || a.started() != 4 {
 		t.Fatalf("refused %v, started %d; want [4 5], 4", refused, a.started())
 	}
-	msg := g.Reached("physa init --recover")
+	msg := g.Reached(Lines{"physa init --recover"})
 	t.Log(msg)
 	if !strings.Contains(msg, "$0.80 (200k tokens)") || !strings.Contains(msg, "$1.00") {
 		t.Errorf("Reached = %q; want the spend in dollars and the cap", msg)
@@ -192,12 +192,20 @@ func TestShareCapReadsUsageBeforeEachStart(t *testing.T) {
 	if fmt.Sprint(refused) != "[2 3 4]" || r.started() != 2 || r.readCount() != 3 {
 		t.Fatalf("refused %v, started %d, reads %d; want [2 3 4], 2, 3", refused, r.started(), r.readCount())
 	}
-	msg := g.Reached("physa init --recover")
+	msg := g.Reached(Lines{"physa init --recover"})
 	t.Log(msg)
 	for _, want := range []string{"80%", "weekly_all resets", "once the plan's usage is under 80%"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("Reached = %q; want %q in it", msg, want)
 		}
+	}
+	g.readErr = errors.New("claude timed out")
+	if bad := g.Reached(Lines{"physa init --walk", "physa init --place"}); !strings.Contains(bad, "run physa init --walk, then physa init --place once it can be read and is under 80%") {
+		t.Errorf("unreadable, several lines: %q", bad)
+	}
+	g.readErr = nil
+	if many := g.Reached(Lines{"physa init --walk", "physa init --place"}); !strings.Contains(many, "run physa init --walk, then physa init --place once the plan's usage is under 80%") {
+		t.Errorf("several lines: %q", many)
 	}
 }
 
@@ -326,5 +334,20 @@ func TestGuardDelegates(t *testing.T) {
 	g := guard(Cap{Kind: Tokens, Tokens: 1}, &fakeAgent{}, priced())
 	if g.Name() != "fake" || adapter.Window(g) != 1000 || adapter.Warnings(g) != nil {
 		t.Fatalf("name %q, window %d", g.Name(), adapter.Window(g))
+	}
+}
+
+// TestReachedWithSeveralLinesAsksForALargerCapOnEach checks the cap's message
+// with one line and with several, in its money form.
+func TestReachedWithSeveralLinesAsksForALargerCapOnEach(t *testing.T) {
+	g := guard(Cap{Kind: Tokens, Tokens: 200_000}, &fakeAgent{}, priced())
+	run(t, g, 6)
+	one := g.Reached(Lines{"physa init --walk"})
+	if !strings.Contains(one, "run physa init --walk with a larger --cap, or none.") {
+		t.Errorf("one line: %q", one)
+	}
+	many := g.Reached(Lines{"physa init --walk", "physa init --place", "physa init --recover"})
+	if !strings.Contains(many, "run physa init --walk, then physa init --place and physa init --recover, with a larger --cap on each line that starts sessions, or none.") {
+		t.Errorf("several lines: %q", many)
 	}
 }

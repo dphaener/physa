@@ -2,7 +2,6 @@ package initrun
 
 import (
 	"encoding/json"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -14,19 +13,13 @@ const (
 	sectionHead = "## Measures\n"
 )
 
-// zeroFor matches a zero standing in for a measure: "0%", "0 of 0" or a
-// bare 0 count after a colon.
-var zeroFor = regexp.MustCompile(`(^|[^0-9.])0(%| of 0)|: 0( |,|$)`)
-
-// walkMeasures are the measures the proposal path, with no areas, walk or
-// placements stored, can't give, with the reason each gives.
-var walkMeasures = map[string]string{
-	"files":                             "no areas are stored",
-	"placed":                            "no placements are stored, since no walk is stored",
-	"prs_in_one_capability":             "no walk is stored",
-	"capabilities_with_no_pr_or_change": "no walk is stored",
-	"rules_reasons":                     "no areas are stored, so a `from` path can't be told a test, a doc or a source file",
-}
+// walkMeasures are the measures that need the areas, the walk or the
+// placements, which a full run stores and so can give; notStored are the
+// reasons a measure gives when one of them is not stored.
+var (
+	walkMeasures = []string{"files", "placed", "prs_in_one_capability", "capabilities_with_no_pr_or_change", "rules_reasons"}
+	notStored    = []string{"no areas are stored", "no walk is stored", "no placements are stored", "no consolidation is stored"}
+)
 
 // sectionBetween fails unless body holds the measures section once, after
 // the capabilities proposed and before the entries recovered.
@@ -88,9 +81,10 @@ func TestReportWriteAfterStoredPhases(t *testing.T) {
 }
 
 // TestReportFullRunWithoutWrite: a full run that does not write ends with
-// the report, after the recovery's own output, plain and under report in
-// --json. It runs on the proposal path, so each walk measure says why it
-// can't be given and no zero stands in; the exit code is the run's own, 0.
+// the report, after the consolidation's own output, plain and under report
+// in --json. It stores the areas, the walk and the placements, so every
+// measure is given and none says it can't be; the exit code is the run's
+// own, 0.
 func TestReportFullRunWithoutWrite(t *testing.T) {
 	remoteRepo(t)
 	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()))
@@ -98,47 +92,47 @@ func TestReportFullRunWithoutWrite(t *testing.T) {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
 	t.Logf("plain output's report:\n%s", out[max(strings.Index(out, reportHead), 0):])
-	rec, at := strings.Index(out, "## delivery: recovered"), strings.Index(out, reportHead)
-	if rec < 0 || at < rec || strings.Count(out, reportHead) != 1 || strings.Contains(out, sectionHead) {
-		t.Fatalf("the report is not printed once after the recovery:\n%s", out)
+	cons, at := strings.Index(out, "Consolidated 2 capabilities"), strings.Index(out, reportHead)
+	if cons < 0 || at < cons || strings.Count(out, reportHead) != 1 || strings.Contains(out, sectionHead) {
+		t.Fatalf("the report is not printed once after the consolidation:\n%s", out)
 	}
 	report := out[at:]
-	for _, why := range walkMeasures {
-		if !strings.Contains(report, "can't be given: "+why+".") {
-			t.Errorf("the report lacks %q:\n%s", why, report)
+	for _, want := range []string{"Source files: 2\n  in a capability: 2 (100%)\n", "PRs placed: 1 of 1 (100%)\n", "PRs in one capability: ", "Capabilities with no PR or change: 1 of 2 (50%)\n",
+		"Rules, by where their reasons came from: 2\n", "Consolidation:\n", "Spend per phase:\n  discover: ", "\n  walk: "} {
+		if !strings.Contains(report, want) {
+			t.Errorf("the report lacks %q:\n%s", want, report)
 		}
 	}
-	for _, l := range strings.Split(report, "\n") {
-		if strings.Contains(l, "can't be given") && zeroFor.MatchString(l) {
-			t.Errorf("a zero stands in for a measure that can't be given: %q", l)
+	for _, why := range notStored {
+		if strings.Contains(report, why) {
+			t.Errorf("a measure of a full run says %q:\n%s", why, report)
 		}
+	}
+	if !strings.HasSuffix(errOut, "physa init: this run spent 81k tokens.\n") {
+		t.Errorf("stderr does not end with the run's spend:\n%s", errOut)
 	}
 
 	remoteRepo(t)
 	code, out, errOut = runInit(fullEnv(t, onePR(), newRoutedAgent()), "--json")
 	var doc struct {
-		Recovery json.RawMessage
-		Report   map[string]map[string]any
+		Recovery, Consolidation json.RawMessage
+		Report                  map[string]map[string]any
 	}
-	if code != 0 || json.Unmarshal([]byte(out), &doc) != nil || doc.Recovery == nil {
+	if code != 0 || json.Unmarshal([]byte(out), &doc) != nil || doc.Recovery == nil || doc.Consolidation == nil {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
 	js, _ := json.MarshalIndent(doc.Report, "", "  ")
 	t.Logf("--json report:\n%s", js)
-	for key, why := range walkMeasures {
-		if m := doc.Report[key]; len(m) != 1 || m["cant_be_given"] != why {
-			t.Errorf("report.%s = %v, want only cant_be_given %q", key, m, why)
+	for _, key := range append([]string{"consolidation", "spend"}, walkMeasures...) {
+		if m := doc.Report[key]; len(m) == 0 || m["cant_be_given"] != nil {
+			t.Errorf("report.%s = %v, want the measure", key, m)
 		}
-	}
-	if s := doc.Report["spend"]; s["phases"] == nil || s["cant_be_given"] != nil {
-		t.Errorf("report.spend = %v, want the phases", s)
 	}
 }
 
-// TestReportFullRunWritingOnTheProposalPath: a full run with --write shows
-// the report through the body alone, its walk measures saying why they
-// can't be given.
-func TestReportFullRunWritingOnTheProposalPath(t *testing.T) {
+// TestReportFullRunWriting: a full run with --write shows the report through
+// the body alone, its walk measures given.
+func TestReportFullRunWriting(t *testing.T) {
 	remoteRepo(t)
 	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write")
 	if code != 0 {
@@ -148,8 +142,12 @@ func TestReportFullRunWritingOnTheProposalPath(t *testing.T) {
 	if strings.Contains(out, reportHead) {
 		t.Errorf("--write printed the report beside the body's section:\n%s", out)
 	}
-	if !strings.Contains(out, "- PRs in one capability: can't be given: no walk is stored.\n") {
-		t.Errorf("the section lacks the walk measure's reason:\n%s", out)
+	if !strings.Contains(out, "- PRs in one capability: ") || strings.Contains(out, "is stored") {
+		t.Errorf("the section lacks the walk's measures:\n%s", out)
+	}
+	inOrder(t, errOut, "physa init: this run spent ")
+	if strings.Contains(errOut[strings.Index(errOut, "physa init: this run spent "):], "physa init: recovering") {
+		t.Errorf("the run's spend was said before recovery ended:\n%s", errOut)
 	}
 }
 

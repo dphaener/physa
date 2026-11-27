@@ -19,9 +19,9 @@ import (
 	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfolder"
-	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/pathlint"
 	"github.com/dphaener/physa/internal/place"
+	"github.com/dphaener/physa/internal/productpromise"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/recovering"
 	"github.com/dphaener/physa/internal/recoverinput"
@@ -31,10 +31,16 @@ import (
 )
 
 var (
-	gatherAt   = time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+	gatherAt = time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+	// proposedAt is when an earlier physa stored a proposal, which rows it
+	// recovered from it carry as their ProposalAt.
 	proposedAt = time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
+	walkedAt   = time.Date(2026, 11, 20, 11, 0, 0, 0, time.UTC)
 	runAt      = time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
 )
+
+// promise is the product's promise the test store's areas state.
+const promise = "People keep their notes and find them again."
 
 const (
 	idA = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
@@ -147,17 +153,17 @@ func (s *fakeSession) Wait() (adapter.Result, error) {
 	return adapter.Result{Text: s.step.text, Model: "fake-1", SessionID: s.spec.SessionID, Tokens: t}, s.step.err
 }
 
-// fakeStore holds a gather, a proposal, a walk with its placement and a
+// fakeStore holds a gather, the areas, a walk with its placement and a
 // seed, each nil when not stored, and what was put in it.
 type fakeStore struct {
-	gather   store.Gather
-	proposal *initrecord.Proposal
-	walk     *initrecord.Walk
-	place    *initrecord.Place
-	seed     *uint64
-	seeds    []uint64
-	puts     [][]initrecord.Recovered
-	rows     []initrecord.Recovered // what init's record already holds
+	gather store.Gather
+	areas  *initrecord.Areas
+	walk   *initrecord.Walk
+	place  *initrecord.Place
+	seed   *uint64
+	seeds  []uint64
+	puts   [][]initrecord.Recovered
+	rows   []initrecord.Recovered // what init's record already holds
 }
 
 func (s *fakeStore) Recovered(ctx context.Context) ([]initrecord.Recovered, error) {
@@ -194,11 +200,11 @@ func (s *fakeStore) Gathered(ctx context.Context) (store.Gather, bool, error) {
 	return s.gather, true, nil
 }
 
-func (s *fakeStore) Proposed(ctx context.Context) (initrecord.Proposal, bool, error) {
-	if s.proposal == nil {
-		return initrecord.Proposal{}, false, nil
+func (s *fakeStore) Areas(ctx context.Context) (initrecord.Areas, bool, error) {
+	if s.areas == nil {
+		return initrecord.Areas{}, false, nil
 	}
-	return *s.proposal, true, nil
+	return *s.areas, true, nil
 }
 
 func (s *fakeStore) PutRecovered(ctx context.Context, rs []initrecord.Recovered) error {
@@ -223,26 +229,57 @@ func testGather() store.Gather {
 	}
 }
 
-// names are the proposed capabilities; each is shown by #12 but search,
-// which #7 shows.
+// names are the walk's capabilities, each in an area of its own; the
+// placements give each #12 and a1b2c3d but search, which has #7.
 var names = []string{"export", "search", "sharing", "sync", "tags"}
 
-func testStore(t *testing.T) *fakeStore {
+// stored is a fakeStore holding the gather, areas stating the product's
+// promise, and a walk of caps (name and area) with its placements.
+func stored(t *testing.T, caps [][2]string, placed []place.CapabilityPlaced) *fakeStore {
 	t.Helper()
-	var caps []mapping.Capability
-	for _, n := range names {
-		c := mapping.Capability{Name: n, Promise: "People can rely on " + n + ".", ShownBy: []string{"#12"}}
-		if n == "search" {
-			c.ShownBy = []string{"#7"}
-		}
-		caps = append(caps, c)
+	var wr walk.Record
+	for _, c := range caps {
+		wr.Capabilities = append(wr.Capabilities, walk.CapabilityRecord{Area: c[1],
+			Capability: walk.Capability{Name: c[0], Promise: "People can rely on " + c[0] + ".", Sources: []string{"internal/" + c[0] + "/" + c[0] + ".go"}, Tests: []string{"internal/" + c[0] + "/" + c[0] + "_test.go"}},
+			Entries:    walk.Entries{Tests: []string{"internal/" + c[0] + "/"}, Docs: []string{"docs/" + c[0] + ".md"}}})
 	}
-	body, err := json.Marshal(mapping.Stored{Proposal: mapping.Proposal{
-		Product: mapping.Product{Promise: "People keep their notes and find them again."}, Capabilities: caps}})
+	return &fakeStore{gather: testGather(), areas: areasStating(t, promise), walk: &initrecord.Walk{AreasAt: gatherAt, At: walkedAt, Body: marshal(t, wr)},
+		place: &initrecord.Place{WalkAt: walkedAt, At: walkedAt.Add(time.Minute), Body: marshal(t, place.Record{ByCapability: placed})}}
+}
+
+// areasStating is a stored areas row whose body states promise for the
+// product, or no product when promise is empty.
+func areasStating(t *testing.T, promise string) *initrecord.Areas {
+	t.Helper()
+	body := map[string]any{"areas": []any{}}
+	if promise != "" {
+		body["product"] = productpromise.Product{Name: "Notes", Promise: promise}
+	}
+	return &initrecord.Areas{GatherAt: gatherAt, At: gatherAt.Add(time.Minute), Body: marshal(t, body)}
+}
+
+func marshal(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fakeStore{gather: testGather(), proposal: &initrecord.Proposal{GatherAt: gatherAt, At: proposedAt, Body: body}}
+	return b
+}
+
+func testStore(t *testing.T) *fakeStore {
+	t.Helper()
+	var caps [][2]string
+	var placed []place.CapabilityPlaced
+	for _, n := range names {
+		caps = append(caps, [2]string{n, n})
+		p := place.CapabilityPlaced{Capability: n, Area: n, PRs: []int{12}, Changes: []string{idA}}
+		if n == "search" {
+			p = place.CapabilityPlaced{Capability: n, Area: n, PRs: []int{7}}
+		}
+		placed = append(placed, p)
+	}
+	return stored(t, caps, placed)
 }
 
 // reply wraps a capability text and terms as a session's answer.
@@ -357,7 +394,7 @@ func TestHappyPathStoresBothCapabilities(t *testing.T) {
 	if !spec.ReadOnly || spec.PromptOnly || spec.Resume || spec.SessionID != ex.SessionID || spec.Dir != h.root {
 		t.Errorf("spec %+v", spec)
 	}
-	if rep.From != "proposal" || !strings.Contains(h.progress.String(), "at most 3 at once, from the proposal\n") || len(h.store.seeds) != 0 {
+	if rep.From != "walk" || !strings.Contains(h.progress.String(), "at most 3 at once, from the walk and placements\n") || len(h.store.seeds) != 0 {
 		t.Errorf("from %q, seeds %v, progress:\n%s", rep.From, h.store.seeds, h.progress)
 	}
 	if !strings.Contains(spec.Prompt, "#12, merged") || strings.Contains(spec.Prompt, "#7, merged") || !strings.Contains(spec.System, "Today's date: 2026-11-21") {
@@ -372,7 +409,7 @@ func TestHappyPathStoresBothCapabilities(t *testing.T) {
 	}
 	row := h.store.puts[0][0]
 	if row.Capability != "export" || row.Status != StatusRecovered || row.File != ex.File || row.Terms != ex.Terms ||
-		!row.ProposalAt.Equal(proposedAt) || !row.At.Equal(runAt) || row.SessionID != ex.SessionID || row.Model != "fake-1" ||
+		!row.ProposalAt.Equal(walkedAt) || !row.At.Equal(runAt) || row.SessionID != ex.SessionID || row.Model != "fake-1" ||
 		row.Attempts != 1 || row.Appetite != 0 || row.Input != ex.Tokens.Input || row.Output != 500 {
 		t.Errorf("row %+v", row)
 	}
@@ -498,6 +535,7 @@ func TestNeverMoreThanConcurrencyAtOnce(t *testing.T) {
 		scripts[n] = []step{{text: reply(good(n+"-rule"), "")}}
 	}
 	h := newHarness(t, scripts)
+	h.session.Only = names
 	h.agent.started = make(chan struct{}, len(names))
 	h.agent.gate = make(chan struct{})
 	done := make(chan Report)
@@ -555,11 +593,11 @@ func TestRefusalsStartNoAgent(t *testing.T) {
 			t.Errorf("resolved %d, started %d, puts %d", h.resolved, h.agent.starts(), len(h.store.puts))
 		}
 	})
-	t.Run("no proposal", func(t *testing.T) {
+	t.Run("no walk", func(t *testing.T) {
 		h := newHarness(t, nil)
-		h.store.proposal = nil
+		h.store.walk = nil
 		_, err := Run(context.Background(), h.store, h.session)
-		if !errors.Is(err, ErrNoProposal) || err.Error() != "nothing proposed yet; run physa init --propose first" {
+		if !errors.Is(err, ErrNoWalk) || err.Error() != "nothing walked and placed yet; run physa init --areas, --walk and --place first" {
 			t.Errorf("error %v", err)
 		}
 		if h.resolved != 0 || h.agent.starts() != 0 {
@@ -777,7 +815,7 @@ func TestProgressLineCountsCapabilitiesAndTokens(t *testing.T) {
 	h.session.Only = []string{"export"}
 	h.run(t)
 	line := strings.SplitN(h.progress.String(), "\n", 2)[0]
-	if want := "physa init: recovering 1 capability, at most 3 at once, from the proposal"; line != want {
+	if want := "physa init: recovering 1 capability, at most 3 at once, from the walk and placements"; line != want {
 		t.Errorf("progress = %q, want %q", line, want)
 	}
 }
@@ -867,16 +905,12 @@ func bigExport(t *testing.T, h *harness) {
 		h.store.gather.PRs = append(h.store.gather.PRs, store.GatheredPR{Number: n, Title: fmt.Sprintf("Export part %d", n),
 			Body: fmt.Sprintf("marker-%d ", n) + strings.Repeat("Exports hold every note. ", 2400), MergedAt: gatherAt.Add(-time.Duration(n) * time.Minute)})
 	}
-	var stored mapping.Stored
-	if err := json.Unmarshal(h.store.proposal.Body, &stored); err != nil {
+	var pr place.Record
+	if err := json.Unmarshal(h.store.place.Body, &pr); err != nil {
 		t.Fatal(err)
 	}
-	stored.Proposal.Capabilities[0].ShownBy = []string{"#12", "#21", "#22", "#23"}
-	body, err := json.Marshal(stored)
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.store.proposal.Body = body
+	pr.ByCapability[0].PRs = []int{12, 21, 22, 23}
+	h.store.place.Body = marshal(t, pr)
 	h.session.Only = []string{"export"}
 }
 
@@ -947,8 +981,7 @@ func TestARefusalAsTooLongLaysTheSourcesIntoShares(t *testing.T) {
 // recoveringSystem is the system prompt every capability of h's run shares.
 func recoveringSystem(t *testing.T, h *harness) string {
 	t.Helper()
-	system, _ := recovering.Split(recovering.Input{Product: "People keep their notes and find them again.", Date: runAt,
-		Sources: reading.Of(h.store.gather, recovering.Reads)})
+	system, _ := recovering.Split(recovering.Input{Product: promise, Date: runAt, Footprint: &recovering.Footprint{}})
 	return system
 }
 
@@ -964,47 +997,25 @@ func TestASourceLargerThanAShareFailsItsCapabilityNamed(t *testing.T) {
 	}
 }
 
-var walkedAt = time.Date(2026, 11, 20, 11, 0, 0, 0, time.UTC)
-
 // walkCaps are the walk's capabilities and their areas, across three areas.
 var walkCaps = [][2]string{{"export", "notes-out"}, {"search", "finding"}, {"tags", "finding"}, {"sharing", "people"}}
 
-// walkHarness is a harness whose store holds a walk and its placement, and
-// a proposal only when proposed: export owns internal/export/export.go, of
-// 40 lines, with #12 and a1b2c3d placed on it, and search has #7.
-func walkHarness(t *testing.T, scripts map[string][]step, proposed bool) *harness {
+// walkHarness is a harness whose store holds a walk across three areas and
+// its placement: export owns internal/export/export.go, of 40 lines, with
+// #12 and a1b2c3d placed on it, and search has #7.
+func walkHarness(t *testing.T, scripts map[string][]step) *harness {
 	t.Helper()
 	h := newHarness(t, scripts)
-	if !proposed {
-		h.store.proposal = nil
-	}
-	var wr walk.Record
-	for _, c := range walkCaps {
-		src := "internal/" + c[0] + "/" + c[0] + ".go"
-		wr.Capabilities = append(wr.Capabilities, walk.CapabilityRecord{Area: c[1],
-			Capability: walk.Capability{Name: c[0], Promise: "People can rely on " + c[0] + ".", Sources: []string{src}, Tests: []string{"internal/" + c[0] + "/" + c[0] + "_test.go"}},
-			Entries:    walk.Entries{Tests: []string{"internal/" + c[0] + "/"}, Docs: []string{"docs/" + c[0] + ".md"}}})
-	}
+	h.store = stored(t, walkCaps, []place.CapabilityPlaced{
+		{Capability: "export", Area: "notes-out", PRs: []int{12}, Changes: []string{idA}},
+		{Capability: "search", Area: "finding", PRs: []int{7}},
+	})
 	if err := os.MkdirAll(filepath.Join(h.root, "internal", "export"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(h.root, "internal", "export", "export.go"), []byte(strings.Repeat("package export\n", 40)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	pr := place.Record{ByCapability: []place.CapabilityPlaced{
-		{Capability: "export", Area: "notes-out", PRs: []int{12}, Changes: []string{idA}},
-		{Capability: "search", Area: "finding", PRs: []int{7}},
-	}}
-	wb, err := json.Marshal(wr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pb, err := json.Marshal(pr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.store.walk = &initrecord.Walk{AreasAt: gatherAt, At: walkedAt, Body: wb}
-	h.store.place = &initrecord.Place{WalkAt: walkedAt, At: walkedAt.Add(time.Minute), Body: pb}
 	return h
 }
 
@@ -1051,7 +1062,7 @@ func runNames(rep Report) []string {
 // read-only session in the repo's root, given its area, files and placed
 // PRs and changes.
 func TestWalkRecoversEveryCapabilityReadOnly(t *testing.T) {
-	h := walkHarness(t, goodScripts(1), true)
+	h := walkHarness(t, goodScripts(1))
 	before := h.rootFiles(t)
 	rep := h.run(t)
 
@@ -1074,11 +1085,11 @@ func TestWalkRecoversEveryCapabilityReadOnly(t *testing.T) {
 			t.Errorf("export's message lacks %q:\n%s", want, ex.Prompt)
 		}
 	}
-	if strings.Contains(ex.Prompt, "#7, merged") || strings.Contains(ex.Prompt, "The proposal's questions") {
-		t.Error("export's message holds search's PR or the proposal's form")
+	if strings.Contains(ex.Prompt, "#7, merged") {
+		t.Error("export's message holds search's PR")
 	}
-	if !strings.Contains(ex.System, "People keep their notes and find them again.") {
-		t.Error("the product's promise is the stored proposal's")
+	if !strings.Contains(ex.System, productpromise.Block(promise)) {
+		t.Error("the product's promise is not the stored areas'")
 	}
 	if !strings.Contains(h.progress.String(), "physa init: recovering 4 capabilities, at most 3 at once, from the walk and placements\n") {
 		t.Errorf("progress:\n%s", h.progress)
@@ -1094,24 +1105,11 @@ func TestWalkRecoversEveryCapabilityReadOnly(t *testing.T) {
 	t.Logf("from %q: %v; export's spec ReadOnly %v, Dir is root %v", rep.From, statuses(rep), ex.ReadOnly, ex.Dir == h.root)
 }
 
-// TestWalkWithoutProposalUsesTheStandIn checks that the walk path runs with
-// no proposal stored, with "Not yet stated." for the product's promise.
-func TestWalkWithoutProposalUsesTheStandIn(t *testing.T) {
-	h := walkHarness(t, goodScripts(1), false)
-	rep := h.run(t)
-	if rep.From != "walk" || !rep.Whole() || len(rep.Capabilities) != len(walkCaps) {
-		t.Fatalf("from %q, %v", rep.From, statuses(rep))
-	}
-	if sys := h.agent.specs["export"][0].System; !strings.Contains(sys, "Not yet stated.") {
-		t.Error("the product's promise is not the stand-in")
-	}
-}
-
 // TestWalkOrderFollowsTheStoredSeed checks that a walk run goes in
 // recovery's order for the gather's seed, stored before the first session,
 // and that a later run reads the stored seed and keeps its order.
 func TestWalkOrderFollowsTheStoredSeed(t *testing.T) {
-	h := walkHarness(t, goodScripts(1), true)
+	h := walkHarness(t, goodScripts(1))
 	h.agent.onStart = func(string, int) {
 		if h.store.seed == nil {
 			t.Error("a session started before the seed was stored")
@@ -1142,7 +1140,7 @@ func TestWalkOrderFollowsTheStoredSeed(t *testing.T) {
 // TestWalkOnlyKeepsItsOrder checks that Only names walk capabilities, in
 // its order and each once, and that a name the walk lacks starts nothing.
 func TestWalkOnlyKeepsItsOrder(t *testing.T) {
-	h := walkHarness(t, goodScripts(1), true)
+	h := walkHarness(t, goodScripts(1))
 	h.session.Only = []string{"tags", "export", "tags"}
 	rep := h.run(t)
 	if got := statuses(rep); !reflect.DeepEqual(got, []string{"tags: recovered", "export: recovered"}) || rep.From != "walk" {
@@ -1152,7 +1150,7 @@ func TestWalkOnlyKeepsItsOrder(t *testing.T) {
 		t.Errorf("%d sessions, seeds %v", h.agent.starts(), h.store.seeds)
 	}
 
-	h = walkHarness(t, nil, true)
+	h = walkHarness(t, nil)
 	h.session.Only = []string{"export", "billing"}
 	_, err := Run(context.Background(), h.store, h.session)
 	if err == nil || !strings.Contains(err.Error(), `no capability "billing" in the walk; it found: export, search, tags, sharing`) {
@@ -1163,19 +1161,14 @@ func TestWalkOnlyKeepsItsOrder(t *testing.T) {
 	}
 }
 
-// TestWalkWithoutPlacementRecoversFromTheProposal checks that a walk with
-// no placement stored leaves recovery on the proposal.
-func TestWalkWithoutPlacementRecoversFromTheProposal(t *testing.T) {
-	h := walkHarness(t, map[string][]step{"export": {{text: reply(good("export-rule"), "")}}}, true)
+// TestWalkWithoutPlacementIsErrNoWalk checks that a walk with no
+// placement stored is not recovered: it is ErrNoWalk, with no session.
+func TestWalkWithoutPlacementIsErrNoWalk(t *testing.T) {
+	h := walkHarness(t, map[string][]step{"export": {{text: reply(good("export-rule"), "")}}})
 	h.store.place = nil
-	h.session.Only = []string{"export"}
-	rep := h.run(t)
-	if rep.From != "proposal" || strings.Contains(h.agent.specs["export"][0].Prompt, "## Its files") {
-		t.Errorf("from %q", rep.From)
-	}
-	h.store.proposal = nil
-	if _, err := Run(context.Background(), h.store, h.session); !errors.Is(err, ErrNoProposal) {
-		t.Errorf("a walk with no placement and no proposal: %v", err)
+	_, err := Run(context.Background(), h.store, h.session)
+	if !errors.Is(err, ErrNoWalk) || strings.Contains(err.Error(), "earlier physa") || h.resolved != 0 || h.agent.starts() != 0 {
+		t.Errorf("a walk with no placement: %v; resolved %d, started %d", err, h.resolved, h.agent.starts())
 	}
 }
 
@@ -1188,7 +1181,7 @@ func TestWalkRetryDropsBadAnchorAndPath(t *testing.T) {
 	bad := reply("# Export\n\n## Rules\n\n"+rule("export-deleted")+
 		"\n### Exports are zipped\n`export-zipped` · from internal/export/zip.go\nAn export is one zip file.\nBecause: the code writes one.\n"+
 		"\n### Exports hold every note\n`export-every` · #12\nThe writer in internal/export/export.go reads every note.\nBecause: a reviewer asked for it in #12.\n", "")
-	h := walkHarness(t, map[string][]step{"export": {{text: bad}, {text: bad}, {text: bad}}}, true)
+	h := walkHarness(t, map[string][]step{"export": {{text: bad}, {text: bad}, {text: bad}}})
 	h.session.Only = []string{"export"}
 	rep := h.run(t)
 
@@ -1229,7 +1222,7 @@ func TestRetryWithoutResumeStartsAFreshSession(t *testing.T) {
 	h := walkHarness(t, map[string][]step{"export": {
 		{text: reply("# Export\n\n## Rules\n\n"+bare("export-deleted"), "")},
 		{text: reply(good("export-deleted"), "")},
-	}}, true)
+	}})
 	h.agent.noResume = true
 	h.session.Only = []string{"export"}
 	rep := h.run(t)
@@ -1261,7 +1254,7 @@ func rowOf(name, status string, at time.Time) initrecord.Recovered {
 // walk, in the seeded order, says how many it kept, leaves the stored rows
 // of the others alone, and reports a whole run.
 func TestContinueSkipsWhatIsAlreadyRecovered(t *testing.T) {
-	h := walkHarness(t, goodScripts(1), true)
+	h := walkHarness(t, goodScripts(1))
 	order := walkOrder(t, h, recoverinput.Seed(h.store.gather))
 	h.store.rows = []initrecord.Recovered{rowOf(order[1], StatusRecovered, walkedAt), rowOf(order[3], StatusRecovered, walkedAt)}
 	rep := h.run(t)
@@ -1289,7 +1282,7 @@ func TestContinueSkipsWhatIsAlreadyRecovered(t *testing.T) {
 // TestContinueRecoversAgainWhatIsNotFromThisSource checks that rows from an
 // earlier walk, failed rows and not yet recovered rows are recovered again.
 func TestContinueRecoversAgainWhatIsNotFromThisSource(t *testing.T) {
-	h := walkHarness(t, goodScripts(1), true)
+	h := walkHarness(t, goodScripts(1))
 	order := walkOrder(t, h, recoverinput.Seed(h.store.gather))
 	h.store.rows = []initrecord.Recovered{
 		rowOf(order[0], StatusRecovered, walkedAt.Add(-time.Hour)),
@@ -1309,7 +1302,7 @@ func TestContinueRecoversAgainWhatIsNotFromThisSource(t *testing.T) {
 // TestContinueOnlyRecoversANamedCapabilityAgain checks that --only recovers a
 // capability already recovered.
 func TestContinueOnlyRecoversANamedCapabilityAgain(t *testing.T) {
-	h := walkHarness(t, goodScripts(1), true)
+	h := walkHarness(t, goodScripts(1))
 	order := walkOrder(t, h, recoverinput.Seed(h.store.gather))
 	h.store.rows = []initrecord.Recovered{rowOf(order[0], StatusRecovered, walkedAt)}
 	h.session.Only = []string{order[0]}
@@ -1321,7 +1314,7 @@ func TestContinueOnlyRecoversANamedCapabilityAgain(t *testing.T) {
 // TestContinueWithEverythingRecoveredRunsNothing checks that when every
 // capability is already recovered no agent resolves and the report is whole.
 func TestContinueWithEverythingRecoveredRunsNothing(t *testing.T) {
-	h := walkHarness(t, goodScripts(1), true)
+	h := walkHarness(t, goodScripts(1))
 	for _, n := range walkOrder(t, h, recoverinput.Seed(h.store.gather)) {
 		h.store.rows = append(h.store.rows, rowOf(n, StatusRecovered, walkedAt))
 	}
@@ -1464,5 +1457,123 @@ func TestCancelStartsNoRetry(t *testing.T) {
 	}
 	if len(h.store.puts) != 1 || h.store.puts[0][0].Status != StatusNotYet {
 		t.Errorf("stored %+v", h.store.puts)
+	}
+}
+
+// scratchPromises reads the product's promise from the index of every
+// scratch map a check has open now.
+func scratchPromises(t *testing.T) []string {
+	t.Helper()
+	dirs, err := filepath.Glob(filepath.Join(os.TempDir(), "physa-check-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, d := range dirs {
+		b, err := os.ReadFile(filepath.Join(d, filepath.FromSlash(mapfolder.ProductDir), mapfolder.IndexFile))
+		if err == nil {
+			out = append(out, string(b))
+		}
+	}
+	return out
+}
+
+// TestProductPromiseReachesEverySessionAndTheCheck checks that the
+// promise the stored areas state is given to every capability's session,
+// in the form every init session reads it, and is the product's promise of
+// the scratch map each capability is checked in. A rule anchored to #99,
+// which the gather lacks, makes the check ask whether the PR exists while
+// its scratch map is open, and the test reads the map then.
+func TestProductPromiseReachesEverySessionAndTheCheck(t *testing.T) {
+	const stated = "Teams keep the notes they write and find them again by any word."
+	scripts := goodScripts(1)
+	scripts["export"] = []step{{text: reply("# Export\n\n## Rules\n\n"+rule("export-rule")+
+		"\n### Exports name PR 99\n`export-ninety-nine` · #99\nSee it.\nBecause: it says so.\n", "")}}
+	h := walkHarness(t, scripts)
+	h.store.areas = areasStating(t, stated)
+	var seen []string
+	h.session.PRExists = func(_ context.Context, n int) (bool, error) {
+		seen = append(seen, scratchPromises(t)...)
+		return n == 99, nil
+	}
+	rep := h.run(t)
+	if len(rep.Capabilities) != len(walkCaps) || !rep.Whole() {
+		t.Fatalf("outcomes %v", statuses(rep))
+	}
+	block := productpromise.Block(stated)
+	for _, c := range walkCaps {
+		spec := h.agent.specs[c[0]][0]
+		if !strings.Contains(spec.System, block) || strings.Contains(spec.System+spec.Prompt, productpromise.NoPromise) {
+			t.Errorf("%s's session lacks the stated promise:\n%s", c[0], spec.System[strings.LastIndex(spec.System, "## The product"):])
+		}
+	}
+	if !slices.ContainsFunc(seen, func(index string) bool { return strings.Contains(index, "---\npromise: "+stated+"\n---") }) {
+		t.Errorf("no scratch map held the stated promise; read %q", seen)
+	}
+	t.Logf("every session's system prompt holds:\n%s", block)
+}
+
+// TestProductPromiseNotStatedIsNotYetStated checks that with no areas
+// stored, or areas that state no product, every session and the check are
+// given "Not yet stated.".
+func TestProductPromiseNotStatedIsNotYetStated(t *testing.T) {
+	for name, areas := range map[string]*initrecord.Areas{"no areas": nil, "no product": areasStating(t, "")} {
+		h := walkHarness(t, goodScripts(1))
+		h.store.areas = areas
+		rep := h.run(t)
+		if rep.From != "walk" || !rep.Whole() || len(rep.Capabilities) != len(walkCaps) {
+			t.Fatalf("%s: from %q, %v", name, rep.From, statuses(rep))
+		}
+		for _, c := range walkCaps {
+			if sys := h.agent.specs[c[0]][0].System; !strings.Contains(sys, productpromise.Block(productpromise.NoPromise)) {
+				t.Errorf("%s: %s's session is not given the stand-in", name, c[0])
+			}
+		}
+	}
+	for _, product := range []string{"", " \n "} {
+		dir, _, err := checker{product: product, root: t.TempDir()}.scratch("export", recovering.File("export", "Notes leave the product.", ""), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(mapfolder.ProductDir), mapfolder.IndexFile))
+		if err != nil || !strings.HasPrefix(string(b), "---\npromise: Not yet stated.\n---") {
+			t.Errorf("product %q: the scratch map's index %q, %v", product, b, err)
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			t.Error(err)
+		}
+	}
+}
+
+// TestProposalRowsWithoutAWalkAreErrNoWalk checks that an old record, rows
+// an earlier physa recovered from a proposal and no walk, is ErrNoWalk,
+// saying those capabilities can no longer be written, and starts nothing.
+func TestProposalRowsWithoutAWalkAreErrNoWalk(t *testing.T) {
+	h := newHarness(t, goodScripts(1))
+	h.store.walk, h.store.place = nil, nil
+	h.store.rows = []initrecord.Recovered{rowOf("export", StatusRecovered, proposedAt), rowOf("search", StatusFailed, proposedAt)}
+	_, err := Run(context.Background(), h.store, h.session)
+	want := "nothing walked and placed yet; run physa init --areas, --walk and --place first; " +
+		"the capabilities an earlier physa recovered from a proposal can no longer be written; a new physa init replaces them"
+	if !errors.Is(err, ErrNoWalk) || err.Error() != want {
+		t.Errorf("error %v", err)
+	}
+	if h.resolved != 0 || h.agent.starts() != 0 || len(h.store.puts) != 0 || len(h.store.seeds) != 0 {
+		t.Errorf("resolved %d, started %d, puts %d, seeds %v", h.resolved, h.agent.starts(), len(h.store.puts), h.store.seeds)
+	}
+	t.Logf("error: %v", err)
+}
+
+// TestProposalRowsWithAWalkAreNotKept checks that rows recovered from a
+// proposal count for nothing once a walk is stored: every capability of the
+// walk is recovered, and none is said to be kept.
+func TestProposalRowsWithAWalkAreNotKept(t *testing.T) {
+	h := walkHarness(t, goodScripts(1))
+	for _, c := range walkCaps {
+		h.store.rows = append(h.store.rows, rowOf(c[0], StatusRecovered, proposedAt))
+	}
+	rep := h.run(t)
+	if !slices.Equal(runNames(rep), walkOrder(t, h, recoverinput.Seed(h.store.gather))) || strings.Contains(h.progress.String(), "already recovered") {
+		t.Errorf("ran %v; progress:\n%s", runNames(rep), h.progress)
 	}
 }

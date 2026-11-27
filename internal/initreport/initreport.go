@@ -16,7 +16,6 @@ import (
 	"github.com/dphaener/physa/internal/areas"
 	"github.com/dphaener/physa/internal/consolidate"
 	"github.com/dphaener/physa/internal/initrecord"
-	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/place"
 	"github.com/dphaener/physa/internal/recoverinput"
 	"github.com/dphaener/physa/internal/store"
@@ -148,7 +147,8 @@ type PhaseSpend struct {
 }
 
 // stored is one input of init's record: ok when stored and read, bad
-// saying why when stored and unreadable.
+// saying why when stored and unreadable, or, for the rows, when what they
+// are listed by is not stored.
 type stored[T any] struct {
 	v   T
 	ok  bool
@@ -194,13 +194,23 @@ func Load(ctx context.Context, st *initrecord.Store) Report {
 	r.walk = got(w, ok, err, badWalk)
 	p, ok, err := place.Load(ctx, st)
 	r.place = got(p, ok, err, badPlace)
-	rows, err := written(ctx, st)
+	rows, listed, err := written(ctx, st)
 	r.rows = got(rows, len(rows) > 0, err, badRows)
+	if err == nil && !listed { // the rows --write would write are listed by the walk and placements
+		r.rows.bad = noPlace
+		if !r.walk.ok && r.walk.bad == "" {
+			r.rows.bad = noWalk
+		}
+	}
 	c, ok, err := consolidate.Load(ctx, st)
+	bad := badConsolidation
 	if err == nil && ok {
 		r.current, err = consolidate.Current(ctx, st)
+		if err != nil && r.areas.bad != "" {
+			bad = badAreas // whether it is current turns on the promise the areas state
+		}
 	}
-	r.cons = got(c, ok, err, badConsolidation)
+	r.cons = got(c, ok, err, bad)
 	s, err := st.Spending(ctx)
 	r.spent = got(s, len(s) > 0, err, badSpend)
 	return Report{Files: r.files(), Placed: r.placed(), OneCapability: r.oneCapability(), Unplaced: r.unplaced(),
@@ -208,18 +218,19 @@ func Load(ctx context.Context, st *initrecord.Store) Report {
 }
 
 // written is the recovered rows with a file that `--write` would write:
-// those of the stored walk when placements are stored, else every row.
-func written(ctx context.Context, st *initrecord.Store) ([]initrecord.Recovered, error) {
-	src, _, err := recoverinput.Listed(ctx, st, mapping.Proposal{}, true)
-	if err != nil {
-		return nil, err
+// those recovered from the stored walk, and none when the walk or the
+// placements are not stored (listed false), so a row of an earlier source
+// is never read.
+func written(ctx context.Context, st *initrecord.Store) (rows []initrecord.Recovered, listed bool, err error) {
+	src, listed, err := recoverinput.Listed(ctx, st)
+	if err != nil || !listed {
+		return nil, listed, err
 	}
-	rows, err := st.Recovered(ctx)
-	var out []initrecord.Recovered
-	for _, row := range rows {
+	all, err := st.Recovered(ctx)
+	for _, row := range all {
 		if row.File != "" && src.Holds(row.ProposalAt) {
-			out = append(out, row)
+			rows = append(rows, row)
 		}
 	}
-	return out, err
+	return rows, true, err
 }

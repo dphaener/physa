@@ -15,23 +15,19 @@ import (
 	"github.com/dphaener/physa/internal/areas"
 	"github.com/dphaener/physa/internal/command"
 	"github.com/dphaener/physa/internal/consolidate"
-	"github.com/dphaener/physa/internal/coverage"
 	"github.com/dphaener/physa/internal/discovery"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/gather/merged"
 	"github.com/dphaener/physa/internal/initcap"
 	"github.com/dphaener/physa/internal/initrecord"
-	"github.com/dphaener/physa/internal/initreport"
 	"github.com/dphaener/physa/internal/interrupt"
 	"github.com/dphaener/physa/internal/mapped"
-	"github.com/dphaener/physa/internal/mapping"
-	"github.com/dphaener/physa/internal/newcodebase"
 	"github.com/dphaener/physa/internal/place"
 	"github.com/dphaener/physa/internal/preflight"
+	"github.com/dphaener/physa/internal/productpromise"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/recoveryreport"
-	"github.com/dphaener/physa/internal/shares"
 	"github.com/dphaener/physa/internal/spend"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
@@ -67,10 +63,9 @@ type Env struct {
 // order; --write then writes the map to physa/init. No phase has an appetite or a circuit breaker
 // (design 10 Q6); a --cap holds every session to it (initcap). Every session is weighed through a
 // spend.Meter, and the prices it learns are saved to the machine's spend cache. It returns 0 when
-// all asked was done, 1 when it stopped before proposing for a source larger than one share of
-// propose, or before a session that would pass the cap, or some capabilities are not yet recovered
-// (still written with --write), or, for --consolidate, a
-// session of consolidation was left as it was (see consolidate.Result.ExitCode; a write then still
+// all asked was done, 1 when it stopped before a session that would pass the cap, or some
+// capabilities are not yet recovered (--recover --write still writes them), or a session of
+// consolidation was left as it was (see consolidate.Result.ExitCode; a write then still
 // happens), 2 when it could not (a capability failed, the map failed its check,
 // the hook was refused, the cap needs usage the agent cannot report), interrupt.Code when ctx was
 // cancelled while a phase ran (it says what was kept and how to continue, in place of the cap's
@@ -107,11 +102,11 @@ func Run(ctx context.Context, o Flags, args, words []string, stdout, stderr io.W
 	r := &run{o: o, env: env, st: initrecord.Of(st), root: root, args: words, stderr: stderr, cache: cache, p: newPrinter(o, stdout), counts: map[string]spend.Count{}}
 	code := 0
 	if o.Cap.Kind != initcap.None { // held to the cap from here on; a code other than 0 ends the run before any phase
-		if r.guard, code = initcap.Start(ctx, initcap.Run{Cap: o.Cap, Agent: r.agent, Cache: cache, Record: r.st, Fresh: o.Full() || o.Gather, Again: initcap.Again(words, false), Say: !o.Full(), Out: stderr}); code != 0 {
+		if r.guard, code = initcap.Start(ctx, initcap.Run{Cap: o.Cap, Agent: r.agent, Cache: cache, Record: r.st, Fresh: o.Full() || o.Gather, Again: initcap.Again(words, ""), Say: !o.Full(), Out: stderr}); code != 0 {
 			return code
 		}
 	}
-	if o.Propose || o.Recover || o.Areas || o.Walk || o.Place || o.Consolidate { // the phases on a stored gather say when the forge stopped it, and still run
+	if o.Recover || o.Areas || o.Walk || o.Place || o.Consolidate { // the phases on a stored gather say when the forge stopped it, and still run
 		preflight.Stored(ctx, stderr, st)
 	}
 	switch {
@@ -123,10 +118,8 @@ func Run(ctx context.Context, o Flags, args, words []string, stdout, stderr io.W
 		code = r.place(ctx)
 	case o.Consolidate:
 		code = r.consolidate(ctx)
-	case o.Propose:
-		code = r.propose(ctx)
 	case o.Recover:
-		code = r.recoverPhase(ctx, r.o.Only, nil)
+		code = r.recoverPhase(ctx)
 	case o.Full():
 		code = r.full(ctx)
 	default:
@@ -143,9 +136,9 @@ func Run(ctx context.Context, o Flags, args, words []string, stdout, stderr io.W
 		}
 	}
 	if r.kept != "" { // interrupted: said in place of the cap's line, and its code wins
-		return interrupt.Say(stderr, r.kept, initcap.Continue(words, r.inRec && o.Full()))
+		return interrupt.Say(stderr, r.kept, initcap.Continue(words, r.phase).String())
 	}
-	code = r.p.done(r.guard.Finish(stderr, code, initcap.Again(words, r.inRec && o.Full())), stderr)
+	code = r.p.done(r.guard.Finish(stderr, code, initcap.Again(words, r.phase)), stderr)
 	if r.skill != "" { // said last, so it is the line left on the screen; it never changes the code
 		fmt.Fprintf(stderr, "physa init: %s\n", r.skill)
 	}
@@ -165,7 +158,7 @@ type run struct {
 	p      *printer
 	skill  string         // the full run's line on the agent's Physa skill, empty for none
 	guard  *initcap.Guard // the agent sessions start on when capped, nil when not
-	inRec  bool           // recovering has started
+	phase  string         // the phase a full run is in once it has gathered, as initcap.Again names it; empty otherwise
 	kept   string         // what an interrupted run kept, empty while it was not interrupted
 
 	once   sync.Once
@@ -239,24 +232,6 @@ func (r *run) gatherInto(ctx context.Context, off string) (store.Gather, gather.
 	return g, sum, err // nil, or the stop of a gather now stored
 }
 
-// propose proposes a map from the stored gather, in one session or in shares, and prints it.
-func (r *run) propose(ctx context.Context) int {
-	from := r.meter.Count()
-	res, err := shares.Propose(ctx, r.st, mapping.Session{Agent: r.agent, Progress: r.stderr, Now: r.env.Now})
-	r.spent(ctx, "propose", from)
-	if err != nil {
-		return r.fail(ctx, interrupt.Nothing("the proposal"), err)
-	}
-	r.p.proposal(res)
-	if g, ok, err := r.st.Gathered(ctx); err == nil && ok { // what recovery reads beyond the citations, and what no capability got
-		_, c := coverage.Place(g, res.Proposal.Capabilities)
-		if coverage.Warn(r.stderr, c); !r.p.json || r.p.multi { // --propose --json prints the proposal alone
-			r.p.value("coverage", coverage.Text(c), c)
-		}
-	}
-	return 0
-}
-
 // areas divides the stored gather's source files into areas, stores them in init's record and prints them.
 func (r *run) areas(ctx context.Context) int {
 	repo, err := r.env.Repo(ctx, ".")
@@ -285,22 +260,29 @@ func (r *run) walk(ctx context.Context) int {
 	return 0
 }
 
-// consolidate consolidates the capabilities recovered from the stored walk, stores the
-// consolidation in init's record and prints it; with --write it then writes everything stored.
+// consolidate is --consolidate: it consolidates and, with --write, then writes everything stored.
 func (r *run) consolidate(ctx context.Context) int {
-	from := r.meter.Count()
-	res, err := consolidate.Run(ctx, r.st, consolidate.Session{Agent: r.agent, Stopped: r.guard.Stopped, Root: r.root,
-		Product: newcodebase.TitleCase(filepath.Base(r.root)), Progress: r.stderr, Now: r.env.Now})
-	r.spent(ctx, "consolidate", from)
-	if err != nil {
-		return r.fail(ctx, interrupt.Nothing("the consolidation"), err)
-	}
-	r.p.emit("consolidation", func(w io.Writer) error { return consolidate.Text(w, res) }, func(w io.Writer) error { return json.NewEncoder(w).Encode(res) })
-	code := res.ExitCode()
-	if r.o.Write {
+	code, ok := r.consolidated(ctx)
+	if ok && r.o.Write {
 		code = max(code, r.writeStored(ctx))
 	}
 	return code
+}
+
+// consolidated consolidates the capabilities recovered from the stored walk, stores the
+// consolidation in init's record and prints it, writing nothing to the repo. ok is false when it
+// stored none: it could not run, or the cap or an interrupt stopped it.
+func (r *run) consolidated(ctx context.Context) (code int, ok bool) {
+	from := r.meter.Count()
+	p, _, _ := productpromise.Stored(ctx, r.st) // unreadable areas: the folder's name, and a write says why
+	res, err := consolidate.Run(ctx, r.st, consolidate.Session{Agent: r.agent, Stopped: r.guard.Stopped, Root: r.root,
+		Product: productName(p, r.root), Progress: r.stderr, Now: r.env.Now})
+	r.spent(ctx, "consolidate", from)
+	if err != nil {
+		return r.fail(ctx, interrupt.Nothing("the consolidation"), err), false
+	}
+	r.p.emit("consolidation", func(w io.Writer) error { return consolidate.Text(w, res) }, func(w io.Writer) error { return json.NewEncoder(w).Encode(res) })
+	return res.ExitCode(), true
 }
 
 // place places the stored gather's PRs and changes on the capabilities by the stored footprints, with no
@@ -314,29 +296,28 @@ func (r *run) place(ctx context.Context) int {
 	return 0
 }
 
-// recoverPhase recovers the proposed capabilities into the store and prints
-// how each fared. Without --write it writes nothing to the repo; with it,
-// it then writes everything stored to physa/init, keeping what an
-// earlier run recovered. done, set by the full run only, is called with the report first.
-func (r *run) recoverPhase(ctx context.Context, only []string, done func(recovery.Report)) int {
+// recoverPhase is --recover: it recovers and, with --write, then writes everything stored to
+// physa/init, keeping what an earlier run recovered.
+func (r *run) recoverPhase(ctx context.Context) int {
+	code, ok := r.recovered(ctx, r.o.Only)
+	if ok && r.o.Write {
+		code = max(code, r.writeStored(ctx))
+	}
+	return code
+}
+
+// recovered recovers the walk's capabilities into the store and prints how each fared, writing
+// nothing to the repo. ok is false when an interrupt stopped it; a cap that refuses a session
+// is no error, so its caller asks the guard.
+func (r *run) recovered(ctx context.Context, only []string) (code int, ok bool) {
 	from := r.meter.Count()
-	r.inRec = true
 	rep, err := recovery.Run(ctx, r.st, r.recoverySession(only))
 	r.spent(ctx, "recover", from)
 	if err != nil { // interrupted, the capabilities recovered are stored and the rest not yet
-		return r.fail(ctx, interrupt.Kept(rep.Recovered()), err)
-	}
-	if done != nil {
-		done(rep)
+		return r.fail(ctx, interrupt.Kept(rep.Recovered()), err), false
 	}
 	r.p.recovery(rep)
-	code := recoveryreport.ExitCode(rep)
-	if r.o.Write {
-		code = max(code, r.writeStored(ctx))
-	} else if done != nil { // the full run ends with init's report; with --write, the body and --json carry it
-		r.p.value(initreport.Part(ctx, r.st))
-	}
-	return code
+	return recoveryreport.ExitCode(rep), true
 }
 
 // fail is failed, but once ctx is cancelled it keeps kept, what the interrupted phase kept, and
@@ -353,11 +334,8 @@ func (r *run) fail(ctx context.Context, kept string, err error) int {
 	return failed(r.stderr, err)
 }
 
-// failed prints err as init's failure and returns 2, or 1 for a stop before spending on propose.
+// failed prints err as init's failure and returns 2.
 func failed(stderr io.Writer, err error) int {
 	fmt.Fprintf(stderr, "physa init: %v\n", err)
-	if _, ok := err.(*shares.TooLarge); ok { //nolint:errorlint // unwrapped on purpose: found before any share ran; after a halving it comes wrapped and exits 2
-		return 1
-	}
 	return 2
 }

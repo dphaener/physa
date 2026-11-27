@@ -38,7 +38,7 @@ func TestOfReadsInOrder(t *testing.T) {
 			{ID: "bbb2", Short: "bbb2", Subject: "Grow", At: day(2), Files: []string{"a.go", "b.go"}},
 		},
 	}
-	in := Of(g, Propose)
+	in := Of(g, Options{})
 	if len(in.Docs) != 2 || in.Docs[0].Path != "AGENTS.md" || in.Docs[1].Body != g.Docs[0].Body {
 		t.Fatalf("docs = %+v", in.Docs)
 	}
@@ -47,10 +47,10 @@ func TestOfReadsInOrder(t *testing.T) {
 		t.Fatalf("prs = %+v", in.PRs)
 	}
 	if !reflect.DeepEqual(in.Commits, []Commit{{Short: "bbb2", Subject: "Grow"}, {Short: "aaa1", Subject: "Start"}}) {
-		t.Fatalf("propose reads subjects only: commits = %+v", in.Commits)
+		t.Fatalf("without messages a change is its subject: commits = %+v", in.Commits)
 	}
 	want := []string{"docs: 2, whole, about 32 tokens", "pull requests: 2, whole, about 15 tokens",
-		"review comments: 1, whole, about 4 tokens", "changes: 2, whole, about 8 tokens", "clusters: none"}
+		"review comments: 1, whole, about 4 tokens", "changes: 2, whole, about 8 tokens"}
 	if got := in.Report.Lines(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("lines = %q", got)
 	}
@@ -59,8 +59,8 @@ func TestOfReadsInOrder(t *testing.T) {
 	}
 
 	in = Of(g, Options{Messages: true})
-	if in.Commits[1].Message != "Why." || !in.Commits[1].At.Equal(day(1)) || len(in.Report.Sources) != 4 || in.Clusters != nil {
-		t.Fatalf("with messages, without clusters: commits %+v, sources %+v", in.Commits, in.Report.Sources)
+	if in.Commits[1].Message != "Why." || !in.Commits[1].At.Equal(day(1)) || len(in.Report.Sources) != 4 {
+		t.Fatalf("with messages: commits %+v, sources %+v", in.Commits, in.Report.Sources)
 	}
 }
 
@@ -101,21 +101,21 @@ func TestClusters(t *testing.T) {
 	}
 	add(3, big...)
 
-	got := clusters(changes)
+	got := Clusters(changes)
 	want := []Cluster{{Paths: []string{"a.go", "b.go", "c.go"}, Changes: 6}, {Paths: []string{"f.go", "g.go"}, Changes: 4}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("clusters = %+v", got)
 	}
 
 	var wide []string
-	for i := 0; i < ClusterPaths+3; i++ {
+	for i := 0; i < 11; i++ {
 		wide = append(wide, fmt.Sprintf("w%02d.go", i))
 	}
 	changes = nil
 	add(ClusterMinChanges, wide[:ClusterMaxFiles/2]...)
 	add(ClusterMinChanges, wide...)
-	got = clusters(changes)
-	if len(got) != 1 || len(got[0].Paths) != ClusterPaths || got[0].Paths[0] != "w00.go" || got[0].Changes != 2*ClusterMinChanges {
+	got = Clusters(changes)
+	if len(got) != 1 || len(got[0].Paths) != len(wide) || got[0].Paths[0] != "w00.go" || got[0].Changes != 2*ClusterMinChanges {
 		t.Fatalf("wide cluster = %+v", got)
 	}
 }
@@ -138,9 +138,9 @@ func TestBytesPerTokenRoundsUp(t *testing.T) {
 
 func TestDeterministic(t *testing.T) {
 	g := synthetic()
-	a := Of(g, Propose)
+	a := Of(g, Options{})
 	for i := 0; i < 3; i++ {
-		if b := Of(g, Propose); !reflect.DeepEqual(a, b) {
+		if b := Of(g, Options{}); !reflect.DeepEqual(a, b) {
 			t.Fatal("two readings of one gather differ")
 		}
 	}
@@ -149,13 +149,13 @@ func TestDeterministic(t *testing.T) {
 func TestLargeGatherReadsQuickly(t *testing.T) {
 	g := synthetic()
 	start := time.Now()
-	in := Of(g, Propose)
+	in := Of(g, Options{})
 	took := time.Since(start)
 	if took >= time.Second {
 		t.Fatalf("Of took %v", took)
 	}
-	if in.Report.Tokens < 400_000 || len(in.Docs) != 3 || len(in.PRs) != 500 || len(in.Commits) != 1_500 || len(in.Clusters) == 0 {
-		t.Fatalf("docs %d, prs %d, changes %d, clusters %d, report %+v", len(in.Docs), len(in.PRs), len(in.Commits), len(in.Clusters), in.Report)
+	if in.Report.Tokens < 400_000 || len(in.Docs) != 3 || len(in.PRs) != 500 || len(in.Commits) != 1_500 {
+		t.Fatalf("docs %d, prs %d, changes %d, report %+v", len(in.Docs), len(in.PRs), len(in.Commits), in.Report)
 	}
 	t.Logf("read %d tokens whole in %v", in.Report.Tokens, took)
 }
@@ -208,12 +208,12 @@ func TestRecounted(t *testing.T) {
 		},
 		Changes: []store.GatheredChange{{ID: "aaa1", Short: "aaa1", Subject: "Start", At: day(1)}},
 	}
-	in := Of(g, Propose)
+	in := Of(g, Options{})
 	if got := in.Recounted(); !reflect.DeepEqual(got, in) {
 		t.Fatalf("recounted whole = %+v, want %+v", got.Report, in.Report)
 	}
 	part := Input{PRs: in.PRs[:1], Report: in.Report}.Recounted() // #2, the newest
-	want := []string{"docs: none", "pull requests: 1, whole, about 5 tokens", "review comments: 1, whole, about 4 tokens", "changes: none", "clusters: none"}
+	want := []string{"docs: none", "pull requests: 1, whole, about 5 tokens", "review comments: 1, whole, about 4 tokens", "changes: none"}
 	if got := part.Report.Lines(); !reflect.DeepEqual(got, want) || part.Report.Tokens != 9 {
 		t.Fatalf("part reports %q, %d tokens", got, part.Report.Tokens)
 	}

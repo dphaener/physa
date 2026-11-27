@@ -64,20 +64,6 @@ func TestRecoveredClearedByNewGather(t *testing.T) {
 	}
 }
 
-func TestRecoveredClearedByNewProposal(t *testing.T) {
-	s, _ := open(t)
-	if err := s.PutRecovered(t.Context(), []Recovered{sampleRecovered("alpha")}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.PutProposal(t.Context(), sampleProposal()); err != nil {
-		t.Fatal(err)
-	}
-	got, err := s.Recovered(t.Context())
-	if err != nil || len(got) != 0 {
-		t.Errorf("Recovered after a new proposal = %d rows, %v; want none", len(got), err)
-	}
-}
-
 func TestRecoveredEmptyStore(t *testing.T) {
 	s, _ := open(t)
 	got, err := s.Recovered(t.Context())

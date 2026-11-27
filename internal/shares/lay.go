@@ -1,16 +1,12 @@
 package shares
 
-import (
-	"github.com/dphaener/physa/internal/mapping"
-	"github.com/dphaener/physa/internal/reading"
-)
+import "github.com/dphaener/physa/internal/reading"
 
 // The kinds of source, in the order a share reads them.
 const (
 	kindDoc = iota
 	kindPR
 	kindChange
-	kindCluster
 )
 
 // slack is the bytes a share's estimate keeps for what its prompt writes
@@ -18,35 +14,28 @@ const (
 // The real prompt is checked after, so slack only makes a first guess safe.
 const slack = 64
 
-// unit is one source as Lay lays it, whole: a doc, a PR with all its review
-// comments, a change, or a cluster.
+// unit is one source as LayFor lays it, whole: a doc, a PR with all its
+// review comments, or a change.
 type unit struct {
 	kind, i int
 	// cost is the bytes it adds to a prompt beside others of its kind.
 	cost int
-	// alone is the bytes of propose's prompt holding it and nothing else.
+	// alone is the bytes of the prompt holding it and nothing else.
 	alone int
 }
 
-// Lay lays in's sources into shares whose whole prompts are each at most
-// room estimated tokens: the window less mapping.ReplyReserve, or less
-// after a halving. Sources keep reading.Of's order (docs, PRs each with all
-// its review comments, changes, clusters), and a share ends when the next
-// source does not fit beside it. When the docs take at most half of room,
-// every share reads all of them and only the other sources are divided;
-// the docs are divided too when they take more, or when a source fits an
-// empty share but not beside them. Every source reaches exactly one share
-// whole, the docs every share when they are not divided. A source that does
-// not fit even an empty share is a *TooLarge, and Lay returns no shares.
-// Each share's Report counts only what it reads. The same input and room
-// always give the same shares.
-func Lay(in reading.Input, room int) ([]reading.Input, error) {
-	return LayFor(in, room, mapping.Prompt)
-}
-
-// LayFor is Lay for a session whose prompt for an input is prompt's: room
-// is then the most estimated tokens prompt's text for each share may take.
-// Recovery lays a capability's own sources with it (design 02 §2.4).
+// LayFor lays in's sources into shares whose prompts, as prompt writes
+// them, each take at most room estimated tokens. Sources keep reading.Of's
+// order (docs, PRs each with all its review comments, changes), and a share
+// ends when the next source does not fit beside it. When the docs take at
+// most half of room, every share reads all of them and only the other
+// sources are divided; the docs are divided too when they take more, or when
+// a source fits an empty share but not beside them. Every source reaches
+// exactly one share whole, the docs every share when they are not divided. A
+// source that does not fit even an empty share is a *TooLarge, and LayFor
+// returns no shares. Each share's Report counts only what it reads. The same
+// input and room always give the same shares. Recovery lays a capability's
+// own sources with it (LayCapability).
 func LayFor(in reading.Input, room int, prompt func(reading.Input) string) ([]reading.Input, error) {
 	limit := max(room, 0) * reading.BytesPerTokenTenths / 10
 	base := len(prompt(reading.Input{}))
@@ -105,11 +94,6 @@ func measure(in reading.Input, room, base, limit int, prompt func(reading.Input)
 	}
 	for i, c := range in.Commits {
 		if err := add(kindChange, i, reading.Input{Commits: []reading.Commit{c}}, reading.Input{Commits: []reading.Commit{c, c}}); err != nil {
-			return nil, err
-		}
-	}
-	for i, c := range in.Clusters {
-		if err := add(kindCluster, i, reading.Input{Clusters: []reading.Cluster{c}}, reading.Input{Clusters: []reading.Cluster{c, c}}); err != nil {
 			return nil, err
 		}
 	}
@@ -173,10 +157,8 @@ func build(in reading.Input, units []unit, shared bool) reading.Input {
 			s.Docs = append(s.Docs, in.Docs[u.i])
 		case kindPR:
 			s.PRs = append(s.PRs, in.PRs[u.i])
-		case kindChange:
-			s.Commits = append(s.Commits, in.Commits[u.i])
 		default:
-			s.Clusters = append(s.Clusters, in.Clusters[u.i])
+			s.Commits = append(s.Commits, in.Commits[u.i])
 		}
 	}
 	return s

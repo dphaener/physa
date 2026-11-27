@@ -7,19 +7,21 @@ import (
 	"sort"
 
 	"github.com/dphaener/physa/internal/initrecord"
+	"github.com/dphaener/physa/internal/productpromise"
 	"github.com/dphaener/physa/internal/sourceset"
 )
 
 // Record is the body init's record keeps for the areas, which the walk reads
 // with Load: the split as code expanded it, the files left out by reason
-// (sourceset's Left constants), the areas, and how they were made.
+// (sourceset's Left constants), the areas, how they were made and the product.
 type Record struct {
-	Split    sourceset.Division   `json:"split"`
-	Left     map[string]LeftFiles `json:"left"`
-	Areas    []AreaRecord         `json:"areas"`
-	Parts    int                  `json:"parts"`
-	Merges   []Joint              `json:"merges"`
-	Sessions []string             `json:"sessions"`
+	Split    sourceset.Division     `json:"split"`
+	Left     map[string]LeftFiles   `json:"left"`
+	Areas    []AreaRecord           `json:"areas"`
+	Parts    int                    `json:"parts"`
+	Merges   []Joint                `json:"merges"`
+	Sessions []string               `json:"sessions"`
+	Product  productpromise.Product `json:"product,omitzero"`
 }
 
 // LeftFiles is the files left out for one reason.
@@ -53,16 +55,17 @@ func Load(ctx context.Context, st Loader) (Record, bool, error) {
 	return r, true, nil
 }
 
-// record builds the body from the listing, the split and the areas.
-func record(l sourceset.Listing, d sourceset.Division, areas []*Area, parts int, merges []Joint, ids []string) Record {
-	r := Record{Split: d, Left: map[string]LeftFiles{}, Areas: []AreaRecord{}, Parts: parts, Merges: merges, Sessions: ids}
+// record builds the body from the listing, the split and the run's areas,
+// parts, merges, sessions and product.
+func (r *runner) record(l sourceset.Listing, d sourceset.Division) Record {
+	rec := Record{Split: d, Left: map[string]LeftFiles{}, Areas: []AreaRecord{}, Parts: r.res.Parts, Merges: r.res.Merges, Sessions: r.ids, Product: r.product}
 	for reason, paths := range l.Left {
-		r.Left[reason] = LeftFiles{Count: len(paths), Paths: paths}
+		rec.Left[reason] = LeftFiles{Count: len(paths), Paths: paths}
 	}
-	for _, a := range areas {
+	for _, a := range r.areas {
 		files := append([]string{}, a.Files...)
 		sort.Strings(files)
-		r.Areas = append(r.Areas, AreaRecord{Name: a.Name, Promise: a.Promise, Files: files})
+		rec.Areas = append(rec.Areas, AreaRecord{Name: a.Name, Promise: a.Promise, Files: files})
 	}
-	return r
+	return rec
 }

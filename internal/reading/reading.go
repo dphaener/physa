@@ -3,15 +3,14 @@
 // ever cut: every doc, PR title, PR body, review comment and change it reads
 // reaches it whole (the owner, 2026-11-23: "This process is important,
 // nothing should get cut."). Options choose what a session reads, never how
-// much of it: propose reads change subjects and clusters of files that
-// change together, as hints; recovery reads change messages and no clusters.
-// Its estimates inform, never stop, a session: init is never bounded, and
-// its estimate is shown before it asks to go on. Tokens are estimated at one measured figure, BytesPerTokenTenths. Reading does no
-// I/O and calls no agent.
+// much of it: recovery reads change messages; without them a change is its
+// subject. It also finds clusters of files that change together. Its
+// estimates inform, never stop, a session. Tokens are estimated at one
+// measured figure, BytesPerTokenTenths. Reading does no I/O and calls no
+// agent.
 package reading
 
 import (
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -25,20 +24,14 @@ type Options struct {
 	// author, time and the change it reverts; without it a change is its
 	// short id and subject.
 	Messages bool
-	// Clusters adds clusters of files that change together, as hints.
-	Clusters bool
 }
-
-// Propose is what init's propose phase reads: change subjects, and clusters.
-var Propose = Options{Clusters: true}
 
 // Input is what a session reads, in order, and the report of it.
 type Input struct {
-	Docs     []Doc
-	PRs      []PR
-	Commits  []Commit
-	Clusters []Cluster
-	Report   Report
+	Docs    []Doc
+	PRs     []PR
+	Commits []Commit
+	Report  Report
 }
 
 // Doc is a doc, whole.
@@ -81,8 +74,8 @@ type Commit struct {
 	Reverts string
 }
 
-// Cluster is a set of files that change together: its first ClusterPaths
-// paths, sorted, and how many changes touch two or more of its files.
+// Cluster is a set of files that change together: its paths, sorted, and
+// how many changes touch two or more of its files.
 type Cluster struct {
 	Paths   []string
 	Changes int
@@ -100,7 +93,7 @@ func rank(kind string) int {
 }
 
 // Of is all of g as o reads it: docs by kind, then path; PRs newest merge
-// first; changes newest first; then, with o.Clusters, the clusters. The same
+// first; then changes newest first. The same
 // gather and options always give the same Input.
 func Of(g store.Gather, o Options) Input {
 	var in Input
@@ -147,12 +140,7 @@ func Of(g store.Gather, o Options) Input {
 		}
 		in.Commits = append(in.Commits, k)
 	}
-	names := sourceNames[:4]
-	if o.Clusters {
-		in.Clusters = append(in.Clusters, clusters(g.Changes)...)
-		names = sourceNames
-	}
-	for _, n := range names {
+	for _, n := range sourceNames {
 		in.Report.Sources = append(in.Report.Sources, SourceReport{Name: n})
 	}
 	return in.Recounted()
@@ -161,14 +149,3 @@ func Of(g store.Gather, o Options) Input {
 // Always says whether every capability's session reads a doc of this kind:
 // the agent docs, readme and contributing guide.
 func Always(kind string) bool { return kind == "agent" || kind == "readme" || kind == "contributing" }
-
-// Linked is the docs a capability's session reads: those Always names, and
-// the others only when linked names them.
-func Linked(docs []store.Doc, linked []string) (read []store.Doc) {
-	for _, d := range docs {
-		if Always(d.Kind) || slices.Contains(linked, d.Path) {
-			read = append(read, d)
-		}
-	}
-	return read
-}

@@ -19,7 +19,7 @@ import (
 
 // initCommand builds physa init on d: every phase in order, or the one a flag names.
 func initCommand(d deps) *cobra.Command {
-	const summary = "Build the map of a repo: it runs to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place, --recover or --consolidate runs one phase; --consolidate merges the recovered capabilities and lifts the product's rules; --recover recovers from the walk and placements when both are stored, else from the proposal."
+	const summary = "Build the map of a repo from its code: it gathers, divides the code into areas, walks each area for its capabilities, places the PRs and changes, recovers each capability and consolidates, to the end, or with --cap stops before a session that would pass the cap; with --write, commit it to physa/init; --gather, --areas, --walk, --place, --recover or --consolidate runs one phase; --consolidate merges the recovered capabilities and lifts the product's rules; --recover recovers from the stored walk and placements."
 	var f initrun.Flags
 	var c *cobra.Command
 	c = command.Declare(command.New("init", summary, initrun.Usage,

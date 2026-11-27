@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -136,10 +137,101 @@ func TestMigrationTwoDropsPRChecks(t *testing.T) {
 	}
 }
 
+// TestMigration21DropsTheStoredProposal checks that a store at version 20
+// holding a stored proposal, recovered rows and a propose spend row migrates
+// to 21 with init_proposal gone and the recovered and spend rows kept.
+func TestMigration21DropsTheStoredProposal(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, "physa.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms, err := migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range ms {
+		if m.n > 20 {
+			break
+		}
+		body, err := migrationFiles.ReadFile("migrations/" + m.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(body)); err != nil {
+			t.Fatalf("%s: %v", m.name, err)
+		}
+	}
+	const at = "2026-11-21T09:00:00Z"
+	for _, q := range []string{
+		`INSERT INTO init_proposal VALUES (1, '` + at + `', '` + at + `', 'sess-1', 'm', 200000, 1000, 200, 300, '{"promise":"p"}')`,
+		`INSERT INTO init_recovery VALUES ('alpha', '` + at + `', '` + at + `', 'recovered', '# alpha', '', '{}', 'sess-a', 'm', 1, 0, 10, 0, 5)`,
+		`INSERT INTO init_recovery VALUES ('beta', '` + at + `', '` + at + `', 'failed', '', '', '{}', 'sess-b', 'm', 2, 0, 20, 0, 6)`,
+		`INSERT INTO init_spend VALUES ('propose', 1000, 200, 300, 1500, 900, 0)`,
+		`INSERT INTO init_spend VALUES ('recover', 30, 0, 11, 41, 20, 0)`,
+		"PRAGMA user_version = 20",
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	db.Close()
+
+	s, err := Open(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if got := version(t, s); got != 21 {
+		t.Errorf("user_version = %d, want 21", got)
+	}
+	var n int
+	err = s.db.QueryRow("SELECT count(*) FROM init_proposal").Scan(&n)
+	if err == nil || !strings.Contains(err.Error(), "no such table") {
+		t.Errorf("querying init_proposal = %v; want no such table", err)
+	}
+	t.Logf("init_proposal after the migration: %v", err)
+	var caps []string
+	rows, err := s.db.Query("SELECT capability, status FROM init_recovery ORDER BY capability")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var c, st string
+		if err := rows.Scan(&c, &st); err != nil {
+			t.Fatal(err)
+		}
+		caps = append(caps, c+":"+st)
+	}
+	rows.Close()
+	if strings.Join(caps, ",") != "alpha:recovered,beta:failed" {
+		t.Errorf("init_recovery rows = %v; want alpha and beta kept", caps)
+	}
+	t.Logf("init_recovery rows kept: %v", caps)
+	var phases []string
+	rows, err = s.db.Query("SELECT phase, weighted FROM init_spend ORDER BY phase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var p string
+		var w int
+		if err := rows.Scan(&p, &w); err != nil {
+			t.Fatal(err)
+		}
+		phases = append(phases, fmt.Sprintf("%s:%d", p, w))
+	}
+	rows.Close()
+	if strings.Join(phases, ",") != "propose:1500,recover:41" {
+		t.Errorf("init_spend rows = %v; want propose and recover kept", phases)
+	}
+	t.Logf("init_spend rows kept: %v", phases)
+}
+
 func TestFreshStoreMigratesToLatest(t *testing.T) {
 	s, _ := open(t)
-	if got := version(t, s); got != 20 {
-		t.Errorf("user_version = %d, want 20", got)
+	if got := version(t, s); got != 21 {
+		t.Errorf("user_version = %d, want 21", got)
 	}
 	var n int
 	if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name = 'slice_records'").Scan(&n); err != nil || n != 1 {
@@ -358,8 +450,8 @@ func TestEngineTableChecks(t *testing.T) {
 
 func TestPlanTables(t *testing.T) {
 	s, _ := open(t)
-	if got := version(t, s); got != 20 {
-		t.Fatalf("user_version = %d, want 20", got)
+	if got := version(t, s); got != 21 {
+		t.Fatalf("user_version = %d, want 21", got)
 	}
 	for _, table := range []string{"changes", "session_changes", "spends", "needs_you"} {
 		var n int

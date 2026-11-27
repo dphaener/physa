@@ -163,25 +163,13 @@ func TestLineRejections(t *testing.T) {
 	}
 }
 
-func TestLinePropose(t *testing.T) {
-	t.Parallel()
-	f, ok := parseLine([]string{"--propose", "--agent=claude", "--json"}, now)
-	if !ok || !f.Propose || f.Gather || f.Agent != "claude" || !f.JSON {
-		t.Fatalf("got %+v %v", f, ok)
-	}
-	f, ok = parseLine([]string{"--propose"}, now)
-	if !ok || f.Agent != "" {
-		t.Errorf("bare propose: %+v %v", f, ok)
-	}
-}
-
 func TestLineAreas(t *testing.T) {
 	t.Parallel()
 	f, ok := parseLine([]string{"--areas", "--agent=claude", "--json"}, now)
 	if !ok || !f.Areas || f.Full() || f.Agent != "claude" || !f.JSON {
 		t.Fatalf("got %+v %v", f, ok)
 	}
-	for _, args := range [][]string{{"--gather"}, {"--propose"}, {"--recover"}, {"--write"}, {"--write", "--push"}, {"--hooks"},
+	for _, args := range [][]string{{"--gather"}, {"--recover"}, {"--write"}, {"--write", "--push"}, {"--hooks"},
 		{"--answers", "a"}, {"--yes"}, {"--only", "a"}, {"--since", "2026-01-02"}, {"--max-prs", "5"}} {
 		if _, ok := parseLine(append([]string{"--areas"}, args...), now); ok {
 			t.Errorf("--areas %v accepted", args)
@@ -195,7 +183,7 @@ func TestLineWalk(t *testing.T) {
 	if !ok || !f.Walk || f.Full() || f.Agent != "claude" || !f.JSON {
 		t.Fatalf("got %+v %v", f, ok)
 	}
-	for _, args := range [][]string{{"--areas"}, {"--gather"}, {"--propose"}, {"--recover"}, {"--write"}, {"--write", "--push"}, {"--hooks"},
+	for _, args := range [][]string{{"--areas"}, {"--gather"}, {"--recover"}, {"--write"}, {"--write", "--push"}, {"--hooks"},
 		{"--answers", "a"}, {"--yes"}, {"--only", "a"}, {"--since", "2026-01-02"}, {"--max-prs", "5"}} {
 		if _, ok := parseLine(append([]string{"--walk"}, args...), now); ok {
 			t.Errorf("--walk %v accepted", args)
@@ -209,7 +197,7 @@ func TestLinePlace(t *testing.T) {
 	if !ok || !f.Place || f.Full() || !f.JSON {
 		t.Fatalf("got %+v %v", f, ok)
 	}
-	for _, args := range [][]string{{"--areas"}, {"--walk"}, {"--gather"}, {"--propose"}, {"--recover"}, {"--write"}, {"--write", "--push"}, {"--hooks"},
+	for _, args := range [][]string{{"--areas"}, {"--walk"}, {"--gather"}, {"--recover"}, {"--write"}, {"--write", "--push"}, {"--hooks"},
 		{"--answers", "a"}, {"--yes"}, {"--only", "a"}, {"--since", "2026-01-02"}, {"--max-prs", "5"}} {
 		if _, ok := parseLine(append([]string{"--place"}, args...), now); ok {
 			t.Errorf("--place %v accepted", args)
@@ -222,22 +210,46 @@ func TestLinePlace(t *testing.T) {
 	}
 }
 
-func TestLineProposeRejections(t *testing.T) {
+// TestLineProposeIsRefused checks that --propose is no flag of init: alone
+// and beside any other flag the line is refused.
+func TestLineProposeIsRefused(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
-		{"--propose", "--gather"},
+		{"--propose"},
+		{"--propose", "--agent=claude", "--json"},
 		{"--gather", "--propose"},
-		{"--propose", "--since", "2026-01-02"},
-		{"--propose", "--max-prs", "5"},
-		{"--propose", "--appetite", "5000"},
-		{"--propose", "--appetite"},
-		{"--propose", "--yes"},
-		{"--propose", "--agent"},
-		{"--propose", "--agent="},
+		{"--recover", "--propose"},
+		{"--areas", "--propose"},
+		{"--write", "--propose"},
 		{"--propose=1"},
 	} {
 		if _, ok := parseLine(args, now); ok {
 			t.Errorf("%v accepted", args)
+		}
+	}
+}
+
+// TestLinePhaseRejections checks what the phases on a stored gather refuse:
+// a gather bound, the flags init never had, and an empty --agent.
+func TestLinePhaseRejections(t *testing.T) {
+	t.Parallel()
+	for _, phase := range []string{"--areas", "--walk", "--recover", "--consolidate"} {
+		for _, args := range [][]string{
+			{"--gather"},
+			{"--since", "2026-01-02"},
+			{"--max-prs", "5"},
+			{"--appetite", "5000"},
+			{"--appetite"},
+			{"--yes"},
+			{"--agent"},
+			{"--agent="},
+		} {
+			if _, ok := parseLine(append([]string{phase}, args...), now); ok {
+				t.Errorf("%s %v accepted", phase, args)
+			}
+		}
+		if _, ok := parseLine([]string{phase + "=1"}, now); ok {
+			t.Errorf("%s=1 accepted", phase)
 		}
 	}
 }
@@ -250,7 +262,7 @@ func TestLineRecover(t *testing.T) {
 		{"--only", "a", "--recover"},
 	} {
 		f, ok := parseLine(args, now)
-		if !ok || !f.Recover || f.Gather || f.Propose {
+		if !ok || !f.Recover || f.Gather || f.Full() {
 			t.Errorf("%v: got %+v %v", args, f, ok)
 		}
 	}
@@ -264,13 +276,13 @@ func TestLineRecoverRejections(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
 		{"--recover", "--gather"},
-		{"--recover", "--propose"},
+		{"--recover", "--areas"},
 		{"--recover", "--since", "2026-01-02"},
 		{"--recover", "--max-prs", "5"},
 		{"--recover", "--appetite", "5000"},
 		{"--recover", "--yes"},
 		{"--only", "a"},
-		{"--propose", "--only", "a"},
+		{"--walk", "--only", "a"},
 		{"--recover", "--only"},
 		{"--recover", "--only="},
 		{"--recover", "--only", "a,,b"},
@@ -307,7 +319,6 @@ func TestLineFullRejections(t *testing.T) {
 		{"--write", "--pr"},
 		{"--pr"},
 		{"--hooks"},
-		{"--write", "--propose"},
 		{"--write", "--gather"},
 		{"--answers", "a.txt", "--recover"},
 		{"--answers", "a.txt", "--gather"},
@@ -349,7 +360,7 @@ func TestLineConsolidate(t *testing.T) {
 	if !ok || !f.Consolidate || f.Full() || f.Agent != "claude" || !f.Write || !f.JSON {
 		t.Fatalf("got %+v %v", f, ok)
 	}
-	for _, args := range [][]string{{"--areas"}, {"--walk"}, {"--place"}, {"--gather"}, {"--propose"}, {"--recover"}, {"--only", "x"}, {"--push"}, {"--hooks"},
+	for _, args := range [][]string{{"--areas"}, {"--walk"}, {"--place"}, {"--gather"}, {"--recover"}, {"--only", "x"}, {"--push"}, {"--hooks"},
 		{"--answers", "a"}, {"--yes"}, {"--since", "2026-01-02"}, {"--max-prs", "5"}} {
 		if _, ok := parseLine(append([]string{"--consolidate"}, args...), now); ok {
 			t.Errorf("--consolidate %v accepted", args)

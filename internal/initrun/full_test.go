@@ -2,9 +2,10 @@ package initrun
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -17,16 +18,17 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/areas"
 	"github.com/dphaener/physa/internal/command"
+	"github.com/dphaener/physa/internal/consolidateprompt"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapcheck"
-	"github.com/dphaener/physa/internal/mapping"
-	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
+	"github.com/dphaener/physa/internal/walk"
 )
 
 // prForge lists PR 3 as merged and holds at most one PR of its own,
@@ -79,28 +81,91 @@ const (
 // session's prompt holds.
 const discoveryMarker = "You find the sources a product's map is built from"
 
-// routedAgent answers discovery with discover (naming nothing when empty),
-// proposing with twoReply and each capability's recovering with its reply,
-// joining a resumed session to its capability. It records each session it
-// started, by "discover", "propose" or the capability, and calls first,
-// when set, before its first start.
+// The code-first replies of routedAgent on remoteRepo's two source files: the
+// split of the files by kind, the areas with the product's name and promise,
+// and each area's walk, which names the capabilities delivery and search.
+const (
+	fullProduct = `"product":{"name":"Keeper","promise":"Teams keep what they learn about their product."},`
+	fullAreas   = `"areas":[{"name":"shipping","promise":"Changes reach users.","sources":["web/"]},` +
+		`{"name":"finding","promise":"People find things.","sources":["main.go"]}]`
+	fullAreasReply = "```json\n{" + fullProduct + fullAreas + "}\n```"
+	// searchTwoRules is search's recovering with two rules, so its area has the
+	// two entries a session of consolidation starts for.
+	searchTwoRules = "````markdown\n# Search\n\n## Rules\n\n" +
+		"### Kept things are found\n`find-kept` · #3\nPeople find what they kept by its words.\nBecause: #3 asked for it.\n\n" +
+		"### Found things open\n`found-opens` · #3\nWhat is found opens where it was kept.\nBecause: #3 asked for it.\n````\n"
+)
+
+// fullWalks answers each area of fullAreas by its name.
+var fullWalks = map[string]string{
+	"shipping": "```json\n" + `{"capabilities":[{"name":"delivery","promise":"Changes reach users in order.","sources":["web/app.js"],"tests":[],"docs":[]}],"shared":[]}` + "\n```",
+	"finding":  "```json\n" + `{"capabilities":[{"name":"search","promise":"People find what they kept.","sources":["main.go"],"tests":[],"docs":[]}],"shared":[]}` + "\n```",
+}
+
+// sessionKind names the session s starts: "discover", "split" and "areas"
+// for the areas phase's two skills, "walk", "consolidate", or the capability a
+// recovering session's message names ("" when it names none).
+func sessionKind(s adapter.Spec) string {
+	switch {
+	case strings.Contains(s.Prompt, discoveryMarker):
+		return "discover"
+	case strings.HasPrefix(s.System, strings.TrimRight(areas.Sources, "\n")):
+		return "split"
+	case strings.HasPrefix(s.System, strings.TrimRight(areas.Areas, "\n")):
+		return "areas"
+	case strings.HasPrefix(s.System, strings.TrimRight(walk.Walk, "\n")):
+		return "walk"
+	case s.System == consolidateprompt.Consolidate, s.System == consolidateprompt.Merge, s.System == consolidateprompt.Lift:
+		return "consolidate"
+	}
+	if m := recoverName.FindStringSubmatch(s.Prompt); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// consolidateNothing is a session of consolidation's answer that changes
+// nothing, for the skill in system.
+func consolidateNothing(system string) string {
+	switch system {
+	case consolidateprompt.Merge:
+		return "```json\n{\"merge\":[]}\n```\n"
+	case consolidateprompt.Lift:
+		return "```json\n{\"lift\":[]}\n```\n"
+	}
+	return "```json\n{\"merge\":[],\"move\":[],\"drop\":[]}\n```\n"
+}
+
+// routedAgent answers every session of a code-first run: discovery with
+// discover (naming nothing when empty), the areas phase with split and
+// areas, each area's walk with walks, each
+// capability's recovering with its reply and consolidation with nothing to
+// change, a resumed session getting its first answer again. It records each
+// session it started, by "discover", "areas" (the split too), "walk", the
+// capability or "consolidate", and calls first, when set, before its first
+// start.
 type routedAgent struct {
 	mu        sync.Mutex
 	replies   map[string]string
-	sessions  map[string]string // session id → capability
-	started   []string          // "discover", "propose" or the capability
+	walks     map[string]string // area → the walk's reply
+	areas     string            // the areas session's reply
+	split     string            // the split's reply
+	sessions  map[string]string // session id → what it was recorded as
+	texts     map[string]string // session id → its answer
+	started   []string          // "discover", "areas", "walk", the capability or "consolidate"
 	first     func()
-	propose   int64          // the input tokens proposing uses; zero means 10,000
-	discover  string         // discovery's reply
-	discovers adapter.Tokens // the tokens discovery uses; zero means 1,000 in, 10 out
-	recovers  int64          // the input tokens each recovering session uses; zero means 10,000
-	readOnly  bool           // every discovery session was read-only
-	priced    bool           // each result carries its cost, at $4 a million input
-	writes1h  bool           // with priced, uncached input is written to a 1-hour cache, at 2× input
+	spend     map[string]int64 // the input tokens a session of "split", "areas", "walk" or "consolidate" uses; zero means 10,000
+	discover  string           // discovery's reply
+	discovers adapter.Tokens   // the tokens discovery uses; zero means 1,000 in, 10 out
+	recovers  int64            // the input tokens each recovering session uses; zero means 10,000
+	readOnly  bool             // every discovery session was read-only
+	priced    bool             // each result carries its cost, at $4 a million input
+	writes1h  bool             // with priced, uncached input is written to a 1-hour cache, at 2× input
 }
 
 func newRoutedAgent() *routedAgent {
-	return &routedAgent{replies: map[string]string{"delivery": deliveryReply, "search": searchReply}, sessions: map[string]string{}}
+	return &routedAgent{replies: map[string]string{"delivery": deliveryReply, "search": searchReply}, walks: fullWalks, areas: fullAreasReply, split: areasSplit,
+		sessions: map[string]string{}, texts: map[string]string{}, spend: map[string]int64{}}
 }
 
 func (a *routedAgent) Name() string { return "fake" }
@@ -111,39 +176,37 @@ func (a *routedAgent) Start(_ context.Context, s adapter.Spec) (adapter.Session,
 	if len(a.started) == 0 && a.first != nil {
 		a.first()
 	}
-	name := a.sessions[s.SessionID]
+	name, text, in := a.sessions[s.SessionID], a.texts[s.SessionID], int64(0)
 	if !s.Resume {
-		name = "propose"
-		for c := range a.replies {
-			if strings.Contains(s.Prompt, "\nname: "+c+"\n") {
-				name = c
-			}
-		}
-		if strings.Contains(s.Prompt, discoveryMarker) {
-			name = "discover"
+		switch name = sessionKind(s); name {
+		case "discover":
+			text = cmp.Or(a.discover, "```json\n{\"sources\":[]}\n```\n")
 			a.readOnly = (len(a.started) == 0 || a.readOnly) && s.ReadOnly && !s.PromptOnly
+		case "split":
+			name, text, in = "areas", a.split, cmp.Or(a.spend["split"], 10_000)
+		case "areas":
+			text = a.areas
+		case "walk":
+			if m := walkAreaOf.FindStringSubmatch(s.Prompt); m != nil {
+				text = a.walks[m[1]]
+			}
+		case "consolidate":
+			text = consolidateNothing(s.System)
+		default:
+			text = a.replies[name]
 		}
-		a.sessions[s.SessionID] = name
+		a.sessions[s.SessionID], a.texts[s.SessionID] = name, text
 		a.started = append(a.started, name)
 	}
-	text := twoReply
-	t := adapter.Tokens{Input: 10_000, CachedInput: 5, Output: 20}
+	t := adapter.Tokens{Input: cmp.Or(in, a.spend[name], 10_000), CachedInput: 5, Output: 20}
 	switch {
 	case name == "discover":
-		text, t = "```json\n{\"sources\":[]}\n```\n", adapter.Tokens{Input: 1_000, Output: 10}
-		if a.discover != "" {
-			text = a.discover
-		}
+		t = adapter.Tokens{Input: 1_000, Output: 10}
 		if a.discovers != (adapter.Tokens{}) {
 			t = a.discovers
 		}
-	case name != "propose":
-		text = a.replies[name]
-		if a.recovers != 0 {
-			t.Input = a.recovers
-		}
-	case a.propose != 0:
-		t.Input = a.propose
+	case !slices.Contains([]string{"areas", "walk", "consolidate"}, name) && a.recovers != 0:
+		t.Input = a.recovers
 	}
 	res := adapter.Result{Text: text, Tokens: t, SessionID: s.SessionID}
 	if a.priced {
@@ -159,8 +222,19 @@ func (a *routedAgent) Start(_ context.Context, s adapter.Spec) (adapter.Session,
 	return fakeSession{f: &fakeAgent{reports: []adapter.Tokens{t}, result: res}, usage: s.Usage}, nil
 }
 
+// kinds is the sessions a started, each once, in the order they first started.
+func (a *routedAgent) kinds() []string {
+	var out []string
+	for _, k := range a.started {
+		if !slices.Contains(out, k) {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
 // remoteRepo is the person's clone of a local bare remote, with AGENTS.md,
-// a few changes, an uncommitted edit and an untracked file, made the test's
+// the source files main.go and web/app.js, which PR 3 added, a few changes, an uncommitted edit and an untracked file, made the test's
 // working directory. It returns the clone and the bare remote.
 func remoteRepo(t *testing.T) (dir, bare string) {
 	t.Helper()
@@ -176,8 +250,9 @@ func remoteRepo(t *testing.T) (dir, bare string) {
 	gitIn(t, dir, "init", "-q")
 	write(t, dir, "AGENTS.md", "Our rules.\n")
 	write(t, dir, "main.go", "package main\n")
+	write(t, dir, "web/app.js", "let a\n")
 	gitIn(t, dir, "add", ".")
-	gitIn(t, dir, "commit", "-q", "-m", "feat: Start")
+	gitIn(t, dir, "commit", "-q", "-m", "feat: Start (#3)")
 	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "feat: More")
 	gitIn(t, dir, "remote", "add", "origin", bare)
 	gitIn(t, dir, "push", "-q", "origin", "main")
@@ -245,21 +320,22 @@ func TestFullWritePushPR(t *testing.T) {
 		t.Fatalf("PRs created %v, edits %d", f.created, f.edits)
 	}
 	for _, s := range []string{"`delivery`: Changes reach users in order.", "`search`: People find what they kept.",
-		"delivery: rule \"Changes ship fast (ship-fast)\"", "| propose | 10000 | 5 | 20 | 10k | none: no price yet |", "| recover |", "| total |",
+		"delivery: rule \"Changes ship fast (ship-fast)\"", "| areas | 20000 | 10 | 40 | 20k | none: no price yet |", "| walk |", "| recover |", "| total |",
 		"| Weighted | Cost estimate |",
 		"## The Session: hook\n\nNot asked for."} {
 		if !strings.Contains(f.bodies[0], s) {
 			t.Errorf("PR body lacks %q:\n%s", s, f.bodies[0])
 		}
 	}
-	for _, s := range []string{"Gathered into", "## delivery: recovered", "Wrote physa/init at ", "Pushed: true", "PR: opened #7", "## Tokens spent"} {
+	for _, s := range []string{"Gathered into", "- shipping (1 file): Changes reach users.", "Product: Keeper. Its promise: Teams keep what they learn about their product.",
+		"PRs placed: ", "## delivery: recovered", "Consolidated 2 capabilities", "Wrote physa/init at ", "Pushed: true", "PR: opened #7", "## Tokens spent"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("stdout lacks %q:\n%s", s, out)
 		}
 	}
 	msg := gitIn(t, bare, "log", "-1", "--format=%B", "physa/init")
-	if strings.Count(msg, "Session: ") != 3 || strings.Contains(msg, "Capability:") {
-		t.Errorf("commit message:\n%s", msg)
+	if n := strings.Count(msg, "Session: "); n != 6 || strings.Contains(msg, "Capability:") { // the areas' two, the walk's two and the recoveries' two
+		t.Errorf("commit message, with %d Session: trailers:\n%s", n, msg)
 	}
 }
 
@@ -304,7 +380,7 @@ func (r readFails) Read([]byte) (int, error) {
 }
 
 // TestBareRunAsksNothingAboutCost checks that a bare run on a terminal prints
-// no estimate and asks no question: it proposes and recovers without being
+// no estimate and asks no question: it walks and recovers without being
 // asked, and the next run's first line names what a token is worth.
 func TestBareRunAsksNothingAboutCost(t *testing.T) {
 	remoteRepo(t)
@@ -314,7 +390,7 @@ func TestBareRunAsksNothingAboutCost(t *testing.T) {
 	env.IsTerminal = func() bool { return true }
 	env.Stdin = readFails{t}
 	code, out, errOut := runInit(env, "--write")
-	if code != 0 || !strings.Contains(out, "## delivery: recovered") || !slices.Contains(a.started, "propose") {
+	if code != 0 || !strings.Contains(out, "## delivery: recovered") || !slices.Contains(a.started, "walk") {
 		t.Fatalf("code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
 	}
 	if regexp.MustCompile(`(?i)estimat`).MatchString(errOut) || regexp.MustCompile(`(?m)\?$`).MatchString(errOut) {
@@ -353,7 +429,7 @@ func TestFullTableAgreesWithTheRunAt1HourWrites(t *testing.T) {
 	if total := regexp.MustCompile(`\| total \| \d+ \| \d+ \| \d+ \| ([^ ]+) \| ([^|]+) \|`).FindStringSubmatch(out); total == nil || total[1] != m[1] || strings.TrimSpace(total[2]) != m[2] {
 		t.Errorf("the table's total %q does not match the run's %q:\n%s", total, m[1:], out)
 	}
-	for _, phase := range []string{"| discover |", "| propose |", "| recover |"} {
+	for _, phase := range []string{"| discover |", "| areas |", "| walk |", "| recover |"} {
 		if !strings.Contains(out, phase) {
 			t.Errorf("the table has no %s row:\n%s", phase, out)
 		}
@@ -383,8 +459,8 @@ func TestFullWithPricesShowsCost(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
-	// Proposing: 9,995 uncached in, 5 cached, 20 out at $4/M input: $0.04.
-	for _, want := range []string{"| propose | 10000 | 5 | 20 | 10k | about $0.04 |", "| total |", "physa init: this run spent "} {
+	// The areas' two sessions: each 9,995 uncached in, 5 cached, 20 out at $4/M input, $0.04.
+	for _, want := range []string{"| areas | 20000 | 10 | 40 | 20k | about $0.08 |", "| total |", "physa init: this run spent "} {
 		if !strings.Contains(out+errOut, want) {
 			t.Errorf("output lacks %q:\n%s\n%s", want, out, errOut)
 		}
@@ -405,9 +481,11 @@ func TestFullJSONIsOneDocument(t *testing.T) {
 				Tokens  adapter.Tokens
 			}
 		}
-		Proposal, Recovery json.RawMessage
-		Coverage           struct{ PRs, Cited int }
-		Write              struct {
+		Areas struct {
+			Product struct{ Name, Promise string }
+		}
+		Walk, Place, Recovery, Consolidation json.RawMessage
+		Write                                struct {
 			Branch string
 			Commit struct{ Subject string }
 			Pushed bool
@@ -420,10 +498,10 @@ func TestFullJSONIsOneDocument(t *testing.T) {
 	if d := doc.Gather.Discovery; doc.Gather.Version != 3 || !d.Started || d.Tokens.Input != 1_000 {
 		t.Errorf("gather %+v", doc.Gather)
 	}
-	if c := doc.Coverage; c.PRs != 1 || c.Cited > 1 {
-		t.Errorf("coverage %+v", c)
+	if p := doc.Areas.Product; p.Name != "Keeper" || p.Promise != "Teams keep what they learn about their product." {
+		t.Errorf("areas.product %+v", p)
 	}
-	if len(doc.Proposal) == 0 || len(doc.Recovery) == 0 || doc.Write.Branch != "physa/init" ||
+	if len(doc.Walk) == 0 || len(doc.Place) == 0 || len(doc.Recovery) == 0 || len(doc.Consolidation) == 0 || doc.Write.Branch != "physa/init" ||
 		doc.Write.Commit.Subject == "" || doc.Write.Pushed || doc.Write.PR.State != "not asked" {
 		t.Errorf("document %s", out)
 	}
@@ -555,7 +633,7 @@ func TestFullHooksRefusedKeepsBranch(t *testing.T) {
 
 func TestFullBadCombinationsAreBadUsage(t *testing.T) {
 	newRepo(t)
-	for _, args := range [][]string{{"--push"}, {"--write", "--propose"}, {"--answers", "a.txt", "--recover"}, {"--hooks"}, {"--yes", "--gather"}, {"--appetite", "300000"}} {
+	for _, args := range [][]string{{"--push"}, {"--write", "--gather"}, {"--propose"}, {"--answers", "a.txt", "--recover"}, {"--hooks"}, {"--yes", "--gather"}, {"--appetite", "300000"}} {
 		if code, _, _ := runInit(testEnv(t, nil, nil), args...); code != command.BadUsage {
 			t.Errorf("%v: code %d", args, code)
 		}
@@ -582,7 +660,7 @@ func mappedRepo(t *testing.T, p string) {
 
 func TestMappedRepoIsRefusedBeforeAnythingIsSpent(t *testing.T) {
 	for p := range mapLayouts {
-		for _, args := range [][]string{nil, {"--propose"}, {"--recover"}} {
+		for _, args := range [][]string{nil, {"--walk"}, {"--recover"}} {
 			mappedRepo(t, p)
 			a := newRoutedAgent()
 			env := fullEnv(t, onePR(), a)
@@ -637,7 +715,7 @@ func trunkRepo(t *testing.T) string {
 
 func TestNoDefaultBranchSkipsTheEarlyCheck(t *testing.T) {
 	trunkRepo(t)
-	code, _, errOut := runInit(testEnv(t, nil, nil), "--propose")
+	code, _, errOut := runInit(testEnv(t, nil, nil), "--areas")
 	if code != 2 || strings.Contains(errOut, "already has a map") || !strings.Contains(errOut, "nothing gathered yet") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
@@ -648,7 +726,7 @@ func TestNoDefaultBranchRefusesAMapInTheWorkingTree(t *testing.T) {
 		dir := trunkRepo(t)
 		write(t, dir, p, text)
 		a := newRoutedAgent()
-		for _, args := range [][]string{nil, {"--propose"}, {"--recover"}} {
+		for _, args := range [][]string{nil, {"--walk"}, {"--recover"}} {
 			code, out, errOut := runInit(testEnv(t, nil, a), args...)
 			t.Logf("%s %v: %s", p, args, strings.TrimSpace(errOut))
 			if code != 2 || out != "" || !strings.Contains(errOut, "("+p+" in the working tree)") || !strings.Contains(errOut, "physa map learn") {
@@ -684,131 +762,6 @@ func TestGatherChoosesTheDiscoveryAgent(t *testing.T) {
 	}
 	if g := storedGather(t, env); !slices.ContainsFunc(g.Docs, func(d store.Doc) bool { return d.Path == "docs/notes/why.md" && d.Reason == "why the product exists" }) {
 		t.Errorf("stored docs %+v", g.Docs)
-	}
-}
-
-// mergeMarker is a line of the merge skill, which only the merge's prompt
-// holds.
-const mergeMarker = "You merge what several sessions proposed"
-
-// windowedAgent is a routedAgent that states its window, and records which
-// propose sessions it started read a share or merged, with their ids: those
-// that are not discovery's, a recovering session's (whose prompt names its
-// capability) or resumed.
-type windowedAgent struct {
-	*routedAgent
-	window  int
-	propose []string // "share" or "merge", in order
-	ids     []string
-}
-
-// Window is the window the test sets while propose reads its shares, and a
-// whole one once the merge has run: recovering's skill is larger than the
-// room a share leaves, and only propose is meant to be cramped here.
-func (w *windowedAgent) Window() int {
-	if slices.Contains(w.propose, "merge") {
-		return 1_000_000
-	}
-	return w.window
-}
-
-func (w *windowedAgent) Start(ctx context.Context, s adapter.Spec) (adapter.Session, error) {
-	if !s.Resume && !strings.Contains(s.Prompt, discoveryMarker) && !strings.Contains(s.Prompt, "\nname: delivery\n") && !strings.Contains(s.Prompt, "\nname: search\n") {
-		kind := "share"
-		if strings.Contains(s.Prompt, mergeMarker) {
-			kind = "merge"
-		}
-		w.propose, w.ids = append(w.propose, kind), append(w.ids, s.SessionID)
-	}
-	return w.routedAgent.Start(ctx, s)
-}
-
-// shareWindow leaves one share of propose room for the skill and 6,000
-// estimated tokens.
-var shareWindow = reading.Tokens(mapping.Prompt(reading.Input{})) + 6_000 + mapping.ReplyReserve
-
-// bigPRs is a forge that lists PRs 3, 4 and 5 as merged, each with a body of
-// about tokens estimated tokens.
-func bigPRs(tokens int) forge.Forge {
-	var prs []forge.PR
-	for n := 3; n <= 5; n++ {
-		body := strings.Repeat(fmt.Sprintf("PR %d says why. ", n), tokens*23/10/len("PR 3 says why. "))
-		prs = append(prs, forge.PR{Number: n, Title: fmt.Sprintf("Change %d", n), Body: body, MergedAt: time.Now().Add(-time.Duration(n) * time.Hour)})
-	}
-	return mergedFake{prs: prs}
-}
-
-// TestFullProposesInSharesWhenOneSessionCannotHoldTheSources checks that a
-// bare run whose sources are more than one session of the agent holds
-// estimates every share and the merge, proposes in shares and a merge
-// before recovering, and writes a Session: trailer for each of them.
-func TestFullProposesInSharesWhenOneSessionCannotHoldTheSources(t *testing.T) {
-	remoteRepo(t)
-	a := &windowedAgent{routedAgent: newRoutedAgent(), window: shareWindow}
-	code, out, errOut := runInit(fullEnv(t, bigPRs(4_000), a), "--write")
-	if code != 0 {
-		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
-	}
-	if want := []string{"share", "share", "share", "merge"}; !slices.Equal(a.propose, want) {
-		t.Fatalf("propose sessions %v, want %v", a.propose, want)
-	}
-	if got := a.started[:5]; !slices.Equal(got, []string{"discover", "propose", "propose", "propose", "propose"}) || len(a.started) != 7 {
-		t.Errorf("sessions %v: want discovery, the shares and the merge, then recovering", a.started)
-	}
-	for _, want := range []string{"physa init: propose reads share 1 of 3 whole, ", "physa init: propose reads share 3 of 3 whole, ", "physa init: propose merges the proposals of its 3 shares"} {
-		if !strings.Contains(errOut, want) {
-			t.Errorf("stderr lacks %q:\n%s", want, errOut)
-		}
-	}
-	if strings.Contains(errOut, "propose reads its sources whole") || regexp.MustCompile(`(?i)estimat`).MatchString(errOut) {
-		t.Errorf("stderr names one session or an estimate:\n%s", errOut)
-	}
-	for _, want := range []string{"in 3 shares and a merge", "Share 1 of 3, about ", "The merge read only the shares' proposals", "## delivery: recovered", "Wrote physa/init at "} {
-		if !strings.Contains(out, want) {
-			t.Errorf("stdout lacks %q:\n%s", want, out)
-		}
-	}
-	msg := gitIn(t, ".", "log", "-1", "--format=%B", "physa/init")
-	if n := strings.Count(msg, "Session: "); n != 6 {
-		t.Errorf("%d Session: trailers, want the 3 shares', the merge's and 2 recoveries':\n%s", n, msg)
-	}
-	for _, id := range a.ids {
-		if !strings.Contains(msg, "Session: "+id+"\n") {
-			t.Errorf("no Session: trailer for propose's session %s:\n%s", id, msg)
-		}
-	}
-}
-
-// TestFullOneSessionWithinTheWindowIsUnchanged checks that an agent whose
-// window holds the whole prompt proposes in one session, as before.
-func TestFullOneSessionWithinTheWindowIsUnchanged(t *testing.T) {
-	remoteRepo(t)
-	a := &windowedAgent{routedAgent: newRoutedAgent(), window: 1_000_000}
-	code, out, errOut := runInit(fullEnv(t, bigPRs(4_000), a))
-	if code != 0 || !slices.Equal(a.propose, []string{"share"}) || !strings.Contains(errOut, "propose reads its sources whole") ||
-		strings.Contains(errOut, "shares") || strings.Contains(out, "Share 1 of") {
-		t.Errorf("code %d, propose sessions %v\nstdout %s\nstderr %s", code, a.propose, out, errOut)
-	}
-}
-
-// TestFullStopsOnASourceLargerThanAShare checks that a PR larger than an
-// empty share stops a bare run with exit 1 before any propose session, and
-// --propose alone the same way, naming the PR and how to leave it out.
-func TestFullStopsOnASourceLargerThanAShare(t *testing.T) {
-	remoteRepo(t)
-	a := &windowedAgent{routedAgent: newRoutedAgent(), window: shareWindow}
-	env := fullEnv(t, bigPRs(10_000), a)
-	stop := regexp.MustCompile(`physa init: PR #3 takes about [0-9,]+ estimated tokens, and with the skill it is more than one share of propose holds \(about [0-9,]+ tokens\)\. ` +
-		`Nothing is cut, so init stops before spending on propose\. To leave it out of the gather, gather again with --since a date after it merged on [0-9-]+ \(physa init --gather --since [0-9-]+\), or with a smaller --max-prs\.\n$`)
-	code, out, errOut := runInit(env)
-	t.Logf("bare run: exit %d\nstderr:\n%s", code, errOut)
-	if code != 1 || !slices.Equal(a.started, []string{"discover"}) || len(a.propose) != 0 || !stop.MatchString(errOut) || strings.Contains(out, "# Proposed map") {
-		t.Errorf("bare run: code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
-	}
-	code, out, errOut = runInit(env, "--propose")
-	t.Logf("--propose: exit %d\nstderr:\n%s", code, errOut)
-	if code != 1 || !slices.Equal(a.started, []string{"discover"}) || len(a.propose) != 0 || !stop.MatchString(errOut) || out != "" {
-		t.Errorf("--propose: code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
 	}
 }
 
@@ -928,8 +881,7 @@ func TestFullSkillLineKeepsTheExitCode(t *testing.T) {
 		agent func() adapter.Adapter
 		args  []string
 	}{
-		"stopped before proposing": {func(t *testing.T) { remoteRepo(t) }, bigPRs(10_000),
-			func() adapter.Adapter { return &windowedAgent{routedAgent: newRoutedAgent(), window: shareWindow} }, []string{"--write"}},
+		"stopped by the cap":        {func(t *testing.T) { remoteRepo(t) }, onePR(), func() adapter.Adapter { return newRoutedAgent() }, []string{"--write", "--cap", "1k"}},
 		"a new codebase unanswered": {func(t *testing.T) { newCodebaseRepo(t) }, nil, func() adapter.Adapter { return newRoutedAgent() }, []string{"--write"}},
 		"a hook refused": {func(t *testing.T) {
 			dir, _ := remoteRepo(t)
@@ -967,12 +919,223 @@ func TestSkillIsNotAskedOutsideAFullRun(t *testing.T) {
 	if code, _, errOut := runInit(env, "--push"); code != command.BadUsage || strings.Contains(errOut, "physa skill") {
 		t.Errorf("a bad line: code %d, stderr %s", code, errOut)
 	}
-	for _, args := range [][]string{nil, {"--propose"}, {"--recover"}} {
+	for _, args := range [][]string{nil, {"--walk"}, {"--recover"}} {
 		mappedRepo(t, ".physa/product/index.md")
 		env := fullEnv(t, onePR(), newRoutedAgent())
 		env.Skill = never
 		if code, _, errOut := runInit(env, args...); code != 2 || strings.Contains(errOut, "physa skill") {
 			t.Errorf("a mapped repo %v: code %d, stderr %s", args, code, errOut)
+		}
+	}
+}
+
+// tickingNow gives env a clock that moves a second each time it is read, so
+// what a run stores is in the order it stored it.
+func tickingNow(env *Env) {
+	var mu sync.Mutex
+	now := time.Now().UTC().Truncate(time.Second)
+	env.Now = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		now = now.Add(time.Second)
+		return now
+	}
+}
+
+// inOrder fails the test unless out holds each of marks, each after the one
+// before it.
+func inOrder(t *testing.T, out string, marks ...string) {
+	t.Helper()
+	at := 0
+	for _, m := range marks {
+		i := strings.Index(out[at:], m)
+		if i < 0 {
+			t.Fatalf("the output lacks %q after %q:\n%s", m, out[:at], out)
+		}
+		at += i + len(m)
+	}
+}
+
+// TestFullRunsThePhasesInOrder checks that a bare run starts its sessions in
+// the order discovery, areas, walk, recover, consolidate, prints each phase as
+// the phase alone does in that order with the placements between the walk and
+// the recovery, and stores them in that order, each spending under its phase.
+func TestFullRunsThePhasesInOrder(t *testing.T) {
+	remoteRepo(t)
+	a := newRoutedAgent()
+	a.replies["search"] = searchTwoRules // two entries in an area, so consolidation starts a session
+	env := fullEnv(t, onePR(), a)
+	tickingNow(&env)
+	code, out, errOut := runInit(env)
+	t.Logf("sessions %v", a.started)
+	if code != 0 {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	kinds := a.kinds()
+	if len(kinds) != 6 || !slices.Equal(kinds[:3], []string{"discover", "areas", "walk"}) || kinds[5] != "consolidate" ||
+		!slices.Equal(slices.Sorted(slices.Values(kinds[3:5])), []string{"delivery", "search"}) {
+		t.Errorf("sessions %v; want discovery, areas, walk, the two recoveries, then consolidation", a.started)
+	}
+	inOrder(t, out, "Gathered into", "- shipping (1 file): Changes reach users.", "delivery", "PRs placed: ", "## delivery: recovered", "Consolidated 2 capabilities", reportHead)
+	st, err := env.Store(context.Background(), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	rec := initrecord.Of(st)
+	ar, okA, errA := rec.Areas(t.Context())
+	wk, okW, errW := rec.Walk(t.Context())
+	pl, okP, errP := rec.Place(t.Context())
+	rows, errR := rec.Recovered(t.Context())
+	co, okC, errC := rec.Consolidated(t.Context())
+	if err := errors.Join(errA, errW, errP, errR, errC); err != nil || !okA || !okW || !okP || !okC || len(rows) != 2 {
+		t.Fatalf("stored: areas %v, walk %v, place %v, %d recovered, consolidation %v: %v", okA, okW, okP, len(rows), okC, err)
+	}
+	// the placements are of this walk, and recovery reads them, so they were stored between the two
+	if !ar.At.Before(wk.At) || !pl.WalkAt.Equal(wk.At) {
+		t.Errorf("areas at %v, walk at %v, placements of the walk at %v; want that order", ar.At, wk.At, pl.WalkAt)
+	}
+	for _, r := range rows {
+		if !r.ProposalAt.Equal(wk.At) || !wk.At.Before(r.At) || !r.At.Before(co.At) {
+			t.Errorf("%s recovered at %v from the walk at %v; want after the walk (%v) and before the consolidation (%v)", r.Capability, r.At, r.ProposalAt, wk.At, co.At)
+		}
+	}
+	if !strings.Contains(errOut, "from the walk and placements") {
+		t.Errorf("recovery did not read the placements:\n%s", errOut)
+	}
+	spent, err := rec.Spending(t.Context())
+	var phases []string
+	for _, p := range spent {
+		phases = append(phases, p.Phase)
+	}
+	if want := []string{"discover", "areas", "walk", "recover", "consolidate"}; err != nil || !slices.Equal(phases, want) {
+		t.Errorf("spend stored under %v (%v), want %v", phases, err, want)
+	}
+}
+
+// productIndex is the map's product as physa/init holds it in dir.
+func productIndex(t *testing.T, dir string) string {
+	t.Helper()
+	return strings.TrimSpace(gitIn(t, dir, "show", "physa/init:.physa/product/index.md"))
+}
+
+// TestFullWriteWritesTheStatedProduct checks that a full run with --write
+// writes the name and promise the areas session stated to the map's product,
+// and says nothing of a promise not stated.
+func TestFullWriteWritesTheStatedProduct(t *testing.T) {
+	dir, _ := remoteRepo(t)
+	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write")
+	if code != 0 {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	want := "---\npromise: Teams keep what they learn about their product.\n---\n\n# Keeper\n\nTeams keep what they learn about their product."
+	if p := productIndex(t, dir); p != want {
+		t.Errorf("product/index.md:\n%s\nwant:\n%s", p, want)
+	}
+	if strings.Contains(errOut, "Not yet stated.") || strings.Contains(out, "Not yet stated.") {
+		t.Errorf("a stated promise is said missing:\n%s\n%s", out, errOut)
+	}
+}
+
+// TestFullWriteWithoutAStatedPromiseSaysNotYetStated checks that when the
+// areas session states no product, the full run still writes, the map's
+// product is named after the folder and says "Not yet stated.", and init says
+// so without advising --areas alone.
+func TestFullWriteWithoutAStatedPromiseSaysNotYetStated(t *testing.T) {
+	dir, _ := remoteRepo(t)
+	a := newRoutedAgent()
+	a.areas = "```json\n{" + fullAreas + "}\n```"
+	code, out, errOut := runInit(fullEnv(t, onePR(), a), "--write")
+	if code != 0 {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	p := productIndex(t, dir)
+	if !strings.HasPrefix(p, "---\npromise: Not yet stated.\n---\n\n# ") || !strings.HasSuffix(p, "\n\nNot yet stated.") || strings.Contains(p, "Keeper") {
+		t.Errorf("product/index.md:\n%s", p)
+	}
+	line := "physa init: the stored areas state no product promise, so the map's product says \"Not yet stated.\"; a new physa init states one\n"
+	if strings.Count(errOut, line) != 1 || strings.Contains(errOut, "--areas") {
+		t.Errorf("stderr does not say the promise is not stated once, or advises --areas:\n%s", errOut)
+	}
+	if !strings.Contains(out, `no product promise was stated with the areas, so the map's product will say "Not yet stated."`) {
+		t.Errorf("the areas' output does not say so:\n%s", out)
+	}
+}
+
+// TestFullWithNoSourceFileStopsAtAreas checks that a full run on a repo with
+// history and docs but no source file to divide stops at areas with areas'
+// own message and exit 2, having started no walk and written nothing.
+func TestFullWithNoSourceFileStopsAtAreas(t *testing.T) {
+	dir, _ := remoteRepo(t)
+	gitIn(t, dir, "rm", "-q", "-f", "main.go", "web/app.js")
+	write(t, dir, "notes.txt", "notes\n")
+	gitIn(t, dir, "add", "notes.txt")
+	gitIn(t, dir, "commit", "-q", "-m", "chore: Drop the code")
+	a := newRoutedAgent()
+	a.split = "```json\n" + `{"tests":[],"docs":["AGENTS.md"],"other":["*.txt"]}` + "\n```"
+	code, out, errOut := runInit(fullEnv(t, onePR(), a), "--write")
+	t.Logf("stderr:\n%s", errOut)
+	if code != 2 || !strings.Contains(errOut, "physa init: the split leaves no source file to divide into areas") {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	if got := a.kinds(); !slices.Equal(got, []string{"discover", "areas"}) {
+		t.Errorf("sessions %v; want discovery and the areas' split alone", a.started)
+	}
+	if strings.Contains(errOut, "To continue") || gitIn(t, dir, "branch", "--list", "physa/init") != "" {
+		t.Errorf("a failed areas phase said how to continue or wrote a branch:\n%s", errOut)
+	}
+}
+
+// TestFullRecoveryWithAFailedCapabilityStillConsolidatesAndWrites checks that
+// a full run whose recovery left one capability failed, and was not stopped,
+// goes on to consolidate and write, and exits 2 for the failure.
+func TestFullRecoveryWithAFailedCapabilityStillConsolidatesAndWrites(t *testing.T) {
+	dir, _ := remoteRepo(t)
+	a := newRoutedAgent()
+	a.replies["search"] = "no block here"
+	env := fullEnv(t, onePR(), a)
+	code, out, errOut := runInit(env, "--write")
+	if code != 2 {
+		t.Fatalf("code %d, want 2\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	inOrder(t, out, "## search: failed", "Consolidated 1 capabilities", "Wrote physa/init at ")
+	files := gitIn(t, dir, "ls-tree", "-r", "--name-only", "physa/init")
+	if !strings.Contains(files, ".physa/capabilities/delivery/rules.md") || !strings.Contains(files, ".physa/capabilities/search/index.md") {
+		t.Errorf("physa/init holds:\n%s", files)
+	}
+	if !strings.Contains(errOut, "physa init: this run spent ") || strings.Contains(errOut, "To continue") {
+		t.Errorf("stderr:\n%s", errOut)
+	}
+}
+
+// TestFullWritesTheRecoveredMapWhenConsolidationCannotRun checks that when
+// consolidation cannot run, here because no capability was recovered, init
+// says so, still writes the map as recovered with --write, and exits 2.
+func TestFullWritesTheRecoveredMapWhenConsolidationCannotRun(t *testing.T) {
+	dir, _ := remoteRepo(t)
+	a := newRoutedAgent()
+	a.replies["delivery"], a.replies["search"] = "no block here", "no block here"
+	code, out, errOut := runInit(fullEnv(t, onePR(), a), "--write")
+	if code != 2 || strings.Contains(out, "Consolidated ") || !strings.Contains(out, "Wrote physa/init at ") {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	inOrder(t, errOut, "physa init: no capability recovered from the walk yet", "physa init: consolidation could not run, so the map stays as recovered\n", "physa init: this run spent ")
+	if files := gitIn(t, dir, "ls-tree", "-r", "--name-only", "physa/init"); !strings.Contains(files, ".physa/capabilities/delivery/index.md") {
+		t.Errorf("physa/init holds:\n%s", files)
+	}
+}
+
+// TestProposeIsAnUnknownFlag checks that --propose, removed with init's
+// propose, is refused as any unknown flag is: bad usage, with nothing run.
+func TestProposeIsAnUnknownFlag(t *testing.T) {
+	newRepo(t)
+	for _, args := range [][]string{{"--propose"}, {"--propose", "--json"}, {"--gather", "--propose"}, {"--write", "--propose"}} {
+		f := oneAgent()
+		env := testEnv(t, onePR(), f)
+		code, out, errOut := runInit(env, args...)
+		bogus, _, bogusErr := runInit(env, "--bogus")
+		if code != command.BadUsage || out != "" || f.starts != 0 || code != bogus || errOut != bogusErr || !strings.HasPrefix(errOut, "usage: physa init") || strings.Contains(errOut, "--propose") {
+			t.Errorf("%v: code %d, %d sessions, stdout %q, stderr %q", args, code, f.starts, out, errOut)
 		}
 	}
 }

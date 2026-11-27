@@ -1,23 +1,27 @@
 package initrun
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"github.com/dphaener/physa/internal/areas"
 	"github.com/dphaener/physa/internal/consolidatedmap"
 	"github.com/dphaener/physa/internal/initbranch"
 	"github.com/dphaener/physa/internal/initpr"
 	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/initreport"
-	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/newcodebase"
+	"github.com/dphaener/physa/internal/productpromise"
 	"github.com/dphaener/physa/internal/recoverinput"
 	"github.com/dphaener/physa/internal/recovery"
+	"github.com/dphaener/physa/internal/walk"
 )
 
 // notReached is why a capability recovering never reached has no recovered
@@ -25,11 +29,14 @@ import (
 const notReached = "recovering has not reached it yet"
 
 // writeStored writes what the store holds to physa/init; see storedMap, with init's report as the body's section and in --json. A current
-// stored consolidation takes the place of the recovered text; a stale one is said and ignored.
+// stored consolidation takes the place of the recovered text; a stale one is said and ignored, and so is a product promise not stated.
 func (r *run) writeStored(ctx context.Context) int {
 	m, err := storedMap(ctx, r.st, r.root, r.env)
 	if err != nil {
 		return failed(r.stderr, err)
+	}
+	if m.ProductPromise == productpromise.NoPromise {
+		fmt.Fprintf(r.stderr, "physa init: the stored areas state no product promise, so the map's product says %q; a new physa init states one\n", productpromise.NoPromise)
 	}
 	m, stale, err := consolidatedmap.Apply(ctx, r.st, m)
 	if err != nil {
@@ -43,47 +50,32 @@ func (r *run) writeStored(ctx context.Context) int {
 	return writeMap(ctx, m, rep, r.o, r.env, r.p, r.stderr)
 }
 
-// storedMap builds init's map from the store: the capabilities of the source
-// the stored recovery came from (the walk's, in walk order, when the walk and
-// the placements are stored, else the proposal's), each with its stored
-// recovery of that source (promise only when it has no recovered text), the
-// recovered terms in capability order, the sessions Physa started, and what
-// the PR body summarises, with what each phase spent as the meter counted
-// it. The product's promise, questions and dropped items are the stored
-// proposal's, or "Not yet stated." with none without one. The product is
-// named after root.
+// productName is the product's name: the one the stored areas state, else root's folder name.
+func productName(p productpromise.Product, root string) string {
+	return cmp.Or(p.Name, newcodebase.TitleCase(filepath.Base(root)))
+}
+
+// storedMap builds init's map from the store: the walk's capabilities, in walk
+// order, each with its stored recovery from that walk (promise only when it
+// has no recovered text), the recovered terms in capability order, the
+// sessions Physa started (the areas', the walk's, then each recovery's), and
+// what the PR body summarises, with what each phase spent as the meter
+// counted it. The product's name and promise are the ones the stored areas
+// state, or root's folder name and "Not yet stated.".
 func storedMap(ctx context.Context, st *initrecord.Store, root string, env Env) (initbranch.Map, error) {
-	prop, hasProp, err := st.Proposed(ctx)
-	var s mapping.Stored
-	if err == nil && hasProp {
-		err = json.Unmarshal(prop.Body, &s)
+	p, _, err := productpromise.Stored(ctx, st)
+	src, ok, lerr := recoverinput.Listed(ctx, st)
+	if lerr == nil && !ok {
+		lerr = recovery.ErrNoWalk
 	}
-	var src recoverinput.Source
-	var ok bool
-	if err == nil {
-		if src, ok, err = recoverinput.Listed(ctx, st, s.Proposal, hasProp); err == nil && !ok {
-			err = recovery.ErrNoProposal
-		}
-	}
+	ar, _, aerr := areas.Load(ctx, st)
+	wr, _, werr := walk.Load(ctx, st)
 	rows, rerr := st.Recovered(ctx)
 	spent, serr := st.Spending(ctx)
-	if err = errors.Join(err, rerr, serr); err != nil {
+	if err = errors.Join(err, lerr, aerr, werr, rerr, serr); err != nil {
 		return initbranch.Map{}, err
 	}
-	m := initbranch.Map{ProductName: newcodebase.TitleCase(filepath.Base(root)), ProductPromise: recoverinput.NoPromise, Date: env.Now()}
-	if hasProp {
-		m.ProductPromise, m.Sessions = s.Proposal.Product.Promise, s.Ran(prop.SessionID)
-	}
-	for _, q := range s.Proposal.Questions {
-		m.ProductQuestions = append(m.ProductQuestions, initbranch.Question{Question: q.Question, SuggestedBy: q.SuggestedBy})
-	}
-	for _, d := range s.Dropped {
-		value := strings.TrimPrefix(d.Capability+": "+d.Value, ": ")
-		m.Summary.Dropped = append(m.Summary.Dropped, initbranch.Drop{What: d.What, Value: value, Reason: d.Reason})
-	}
-	for _, mf := range s.Malformed {
-		m.Summary.Dropped = append(m.Summary.Dropped, initbranch.Drop{What: "malformed item", Value: mf.Raw, Reason: mf.Reason})
-	}
+	m := initbranch.Map{ProductName: productName(p, root), ProductPromise: p.PromiseOr(), Date: env.Now(), Sessions: slices.Concat(ar.Sessions, wr.Sessions)}
 	byName := map[string]initrecord.Recovered{}
 	for _, r := range rows {
 		if src.Holds(r.ProposalAt) {

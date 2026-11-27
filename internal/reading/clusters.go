@@ -6,16 +6,6 @@ import (
 	"github.com/dphaener/physa/internal/store"
 )
 
-// clusters is Clusters as propose reads them: each with its first
-// ClusterPaths paths.
-func clusters(changes []store.GatheredChange) []Cluster {
-	out := Clusters(changes)
-	for i := range out {
-		out[i].Paths = out[i].Paths[:min(len(out[i].Paths), ClusterPaths)]
-	}
-	return out
-}
-
 // Clusters finds files that change together, each cluster with all its
 // paths. Changes touching more than ClusterMaxFiles files are skipped;
 // pairs of files sharing at least ClusterMinChanges changes are joined, and

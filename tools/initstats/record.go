@@ -26,7 +26,6 @@ type Record struct {
 	Repo     Repo             `json:"repo"`
 	Phases   map[string]Phase `json:"phases"`
 	Gather   *Gather          `json:"gather,omitempty"`
-	Proposal *Proposal        `json:"proposal,omitempty"`
 	Recovery *Recovery        `json:"recovery,omitempty"`
 }
 
@@ -98,27 +97,6 @@ type Gather struct {
 	} `json:"quiet,omitempty"`
 }
 
-// Proposal is the propose phase's counts.
-type Proposal struct {
-	Capabilities int      `json:"capabilities"`
-	Unshown      int      `json:"unshown"`
-	Questions    int      `json:"questions"`
-	Dropped      int      `json:"dropped"`
-	Malformed    int      `json:"malformed"`
-	PromptTokens int      `json:"prompt_tokens"`
-	SourceTokens int      `json:"source_tokens"`
-	Sources      []Source `json:"sources"`
-	Model        string   `json:"model"`
-	Tokens       Tokens   `json:"tokens"`
-}
-
-// Source is what proposing read of one kind of source.
-type Source struct {
-	Name   string `json:"name"`
-	Items  int    `json:"items"`
-	Tokens int    `json:"tokens"`
-}
-
 // Recovery is the recover phase's counts, one row per capability in run
 // order, by position rather than name.
 type Recovery struct {
@@ -149,7 +127,6 @@ var (
 	extPattern    = regexp.MustCompile(`^\.[a-z0-9]{1,8}$`)
 	commitPattern = regexp.MustCompile(`^[0-9a-f]{12}$`)
 	datePattern   = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}`)
-	sourceNames   = map[string]bool{"docs": true, "pull requests": true, "review comments": true, "changes": true, "clusters": true}
 	statuses      = map[string]bool{"recovered": true, "not yet recovered": true, "failed": true}
 )
 
@@ -171,8 +148,10 @@ func oneOf(set map[string]bool, s string) string {
 	return "other"
 }
 
-// build reads a kept run's folder into a record. Each phase's output is
-// decoded into the types above, so a field they don't declare is never read.
+// build reads a kept run's folder into a record. The gather's and recovery's
+// outputs are decoded into the types above, so a field they don't declare is
+// never read; the other phases' outputs, and an older run's proposal, are
+// kept in the folder but not read.
 func build(kept, label string) (Record, error) {
 	var m meta
 	if _, err := readJSON(filepath.Join(kept, "meta.json"), &m); err != nil {
@@ -205,41 +184,6 @@ func build(kept, label string) (Record, error) {
 		out.Discovery.Model = model(out.Discovery.Model)
 		out.Bound.Since, out.Bound.HistorySince = date(out.Bound.Since), date(out.Bound.HistorySince)
 		rec.Gather = &out
-	}
-	var p struct {
-		Capabilities []struct {
-			Unshown   bool              `json:"unshown"`
-			Questions []json.RawMessage `json:"questions"`
-		} `json:"capabilities"`
-		Questions []json.RawMessage `json:"questions"`
-		Dropped   []json.RawMessage `json:"dropped"`
-		Malformed []json.RawMessage `json:"malformed"`
-		Read      struct {
-			PromptTokens int      `json:"prompt_tokens"`
-			SourceTokens int      `json:"source_tokens"`
-			Sources      []Source `json:"sources"`
-		} `json:"read"`
-		Session struct {
-			Model  string `json:"model"`
-			Tokens Tokens `json:"tokens"`
-		} `json:"session"`
-	}
-	if ok, err := readJSON(filepath.Join(kept, "proposal.json"), &p); err != nil {
-		return rec, err
-	} else if ok {
-		pr := Proposal{Capabilities: len(p.Capabilities), Questions: len(p.Questions), Dropped: len(p.Dropped),
-			Malformed: len(p.Malformed), PromptTokens: p.Read.PromptTokens, SourceTokens: p.Read.SourceTokens,
-			Sources: []Source{}, Model: model(p.Session.Model), Tokens: p.Session.Tokens}
-		for _, c := range p.Capabilities {
-			pr.Questions += len(c.Questions)
-			if c.Unshown {
-				pr.Unshown++
-			}
-		}
-		for _, s := range p.Read.Sources {
-			pr.Sources = append(pr.Sources, Source{Name: oneOf(sourceNames, s.Name), Items: s.Items, Tokens: s.Tokens})
-		}
-		rec.Proposal = &pr
 	}
 	var r struct {
 		Used         Tokens `json:"used"`

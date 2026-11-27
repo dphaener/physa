@@ -9,7 +9,6 @@ package recovering
 import (
 	"time"
 
-	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/reading"
 )
 
@@ -19,14 +18,10 @@ var Reads = reading.Options{Messages: true}
 
 // Input is everything one session recovers a capability from.
 type Input struct {
-	// Product is the product's promise, as the proposal holds it.
+	// Product is the product's promise, as init's record holds it.
 	Product string
-	// Name and Promise are the capability's, as the proposal or the walk
-	// holds them.
+	// Name and Promise are the capability's, as the walk holds them.
 	Name, Promise string
-	// Questions are the proposal's questions about this capability; a
-	// capability found in the code has none.
-	Questions []mapping.Question
 	// Area is the area of the code a capability found in the code was found
 	// in; empty for one proposed from the history.
 	Area string

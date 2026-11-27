@@ -16,8 +16,8 @@ import (
 	"github.com/dphaener/physa/internal/consolidating"
 	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/place"
+	"github.com/dphaener/physa/internal/productpromise"
 	"github.com/dphaener/physa/internal/recovering"
-	"github.com/dphaener/physa/internal/recoverinput"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/sourceset"
 	"github.com/dphaener/physa/internal/spend"
@@ -41,7 +41,7 @@ import (
 // left unclaimed, as an older walk could leave it.
 var (
 	gatherAt   = time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
-	proposalAt = gatherAt.Add(30 * time.Minute)
+	proposalAt = gatherAt.Add(30 * time.Minute) // when an earlier physa stored a proposal, for rows recovered from it
 	areasAt    = gatherAt.Add(time.Hour)
 	walkAt     = gatherAt.Add(2 * time.Hour)
 
@@ -128,11 +128,6 @@ func shopGather() store.Gather {
 
 func (f *fixture) gather(g store.Gather) *fixture {
 	f.check(f.st.PutGather(f.t.Context(), g))
-	return f
-}
-
-func (f *fixture) proposal() *fixture {
-	f.check(f.st.PutProposal(f.t.Context(), initrecord.Proposal{GatherAt: gatherAt, At: proposalAt, SessionID: "prop", Model: "m", Body: []byte(`{}`)}))
 	return f
 }
 
@@ -265,11 +260,11 @@ func (f *fixture) recovered(rows []initrecord.Recovered) *fixture {
 
 // fingerprint is the fingerprint consolidation keeps of what it was made
 // from, as consolidate's read makes it: the walk's time, the product's
-// promise (none is stated on the walk path) and each recovered row with a
+// promise (the fixture's areas state none) and each recovered row with a
 // file, in walk order. The golden test checks consolidate.Current agrees.
 func fingerprint(rows []initrecord.Recovered) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "walk %s\npromise %q\n", walkAt.UTC().Format(time.RFC3339Nano), recoverinput.NoPromise)
+	fmt.Fprintf(h, "walk %s\npromise %q\n", walkAt.UTC().Format(time.RFC3339Nano), productpromise.NoPromise)
 	for _, name := range walkOrder {
 		for _, r := range rows {
 			if r.Capability == name && r.Status == recovery.StatusRecovered && r.File != "" {
@@ -300,7 +295,7 @@ func (f *fixture) consolidated(rows []initrecord.Recovered) *fixture {
 		return consolidate.Capability{Name: name, Promise: promise, Area: capabilitytext.Area{Name: area}, File: capText(name, promise, rules, decisions, nil)}
 	}
 	res := consolidate.Result{
-		Fingerprint: fingerprint(rows), WalkAt: walkAt, ProductPromise: recoverinput.NoPromise,
+		Fingerprint: fingerprint(rows), WalkAt: walkAt, ProductPromise: productpromise.NoPromise,
 		Capabilities: []consolidate.Capability{
 			capOf("cart", "shop", "People fill a cart.", []string{totalsRound, emptyCart, lineOrder, removedLines, providerRule}, []string{cartDecision}),
 			capOf("pay", "shop", "People pay for their cart.", []string{refundCap, chargeOnce, retryHooks}, nil),
@@ -362,11 +357,4 @@ func (f *fixture) spent() *fixture {
 func full(t *testing.T) *fixture {
 	rows := recoveredRows(walkAt)
 	return newFixture(t).gather(shopGather()).areas().walk().place().recovered(rows).consolidated(rows).spent()
-}
-
-// proposalPath is a run that proposed and recovered from the proposal:
-// gather, proposal, recovered rows and spend, and no areas, walk,
-// placements or consolidation.
-func proposalPath(t *testing.T) *fixture {
-	return newFixture(t).gather(shopGather()).proposal().recovered(recoveredRows(proposalAt)).spent()
 }

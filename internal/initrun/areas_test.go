@@ -146,7 +146,7 @@ func TestAreasRefusesAMappedRepoBeforeAnySession(t *testing.T) {
 
 func TestAreasIsBadUsageWithOtherFlags(t *testing.T) {
 	t.Parallel()
-	for _, args := range [][]string{{"--gather"}, {"--propose"}, {"--recover"}, {"--write"}, {"--push"}, {"--pr"}, {"--hooks"},
+	for _, args := range [][]string{{"--gather"}, {"--recover"}, {"--write"}, {"--push"}, {"--pr"}, {"--hooks"},
 		{"--answers", "x"}, {"--yes"}, {"--only", "x"}, {"--since", "2026-01-01"}, {"--max-prs", "3"}} {
 		if code, _, _ := runInit(testEnv(t, nil, nil), append([]string{"--areas"}, args...)...); code != command.BadUsage {
 			t.Errorf("--areas %v: code %d, want bad usage", args, code)
@@ -159,10 +159,9 @@ func TestAreasIsBadUsageWithOtherFlags(t *testing.T) {
 // written from what init stored holds none of their words.
 func TestAreasNeverReachTheMap(t *testing.T) {
 	dir, _ := remoteRepo(t)
-	write(t, dir, "web/app.js", "let a\n")
-	gitIn(t, dir, "add", "web/app.js")
-	gitIn(t, dir, "commit", "-q", "-m", "feat: Add web", "--", "web/app.js")
-	a := &areaAgent{next: newRoutedAgent()}
+	r := newRoutedAgent()
+	r.replies = map[string]string{"zz-cap-marker": capReply("marker"), "zz-cap-second": capReply("second")}
+	a := &walkAgent{next: &areaAgent{next: r}}
 	env := fullEnv(t, &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}, a)
 	if code, _, errOut := runInit(env, "--gather"); code != 0 {
 		t.Fatalf("gather: %d %s", code, errOut)
@@ -180,7 +179,7 @@ func TestAreasNeverReachTheMap(t *testing.T) {
 	if got := gitIn(t, dir, "ls-files", ".physa"); got != "" {
 		t.Errorf(".physa is tracked: %s", got)
 	}
-	for _, args := range [][]string{{"--propose"}, {"--recover", "--write"}} {
+	for _, args := range [][]string{{"--walk"}, {"--place"}, {"--recover", "--write"}} {
 		if code, _, errOut := runInit(env, args...); code != 0 {
 			t.Fatalf("%v: %d %s", args, code, errOut)
 		}
@@ -192,7 +191,7 @@ func TestAreasNeverReachTheMap(t *testing.T) {
 	_, ok, err := initrecord.Of(st).Areas(context.Background())
 	st.Close()
 	if !ok || err != nil {
-		t.Fatalf("the areas were not kept through propose and recover: %v %v", ok, err)
+		t.Fatalf("the areas were not kept through the walk, the placements and the recovery: %v %v", ok, err)
 	}
 	files := strings.Fields(gitIn(t, dir, "ls-tree", "-r", "--name-only", "physa/init"))
 	if len(files) < 3 {

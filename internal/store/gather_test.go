@@ -10,6 +10,19 @@ import (
 	"time"
 )
 
+func TestPROf(t *testing.T) {
+	for subject, want := range map[string]int{
+		"Add export (#12)":                   12,
+		"Merge pull request #7 from a/b":     7,
+		"Refer to #3 in passing":             0,
+		"Add export (#12) and then trailing": 0,
+	} {
+		if got := PROf(GatheredChange{Subject: subject}); got != want {
+			t.Errorf("PROf(%q) = %d, want %d", subject, got, want)
+		}
+	}
+}
+
 func sampleGather() Gather {
 	t0 := time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC)
 	return Gather{

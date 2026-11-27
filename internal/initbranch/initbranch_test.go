@@ -271,7 +271,7 @@ func TestWritesExactlyTheMapFiles(t *testing.T) {
 		}
 	}
 	msg := gitIn(t, f.dir, "log", "-1", "--format=%B", Branch)
-	wantMsg := "docs(map): Add the map recovered by physa init\n\nInit proposed 2 capabilities from the repo's docs, history and PRs:\n" +
+	wantMsg := "docs(map): Add the map recovered by physa init\n\nInit named 2 capabilities from the repo's code, with its docs, history and PRs:\n" +
 		"1 recovered, 1 not yet recovered and 0 failed.\nThose not recovered hold their promise only, to be filled from future PRs.\n\n" +
 		"Session: s-propose\nSession: s-delivery"
 	if msg != wantMsg {

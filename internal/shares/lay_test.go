@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/draft"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
 )
@@ -24,9 +24,44 @@ func text(n int, prefix string) string {
 	return b.String()
 }
 
+// head stands in for a session's skill: what its prompt says before the
+// sources.
+var head = text(9_000, "skill")
+
+// prompt is a session's prompt for in, as these tests write it: head, then
+// the sources, whole, under their own headings, each doc, PR and review
+// comment in its own fence and the changes in one, as draft.Fence fences
+// them, so a share's real prompt can be longer than its estimate.
+func prompt(in reading.Input) string {
+	var w strings.Builder
+	w.WriteString(head + "\n## Docs\n\n")
+	for i, d := range in.Docs {
+		fmt.Fprintf(&w, "Doc %d of %d:\n\n", i+1, len(in.Docs))
+		draft.Fence(&w, "path: "+d.Path+"\nkind: "+d.Kind+"\ntext:\n"+d.Body)
+	}
+	w.WriteString("\n## Pull requests\n\n")
+	for _, p := range in.PRs {
+		fmt.Fprintf(&w, "#%d, merged %s:\n\n", p.Number, p.MergedAt.UTC().Format(time.DateOnly))
+		draft.Fence(&w, "title: "+p.Title+"\nbody:\n"+p.Body)
+		for _, c := range p.Comments {
+			fmt.Fprintf(&w, "\nReview comment on #%d:\n\n", p.Number)
+			draft.Fence(&w, "author: "+c.Author+"\ntext:\n"+c.Body)
+		}
+	}
+	w.WriteString("\n## Changes\n\n")
+	if len(in.Commits) > 0 {
+		var t strings.Builder
+		for _, c := range in.Commits {
+			t.WriteString(c.Short + " " + c.Subject + "\n")
+		}
+		draft.Fence(&w, t.String())
+	}
+	return w.String()
+}
+
 // gathered is a gather of docs docs of docBytes each, prs PRs of prBytes
-// each with two review comments, and changes changes, read as propose reads
-// it.
+// each with two review comments, and changes changes, read with change
+// subjects only.
 func gathered(docs, docBytes, prs, prBytes, changes int) reading.Input {
 	var g store.Gather
 	for i := 0; i < docs; i++ {
@@ -42,7 +77,7 @@ func gathered(docs, docBytes, prs, prBytes, changes int) reading.Input {
 			Subject: fmt.Sprintf("feat: Change number %d does a thing", i), At: day0.Add(time.Duration(i) * time.Minute),
 			Files: []string{"a.go", "b.go"}})
 	}
-	return reading.Of(g, reading.Propose)
+	return reading.Of(g, reading.Options{})
 }
 
 // check asserts that shares read every source of in exactly once, in
@@ -52,7 +87,7 @@ func check(t *testing.T, in reading.Input, shares []reading.Input, room int, sha
 	t.Helper()
 	var all reading.Input
 	for i, s := range shares {
-		if got := reading.Tokens(mapping.Prompt(s)); got > room {
+		if got := reading.Tokens(prompt(s)); got > room {
 			t.Errorf("share %d of %d: prompt about %d tokens, over room %d", i+1, len(shares), got, room)
 		}
 		if !reflect.DeepEqual(s.Report, s.Recounted().Report) || len(s.Report.Sources) != len(in.Report.Sources) {
@@ -72,14 +107,13 @@ func check(t *testing.T, in reading.Input, shares []reading.Input, room int, sha
 		}
 		all.PRs = append(all.PRs, s.PRs...)
 		all.Commits = append(all.Commits, s.Commits...)
-		all.Clusters = append(all.Clusters, s.Clusters...)
 	}
 	if !shared && !reflect.DeepEqual(all.Docs, in.Docs) {
 		t.Errorf("docs: read %d, want each of %d once, in order, whole", len(all.Docs), len(in.Docs))
 	}
-	if !reflect.DeepEqual(all.PRs, in.PRs) || !reflect.DeepEqual(all.Commits, in.Commits) || !reflect.DeepEqual(all.Clusters, in.Clusters) {
-		t.Errorf("PRs, changes or clusters not each read once, in order, whole: %d/%d PRs, %d/%d changes, %d/%d clusters",
-			len(all.PRs), len(in.PRs), len(all.Commits), len(in.Commits), len(all.Clusters), len(in.Clusters))
+	if !reflect.DeepEqual(all.PRs, in.PRs) || !reflect.DeepEqual(all.Commits, in.Commits) {
+		t.Errorf("PRs or changes not each read once, in order, whole: %d/%d PRs, %d/%d changes",
+			len(all.PRs), len(in.PRs), len(all.Commits), len(in.Commits))
 	}
 	for i := range all.PRs {
 		if i < len(in.PRs) && (all.PRs[i].Body != in.PRs[i].Body || len(all.PRs[i].Comments) != len(in.PRs[i].Comments)) {
@@ -88,8 +122,8 @@ func check(t *testing.T, in reading.Input, shares []reading.Input, room int, sha
 	}
 }
 
-func TestLay(t *testing.T) {
-	skill := reading.Tokens(mapping.Prompt(reading.Input{}))
+func TestLayFor(t *testing.T) {
+	skill := reading.Tokens(prompt(reading.Input{}))
 	for _, tc := range []struct {
 		name   string
 		in     reading.Input
@@ -109,18 +143,18 @@ func TestLay(t *testing.T) {
 		{"nothing gathered", gathered(0, 0, 0, 0, 0), skill, true, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			shares, err := Lay(tc.in, tc.room)
+			shares, err := LayFor(tc.in, tc.room, prompt)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if tc.shares == 1 && (len(shares) != 1 || mapping.Prompt(shares[0]) != mapping.Prompt(tc.in) || !reflect.DeepEqual(shares[0].Report, tc.in.Report)) {
+			if tc.shares == 1 && (len(shares) != 1 || prompt(shares[0]) != prompt(tc.in) || !reflect.DeepEqual(shares[0].Report, tc.in.Report)) {
 				t.Fatalf("want one share that is the whole input, got %d", len(shares))
 			}
 			if tc.shares == 0 && len(shares) < 2 {
 				t.Fatalf("want more than one share, got %d", len(shares))
 			}
 			check(t, tc.in, shares, tc.room, tc.shared)
-			again, _ := Lay(tc.in, tc.room)
+			again, _ := LayFor(tc.in, tc.room, prompt)
 			if !reflect.DeepEqual(again, shares) {
 				t.Fatal("the same input and room gave other shares")
 			}
@@ -128,31 +162,23 @@ func TestLay(t *testing.T) {
 	}
 }
 
-func TestLayMovesSourcesWhenARealPromptIsOver(t *testing.T) {
+func TestLayForMovesSourcesWhenARealPromptIsOver(t *testing.T) {
 	// Backticks in subjects lengthen the changes' fence beyond the estimate's
 	// slack, so the real prompt is what decides.
 	in := gathered(0, 0, 0, 0, 400)
 	for i := range in.Commits {
 		in.Commits[i].Subject += strings.Repeat("`", 30+i%40)
 	}
-	room := reading.Tokens(mapping.Prompt(reading.Input{})) + 1_000
-	shares, err := Lay(in, room)
+	room := reading.Tokens(prompt(reading.Input{})) + 1_000
+	shares, err := LayFor(in, room, prompt)
 	if err != nil {
 		t.Fatal(err)
 	}
 	check(t, in, shares, room, true)
 }
 
-func TestFits(t *testing.T) {
-	in := gathered(2, 1_000, 5, 1_000, 10)
-	need := reading.Tokens(mapping.Prompt(in)) + mapping.ReplyReserve
-	if !Fits(in, 0) || !Fits(in, need) || Fits(in, need-1) {
-		t.Fatalf("Fits at window 0, %d and %d", need, need-1)
-	}
-}
-
-func TestLayTooLarge(t *testing.T) {
-	skill := reading.Tokens(mapping.Prompt(reading.Input{}))
+func TestLayForTooLarge(t *testing.T) {
+	skill := reading.Tokens(prompt(reading.Input{}))
 	room := skill + 2_000
 	pr := gathered(1, 500, 3, 500, 5)
 	pr.PRs[1].Body = text(10_000, "huge")
@@ -166,16 +192,16 @@ func TestLayTooLarge(t *testing.T) {
 		in   reading.Input
 		want []string
 	}{
-		{"PR", pr, []string{"PR #" + fmt.Sprint(pr.PRs[1].Number) + " takes about ", "Nothing is cut, so init stops before spending on propose.",
+		{"PR", pr, []string{"PR #" + fmt.Sprint(pr.PRs[1].Number) + " takes about ", "more than one share holds", "Nothing is cut.",
 			"--since a date after it merged on 2026-03-02", "physa init --gather --since 2026-03-03", "a smaller --max-prs"}},
 		{"doc", doc, []string{"doc " + doc.Docs[1].Path + " takes about ", "Nothing is cut", "ignore it in git", "physa init --gather."}},
 		{"change", change, []string{"change " + change.Commits[2].Short + " takes about ", "--since a date after the change's"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			shares, err := Lay(tc.in, room)
+			shares, err := LayFor(tc.in, room, prompt)
 			var tl *TooLarge
 			if !errors.As(err, &tl) || shares != nil {
-				t.Fatalf("Lay = %d shares, %v; want a TooLarge and no shares", len(shares), err)
+				t.Fatalf("LayFor = %d shares, %v; want a TooLarge and no shares", len(shares), err)
 			}
 			if tl.Tokens < 4_000 || tl.Room != room {
 				t.Errorf("tokens %d, room %d", tl.Tokens, tl.Room)
@@ -191,11 +217,11 @@ func TestLayTooLarge(t *testing.T) {
 	}
 }
 
-func TestLayIsQuickOnALargeGather(t *testing.T) {
+func TestLayForIsQuickOnALargeGather(t *testing.T) {
 	in := gathered(5, 2_000, 1_000, 1_500, 5_000)
 	room := 50_000
 	start := time.Now()
-	shares, err := Lay(in, room)
+	shares, err := LayFor(in, room, prompt)
 	took := time.Since(start)
 	if err != nil {
 		t.Fatal(err)

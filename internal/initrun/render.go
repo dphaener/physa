@@ -7,7 +7,6 @@ import (
 
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/initbranch"
-	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/newcodebase"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/recoveryreport"
@@ -58,10 +57,6 @@ func (p *printer) value(key, text string, v any) {
 
 func (p *printer) gather(s gather.Summary) {
 	p.emit("gather", func(w io.Writer) error { return gather.WriteText(w, s) }, func(w io.Writer) error { return gather.WriteJSON(w, s) })
-}
-
-func (p *printer) proposal(r mapping.Result) {
-	p.emit("proposal", func(w io.Writer) error { return mapping.WriteText(w, r) }, func(w io.Writer) error { return mapping.WriteJSON(w, r) })
 }
 
 func (p *printer) recovery(r recovery.Report) {

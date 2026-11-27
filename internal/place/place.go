@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/areas"
-	"github.com/dphaener/physa/internal/coverage"
 	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/sourceset"
 	"github.com/dphaener/physa/internal/store"
@@ -146,7 +145,7 @@ func placeAll(g store.Gather, split sourceset.Division, caps []walk.CapabilityRe
 		prs[p.Number] = nil
 	}
 	held := func(ch store.GatheredChange) (int, bool) {
-		n := coverage.PROf(ch)
+		n := store.PROf(ch)
 		_, ok := prs[n]
 		return n, ok && n > 0
 	}

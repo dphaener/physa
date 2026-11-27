@@ -13,7 +13,7 @@ Physa is early. What exists today is usable on a real repo, and Physa's own map 
 - **The map, read by agents.** `.physa/` holds one folder per capability, each with its rules, decisions and questions. `physa map index` lists the capabilities, and `physa map slice` gives an agent the slice its task needs in one call. `physa check map` and `physa map fmt` keep the map in its format.
 - **Changes checked against the map.** Every commit names the capability it serves in a `Capability:` trailer. `physa check` checks a range of changes, making sure each one names a capability that exists in the map as it leaves it, and that the map stays sound.
 - **Learning.** `physa map learn` reads merged changes and the agent sessions behind them, then drafts one batched PR to `physa/learn` with proposed map entries for the stewards to review.
-- **Init.** `physa init` builds a first map for an existing repo. It finds the repo's own sources, proposes capabilities, then recovers each one's rules, decisions, questions and terms, with every entry citing its source. It estimates its cost and asks before the large spend. On a large repo, the propose step runs in shares, then merges them.
+- **Init.** `physa init` builds a first map for an existing repo. It finds the repo's own sources, divides the code into areas and names each area's capabilities, places the PRs and changes on them, then recovers each one's rules, decisions, questions and terms, with every entry citing its source, and merges what repeats (15 §3). It takes an optional `--cap` and never estimates or asks about cost.
 - **The engine, without agents.** One engine runs per machine, with a local store, events and durable intents. You can add ideas and pursue them from the CLI, give a pursuit its plan of changes, count spend from each agent's cost, and collect engineering evidence from git and GitHub.
 
 **Not built yet**
@@ -52,7 +52,7 @@ The map commands need only git. `init` and `map learn` run agent sessions throug
 Run these from inside a git repo. Every command takes `--help`, and most take `--json`.
 
 ```sh
-physa init                       # estimate, ask, then gather, propose and recover a map
+physa init                       # gather, divide into areas, walk them, place PRs, recover and consolidate a map
 physa init --write --pr          # commit the map to physa/init and open its PR
 
 physa map                        # the index: every capability with its promise

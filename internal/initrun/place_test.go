@@ -117,7 +117,7 @@ func TestPlaceOnAStoppedGatherWarnsAndRuns(t *testing.T) {
 
 func TestPlaceIsBadUsageWithOtherFlags(t *testing.T) {
 	t.Parallel()
-	for _, args := range [][]string{{"--areas"}, {"--walk"}, {"--gather"}, {"--propose"}, {"--recover"}, {"--write"}, {"--push"}, {"--hooks"},
+	for _, args := range [][]string{{"--areas"}, {"--walk"}, {"--gather"}, {"--recover"}, {"--write"}, {"--push"}, {"--hooks"},
 		{"--answers", "x"}, {"--yes"}, {"--only", "x"}, {"--since", "2026-01-01"}, {"--max-prs", "3"}} {
 		if code, _, _ := runInit(testEnv(t, nil, nil), append([]string{"--place"}, args...)...); code != command.BadUsage {
 			t.Errorf("--place %v: code %d, want bad usage", args, code)

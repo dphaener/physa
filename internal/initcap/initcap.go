@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -241,36 +242,80 @@ func Sum(rows []initrecord.Spent) spend.Spend {
 	return s
 }
 
-// recoverTakes is each flag a continued --recover keeps from a bare run's
-// words, true when it takes a value.
-var recoverTakes = map[string]bool{"--agent": true, "--write": false, "--push": false, "--pr": false, "--hooks": false, "--json": false}
-
 // takesValue is each of init's flags that takes a value.
 var takesValue = map[string]bool{"--agent": true, "--answers": true, "--since": true, "--max-prs": true, "--cap": true, "--only": true}
 
+// phases are the phases a full run runs after the gather, in design 15's
+// order.
+var phases = []string{"areas", "walk", "place", "recover", "consolidate"}
+
+// phaseFlags is each flag a phase's line keeps from the words typed. A phase
+// that starts sessions also keeps --cap when the line is a Continue's; the
+// write flags are on --consolidate's line only, so the map is written once.
+var phaseFlags = map[string][]string{
+	"areas":       {"--agent", "--json"},
+	"walk":        {"--agent", "--json"},
+	"place":       {"--json"},
+	"recover":     {"--agent", "--json"},
+	"consolidate": {"--agent", "--json", "--write", "--push", "--pr", "--hooks"},
+}
+
+// Lines are the lines that continue a stopped run, in the order to run them.
+type Lines []string
+
+// String joins the lines for a message: one alone is that line; several are
+// "A, then B, C and D" (two are "A, then B").
+func (l Lines) String() string {
+	switch len(l) {
+	case 0:
+		return ""
+	case 1:
+		return l[0]
+	case 2:
+		return l[0] + ", then " + l[1]
+	}
+	return l[0] + ", then " + strings.Join(l[1:len(l)-1], ", ") + " and " + l[len(l)-1]
+}
+
 // Again is the line that continues a run the cap stopped, from the words
-// typed after init: "physa init" and those words without --cap, or, when
-// recovering was stopped in a bare run, "physa init --recover" and the
-// words of the bare run --recover takes (--agent, --write, --push, --pr,
-// --hooks and --json).
-func Again(words []string, recovering bool) string { return again(words, recovering, false) }
+// typed after init and the phase a bare run stopped in. With "" (not a bare
+// run, or stopped in the gather) it is "physa init" and the words without
+// --cap. With "areas", "walk", "place", "recover" or "consolidate" it is the
+// line of that phase and of each phase after it, each keeping only the
+// words its phase takes; the write flags are on the --consolidate line only.
+func Again(words []string, phase string) Lines { return again(words, phase, false) }
 
 // Continue is the line that continues a run an interrupt stopped: Again's,
 // keeping the --cap typed, quoted when it holds a $ so a shell keeps it, as
-// the person's cap still applies.
-func Continue(words []string, recovering bool) string { return again(words, recovering, true) }
+// the person's cap still applies, on each line whose phase takes a cap.
+func Continue(words []string, phase string) Lines { return again(words, phase, true) }
 
-func again(words []string, recovering, keepCap bool) string {
+func again(words []string, phase string, keepCap bool) Lines {
+	from := slices.Index(phases, phase)
+	if from < 0 {
+		return Lines{line("", words, nil, keepCap)}
+	}
+	var out Lines
+	for _, p := range phases[from:] {
+		out = append(out, line(p, words, phaseFlags[p], keepCap && p != "place"))
+	}
+	return out
+}
+
+// line is physa init, the phase's flag when it has one, and each of the words
+// typed that allowed names (all but --cap when allowed is nil), keeping --cap
+// too when keepCap.
+func line(phase string, words, allowed []string, keepCap bool) string {
 	out := []string{"physa", "init"}
-	if recovering {
-		out = append(out, "--recover")
+	if phase != "" {
+		out = append(out, "--"+phase)
 	}
 	for i := 0; i < len(words); i++ {
 		w := words[i]
 		name, _, joined := strings.Cut(w, "=")
 		keep := name != "--cap"
-		if recovering {
-			_, keep = recoverTakes[name]
+		if phase != "" {
+			keep = slices.Contains(allowed, name)
 		}
 		keep = keep || keepCap && name == "--cap"
 		if keep {

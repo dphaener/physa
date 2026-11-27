@@ -7,10 +7,8 @@ import (
 	"strings"
 
 	"github.com/dphaener/physa/internal/draft"
+	"github.com/dphaener/physa/internal/productpromise"
 )
-
-// none stands in a part of a prompt that holds nothing.
-const none = "none\n"
 
 func skill(s string) string { return strings.TrimRight(s, "\n") }
 
@@ -39,17 +37,26 @@ func AreasPrompt(tree string) (system, message string) {
 	return skill(Areas), w.String()
 }
 
+// lead is the promise's block and a blank line, or nothing for no promise.
+func lead(promise string) string {
+	if promise == "" {
+		return ""
+	}
+	return productpromise.Block(promise) + "\n"
+}
+
 // PartPrompt returns the system prompt and the message of part i of n. The
 // system is the areas skill followed by the parts skill, so it holds
-// AcrossParts. The message gives every source folder of the repo (overview),
+// AcrossParts. The message gives the product's promise an earlier part
+// stated (promise, "" for none), every source folder of the repo (overview),
 // the areas so far (briefs) and this part's files (partTree).
-func PartPrompt(i, n int, overview, briefs, partTree string) (system, message string) {
+func PartPrompt(i, n int, promise, overview, briefs, partTree string) (system, message string) {
 	var w strings.Builder
-	fmt.Fprintf(&w, "## Part %d of %d\n\n", i, n)
+	fmt.Fprintf(&w, "## Part %d of %d\n\n%s", i, n, lead(promise))
 	fenced(&w, "### Every source folder of the repo\n\nCounts only, so you see the product whole.", overview)
 	w.WriteString("\n")
 	if strings.TrimSpace(briefs) == "" {
-		w.WriteString("### Areas so far\n\n" + none)
+		w.WriteString("### Areas so far\n\nnone\n")
 	} else {
 		fenced(&w, "### Areas so far", briefs)
 	}
@@ -59,9 +66,11 @@ func PartPrompt(i, n int, overview, briefs, partTree string) (system, message st
 }
 
 // MergePrompt returns the system prompt (the merge skill) and the message of
-// the session that finds areas keeping one family of promises: the briefs.
-func MergePrompt(briefs string) (system, message string) {
+// the session that finds areas keeping one family of promises: the product's
+// promise as the first part stated it ("" for none), then the briefs.
+func MergePrompt(promise, briefs string) (system, message string) {
 	var w strings.Builder
+	w.WriteString(lead(promise))
 	fenced(&w, "## The areas", briefs)
 	return skill(Merge), w.String()
 }

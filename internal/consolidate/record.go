@@ -15,12 +15,11 @@ import (
 
 	"github.com/dphaener/physa/internal/capabilitytext"
 	"github.com/dphaener/physa/internal/consolidating"
-	"github.com/dphaener/physa/internal/draft"
 	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/mapfolder"
-	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/place"
+	"github.com/dphaener/physa/internal/productpromise"
 	"github.com/dphaener/physa/internal/recovering"
 	"github.com/dphaener/physa/internal/recoverinput"
 	"github.com/dphaener/physa/internal/recovery"
@@ -41,7 +40,7 @@ func (m missing) Error() string { return m.msg }
 // input is what one consolidation is made from.
 type input struct {
 	walkAt      time.Time
-	promise     string // the product's promise, recoverinput.NoPromise when none is stated
+	promise     string // the product's promise, productpromise.NoPromise when none is stated
 	stated      bool
 	rows        map[string]initrecord.Recovered // eligible rows, by capability
 	caps        []capabilitytext.Capability     // their capabilities, in walk order
@@ -90,8 +89,8 @@ func read(ctx context.Context, st *initrecord.Store, root string) (input, error)
 	if !walked {
 		return in, missing{"no walk stored yet; run physa init --walk, --place and --recover first"}
 	}
-	src, _, err := recoverinput.Listed(ctx, st, mapping.Proposal{}, false)
-	if err == nil && !src.FromWalk {
+	src, ok, err := recoverinput.Listed(ctx, st)
+	if err == nil && !ok {
 		err = missing{"no placements stored yet; run physa init --place and --recover first"}
 	}
 	if err != nil {
@@ -141,18 +140,11 @@ func read(ctx context.Context, st *initrecord.Store, root string) (input, error)
 	return in, nil
 }
 
-// promise is the stored proposal's product promise, or
-// recoverinput.NoPromise and false on the walk path with none stated.
+// promise is the product's promise the stored areas state, as one line,
+// or productpromise.NoPromise and false when none is stated.
 func promise(ctx context.Context, st *initrecord.Store) (string, bool, error) {
-	prop, ok, err := st.Proposed(ctx)
-	var s mapping.Stored
-	if err == nil && ok {
-		err = json.Unmarshal(prop.Body, &s)
-	}
-	if p := draft.OneLine(s.Proposal.Product.Promise); err == nil && p != "" {
-		return p, true, nil
-	}
-	return recoverinput.NoPromise, false, err
+	p, ok, err := productpromise.Stored(ctx, st)
+	return p.PromiseOr(), ok, err
 }
 
 // result is the record of the consolidation out made from in.

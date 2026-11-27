@@ -24,8 +24,9 @@ func (s *Store) AddSpent(ctx context.Context, p Spent) error {
 }
 
 // Spending returns what each init phase has spent, in run order: discover, areas,
-// walk, propose, recover, consolidate. A phase the order does not name comes after
-// them, by name.
+// walk, propose, recover, consolidate. Propose is only an old record's: an
+// earlier physa's propose phase, whose spend stays until a new gather. A phase
+// the order does not name comes after them, by name.
 func (s *Store) Spending(ctx context.Context) ([]Spent, error) {
 	rows, err := s.DB().QueryContext(ctx, `SELECT phase, input, cached_input, output, weighted, micro_usd, unpriced FROM init_spend
 		ORDER BY CASE phase WHEN 'discover' THEN 0 WHEN 'areas' THEN 1 WHEN 'walk' THEN 2 WHEN 'propose' THEN 3 WHEN 'recover' THEN 4 WHEN 'consolidate' THEN 5 ELSE 6 END, phase`)

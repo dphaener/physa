@@ -6,6 +6,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/spend"
+	"github.com/dphaener/physa/internal/store"
 )
 
 func sampleSpent(phase string, input, output, tokens, micro int64) Spent {
@@ -77,4 +78,27 @@ func TestSpending(t *testing.T) {
 			t.Errorf("Spending = %+v; want no rows", got)
 		}
 	})
+}
+
+func TestSpentAddsPerPhaseAndIsCleared(t *testing.T) {
+	s, _ := open(t)
+	sp := func(phase string, in, cached, out, w, usd int64, unpriced bool) Spent {
+		return Spent{Phase: phase, Count: spend.Count{Raw: adapter.Tokens{Input: in, CachedInput: cached, Output: out}, Spend: spend.Spend{Tokens: w, MicroUSD: usd, Unpriced: unpriced}}}
+	}
+	for _, p := range []Spent{sp("recover", 10, 0, 0, 20, 80, false), sp("discover", 1, 0, 0, 1, 0, true), sp("walk", 5, 1, 2, 15, 60, false), sp("recover", 3, 0, 1, 9, 36, false)} {
+		if err := s.AddSpent(t.Context(), p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.Spending(t.Context())
+	want := []Spent{sp("discover", 1, 0, 0, 1, 0, true), sp("walk", 5, 1, 2, 15, 60, false), sp("recover", 13, 0, 1, 29, 116, false)}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("Spending = %+v, %v\nwant %+v", got, err, want)
+	}
+	if err := s.PutGather(t.Context(), store.Gather{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Spending(t.Context()); len(got) != 0 {
+		t.Errorf("after a new gather: %+v", got)
+	}
 }

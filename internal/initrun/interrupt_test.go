@@ -11,22 +11,37 @@ import (
 	"testing"
 
 	"github.com/dphaener/physa/internal/adapter"
-	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/recovery"
 )
 
-// fourNames are the capabilities fourReply proposes, each shown by PR 3.
+// fourNames are the capabilities fourWalk names, each owning the source file
+// of its name in fourRepo.
 var fourNames = []string{"alpha", "beta", "gamma", "delta"}
 
-// fourReply proposes the four capabilities of fourNames.
-var fourReply = func() string {
-	var caps []string
+// fourAreas puts fourRepo's source files in one area, and fourWalk names a
+// capability for each.
+var fourAreas, fourWalk = func() (string, string) {
+	var files, caps []string
 	for _, n := range fourNames {
-		caps = append(caps, fmt.Sprintf(`{"name":%q,"promise":"People rely on %s.","shown_by":["#3"],"questions":[]}`, n, n))
+		files = append(files, fmt.Sprintf("%q", n+".go"))
+		caps = append(caps, fmt.Sprintf(`{"name":%q,"promise":"People rely on %s.","sources":[%q],"tests":[],"docs":[]}`, n, n, n+".go"))
 	}
-	return "```json\n" + `{"product":{"promise":"Teams keep what they learn about their product."},"capabilities":[` +
-		strings.Join(caps, ",") + `],"questions":[]}` + "\n```\n"
+	return "```json\n" + `{"product":{"name":"Letters","promise":"People rely on their letters."},"areas":[{"name":"letters","promise":"People rely on letters.","sources":[` +
+			strings.Join(files, ",") + `]}]}` + "\n```",
+		"```json\n" + `{"capabilities":[` + strings.Join(caps, ",") + `],"shared":[]}` + "\n```"
 }()
+
+// fourRepo is newRepo with a source file for each of fourNames, committed.
+func fourRepo(t *testing.T) string {
+	t.Helper()
+	dir := newRepo(t)
+	for _, n := range fourNames {
+		write(t, dir, n+".go", "package main\n")
+	}
+	gitIn(t, dir, "add", ".")
+	gitIn(t, dir, "commit", "-q", "-m", "feat: Add the letters")
+	return dir
+}
 
 // capReply is capability n's recovering answer: one rule anchored to PR 3 and
 // one term, each its own, so that nothing is a duplicate across capabilities.
@@ -36,18 +51,20 @@ func capReply(n string) string {
 		"Because: #3 asked for it.\n````\n\n```glossary\n**" + title + "**: What " + n + " is.\n```\n"
 }
 
-// cutAgent discovers nothing, proposes fourReply and recovers each capability
-// with capReply, recording each session it starts. When cut is "recover" it
-// cancels the run's ctx as the third recovering session starts and holds that
-// session until the ctx is done, ending it as the agent does when stopped;
-// the two started before it answer once the cancel came. When cut is
-// "propose" it does the same to the proposing session.
+// cutAgent discovers nothing, answers the areas phase with fourAreas and the
+// walk with fourWalk, recovers each capability with capReply and changes
+// nothing in consolidation, recording each session it starts. When cut is
+// "recover" it cancels the run's ctx as the third recovering session starts
+// and holds that session until the ctx is done, ending it as the agent does
+// when stopped; the two started before it answer once the cancel came. When
+// cut is "walk" or "consolidate" it does the same to that phase's first
+// session; when it is empty it cuts nothing.
 type cutAgent struct {
 	mu       sync.Mutex
 	cut      string
 	cancel   context.CancelFunc
 	released chan struct{}
-	started  []string // "discover", "propose" or the capability
+	started  []string // "discover", "areas", "walk", the capability or "consolidate"
 	after    []string // sessions started once the ctx was done
 }
 
@@ -60,35 +77,40 @@ func (a *cutAgent) Name() string { return "fake" }
 func (a *cutAgent) Start(ctx context.Context, s adapter.Spec) (adapter.Session, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	name := "propose"
-	if strings.Contains(s.Prompt, discoveryMarker) {
-		name = "discover"
-	}
-	for _, n := range fourNames {
-		if strings.Contains(s.Prompt, "\nname: "+n+"\n") {
-			name = n
-		}
+	name, text := sessionKind(s), ""
+	switch name {
+	case "discover":
+		text = "```json\n{\"sources\":[]}\n```\n"
+	case "split":
+		name, text = "areas", areasSplit
+	case "areas":
+		text = fourAreas
+	case "walk":
+		text = fourWalk
+	case "consolidate":
+		text = consolidateNothing(s.System)
+	default:
+		text = capReply(name)
 	}
 	if ctx.Err() != nil {
 		a.after = append(a.after, name)
 	}
 	a.started = append(a.started, name)
-	text := fourReply
-	switch {
-	case name == "discover":
-		text = "```json\n{\"sources\":[]}\n```\n"
-	case name != "propose":
-		text = capReply(name)
-	}
 	res := adapter.Result{Text: text, Tokens: adapter.Tokens{Input: 1_000, Output: 10}, SessionID: s.SessionID}
 	sess := &cutSession{res: res}
-	recovering := slices.DeleteFunc(slices.Clone(a.started), func(n string) bool { return n == "propose" || n == "discover" })
+	recovering := 0
+	for _, n := range a.started {
+		if slices.Contains(fourNames, n) {
+			recovering++
+		}
+	}
+	isCap := slices.Contains(fourNames, name)
 	switch {
-	case a.cut == "propose" && name == "propose", a.cut == "recover" && name != "propose" && name != "discover" && len(recovering) == 3:
+	case a.cut == name && !isCap && ctx.Err() == nil, a.cut == "recover" && isCap && recovering == 3:
 		a.cancel()
 		close(a.released)
 		sess.stopped = ctx
-	case a.cut == "recover" && name != "propose" && name != "discover" && len(recovering) < 3:
+	case a.cut == "recover" && isCap && recovering < 3:
 		sess.wait = a.released
 	}
 	return sess, nil
@@ -122,12 +144,16 @@ func runInitCtx(ctx context.Context, env Env, args ...string) (int, string, stri
 	return code, stdout.String(), stderr.String()
 }
 
-// fourProposedEnv is an Env with a gather and fourReply's proposal stored.
-func fourProposedEnv(t *testing.T) Env {
+// fourWalkedEnv is an Env on fourRepo with a gather, the areas, the walk of
+// fourNames and their placements stored.
+func fourWalkedEnv(t *testing.T) Env {
 	t.Helper()
-	env := gatheredEnv(t, &fakeAgent{result: adapter.Result{Text: fourReply}})
-	if code, _, errOut := runInit(env, "--propose"); code != 0 {
-		t.Fatalf("propose: %d %q", code, errOut)
+	fourRepo(t)
+	env := testEnv(t, onePR(), newCutAgent("", nil))
+	for _, phase := range []string{"--gather", "--areas", "--walk", "--place"} {
+		if code, _, errOut := runInit(env, phase); code != 0 {
+			t.Fatalf("%s: %d %q", phase, code, errOut)
+		}
 	}
 	return env
 }
@@ -142,7 +168,7 @@ func fourProposedEnv(t *testing.T) Env {
 func TestInterruptedRecoverKeepsWhatWasRecovered(t *testing.T) {
 	for _, extra := range [][]string{nil, {"--cap", "10m"}} {
 		t.Run(strings.Join(append([]string{"recover"}, extra...), " "), func(t *testing.T) {
-			env := fourProposedEnv(t)
+			env := fourWalkedEnv(t)
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			a := newCutAgent("recover", cancel)
@@ -197,47 +223,79 @@ func TestInterruptedRecoverKeepsWhatWasRecovered(t *testing.T) {
 	}
 }
 
-// TestInterruptedProposeStoresNothing checks that a --propose whose ctx is
-// cancelled while proposing exits 130, says nothing of the proposal was
-// stored and that physa init --propose continues, and stores no proposal.
-func TestInterruptedProposeStoresNothing(t *testing.T) {
-	env := gatheredEnv(t, nil)
+// TestInterruptedWalkStoresNothing checks that a --walk whose ctx is
+// cancelled while a session walks exits 130, says nothing of the walk was
+// stored and that physa init --walk continues, and stores no walk.
+func TestInterruptedWalkStoresNothing(t *testing.T) {
+	fourRepo(t)
+	env := testEnv(t, onePR(), newCutAgent("", nil))
+	for _, phase := range []string{"--gather", "--areas"} {
+		if code, _, errOut := runInit(env, phase); code != 0 {
+			t.Fatalf("%s: %d %q", phase, code, errOut)
+		}
+	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	a := newCutAgent("propose", cancel)
+	a := newCutAgent("walk", cancel)
 	env.Agent = func(string) (adapter.Adapter, error) { return a, nil }
-	code, out, errOut := runInitCtx(ctx, env, "--propose")
-	want := "physa init: interrupted: nothing more was started and sessions running were stopped; nothing of the proposal was stored. To continue, run physa init --propose.\n"
+	code, out, errOut := runInitCtx(ctx, env, "--walk")
+	want := "physa init: interrupted: nothing more was started and sessions running were stopped; nothing of the walk was stored. To continue, run physa init --walk.\n"
 	if code != 130 || out != "" || errOut[strings.LastIndex(errOut[:len(errOut)-1], "\n")+1:] != want {
 		t.Fatalf("code %d\nstdout %s\nstderr %s\nwant last line %q", code, out, errOut, want)
 	}
 	if strings.Contains(errOut, "context canceled") {
 		t.Errorf("stderr:\n%s", errOut)
 	}
-	st, err := env.Store(t.Context(), ".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	if _, ok, err := initrecord.Of(st).Proposed(t.Context()); ok || err != nil {
-		t.Errorf("a proposal was stored: %v %v", ok, err)
+	if ar, wk, _, _, _ := stored(t, env); !ar || wk {
+		t.Errorf("areas stored %v, walk stored %v; want the areas kept and no walk", ar, wk)
 	}
 }
 
 // TestInterruptedBareRunWhileRecoveringContinuesWithRecover checks that a
 // bare run interrupted while recovering gives physa init --recover, with the
-// words of the line --recover takes, to continue, and exits 130.
+// words of the line --recover takes, then --consolidate, to continue, and
+// exits 130.
 func TestInterruptedBareRunWhileRecoveringContinuesWithRecover(t *testing.T) {
-	remoteRepo(t)
+	fourRepo(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	a := newCutAgent("recover", cancel)
-	env := fullEnv(t, onePR(), a)
+	env := testEnv(t, onePR(), a)
 	code, out, errOut := runInitCtx(ctx, env, "--since", "2025-01-01", "--json")
 	if code != 130 || len(a.after) != 0 {
 		t.Fatalf("code %d, sessions %v, after the cancel %v\nstdout %s\nstderr %s", code, a.started, a.after, out, errOut)
 	}
-	if !strings.HasSuffix(errOut, "2 capabilities recovered in this run are kept. To continue, run physa init --recover --json.\n") {
+	if !strings.HasSuffix(errOut, "2 capabilities recovered in this run are kept. To continue, run physa init --recover --json, then physa init --consolidate --json.\n") {
 		t.Errorf("stderr:\n%s", errOut)
+	}
+}
+
+// TestInterruptedBareRunWhileConsolidatingContinuesWithConsolidate checks
+// that a bare run interrupted while consolidating exits 130, keeps the four
+// capabilities recovered, stores no consolidation, writes nothing though
+// --write was typed, and gives physa init --consolidate with the write flag
+// and the cap typed to continue.
+func TestInterruptedBareRunWhileConsolidatingContinuesWithConsolidate(t *testing.T) {
+	fourRepo(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	a := newCutAgent("consolidate", cancel)
+	env := testEnv(t, onePR(), a)
+	code, out, errOut := runInitCtx(ctx, env, "--write", "--cap", "10m")
+	t.Logf("sessions %v:\n%s", a.started, errOut)
+	if code != 130 || len(a.after) != 0 || a.started[len(a.started)-1] != "consolidate" {
+		t.Fatalf("code %d, sessions %v, after the cancel %v\nstdout %s\nstderr %s", code, a.started, a.after, out, errOut)
+	}
+	want := "physa init: interrupted: nothing more was started and sessions running were stopped; nothing of the consolidation was stored. To continue, run physa init --consolidate --write --cap 10m.\n"
+	if !strings.HasSuffix(errOut, want) {
+		t.Errorf("stderr does not end with %q:\n%s", want, errOut)
+	}
+	for _, not := range []string{"context canceled", "could not run", "the cap of", "this run spent"} {
+		if strings.Contains(errOut, not) {
+			t.Errorf("stderr says %q:\n%s", not, errOut)
+		}
+	}
+	if _, _, _, co, n := stored(t, env); co || n != 4 || branches(t) != "" || strings.Contains(out, "Wrote physa/init") {
+		t.Errorf("consolidation %v, %d recovered, branches %q\nstdout %s", co, n, branches(t), out)
 	}
 }

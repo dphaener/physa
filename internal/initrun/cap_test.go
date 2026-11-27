@@ -2,6 +2,7 @@ package initrun
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"slices"
 	"strings"
@@ -49,7 +50,7 @@ func recoveredRows(t *testing.T, env Env) map[string]string {
 }
 
 // TestCappedRecoverStopsThenContinues checks acceptance 1 for money: a
-// --recover capped at $0.50 starts the first capability's session, whose
+// --recover capped at $0.60 starts the first capability's session, whose
 // budget fits, and refuses the next, whose budget would pass the cap; it
 // says the cap was reached, what init spent in dollars and that physa init
 // --recover continues, and exits 1. A second --recover with a larger cap
@@ -58,16 +59,19 @@ func TestCappedRecoverStopsThenContinues(t *testing.T) {
 	a := newRoutedAgent()
 	a.priced, a.recovers = true, 300_000 // each recovering session spends about $1.20
 	a.replies["delivery"] = recoverReply // checks clean, so no retry starts a second session
-	env := gatheredEnv(t, a)
-	if code, _, errOut := runInit(env, "--propose"); code != 0 { // priced, so a budget has a price
-		t.Fatalf("propose: %d %s", code, errOut)
+	env := areasEnv(t, a)
+	for _, phase := range []string{"--areas", "--walk", "--place"} { // priced, so a budget has a price
+		if code, _, errOut := runInit(env, phase); code != 0 {
+			t.Fatalf("%s: %d %s", phase, code, errOut)
+		}
 	}
-	code, out, errOut := runInit(env, "--recover", "--cap", "$0.50")
-	t.Logf("first run, sessions %v:\n%s", a.started, errOut)
+	before := len(a.started)
+	code, out, errOut := runInit(env, "--recover", "--cap", "$0.60")
+	t.Logf("first run, sessions %v:\n%s", a.started[before:], errOut)
 	if code != 1 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
-	first := slices.DeleteFunc(slices.Clone(a.started), func(s string) bool { return s == "propose" })
+	first := a.started[before:]
 	if len(first) != 1 {
 		t.Fatalf("recovering started %v; want one session before the cap", first)
 	}
@@ -80,16 +84,16 @@ func TestCappedRecoverStopsThenContinues(t *testing.T) {
 		t.Errorf("stored %v", rows)
 	}
 	for _, want := range []string{
-		"physa init: the cap is $0.50: init stops before a session that would pass it; init has spent $0.04 (10k tokens) so far.\n",
+		"physa init: the cap is $0.60: init stops before a session that would pass it; init has spent $0.16 (40k tokens) so far.\n",
 		"physa init: " + rest + ": not yet recovered\n",
-		"physa init: the cap of $0.50 was reached: nothing more was started and sessions already running finished; init has spent $",
+		"physa init: the cap of $0.60 was reached: nothing more was started and sessions already running finished; init has spent $",
 		"To continue, run physa init --recover with a larger --cap, or none.\n",
 	} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, errOut)
 		}
 	}
-	if !regexp.MustCompile(`init has spent \$1\.2[0-9] \([0-9.]+k tokens\)\. To continue`).MatchString(errOut) {
+	if !regexp.MustCompile(`init has spent \$1\.3[0-9] \([0-9.]+k tokens\)\. To continue`).MatchString(errOut) {
 		t.Errorf("the spend is not in dollars:\n%s", errOut)
 	}
 	if strings.Contains(errOut, "failed") {
@@ -150,7 +154,7 @@ func TestCappedWalkStopsCleanly(t *testing.T) {
 // no --cap says nothing of a cap.
 func TestShareCapAtThePlanUsageStartsNoSession(t *testing.T) {
 	u := &usageAgent{fakeAgent: recoverAgent(100), percent: 60}
-	env := proposedEnv(t, u)
+	env := walkedEnv(t, u)
 	code, _, errOut := runInit(env, "--recover", "--cap", "60%")
 	if code != 1 || u.starts != 0 {
 		t.Fatalf("code %d, %d sessions\nstderr %s", code, u.starts, errOut)
@@ -220,20 +224,113 @@ func TestBareCappedRunNamesTheCapFirst(t *testing.T) {
 	}
 }
 
+// branches lists the physa/ branches of the repo in the working directory.
+func branches(t *testing.T) string {
+	t.Helper()
+	return strings.TrimSpace(gitIn(t, ".", "branch", "--list", "physa/*"))
+}
+
+// stored says which of the areas, the walk, the placements and the
+// consolidation init's record holds, and how many capabilities are recovered.
+func stored(t *testing.T, env Env) (areas, walked, placed, consolidated bool, recovered int) {
+	t.Helper()
+	st, err := env.Store(context.Background(), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	rec := initrecord.Of(st)
+	_, areas, errA := rec.Areas(t.Context())
+	_, walked, errW := rec.Walk(t.Context())
+	_, placed, errP := rec.Place(t.Context())
+	_, consolidated, errC := rec.Consolidated(t.Context())
+	rows, errR := rec.Recovered(t.Context())
+	if err := errors.Join(errA, errW, errP, errC, errR); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if r.Status == recovery.StatusRecovered {
+			recovered++
+		}
+	}
+	return areas, walked, placed, consolidated, recovered
+}
+
+// TestBareCappedRunStoppedInTheWalkNamesTheWalkFirst checks that a bare run
+// the cap stops before the walk's first session exits 1, keeps the areas,
+// stores no walk, writes nothing though --write was typed, and gives physa
+// init --walk first and each later phase after it, the write flags on the
+// --consolidate line alone and the gather's bound on none.
+func TestBareCappedRunStoppedInTheWalkNamesTheWalkFirst(t *testing.T) {
+	remoteRepo(t)
+	a := newRoutedAgent()
+	a.priced = true
+	a.spend["areas"] = 200_000 // the areas session spends about $0.80
+	env := fullEnv(t, onePR(), a)
+	code, out, errOut := runInit(env, "--write", "--since", "2025-01-01", "--cap=$0.80")
+	t.Logf("sessions %v:\n%s", a.started, errOut)
+	if code != 1 || !slices.Equal(a.kinds(), []string{"discover", "areas"}) {
+		t.Fatalf("code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
+	}
+	if !strings.HasSuffix(errOut, "To continue, run physa init --walk, then physa init --place, physa init --recover and physa init --consolidate --write, with a larger --cap on each line that starts sessions, or none.\n") {
+		t.Errorf("stderr:\n%s", errOut)
+	}
+	if strings.Contains(errOut, "did not end whole") || strings.Contains(errOut, "this run spent") {
+		t.Errorf("the stop is said as a failure, or as a run that ended:\n%s", errOut)
+	}
+	if ar, wk, _, _, _ := stored(t, env); !ar || wk || branches(t) != "" || strings.Contains(out, "Wrote physa/init") {
+		t.Errorf("areas stored %v, walk stored %v, branches %q\nstdout %s", ar, wk, branches(t), out)
+	}
+}
+
 // TestBareCappedRunStoppedWhileRecoveringContinuesWithRecover checks that a
-// bare run the cap stops once proposing is done gives physa init --recover,
-// with the words of the line --recover takes, to continue.
+// bare run the cap stops once the walk is done exits 1, writes nothing though
+// --write was typed, and gives physa init --recover, with the words of the
+// line --recover takes, then --consolidate with the write flags, to continue.
 func TestBareCappedRunStoppedWhileRecoveringContinuesWithRecover(t *testing.T) {
 	remoteRepo(t)
 	a := newRoutedAgent()
-	a.priced, a.propose = true, 200_000 // proposing spends about $0.80
+	a.priced = true
+	a.spend["walk"] = 250_000 // each walk session spends about $1
 	env := fullEnv(t, onePR(), a)
-	code, out, errOut := runInit(env, "--write", "--since", "2025-01-01", "--cap=$0.80")
-	if code != 1 || slices.Contains(a.started, "delivery") || !slices.Contains(a.started, "propose") {
+	code, out, errOut := runInit(env, "--write", "--since", "2025-01-01", "--cap=$2")
+	t.Logf("sessions %v:\n%s", a.started, errOut)
+	if code != 1 || !slices.Equal(a.kinds(), []string{"discover", "areas", "walk"}) {
 		t.Fatalf("code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
 	}
-	if !strings.Contains(errOut, "To continue, run physa init --recover --write with a larger --cap, or none.\n") {
+	if !strings.HasSuffix(errOut, "To continue, run physa init --recover, then physa init --consolidate --write, with a larger --cap on each line that starts sessions, or none.\n") {
 		t.Errorf("stderr:\n%s", errOut)
+	}
+	if _, wk, pl, co, n := stored(t, env); !wk || !pl || co || n != 0 || branches(t) != "" || strings.Contains(out, "Wrote physa/init") || strings.Contains(errOut, "this run spent") {
+		t.Errorf("walk %v, placements %v, consolidation %v, %d recovered, branches %q\nstdout %s", wk, pl, co, n, branches(t), out)
+	}
+}
+
+// TestBareCappedRunStoppedWhileConsolidatingContinuesWithConsolidate checks
+// that a bare run the cap stops before consolidation's first session exits
+// 1, keeps what it recovered, stores no consolidation, writes nothing though
+// --write was typed, and gives physa init --consolidate with the write flags
+// to continue.
+func TestBareCappedRunStoppedWhileConsolidatingContinuesWithConsolidate(t *testing.T) {
+	remoteRepo(t)
+	a := newRoutedAgent()
+	a.priced, a.recovers = true, 250_000 // each recovering session spends about $1
+	a.replies["delivery"] = recoverReply // checks clean, so no retry starts a session the cap would refuse
+	a.replies["search"] = searchTwoRules // two entries in an area, so consolidation starts a session
+	env := fullEnv(t, onePR(), a)
+	code, out, errOut := runInit(env, "--write", "--since", "2025-01-01", "--cap=$2")
+	t.Logf("sessions %v:\n%s", a.started, errOut)
+	if code != 1 || slices.Contains(a.started, "consolidate") || !slices.Contains(a.started, "search") {
+		t.Fatalf("code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
+	}
+	if !strings.HasSuffix(errOut, "To continue, run physa init --consolidate --write with a larger --cap, or none.\n") {
+		t.Errorf("stderr:\n%s", errOut)
+	}
+	if strings.Contains(errOut, "nothing is stored") || strings.Contains(errOut, "could not run") || strings.Contains(errOut, "this run spent") {
+		t.Errorf("the stop is said as a failure, or as a run that ended:\n%s", errOut)
+	}
+	if _, _, _, co, n := stored(t, env); co || n != 2 || branches(t) != "" || strings.Contains(out, "Wrote physa/init") {
+		t.Errorf("consolidation %v, %d recovered, branches %q\nstdout %s", co, n, branches(t), out)
 	}
 }
 
@@ -246,11 +343,11 @@ func TestBadCapIsBadUsage(t *testing.T) {
 		"--place --cap 5usd":            "physa init: --place starts no session, so it takes no --cap",
 		"--recover --cap lots":          `physa init: --cap "lots" is not a cap: give`,
 		"--walk --cap $0":               `physa init: --cap "$0" must be more than zero`,
-		"--propose --cap=-5":            `physa init: --cap "-5" is not a cap`,
+		"--consolidate --cap=-5":        `physa init: --cap "-5" is not a cap`,
 		"--areas --cap 0%":              `physa init: --cap "0%" must be above 0% and at most 100%`,
 		"--recover --cap 12.5":          `physa init: --cap "12.5" is not a cap`,
 		"--write --cap 5usd x":          "usage: physa init",
-		"--gather --cap 5usd --propose": "usage: physa init",
+		"--gather --cap 5usd --recover": "usage: physa init",
 	} {
 		f := oneAgent()
 		code, _, errOut := runInit(testEnv(t, onePR(), f), strings.Fields(args)...)

@@ -163,15 +163,6 @@ func checkNumbers(t *testing.T, r Report) {
 	}
 }
 
-// TestGoldenProposalPath pins the report of a run on the proposal path:
-// every measure of the walk says why it can't be given, and spend is whole.
-func TestGoldenProposalPath(t *testing.T) {
-	r := proposalPath(t).report()
-	golden(t, "proposal.txt", Text(r))
-	golden(t, "proposal.md", Section(r))
-	golden(t, "proposal.json", jsonOf(t, r))
-}
-
 // want is a measure that can't be given: where its JSON sits, its label in
 // the lines, and the reason.
 type want struct {
@@ -253,15 +244,6 @@ func cantBeGiven(t *testing.T, r Report, ws ...want) {
 }
 
 func TestCantBeGiven(t *testing.T) {
-	t.Run("proposal path", func(t *testing.T) {
-		cantBeGiven(t, proposalPath(t).report(),
-			want{files, filesLabel, noAreas},
-			want{placed, placedLabel, noPlaceNoWalk},
-			want{oneCapability, oneLabel, noWalk},
-			want{unplaced, noPRLabel, noWalk},
-			want{reasons, rulesLabel, noAreasForRules},
-			want{consolidation, consLabel, noConsolidation})
-	})
 	t.Run("no walk", func(t *testing.T) {
 		f := newFixture(t).gather(shopGather()).areas().spent()
 		cantBeGiven(t, f.report(),
@@ -269,6 +251,22 @@ func TestCantBeGiven(t *testing.T) {
 			want{placed, placedLabel, noPlaceNoWalk},
 			want{oneCapability, oneLabel, noWalk},
 			want{unplaced, noPRLabel, noWalk},
+			want{reasons, rulesLabel, noWalk},
+			want{consolidation, consLabel, noConsolidation})
+	})
+	t.Run("rows an earlier physa recovered from a proposal, and no walk", func(t *testing.T) {
+		f := newFixture(t).gather(shopGather()).areas().recovered(recoveredRows(proposalAt)).spent()
+		cantBeGiven(t, f.report(),
+			want{files, filesLabel, noWalk},
+			want{placed, placedLabel, noPlaceNoWalk},
+			want{oneCapability, oneLabel, noWalk},
+			want{unplaced, noPRLabel, noWalk},
+			want{reasons, rulesLabel, noWalk},
+			want{consolidation, consLabel, noConsolidation})
+	})
+	t.Run("rows of an earlier source beside the walk", func(t *testing.T) {
+		f := newFixture(t).gather(shopGather()).areas().walk().place().recovered(recoveredRows(proposalAt)).spent()
+		cantBeGiven(t, f.report(),
 			want{reasons, rulesLabel, noRows},
 			want{consolidation, consLabel, noConsolidation})
 	})
@@ -278,6 +276,7 @@ func TestCantBeGiven(t *testing.T) {
 			want{placed, placedLabel, noPlace},
 			want{oneCapability, oneLabel, noPlace},
 			want{unplaced, noPRLabel, noPlace},
+			want{reasons, rulesLabel, noPlace},
 			want{consolidation, consLabel, noConsolidation})
 	})
 	t.Run("no recovery", func(t *testing.T) {
@@ -313,7 +312,7 @@ func TestCantBeGiven(t *testing.T) {
 			want{placed, placedLabel, noGather},
 			want{oneCapability, oneLabel, noGather},
 			want{unplaced, noPRLabel, noWalk},
-			want{reasons, rulesLabel, noRows},
+			want{reasons, rulesLabel, noWalk},
 			want{consolidation, consLabel, noConsolidation},
 			want{spent, spendLabel, noSpend})
 	})
@@ -366,7 +365,8 @@ func TestCantBeGiven(t *testing.T) {
 var pathLike = regexp.MustCompile(`[^\s/]/[^\s/]`)
 
 func TestNoPathInTheReport(t *testing.T) {
-	for name, r := range map[string]Report{"full": full(t).report(), "proposal path": proposalPath(t).report()} {
+	for name, r := range map[string]Report{"full": full(t).report(),
+		"earlier source": newFixture(t).gather(shopGather()).areas().recovered(recoveredRows(proposalAt)).spent().report()} {
 		for kind, out := range map[string]string{"Text": Text(r), "Section": Section(r), "JSON": jsonOf(t, r)} {
 			for _, p := range fixturePaths() {
 				if strings.Contains(out, p) {
@@ -415,11 +415,14 @@ func TestBodyThatDoesNotDecode(t *testing.T) {
 			t.Fatal(err)
 		}
 		r := f.report()
+		// Whether the consolidation is current turns on the product's
+		// promise the areas state, so it can't be given either.
 		cantBeGiven(t, r,
 			want{files, filesLabel, badAreas},
-			want{reasons, rulesLabel, badAreas})
+			want{reasons, rulesLabel, badAreas},
+			want{consolidation, consLabel, badAreas})
 		if whole := full(t).report(); !reflect.DeepEqual(r.Placed, whole.Placed) || !reflect.DeepEqual(r.OneCapability, whole.OneCapability) ||
-			!reflect.DeepEqual(r.Unplaced, whole.Unplaced) || !reflect.DeepEqual(r.Consolidation, whole.Consolidation) || !reflect.DeepEqual(r.Spend, whole.Spend) {
+			!reflect.DeepEqual(r.Unplaced, whole.Unplaced) || !reflect.DeepEqual(r.Spend, whole.Spend) {
 			t.Errorf("areas that do not decode changed the other measures")
 		}
 	})

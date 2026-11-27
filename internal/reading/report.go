@@ -3,8 +3,8 @@ package reading
 import "fmt"
 
 // Report says what a session reads: one SourceReport per source, in order
-// (docs, pull requests, review comments, changes, then clusters when read),
-// and their estimated tokens together.
+// (docs, pull requests, review comments, changes), and their estimated
+// tokens together.
 type Report struct {
 	Tokens  int
 	Sources []SourceReport
@@ -39,25 +39,20 @@ func (r Report) Lines() []string {
 	return out
 }
 
-// sourceNames are the sources a Report counts, in order; clusters only when
-// they are read.
-var sourceNames = []string{"docs", "pull requests", "review comments", "changes", "clusters"}
+// sourceNames are the sources a Report counts, in order.
+var sourceNames = []string{"docs", "pull requests", "review comments", "changes"}
 
 // Recounted is in with its Report counted again from what in holds, under
-// the sources in's Report names (all of sourceNames but clusters when it
-// names none, and clusters too when in holds any). A part of an Input, such
-// as one share of propose, so reports exactly what it reads, counted as Of
-// counts it.
+// the sources in's Report names (all of sourceNames when it names none). A
+// part of an Input, such as one share of a capability's sources, so reports
+// exactly what it reads, counted as Of counts it.
 func (in Input) Recounted() Input {
 	var names []string
 	for _, s := range in.Report.Sources {
 		names = append(names, s.Name)
 	}
 	if names == nil {
-		names = sourceNames[:4]
-		if len(in.Clusters) > 0 {
-			names = sourceNames
-		}
+		names = sourceNames
 	}
 	in.Report = Report{}
 	for _, n := range names {
@@ -84,14 +79,6 @@ func (in Input) Recounted() Input {
 		case "changes":
 			for _, k := range in.Commits {
 				s.add(len(k.Short) + len(k.Subject) + len(k.Message) + len(k.Author) + len(k.Reverts))
-			}
-		case "clusters":
-			for _, c := range in.Clusters {
-				b := 0
-				for _, p := range c.Paths {
-					b += len(p)
-				}
-				s.add(b)
 			}
 		}
 		s.Tokens = BytesTokens(s.bytes)

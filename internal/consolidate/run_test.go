@@ -3,6 +3,8 @@ package consolidate
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +23,7 @@ import (
 	"github.com/dphaener/physa/internal/consolidating"
 	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapcheck"
+	"github.com/dphaener/physa/internal/productpromise"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/recovering"
 	"github.com/dphaener/physa/internal/recovery"
@@ -154,12 +157,24 @@ func (c fixCap) file() string {
 // placements, and each capability recovered from it.
 func seed(t *testing.T, caps []fixCap, renamed []walk.Rename) *initrecord.Store {
 	t.Helper()
+	return seedAreas(t, caps, renamed, nil)
+}
+
+// seedAreas is seed with areas stored first when areas, their body, is not
+// nil.
+func seedAreas(t *testing.T, caps []fixCap, renamed []walk.Rename, areas []byte) *initrecord.Store {
+	t.Helper()
 	s, err := store.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
 	st := initrecord.Of(s)
+	if areas != nil {
+		if err := st.PutAreas(context.Background(), initrecord.Areas{GatherAt: walkAt.Add(-2 * time.Hour), At: walkAt.Add(-time.Hour), Body: areas}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	wr := walk.Record{Renamed: renamed}
 	var rows []initrecord.Recovered
 	for _, c := range caps {
@@ -715,5 +730,63 @@ func TestAreaSplitToFitTheWindow(t *testing.T) {
 	}
 	if !reflect.DeepEqual(items, []string{"billing (part 1 of 2)", "billing (part 2 of 2)"}) {
 		t.Errorf("sessions = %q; want the area split by capability", items)
+	}
+}
+
+// TestProductPromiseStatedReachesTheLiftAndTheResult checks that the
+// promise the stored areas state is given to the session that judges which
+// rules to lift and is the result's product promise.
+func TestProductPromiseStatedReachesTheLiftAndTheResult(t *testing.T) {
+	const stated = "Teams keep the notes they write and find them again."
+	st := seedAreas(t, liftFixture(3), nil, []byte(`{"areas":[],"product":{"name":"Shop","promise":"Teams keep the notes they write\nand find them again."}}`))
+	f := &fakeAgent{reply: nothing}
+	res := consolidate(t, st, f)
+	var lifts int
+	for _, s := range f.specs {
+		if f.steps[s.SessionID] == StepLift && !s.Resume {
+			lifts++
+			if !strings.Contains(s.Prompt, "## The product's promise\n\n```text\n"+stated+"\n```\n") || strings.Contains(s.Prompt, "Not yet stated") {
+				t.Errorf("the lift session's message:\n%s", s.Prompt)
+			}
+		}
+	}
+	if lifts == 0 {
+		t.Fatalf("no lift session started: %v", f.started())
+	}
+	if res.ProductPromise != stated {
+		t.Errorf("result's product promise %q", res.ProductPromise)
+	}
+	if cur, err := Current(t.Context(), st); !cur || err != nil {
+		t.Errorf("Current = %v, %v", cur, err)
+	}
+}
+
+// TestProductPromiseNotStatedKeepsTheFingerprint checks that areas whose
+// body states no product give "Not yet stated." to the lift session and the
+// result, and the fingerprint computed with "Not yet stated.", as it was
+// before the promise came from the areas, so a consolidation stored then
+// stays current.
+func TestProductPromiseNotStatedKeepsTheFingerprint(t *testing.T) {
+	caps := liftFixture(3)
+	for name, areas := range map[string][]byte{"no product": []byte(`{"areas":[]}`), "no areas": nil} {
+		st := seedAreas(t, caps, nil, areas)
+		f := &fakeAgent{reply: nothing}
+		res := consolidate(t, st, f)
+		h := sha256.New()
+		fmt.Fprintf(h, "walk %s\npromise %q\n", walkAt.UTC().Format(time.RFC3339Nano), "Not yet stated.")
+		for _, c := range caps {
+			fmt.Fprintf(h, "%q %q %q %q\n", c.name, recovery.StatusRecovered, c.file(), c.terms)
+		}
+		if want := hex.EncodeToString(h.Sum(nil)); res.Fingerprint != want {
+			t.Errorf("%s: fingerprint %s, want %s", name, res.Fingerprint, want)
+		}
+		if res.ProductPromise != productpromise.NoPromise {
+			t.Errorf("%s: product promise %q", name, res.ProductPromise)
+		}
+		for _, s := range f.specs {
+			if f.steps[s.SessionID] == StepLift && !strings.Contains(s.Prompt, "Not yet stated: the product's promise has not been written") {
+				t.Errorf("%s: the lift session's message:\n%s", name, s.Prompt)
+			}
+		}
 	}
 }

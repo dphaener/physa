@@ -70,3 +70,17 @@ func TestSkillsHoldNoPerRepoWords(t *testing.T) {
 		}
 	}
 }
+
+func TestSkillsAskForTheProduct(t *testing.T) {
+	for _, want := range []string{"`product`", "`name`", "one sentence on one line: what the product does for its users and why that matters to them", `{"product":{"name":`} {
+		if !strings.Contains(Areas, want) {
+			t.Errorf("areas.md lacks %q", want)
+		}
+	}
+	if !strings.Contains(Parts, "first part states") || !strings.Contains(Parts, "do not restate") {
+		t.Error("parts.md does not say the first part states the product and later parts do not restate it")
+	}
+	if !strings.Contains(Merge, "product's promise") || !strings.Contains(Merge, "stays as the first part stated it") {
+		t.Error("merge.md does not say the product's promise is given and stays as the first part stated it")
+	}
+}

@@ -1,37 +1,25 @@
-// Package shares reads init's sources in shares when they are more than
-// one session holds: propose's (design 02 §2.3.1), and one capability's in
-// recovery (§2.4). It lays the sources, in the order reading gives them,
-// into shares that each read their sources whole, and merges what propose's
-// shares proposed. It never splits, cuts or skips a source
-// (init-no-cut): a source larger than one share stops init, named, before
-// anything is spent on propose. When the whole prompt fits one session,
-// propose runs as before, unchanged.
+// Package shares lays one capability's sources into shares for recovery
+// (design 02 §2.4), when they are more than one session holds. It lays the
+// sources, in the order reading gives them, into shares that each read their
+// sources whole, and joins them again. It never splits, cuts or skips a
+// source (init-no-cut): a source larger than one share is an error naming
+// it, and the capability is not recovered.
 package shares
 
 import (
 	"fmt"
 	"time"
 
-	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/reading"
 )
 
-// Fits reports whether propose's whole prompt for in, with its reply
-// reserve, fits one session of an agent whose window is window estimated
-// tokens. A window of 0 is unknown, and then everything fits: propose runs
-// one session, as before.
-func Fits(in reading.Input, window int) bool {
-	return window == 0 || reading.Tokens(mapping.Prompt(in))+mapping.ReplyReserve <= window
-}
-
-// TooLarge is returned by Lay when one source, with the skill and headings
-// alone, is more than one share holds. Nothing is cut, so init stops before
-// spending on propose.
+// TooLarge is returned by LayFor when one source, with the prompt around it
+// alone, is more than one share holds. Nothing is cut.
 type TooLarge struct {
-	// Source names the source as a person reads it: "doc <path>", "PR #N",
-	// "change <short id>" or "cluster N".
+	// Source names the source as a person reads it: "doc <path>", "PR #N"
+	// or "change <short id>".
 	Source string
-	// Tokens is the source's estimated tokens, as propose writes it.
+	// Tokens is the source's estimated tokens, as the prompt writes it.
 	Tokens int
 	// Room is the most estimated tokens one share's prompt may take.
 	Room int
@@ -40,8 +28,7 @@ type TooLarge struct {
 }
 
 func (e *TooLarge) Error() string {
-	return fmt.Sprintf("%s takes about %s estimated tokens, and with the skill it is more than one share of propose holds (about %s tokens). "+
-		"Nothing is cut, so init stops before spending on propose. %s",
+	return fmt.Sprintf("%s takes about %s estimated tokens, and with the rest of its prompt it is more than one share holds (about %s tokens). Nothing is cut. %s",
 		e.Source, reading.Thousands(int64(e.Tokens)), reading.Thousands(int64(e.Room)), e.Leave)
 }
 
@@ -58,7 +45,7 @@ func tooLarge(in reading.Input, k, i, tokens, room int) *TooLarge {
 		merged := p.MergedAt.UTC()
 		e.Leave = fmt.Sprintf("To leave it out of the gather, gather again with --since a date after it merged on %s (physa init --gather --since %s), or with a smaller --max-prs.",
 			merged.Format(time.DateOnly), merged.AddDate(0, 0, 1).Format(time.DateOnly))
-	case kindChange:
+	default:
 		c := in.Commits[i]
 		e.Source = "change " + c.Short
 		e.Leave = "To leave it out of the gather, gather again with --since a date after the change's (physa init --gather --since <date>)."
@@ -67,9 +54,6 @@ func tooLarge(in reading.Input, k, i, tokens, room int) *TooLarge {
 			e.Leave = fmt.Sprintf("To leave it out of the gather, gather again with --since a date after the change's, %s (physa init --gather --since %s).",
 				at.Format(time.DateOnly), at.AddDate(0, 0, 1).Format(time.DateOnly))
 		}
-	default:
-		e.Source = fmt.Sprintf("cluster %d", i+1)
-		e.Leave = "Clusters come from the changes gathered: to leave it out, gather again with a later --since (physa init --gather --since <date>), so fewer changes are read."
 	}
 	return e
 }

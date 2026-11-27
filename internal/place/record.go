@@ -1,6 +1,7 @@
 package place
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -70,13 +71,14 @@ type CapabilityPlaced struct {
 
 // Loader is the store as Load reads it.
 type Loader interface {
-	Place() (initrecord.Place, bool, error)
+	Place(ctx context.Context) (initrecord.Place, bool, error)
 }
 
 // Load reads the stored placement and decodes its body, false when none
 // exists.
 func Load(st Loader) (Record, bool, error) {
-	p, ok, err := st.Place()
+	ctx := context.TODO()
+	p, ok, err := st.Place(ctx)
 	if err != nil || !ok {
 		return Record{}, false, err
 	}

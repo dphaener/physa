@@ -1,6 +1,7 @@
 package initrun
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,7 +51,8 @@ func (r *run) writeStored() int {
 // proposal's, or "Not yet stated." with none without one. The product is
 // named after root.
 func storedMap(st *initrecord.Store, root string, env Env) (initbranch.Map, error) {
-	prop, hasProp, err := st.Proposed()
+	ctx := context.TODO()
+	prop, hasProp, err := st.Proposed(ctx)
 	var s mapping.Stored
 	if err == nil && hasProp {
 		err = json.Unmarshal(prop.Body, &s)
@@ -62,8 +64,8 @@ func storedMap(st *initrecord.Store, root string, env Env) (initbranch.Map, erro
 			err = recovery.ErrNoProposal
 		}
 	}
-	rows, rerr := st.Recovered()
-	spent, serr := st.Spending()
+	rows, rerr := st.Recovered(ctx)
+	spent, serr := st.Spending(ctx)
 	if err = errors.Join(err, rerr, serr); err != nil {
 		return initbranch.Map{}, err
 	}

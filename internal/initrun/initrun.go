@@ -190,7 +190,7 @@ func (r *run) agent() (adapter.Adapter, error) {
 func (r *run) spent(phase string, from spend.Count) {
 	if c := r.meter.Count().Since(from); c != (spend.Count{}) {
 		r.counts[phase] = c
-		if err := r.st.AddSpent(initrecord.Spent{Phase: phase, Count: c}); err != nil {
+		if err := r.st.AddSpent(context.TODO(), initrecord.Spent{Phase: phase, Count: c}); err != nil {
 			fmt.Fprintf(r.stderr, "physa init: what %s spent was not stored: %v\n", phase, err)
 		}
 	}
@@ -210,7 +210,7 @@ func (r *run) gatherInto(off string) (store.Gather, gather.Summary, error) {
 	if err != nil {
 		return store.Gather{}, gather.Summary{}, err
 	}
-	dir, err := repo.StoreDir()
+	dir, err := repo.StoreDir(context.TODO())
 	if err != nil {
 		return store.Gather{}, gather.Summary{}, err
 	}
@@ -220,7 +220,7 @@ func (r *run) gatherInto(off string) (store.Gather, gather.Summary, error) {
 		return g, sum, cmp.Or(err, adapter.ErrCapped)
 	}
 	sum.Store = dir
-	if perr := r.st.PutGather(g); perr != nil {
+	if perr := r.st.PutGather(context.TODO(), g); perr != nil {
 		return g, sum, perr
 	}
 	r.spent("discover", from)
@@ -236,7 +236,7 @@ func (r *run) propose() int {
 		return r.fail(err)
 	}
 	r.p.proposal(res)
-	if g, ok, err := r.st.Gathered(); err == nil && ok { // what recovery reads beyond the citations, and what no capability got
+	if g, ok, err := r.st.Gathered(context.TODO()); err == nil && ok { // what recovery reads beyond the citations, and what no capability got
 		_, c := coverage.Place(g, res.Proposal.Capabilities)
 		if coverage.Warn(r.stderr, c); !r.p.json || r.p.multi { // --propose --json prints the proposal alone
 			r.p.value("coverage", coverage.Text(c), c)

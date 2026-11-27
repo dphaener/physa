@@ -338,7 +338,7 @@ func (g *Guard) End() string {
 
 // Spending is init's record's spend, phase by phase.
 type Spending interface {
-	Spending() ([]initrecord.Spent, error)
+	Spending(ctx context.Context) ([]initrecord.Spent, error)
 }
 
 // Run is what Start needs of a capped run of init.
@@ -377,7 +377,7 @@ func Start(ctx context.Context, r Run) (*Guard, int) {
 		g.Raw = m.Adapter
 	}
 	if !r.Fresh {
-		rows, err := r.Record.Spending()
+		rows, err := r.Record.Spending(ctx)
 		if err != nil {
 			fmt.Fprintf(r.Out, "physa init: %v\n", err)
 			return g, 2

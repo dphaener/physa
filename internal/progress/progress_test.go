@@ -1,6 +1,7 @@
 package progress
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -14,14 +15,14 @@ type fake struct {
 	since   time.Time
 }
 
-func (f *fake) DefaultBranch() (string, error) {
+func (f *fake) DefaultBranch(ctx context.Context) (string, error) {
 	if f.noRef {
 		return "", errors.New("no default branch")
 	}
 	return "origin/main", nil
 }
 
-func (f *fake) Since(ref string, t time.Time) ([]vcs.Change, error) {
+func (f *fake) Since(ctx context.Context, ref string, t time.Time) ([]vcs.Change, error) {
 	f.since = t
 	return f.changes, nil
 }

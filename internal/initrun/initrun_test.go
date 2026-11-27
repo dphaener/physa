@@ -111,8 +111,8 @@ func testEnv(t *testing.T, f forge.Forge, a adapter.Adapter) Env {
 	t.Helper()
 	sd := t.TempDir()
 	return Env{
-		Store: func(string) (*store.Store, error) { return store.Open(sd) },
-		Repo:  func(dir string) (vcs.Repo, error) { return git.Open(dir) },
+		Store: func(string) (*store.Store, error) { return store.Open(context.Background(), sd) },
+		Repo:  func(dir string) (vcs.Repo, error) { return git.Open(context.Background(), dir) },
 		Forge: func(string) forge.Forge { return f },
 		Agent: func(string) (adapter.Adapter, error) {
 			if a == nil {
@@ -121,7 +121,7 @@ func testEnv(t *testing.T, f forge.Forge, a adapter.Adapter) Env {
 			return a, nil
 		},
 		Now:    time.Now,
-		Writer: git.OpenWriter,
+		Writer: func(d string) (vcs.Writer, error) { return git.OpenWriter(context.Background(), d) },
 		Spend:  filepath.Join(sd, "spend.json"),
 	}
 }
@@ -148,7 +148,7 @@ func storedGather(t *testing.T, env Env) store.Gather {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	g, ok, err := st.Gathered()
+	g, ok, err := st.Gathered(context.Background())
 	if err != nil || !ok {
 		t.Fatalf("gathered: ok %v, err %v", ok, err)
 	}
@@ -274,7 +274,7 @@ func TestProposeStoresAndPrintsMarkdown(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	p, ok, err := initrecord.Of(st).Proposed()
+	p, ok, err := initrecord.Of(st).Proposed(context.Background())
 	if err != nil || !ok || !strings.Contains(string(p.Body), "delivery") {
 		t.Errorf("proposed: ok %v, err %v, body %s", ok, err, p.Body)
 	}
@@ -398,7 +398,7 @@ func TestRecoverText(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	rs, err := initrecord.Of(st).Recovered()
+	rs, err := initrecord.Of(st).Recovered(context.Background())
 	if err != nil || len(rs) != 1 || rs[0].Capability != "delivery" || !strings.Contains(rs[0].File, "ship-in-order") {
 		t.Errorf("stored %+v, err %v", rs, err)
 	}
@@ -446,7 +446,7 @@ func TestStoredMapGivesOneSessionPerShareAndTheMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	prop, ok, err := initrecord.Of(st).Proposed()
+	prop, ok, err := initrecord.Of(st).Proposed(context.Background())
 	if err != nil || !ok {
 		t.Fatalf("proposed: ok %v, err %v", ok, err)
 	}
@@ -462,7 +462,7 @@ func TestStoredMapGivesOneSessionPerShareAndTheMerge(t *testing.T) {
 	if prop.Body, err = json.Marshal(s); err != nil {
 		t.Fatal(err)
 	}
-	if err := initrecord.Of(st).PutProposal(prop); err != nil {
+	if err := initrecord.Of(st).PutProposal(context.Background(), prop); err != nil {
 		t.Fatal(err)
 	}
 	if m, err = storedMap(initrecord.Of(st), "repo", env); err != nil || !reflect.DeepEqual(m.Sessions, s.Sessions) {
@@ -534,7 +534,7 @@ func TestStoredMapWritesTheWalksCapabilitiesAndSkipsRowsOfAnEarlierSource(t *tes
 	}
 	defer st.Close()
 	rec := initrecord.Of(st)
-	w, ok, err := rec.Walk()
+	w, ok, err := rec.Walk(context.Background())
 	if err != nil || !ok {
 		t.Fatalf("walk: %v, %v", ok, err)
 	}
@@ -548,7 +548,7 @@ func TestStoredMapWritesTheWalksCapabilitiesAndSkipsRowsOfAnEarlierSource(t *tes
 		{Capability: "zz-cap-second", ProposalAt: w.At.Add(-time.Hour), Status: recovery.StatusRecovered, File: "# Stale\n"},
 		{Capability: "delivery", ProposalAt: w.At, Status: recovery.StatusRecovered, File: "# Delivery\n"},
 	}
-	if err := rec.PutRecovered(rows); err != nil {
+	if err := rec.PutRecovered(context.Background(), rows); err != nil {
 		t.Fatal(err)
 	}
 	if m, err = storedMap(rec, "repo", env); err != nil || len(m.Capabilities) != 2 {

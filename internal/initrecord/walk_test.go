@@ -18,19 +18,19 @@ func sampleWalk() Walk {
 func TestWalkRoundTripAndReplace(t *testing.T) {
 	s, _ := open(t)
 	want := sampleWalk()
-	if err := s.PutWalk(want); err != nil {
+	if err := s.PutWalk(t.Context(), want); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.Walk()
+	got, ok, err := s.Walk(t.Context())
 	if err != nil || !ok || !reflect.DeepEqual(got, want) {
 		t.Fatalf("Walk = %+v, %v, %v; want %+v", got, ok, err, want)
 	}
 	second := sampleWalk()
 	second.Body = []byte(`{"areas":[1]}`)
-	if err := s.PutWalk(second); err != nil {
+	if err := s.PutWalk(t.Context(), second); err != nil {
 		t.Fatal(err)
 	}
-	got, _, _ = s.Walk()
+	got, _, _ = s.Walk(t.Context())
 	if string(got.Body) != `{"areas":[1]}` {
 		t.Errorf("body = %s; want the second", got.Body)
 	}
@@ -42,49 +42,49 @@ func TestWalkRoundTripAndReplace(t *testing.T) {
 
 func TestWalkEmptyStoreHasNone(t *testing.T) {
 	s, _ := open(t)
-	if _, ok, err := s.Walk(); ok || err != nil {
+	if _, ok, err := s.Walk(t.Context()); ok || err != nil {
 		t.Fatalf("fresh Walk = %v, %v; want false, nil", ok, err)
 	}
 }
 
 func TestPutGatherClearsWalk(t *testing.T) {
 	s, _ := open(t)
-	if err := s.PutWalk(sampleWalk()); err != nil {
+	if err := s.PutWalk(t.Context(), sampleWalk()); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PutGather(store.Gather{}); err != nil {
+	if err := s.PutGather(t.Context(), store.Gather{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.Walk(); ok || err != nil {
+	if _, ok, err := s.Walk(t.Context()); ok || err != nil {
 		t.Errorf("Walk after a new gather = %v, %v; want false, nil", ok, err)
 	}
 }
 
 func TestPutAreasClearsWalk(t *testing.T) {
 	s, _ := open(t)
-	if err := s.PutWalk(sampleWalk()); err != nil {
+	if err := s.PutWalk(t.Context(), sampleWalk()); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PutAreas(sampleAreas()); err != nil {
+	if err := s.PutAreas(t.Context(), sampleAreas()); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.Walk(); ok || err != nil {
+	if _, ok, err := s.Walk(t.Context()); ok || err != nil {
 		t.Errorf("Walk after new areas = %v, %v; want false, nil", ok, err)
 	}
-	if _, ok, _ := s.Areas(); !ok {
+	if _, ok, _ := s.Areas(t.Context()); !ok {
 		t.Error("the new areas were not stored")
 	}
 }
 
 func TestPutProposalKeepsWalk(t *testing.T) {
 	s, _ := open(t)
-	if err := s.PutWalk(sampleWalk()); err != nil {
+	if err := s.PutWalk(t.Context(), sampleWalk()); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PutProposal(Proposal{Body: []byte("{}")}); err != nil {
+	if err := s.PutProposal(t.Context(), Proposal{Body: []byte("{}")}); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.Walk(); !ok || err != nil {
+	if _, ok, err := s.Walk(t.Context()); !ok || err != nil {
 		t.Errorf("Walk after a proposal = %v, %v; want kept", ok, err)
 	}
 }
@@ -92,11 +92,11 @@ func TestPutProposalKeepsWalk(t *testing.T) {
 func TestWalkSpendingOrder(t *testing.T) {
 	s, _ := open(t)
 	for _, ph := range []string{"propose", "walk", "recover", "areas", "discover"} {
-		if err := s.AddSpent(Spent{Phase: ph, Count: spend.Count{Raw: adapter.Tokens{Input: 1}, Spend: spend.Spend{Tokens: 1}}}); err != nil {
+		if err := s.AddSpent(t.Context(), Spent{Phase: ph, Count: spend.Count{Raw: adapter.Tokens{Input: 1}, Spend: spend.Spend{Tokens: 1}}}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	got, err := s.Spending()
+	got, err := s.Spending(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

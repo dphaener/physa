@@ -2,6 +2,7 @@ package initrun
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"math"
 	"reflect"
@@ -242,7 +243,7 @@ func TestFullRunStoppedByRateLimitDoesNotPropose(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if _, ok, err := initrecord.Of(st).Proposed(); ok || err != nil {
+	if _, ok, err := initrecord.Of(st).Proposed(context.Background()); ok || err != nil {
 		t.Errorf("a proposal was stored after a stopped gather: %v %v", ok, err)
 	}
 }
@@ -304,7 +305,7 @@ func TestStoppedGatherThenProposeWarnsAndStillProposes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, ok, err := initrecord.Of(st).Proposed()
+	_, ok, err := initrecord.Of(st).Proposed(context.Background())
 	st.Close()
 	if !ok || err != nil {
 		t.Errorf("no proposal stored after --propose on a stopped gather: %v %v", ok, err)

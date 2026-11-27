@@ -1,6 +1,7 @@
 package learn
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -195,15 +196,15 @@ func arguedSignal(c vcs.Change, pr forge.PR) (Signal, bool) {
 
 // revertSignal finds a change that says it reverts another, naming the
 // reverted change's subject when it is among the collected changes.
-func revertSignal(repo vcs.Repo, c vcs.Change, collected []vcs.Change) (Signal, bool) {
+func revertSignal(ctx context.Context, repo vcs.Repo, c vcs.Change, collected []vcs.Change) (Signal, bool) {
 	id, ok := repo.Reverts(c)
 	if !ok {
 		return Signal{}, false
 	}
 	line := "reverts " + id
 	var reverted *ChangeText
-	if repo.HasChange(id) {
-		if got, err := repo.Latest(id, 1); err == nil && len(got) > 0 && sameChange(got[0].ID, id) {
+	if repo.HasChange(ctx, id) {
+		if got, err := repo.Latest(ctx, id, 1); err == nil && len(got) > 0 && sameChange(got[0].ID, id) {
 			reverted = &ChangeText{Subject: got[0].Subject, Message: got[0].Message}
 		}
 		for _, other := range collected {

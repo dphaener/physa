@@ -1,6 +1,8 @@
 package git
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -203,26 +205,26 @@ func TestHooksPath(t *testing.T) {
 	isolate(t)
 	dir := t.TempDir()
 	run(t, dir, "init", "-q", "-b", "main")
-	h, err := OpenHooks(dir)
+	h, err := OpenHooks(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p, set, err := h.HooksPath(); err != nil || set || p != "" {
+	if p, set, err := h.HooksPath(t.Context()); err != nil || set || p != "" {
 		t.Errorf("unset: HooksPath = %q, %v, %v", p, set, err)
 	}
-	if err := h.SetHooksPath("tools/hooks"); err != nil {
+	if err := h.SetHooksPath(t.Context(), "tools/hooks"); err != nil {
 		t.Fatal(err)
 	}
-	if p, set, err := h.HooksPath(); err != nil || !set || p != "tools/hooks" {
+	if p, set, err := h.HooksPath(t.Context()); err != nil || !set || p != "tools/hooks" {
 		t.Errorf("set: HooksPath = %q, %v, %v", p, set, err)
 	}
 	if got := run(t, dir, "config", "--local", "--get", "core.hooksPath"); got != "tools/hooks" {
 		t.Errorf("local core.hooksPath = %q", got)
 	}
-	if err := h.SetHooksPath(""); err == nil {
+	if err := h.SetHooksPath(t.Context(), ""); err == nil {
 		t.Error("an empty hooks path is no error")
 	}
-	if _, err := OpenHooks(t.TempDir()); err == nil {
+	if _, err := OpenHooks(t.Context(), t.TempDir()); err == nil {
 		t.Error("hooks of no repo is no error")
 	}
 }
@@ -236,11 +238,11 @@ func TestHooksPathGlobal(t *testing.T) {
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	dir := t.TempDir()
 	run(t, dir, "init", "-q", "-b", "main")
-	h, err := OpenHooks(dir)
+	h, err := OpenHooks(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p, set, err := h.HooksPath(); err != nil || !set || p != "~/hooks" {
+	if p, set, err := h.HooksPath(t.Context()); err != nil || !set || p != "~/hooks" {
 		t.Errorf("global: HooksPath = %q, %v, %v, want the global setting", p, set, err)
 	}
 }
@@ -249,11 +251,11 @@ func TestActiveHooks(t *testing.T) {
 	isolate(t)
 	dir := t.TempDir()
 	run(t, dir, "init", "-q", "-b", "main")
-	h, err := OpenHooks(dir)
+	h, err := OpenHooks(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := h.ActiveHooks(); err != nil || len(got) != 0 {
+	if got, err := h.ActiveHooks(t.Context()); err != nil || len(got) != 0 {
 		t.Errorf("a fresh repo: ActiveHooks = %v, %v, want none (samples only)", got, err)
 	}
 	hooksDir := filepath.Join(dir, ".git", "hooks")
@@ -266,14 +268,14 @@ func TestActiveHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 	run(t, dir, "config", "--local", "core.hooksPath", "elsewhere")
-	got, err := h.ActiveHooks()
+	got, err := h.ActiveHooks(t.Context())
 	if err != nil || !reflect.DeepEqual(got, []string{"commit-msg", "pre-push"}) {
 		t.Errorf("ActiveHooks = %v, %v, want commit-msg and pre-push", got, err)
 	}
 	if err := os.RemoveAll(hooksDir); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := h.ActiveHooks(); err != nil || len(got) != 0 {
+	if got, err := h.ActiveHooks(t.Context()); err != nil || len(got) != 0 {
 		t.Errorf("no hooks dir: ActiveHooks = %v, %v", got, err)
 	}
 }
@@ -282,15 +284,28 @@ func TestHooksDir(t *testing.T) {
 	isolate(t)
 	dir := t.TempDir()
 	run(t, dir, "init", "-q", "-b", "main")
-	h, err := OpenHooks(dir)
+	h, err := OpenHooks(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	run(t, dir, "config", "--local", "core.hooksPath", "elsewhere")
-	got, err := h.HooksDir()
+	got, err := h.HooksDir(t.Context())
 	want, _ := filepath.EvalSymlinks(filepath.Join(dir, ".git", "hooks"))
 	gotReal, _ := filepath.EvalSymlinks(got)
 	if err != nil || gotReal != want {
 		t.Errorf("HooksDir = %q, %v, want %q whatever core.hooksPath says", got, err, want)
+	}
+}
+
+func TestHooksPathCancel(t *testing.T) {
+	isolate(t)
+	dir := t.TempDir()
+	run(t, dir, "init", "-q", "-b", "main")
+	h, err := OpenHooks(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, set, err := h.HooksPath(cancelled(t)); !errors.Is(err, context.Canceled) || set {
+		t.Fatalf("set = %v, err = %v, want context.Canceled", set, err)
 	}
 }

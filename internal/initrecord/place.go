@@ -1,6 +1,7 @@
 package initrecord
 
 import (
+	"context"
 	"database/sql"
 	"time"
 )
@@ -14,16 +15,16 @@ type Place struct {
 }
 
 // PutPlace replaces the stored placement with p.
-func (s *Store) PutPlace(p Place) error {
-	_, err := s.DB().Exec(`INSERT OR REPLACE INTO init_place (id, walk_at, at, body) VALUES (1, ?, ?, ?)`, ts(p.WalkAt), ts(p.At), string(p.Body))
+func (s *Store) PutPlace(ctx context.Context, p Place) error {
+	_, err := s.DB().ExecContext(ctx, `INSERT OR REPLACE INTO init_place (id, walk_at, at, body) VALUES (1, ?, ?, ?)`, ts(p.WalkAt), ts(p.At), string(p.Body))
 	return err
 }
 
 // Place returns the stored placement, false when there is none.
-func (s *Store) Place() (Place, bool, error) {
+func (s *Store) Place(ctx context.Context) (Place, bool, error) {
 	var p Place
 	var walkAt, at string
-	err := s.DB().QueryRow(`SELECT walk_at, at, body FROM init_place WHERE id = 1`).Scan(&walkAt, &at, &p.Body)
+	err := s.DB().QueryRowContext(ctx, `SELECT walk_at, at, body FROM init_place WHERE id = 1`).Scan(&walkAt, &at, &p.Body)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			err = nil

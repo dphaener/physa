@@ -167,13 +167,13 @@ func setup(t *testing.T, f *fakeAgent, list []areas.AreaRecord) (*initrecord.Sto
 			t.Fatal(err)
 		}
 	}
-	raw, err := store.Open(t.TempDir())
+	raw, err := store.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { raw.Close() })
 	st := initrecord.Of(raw)
-	if err := st.PutGather(store.Gather{Run: store.GatherRun{At: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}}); err != nil {
+	if err := st.PutGather(context.Background(), store.Gather{Run: store.GatherRun{At: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}}); err != nil {
 		t.Fatal(err)
 	}
 	if list != nil {
@@ -181,7 +181,7 @@ func setup(t *testing.T, f *fakeAgent, list []areas.AreaRecord) (*initrecord.Sto
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := st.PutAreas(initrecord.Areas{At: areasAt, Body: body}); err != nil {
+		if err := st.PutAreas(context.Background(), initrecord.Areas{At: areasAt, Body: body}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -296,7 +296,7 @@ func TestRunEveryFileOwnedOrSharedIsStored(t *testing.T) {
 	if len(rec.Sessions) != 3 || len(rec.Splits) != 0 || len(rec.Renamed) != 0 {
 		t.Errorf("sessions %v splits %v renamed %v", rec.Sessions, rec.Splits, rec.Renamed)
 	}
-	w, _, err := st.Walk()
+	w, _, err := st.Walk(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

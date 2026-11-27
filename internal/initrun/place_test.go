@@ -1,6 +1,7 @@
 package initrun
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -63,10 +64,10 @@ func TestPlacePrintsTheCountsWithNoAgentCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if _, ok, err := initrecord.Of(st).Place(); !ok || err != nil {
+	if _, ok, err := initrecord.Of(st).Place(context.Background()); !ok || err != nil {
 		t.Errorf("place stored: %v %v", ok, err)
 	}
-	if spent, err := initrecord.Of(st).Spending(); err != nil || spent[len(spent)-1].Phase == "place" {
+	if spent, err := initrecord.Of(st).Spending(context.Background()); err != nil || spent[len(spent)-1].Phase == "place" {
 		t.Errorf("a placement with no session spent something: %v %v", spent, err)
 	}
 }

@@ -12,6 +12,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"encoding/json"
@@ -36,7 +37,7 @@ type Store struct {
 
 // Open opens <dir>/physa.db, creating the directory and the file, and
 // applies any migrations it has not seen.
-func Open(dir string) (*Store, error) {
+func Open(ctx context.Context, dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -47,11 +48,11 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if err := whileBusy(func() error { return db.Ping() }); err != nil {
+	if err := whileBusy(func() error { return db.PingContext(ctx) }); err != nil {
 		db.Close()
 		return nil, err
 	}
-	if err := whileBusy(func() error { return migrate(db) }); err != nil {
+	if err := whileBusy(func() error { return migrate(ctx, db) }); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -62,7 +63,7 @@ func Open(dir string) (*Store, error) {
 // writing it. It is for readers outside the engine that must never write and
 // must work when no engine runs (the commit hook). A missing file gives an
 // error wrapping fs.ErrNotExist.
-func OpenReadOnly(path string) (*sql.DB, error) {
+func OpenReadOnly(ctx context.Context, path string) (*sql.DB, error) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, err
 	}
@@ -70,7 +71,7 @@ func OpenReadOnly(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("open %s read-only: %w", path, err)
 	}
@@ -155,13 +156,13 @@ func orderMigrations(names []string) ([]migration, error) {
 	return ms, nil
 }
 
-func migrate(db *sql.DB) error {
+func migrate(ctx context.Context, db *sql.DB) error {
 	ms, err := migrations()
 	if err != nil {
 		return err
 	}
 	var current int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&current); err != nil {
+	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&current); err != nil {
 		return err
 	}
 	if len(ms) > 0 && current > ms[len(ms)-1].n {
@@ -178,30 +179,30 @@ func migrate(db *sql.DB) error {
 		if err != nil {
 			return err
 		}
-		if err := apply(db, m.n, string(body)); err != nil {
+		if err := apply(ctx, db, m.n, string(body)); err != nil {
 			return fmt.Errorf("migration %s: %w", m.name, err)
 		}
 	}
 	return nil
 }
 
-func apply(db *sql.DB, n int, body string) error {
-	tx, err := db.Begin()
+func apply(ctx context.Context, db *sql.DB, n int, body string) error {
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	var current int
-	if err := tx.QueryRow("PRAGMA user_version").Scan(&current); err != nil {
+	if err := tx.QueryRowContext(ctx, "PRAGMA user_version").Scan(&current); err != nil {
 		return err
 	}
 	if current >= n {
 		return nil // another process applied it meanwhile
 	}
-	if _, err := tx.Exec(body); err != nil {
+	if _, err := tx.ExecContext(ctx, body); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", n)); err != nil {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", n)); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -242,7 +243,7 @@ func (r SliceRecord) MarshalJSON() ([]byte, error) {
 }
 
 // PutSliceRecord stores one slice record.
-func (s *Store) PutSliceRecord(r SliceRecord) error {
+func (s *Store) PutSliceRecord(ctx context.Context, r SliceRecord) error {
 	caps := r.Capabilities
 	if caps == nil {
 		caps = []string{}
@@ -262,14 +263,14 @@ func (s *Store) PutSliceRecord(r SliceRecord) error {
 	if r.Session != "" {
 		session = r.Session
 	}
-	_, err = s.db.Exec(`INSERT INTO slice_records (at, capabilities, "with", entries, session) VALUES (?, ?, ?, ?, ?)`,
+	_, err = s.db.ExecContext(ctx, `INSERT INTO slice_records (at, capabilities, "with", entries, session) VALUES (?, ?, ?, ?, ?)`,
 		r.At.UTC().Format(time.RFC3339), string(cj), r.With, entries, session)
 	return err
 }
 
 // SliceRecords returns every slice record, newest first.
-func (s *Store) SliceRecords() ([]SliceRecord, error) {
-	rows, err := s.db.Query(`SELECT at, capabilities, "with", entries, session FROM slice_records ORDER BY at DESC, id DESC`)
+func (s *Store) SliceRecords(ctx context.Context) ([]SliceRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT at, capabilities, "with", entries, session FROM slice_records ORDER BY at DESC, id DESC`)
 	if err != nil {
 		return nil, err
 	}

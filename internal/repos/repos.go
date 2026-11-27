@@ -3,6 +3,7 @@ package repos
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -85,11 +86,12 @@ func Add(dir, root string) (added bool, err error) {
 // StoreDir returns the store directory of the repo at path. A path that is
 // not a repo is an error naming it.
 func StoreDir(path string) (string, error) {
-	r, err := git.Open(path)
+	ctx := context.TODO()
+	r, err := git.Open(ctx, path)
 	if err != nil {
 		return "", fmt.Errorf("%s: not a repo: %w", path, err)
 	}
-	dir, err := r.StoreDir()
+	dir, err := r.StoreDir(ctx)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", path, err)
 	}

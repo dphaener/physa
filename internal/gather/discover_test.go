@@ -63,7 +63,7 @@ type listerRepo struct {
 	paths []string
 }
 
-func (l listerRepo) Listed() ([]string, error) { return l.paths, nil }
+func (l listerRepo) Listed(ctx context.Context) ([]string, error) { return l.paths, nil }
 
 func discoverRepo(t *testing.T) *testRepo {
 	r := newTestRepo(t)

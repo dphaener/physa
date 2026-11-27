@@ -16,7 +16,7 @@ import (
 func open(t *testing.T) (*Store, string) {
 	t.Helper()
 	dir := t.TempDir()
-	s, err := Open(dir)
+	s, err := Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestReopenKeepsRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Close()
-	s2, err := Open(dir)
+	s2, err := Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestNewerDatabaseFailsToOpen(t *testing.T) {
 	}
 	s.Close()
 
-	if _, err := Open(dir); err == nil || !strings.Contains(err.Error(), "newer physa") {
+	if _, err := Open(t.Context(), dir); err == nil || !strings.Contains(err.Error(), "newer physa") {
 		t.Fatalf("Open error = %v, want one naming a newer physa", err)
 	}
 	db, err := sql.Open("sqlite", filepath.Join(dir, "physa.db"))
@@ -122,7 +122,7 @@ func TestMigrationTwoDropsPRChecks(t *testing.T) {
 	}
 	db.Close()
 
-	s, err := Open(dir)
+	s, err := Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,10 +151,10 @@ func TestSliceRecordRoundTrip(t *testing.T) {
 	s, _ := open(t)
 	at := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
 	want := SliceRecord{At: at, Capabilities: []string{"learning", "map"}, With: "all", Entries: []string{"no-adr", "never-cut"}, Session: "sess-1"}
-	if err := s.PutSliceRecord(want); err != nil {
+	if err := s.PutSliceRecord(t.Context(), want); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.SliceRecords()
+	got, err := s.SliceRecords(t.Context())
 	if err != nil || len(got) != 1 {
 		t.Fatalf("records = %v, %v", got, err)
 	}
@@ -169,11 +169,11 @@ func TestSliceRecordsNewestFirst(t *testing.T) {
 	s, _ := open(t)
 	t0 := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
 	for i, at := range []time.Time{t0, t0.Add(time.Hour), t0.Add(time.Hour)} {
-		if err := s.PutSliceRecord(SliceRecord{At: at, Capabilities: []string{"c" + string(rune('a'+i))}}); err != nil {
+		if err := s.PutSliceRecord(t.Context(), SliceRecord{At: at, Capabilities: []string{"c" + string(rune('a'+i))}}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	got, err := s.SliceRecords()
+	got, err := s.SliceRecords(t.Context())
 	if err != nil || len(got) != 3 {
 		t.Fatalf("records = %v, %v", got, err)
 	}
@@ -188,7 +188,7 @@ func TestSliceRecordsNewestFirst(t *testing.T) {
 
 func TestSliceRecordNullEntriesAndSession(t *testing.T) {
 	s, _ := open(t)
-	if err := s.PutSliceRecord(SliceRecord{At: time.Now(), Capabilities: []string{"map"}}); err != nil {
+	if err := s.PutSliceRecord(t.Context(), SliceRecord{At: time.Now(), Capabilities: []string{"map"}}); err != nil {
 		t.Fatal(err)
 	}
 	var entries, session sql.NullString
@@ -198,7 +198,7 @@ func TestSliceRecordNullEntriesAndSession(t *testing.T) {
 	if entries.Valid || session.Valid {
 		t.Errorf("entries %v, session %v; want both null", entries, session)
 	}
-	got, err := s.SliceRecords()
+	got, err := s.SliceRecords(t.Context())
 	if err != nil || got[0].Entries != nil || got[0].Session != "" {
 		t.Errorf("read back %+v, %v", got, err)
 	}
@@ -248,7 +248,7 @@ func TestMigrationSevenKeepsOldSliceRecords(t *testing.T) {
 	}
 	db.Close()
 
-	s, err := Open(dir)
+	s, err := Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +256,7 @@ func TestMigrationSevenKeepsOldSliceRecords(t *testing.T) {
 	if got, want := version(t, s), newestMigration(t); got != want {
 		t.Errorf("user_version = %d, want %d", got, want)
 	}
-	got, err := s.SliceRecords()
+	got, err := s.SliceRecords(t.Context())
 	if err != nil || len(got) != 2 {
 		t.Fatalf("records = %v, %v; want 2 kept", got, err)
 	}
@@ -285,7 +285,7 @@ func TestConcurrentOpenMigrates(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s, err := Open(dir)
+			s, err := Open(t.Context(), dir)
 			if err != nil {
 				errs <- err
 				return
@@ -399,7 +399,7 @@ func TestOpenReadOnlyReadsAndRefusesWrites(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO ideas (slug, text, person, created_at, updated_at) VALUES ('a', 't', 'p', 'n', 'n')`); err != nil {
 		t.Fatal(err)
 	}
-	db, err := OpenReadOnly(filepath.Join(dir, "physa.db"))
+	db, err := OpenReadOnly(t.Context(), filepath.Join(dir, "physa.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,7 +415,7 @@ func TestOpenReadOnlyReadsAndRefusesWrites(t *testing.T) {
 
 func TestOpenReadOnlyMissingFile(t *testing.T) {
 	dir := t.TempDir()
-	_, err := OpenReadOnly(filepath.Join(dir, "physa.db"))
+	_, err := OpenReadOnly(t.Context(), filepath.Join(dir, "physa.db"))
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("err = %v, want one wrapping fs.ErrNotExist", err)
 	}

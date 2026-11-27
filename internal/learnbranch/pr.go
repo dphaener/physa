@@ -1,6 +1,7 @@
 package learnbranch
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -19,7 +20,7 @@ const prIntro = "Learning proposes these map entries from merged changes. " +
 // or a branch that holds no proposal, leaves the PR alone; an open PR is
 // refreshed with the rebuilt body, and a new one is opened only when this
 // run applied a proposal. It never merges a PR.
-func openPR(w vcs.Writer, out *Outcome, st state, o Options) error {
+func openPR(ctx context.Context, w vcs.Writer, out *Outcome, st state, o Options) error {
 	if o.PRs == nil {
 		out.PR = PR{State: PRReady, Reason: o.ForgeReason}
 		return nil
@@ -28,7 +29,7 @@ func openPR(w vcs.Writer, out *Outcome, st state, o Options) error {
 	if out.Commit == nil {
 		return nil
 	}
-	body, ok, err := prBody(w, st.def, out.Commit.ID)
+	body, ok, err := prBody(ctx, w, st.def, out.Commit.ID)
 	if err != nil || !ok {
 		return err
 	}
@@ -56,8 +57,8 @@ func openPR(w vcs.Writer, out *Outcome, st state, o Options) error {
 
 // prBody is the PR's body: the intro, then the proposal lines of every
 // change of def..tip, oldest first. It is false when there are none.
-func prBody(w vcs.Repo, def, tip string) (string, bool, error) {
-	changes, err := w.Changes(def + ".." + tip)
+func prBody(ctx context.Context, w vcs.Repo, def, tip string) (string, bool, error) {
+	changes, err := w.Changes(ctx, def+".."+tip)
 	if err != nil {
 		return "", false, err
 	}

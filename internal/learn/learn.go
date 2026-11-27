@@ -16,6 +16,7 @@
 package learn
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -144,19 +145,20 @@ type entry struct {
 // their signals and triages them. The error is for a history that cannot be
 // read; a source of signals that cannot be read is reported in the Result.
 func Run(repo vcs.Repo, o Options) (Result, error) {
-	ref, err := repo.DefaultBranch()
+	ctx := context.TODO()
+	ref, err := repo.DefaultBranch(ctx)
 	if err != nil {
 		return Result{}, err
 	}
-	watermark, err := readWatermark(repo, ref)
+	watermark, err := readWatermark(ctx, repo, ref)
 	if err != nil {
 		return Result{}, err
 	}
-	collected, older, rng, err := collect(repo, ref, o.Since, watermark)
+	collected, older, rng, err := collect(ctx, repo, ref, o.Since, watermark)
 	if err != nil {
 		return Result{}, err
 	}
-	learned, err := learnedIDs(repo, ref, collected)
+	learned, err := learnedIDs(ctx, repo, ref, collected)
 	if err != nil {
 		return Result{}, err
 	}
@@ -184,7 +186,7 @@ func Run(repo vcs.Repo, o Options) (Result, error) {
 
 	res.Forge, res.Unavailable = askForge(entries, o, res.Unavailable)
 	for _, e := range entries {
-		if s, ok := revertSignal(repo, e.change, collected); ok {
+		if s, ok := revertSignal(ctx, repo, e.change, collected); ok {
 			e.signals = append(e.signals, s)
 		}
 	}
@@ -219,7 +221,7 @@ func Run(repo vcs.Repo, o Options) (Result, error) {
 			res.Nothing = append(res.Nothing, ref)
 		}
 	}
-	res.Through = nextWatermark(repo, watermark, collected, incomplete)
+	res.Through = nextWatermark(ctx, repo, watermark, collected, incomplete)
 	if res.Through == "" && older != nil {
 		res.Through = older.ID
 	}
@@ -230,13 +232,13 @@ func Run(repo vcs.Repo, o Options) (Result, error) {
 // just older than the oldest of them when there is one, and the range they
 // span: those after since when it is given, else every change after the
 // watermark when there is one, else the newest DefaultChanges.
-func collect(repo vcs.Repo, ref, since, watermark string) ([]vcs.Change, *vcs.Change, string, error) {
+func collect(ctx context.Context, repo vcs.Repo, ref, since, watermark string) ([]vcs.Change, *vcs.Change, string, error) {
 	if since == "" && watermark != "" {
-		changes, err := repo.Changes(watermark + ".." + ref)
+		changes, err := repo.Changes(ctx, watermark+".."+ref)
 		if err != nil {
 			return nil, nil, "", err
 		}
-		bound, err := repo.Latest(watermark, 1)
+		bound, err := repo.Latest(ctx, watermark, 1)
 		if err != nil {
 			return nil, nil, "", err
 		}
@@ -250,11 +252,11 @@ func collect(repo vcs.Repo, ref, since, watermark string) ([]vcs.Change, *vcs.Ch
 	}
 	if since != "" {
 		rng := since + ".." + ref
-		changes, err := repo.Changes(rng)
+		changes, err := repo.Changes(ctx, rng)
 		if err != nil {
 			return nil, nil, "", err
 		}
-		bound, err := repo.Latest(since, 1)
+		bound, err := repo.Latest(ctx, since, 1)
 		if err != nil {
 			return nil, nil, "", err
 		}
@@ -264,7 +266,7 @@ func collect(repo vcs.Repo, ref, since, watermark string) ([]vcs.Change, *vcs.Ch
 		}
 		return changes, older, rng, nil
 	}
-	changes, err := repo.Latest(ref, DefaultChanges+1)
+	changes, err := repo.Latest(ctx, ref, DefaultChanges+1)
 	if err != nil {
 		return nil, nil, "", err
 	}

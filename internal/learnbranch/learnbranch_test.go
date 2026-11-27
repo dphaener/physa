@@ -120,7 +120,7 @@ func (f *fixture) opts(a *fakeAgent, push, pr bool) Options {
 		Session: propose.Session{
 			Agent:    func() (adapter.Adapter, error) { return a, nil },
 			Appetite: 40000,
-			Check:    propose.Options{OpenRepo: git.Open},
+			Check:    propose.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }},
 		}}
 }
 
@@ -144,7 +144,7 @@ func (f *fixture) run(o Options, w vcs.Writer) (Outcome, error) {
 
 func (f *fixture) writer() vcs.Writer {
 	f.t.Helper()
-	w, err := git.OpenWriter(f.dir)
+	w, err := git.OpenWriter(context.Background(), f.dir)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -264,12 +264,12 @@ type racingWriter struct {
 	race   func(n int)
 }
 
-func (r *racingWriter) Push(branch, id, expect string) error {
+func (r *racingWriter) Push(ctx context.Context, branch, id, expect string) error {
 	r.pushes++
 	if r.pushes <= r.races {
 		r.race(r.pushes)
 	}
-	return r.Writer.Push(branch, id, expect)
+	return r.Writer.Push(ctx, branch, id, expect)
 }
 
 // otherLearns commits, in the other clone, a learning change on physa/learn

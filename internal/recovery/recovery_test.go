@@ -160,44 +160,48 @@ type fakeStore struct {
 	rows     []initrecord.Recovered // what init's record already holds
 }
 
-func (s *fakeStore) Recovered() ([]initrecord.Recovered, error) { return s.rows, nil }
+func (s *fakeStore) Recovered(ctx context.Context) ([]initrecord.Recovered, error) {
+	return s.rows, nil
+}
 
-func (s *fakeStore) Walk() (initrecord.Walk, bool, error) {
+func (s *fakeStore) Walk(ctx context.Context) (initrecord.Walk, bool, error) {
 	if s.walk == nil {
 		return initrecord.Walk{}, false, nil
 	}
 	return *s.walk, true, nil
 }
 
-func (s *fakeStore) Place() (initrecord.Place, bool, error) {
+func (s *fakeStore) Place(ctx context.Context) (initrecord.Place, bool, error) {
 	if s.place == nil {
 		return initrecord.Place{}, false, nil
 	}
 	return *s.place, true, nil
 }
 
-func (s *fakeStore) RecoverSeed() (uint64, bool, error) {
+func (s *fakeStore) RecoverSeed(ctx context.Context) (uint64, bool, error) {
 	if s.seed == nil {
 		return 0, false, nil
 	}
 	return *s.seed, true, nil
 }
 
-func (s *fakeStore) PutRecoverSeed(seed uint64, _ time.Time) error {
+func (s *fakeStore) PutRecoverSeed(ctx context.Context, seed uint64, _ time.Time) error {
 	s.seed, s.seeds = &seed, append(s.seeds, seed)
 	return nil
 }
 
-func (s *fakeStore) Gathered() (store.Gather, bool, error) { return s.gather, true, nil }
+func (s *fakeStore) Gathered(ctx context.Context) (store.Gather, bool, error) {
+	return s.gather, true, nil
+}
 
-func (s *fakeStore) Proposed() (initrecord.Proposal, bool, error) {
+func (s *fakeStore) Proposed(ctx context.Context) (initrecord.Proposal, bool, error) {
 	if s.proposal == nil {
 		return initrecord.Proposal{}, false, nil
 	}
 	return *s.proposal, true, nil
 }
 
-func (s *fakeStore) PutRecovered(rs []initrecord.Recovered) error {
+func (s *fakeStore) PutRecovered(ctx context.Context, rs []initrecord.Recovered) error {
 	s.puts = append(s.puts, rs)
 	return nil
 }
@@ -666,8 +670,8 @@ func TestScaffoldAloneChecksClean(t *testing.T) {
 // fakeRepo is a history holding one change.
 type fakeRepo struct{ vcs.Repo }
 
-func (fakeRepo) HasChange(id string) bool { return strings.HasPrefix(idA, id) }
-func (fakeRepo) Partial() bool            { return false }
+func (fakeRepo) HasChange(ctx context.Context, id string) bool { return strings.HasPrefix(idA, id) }
+func (fakeRepo) Partial(ctx context.Context) bool              { return false }
 
 func TestCommitAnchorsResolveAgainstTheRepoAtRoot(t *testing.T) {
 	file := "# Notes\n\n## Rules\n\n### Exports hold deleted notes\n`export-deleted` · a1b2c3d\nAn export holds every note.\nBecause: the change says so.\n" +
@@ -712,10 +716,12 @@ type realPuts struct {
 	real *initrecord.Store
 }
 
-func (r realPuts) PutRecovered(rs []initrecord.Recovered) error { return r.real.PutRecovered(rs) }
+func (r realPuts) PutRecovered(ctx context.Context, rs []initrecord.Recovered) error {
+	return r.real.PutRecovered(ctx, rs)
+}
 
 func TestRerunKeepsEarlierRecoveredFile(t *testing.T) {
-	st, err := store.Open(t.TempDir())
+	st, err := store.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -735,7 +741,7 @@ func TestRerunKeepsEarlierRecoveredFile(t *testing.T) {
 	if got := statuses(rep); got[0] != "export: failed" {
 		t.Fatalf("second run %v; want failed", got)
 	}
-	rows, err := initrecord.Of(st).Recovered()
+	rows, err := initrecord.Of(st).Recovered(context.Background())
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("rows %+v, %v", rows, err)
 	}

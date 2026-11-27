@@ -5,6 +5,7 @@
 package initpr
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -56,7 +57,7 @@ func Open(w vcs.Writer, f forge.Forge, out initbranch.Outcome) (initbranch.PR, e
 	} else if err == nil {
 		pr.State = initbranch.PROpened
 		var def string
-		if def, err = w.DefaultBranch(); err == nil {
+		if def, err = w.DefaultBranch(context.TODO()); err == nil {
 			if remote, name, ok := strings.Cut(def, "/"); ok && remote != "" {
 				def = name
 			}

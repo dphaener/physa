@@ -1,6 +1,7 @@
 package mapcheck
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -82,7 +83,7 @@ func lineOf(t *testing.T, root, rel, prefix string) int {
 // check checks the map under root with the git adapter for commit anchors.
 func check(t *testing.T, root string) Result {
 	t.Helper()
-	r, err := CheckWith(root, Options{OpenRepo: git.Open})
+	r, err := CheckWith(root, Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil {
 		t.Fatal(err)
 	}

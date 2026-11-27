@@ -1,6 +1,7 @@
 package learn
 
 import (
+	"context"
 	"strings"
 
 	"github.com/dphaener/physa/internal/history"
@@ -24,10 +25,10 @@ const NoWatermark = "none"
 // One that names no such change is ignored. Of two that are not part of each
 // other's history, the one read first is kept: the default branch's, then
 // the local learn branch's, then the remote's.
-func readWatermark(repo vcs.Repo, ref string) (string, error) {
+func readWatermark(ctx context.Context, repo vcs.Repo, ref string) (string, error) {
 	best := ""
-	for _, from := range append([]string{ref}, repo.Branch(learnBranch)...) {
-		c, ok, err := repo.Trailer(from, throughKey)
+	for _, from := range append([]string{ref}, repo.Branch(ctx, learnBranch)...) {
+		c, ok, err := repo.Trailer(ctx, from, throughKey)
 		if err != nil {
 			return "", err
 		}
@@ -35,14 +36,14 @@ func readWatermark(repo vcs.Repo, ref string) (string, error) {
 			continue
 		}
 		named := history.Trailers(c.Message, throughKey)
-		if len(named) == 0 || strings.EqualFold(named[len(named)-1], NoWatermark) || !repo.HasChange(named[len(named)-1]) {
+		if len(named) == 0 || strings.EqualFold(named[len(named)-1], NoWatermark) || !repo.HasChange(ctx, named[len(named)-1]) {
 			continue
 		}
-		id, ok := repo.Resolve(named[len(named)-1])
-		if !ok || !repo.IsAncestor(id, ref) {
+		id, ok := repo.Resolve(ctx, named[len(named)-1])
+		if !ok || !repo.IsAncestor(ctx, id, ref) {
 			continue
 		}
-		if best == "" || (id != best && repo.IsAncestor(best, id)) {
+		if best == "" || (id != best && repo.IsAncestor(ctx, best, id)) {
 			best = id
 		}
 	}
@@ -61,7 +62,7 @@ func isRecord(c vcs.Change) bool {
 // the learn branch's commits, here and on the remote, that are not on the
 // default branch ref. The learn branch's older history is never read: what
 // it learned is recorded by the watermark.
-func learnedIDs(repo vcs.Repo, ref string, collected []vcs.Change) ([]string, error) {
+func learnedIDs(ctx context.Context, repo vcs.Repo, ref string, collected []vcs.Change) ([]string, error) {
 	var ids []string
 	add := func(changes []vcs.Change) {
 		for _, c := range changes {
@@ -71,8 +72,8 @@ func learnedIDs(repo vcs.Repo, ref string, collected []vcs.Change) ([]string, er
 		}
 	}
 	add(collected)
-	for _, branch := range repo.Branch(learnBranch) {
-		changes, err := repo.Changes(ref + ".." + branch)
+	for _, branch := range repo.Branch(ctx, learnBranch) {
+		changes, err := repo.Changes(ctx, ref+".."+branch)
 		if err != nil {
 			return nil, err
 		}
@@ -87,7 +88,7 @@ func learnedIDs(repo vcs.Repo, ref string, collected []vcs.Change) ([]string, er
 // nothing to learn, up to the first not fully triaged. Learning's own
 // records neither move it nor stop it. It returns the read watermark when it
 // would not move past it.
-func nextWatermark(repo vcs.Repo, read string, collected []vcs.Change, incomplete map[string]bool) string {
+func nextWatermark(ctx context.Context, repo vcs.Repo, read string, collected []vcs.Change, incomplete map[string]bool) string {
 	through := ""
 	for i := len(collected) - 1; i >= 0; i-- {
 		c := collected[i]
@@ -102,7 +103,7 @@ func nextWatermark(repo vcs.Repo, read string, collected []vcs.Change, incomplet
 	if read == "" {
 		return through
 	}
-	if through == "" || through == read || !repo.IsAncestor(read, through) {
+	if through == "" || through == read || !repo.IsAncestor(ctx, read, through) {
 		return read
 	}
 	return through

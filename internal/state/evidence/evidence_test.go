@@ -87,7 +87,7 @@ func newEnv(t *testing.T, ff *fakeForge) *env {
 func (e *env) open() {
 	e.t.Helper()
 	dir := filepath.Join(e.dir, ".git", "physa")
-	st, err := store.Open(dir)
+	st, err := store.Open(context.Background(), dir)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestRepeatedPollRecordsNothingTwice(t *testing.T) {
 	}
 	e.close()
 	// The kill: the poll's facts and watermark are stored, but it is pending.
-	st, err := store.Open(filepath.Join(e.dir, ".git", "physa"))
+	st, err := store.Open(context.Background(), filepath.Join(e.dir, ".git", "physa"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,7 +455,7 @@ func TestListFilters(t *testing.T) {
 
 // Wake does nothing on a state that does not register the poll.
 func TestWakeWithoutPoll(t *testing.T) {
-	st, err := store.Open(t.TempDir())
+	st, err := store.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

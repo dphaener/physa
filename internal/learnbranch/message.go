@@ -1,6 +1,7 @@
 package learnbranch
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -38,7 +39,7 @@ type record struct {
 // proposal, and the trailer block, which always holds Learned-through
 // (learn.NoWatermark when there is nothing to learn through yet). The
 // subject counts the changes learned from.
-func (r record) message(w vcs.Repo) string {
+func (r record) message(ctx context.Context, w vcs.Repo) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "docs(map): Learn from %d %s\n\n", r.changes, plural(r.changes, "change"))
 	if len(r.applied) == 0 {
@@ -53,7 +54,7 @@ func (r record) message(w vcs.Repo) string {
 		through = learn.NoWatermark
 	}
 	fmt.Fprintf(&b, "%s: %s\n", throughKey, through)
-	if ids := r.learnedIDs(w); len(ids) > 0 {
+	if ids := r.learnedIDs(ctx, w); len(ids) > 0 {
 		fmt.Fprintf(&b, "%s: %s\n", learnedKey, strings.Join(ids, ", "))
 	}
 	if r.session != "" {
@@ -66,13 +67,13 @@ func (r record) message(w vcs.Repo) string {
 // learnedIDs are the run's own Learned ids, then each carried one that names
 // a change the recorded watermark does not pass, or no change at all, each
 // once.
-func (r record) learnedIDs(w vcs.Repo) []string {
+func (r record) learnedIDs(ctx context.Context, w vcs.Repo) []string {
 	ids := append([]string{}, r.learned...)
 	for _, id := range r.carried {
 		if contains(ids, id) {
 			continue
 		}
-		if full, ok := w.Resolve(id); ok && r.through != "" && w.IsAncestor(full, r.through) {
+		if full, ok := w.Resolve(ctx, id); ok && r.through != "" && w.IsAncestor(ctx, full, r.through) {
 			continue
 		}
 		ids = append(ids, id)

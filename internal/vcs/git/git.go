@@ -8,12 +8,14 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,12 +33,12 @@ var _ vcs.Tracker = (*repo)(nil)
 
 // Open returns the repository that contains dir. It returns vcs.ErrNotRepo
 // when dir is not in one, and a wrapped error when git cannot run.
-func Open(dir string) (vcs.Repo, error) {
+func Open(ctx context.Context, dir string) (vcs.Repo, error) {
 	r := &repo{dir: dir}
-	_, stderr, err := r.git("rev-parse", "--git-dir")
+	_, stderr, err := r.git(ctx, "rev-parse", "--git-dir")
 	if err != nil {
 		var exit *exec.ExitError
-		if errors.As(err, &exit) && strings.Contains(stderr, "not a git repository") {
+		if ctx.Err() == nil && errors.As(err, &exit) && strings.Contains(stderr, "not a git repository") {
 			return nil, vcs.ErrNotRepo
 		}
 		return nil, fmt.Errorf("git cannot read %s: %w", dir, gitError(err, stderr))
@@ -49,62 +51,48 @@ const logFormat = "--format=%H%x00%h%x00%s%x00%cI%x00%an%x00%B%x1e"
 
 // Changes returns the non-merge commits of the range rng, newest first as git
 // orders them. Git's own message is the error when the range is not valid.
-func (r *repo) Changes(rng string) ([]vcs.Change, error) {
-	out, stderr, err := r.git("log", "--no-merges", logFormat, "--end-of-options", rng, "--")
-	if err != nil {
-		return nil, gitError(err, stderr)
-	}
-	return parseLog(out)
+func (r *repo) Changes(ctx context.Context, rng string) ([]vcs.Change, error) {
+	return r.log(ctx, "--no-merges", logFormat, "--end-of-options", rng, "--")
 }
 
 // Since returns the non-merge commits reachable from ref committed after t,
 // newest first. A zero t means all of them.
-func (r *repo) Since(ref string, t time.Time) ([]vcs.Change, error) {
-	args := []string{"log", "--no-merges"}
+func (r *repo) Since(ctx context.Context, ref string, t time.Time) ([]vcs.Change, error) {
+	args := []string{"--no-merges"}
 	if !t.IsZero() {
 		args = append(args, "--since="+t.UTC().Format(time.RFC3339))
 	}
-	out, stderr, err := r.git(append(args, logFormat, "--end-of-options", ref, "--")...)
-	if err != nil {
-		return nil, gitError(err, stderr)
-	}
-	return parseLog(out)
+	return r.log(ctx, append(args, logFormat, "--end-of-options", ref, "--")...)
 }
 
 // Merges returns the merge commits on ref's first-parent line committed
 // after t, newest first. A zero t means all of them.
-func (r *repo) Merges(ref string, t time.Time) ([]vcs.Change, error) {
-	args := []string{"log", "--merges", "--first-parent"}
+func (r *repo) Merges(ctx context.Context, ref string, t time.Time) ([]vcs.Change, error) {
+	args := []string{"--merges", "--first-parent"}
 	if !t.IsZero() {
 		args = append(args, "--since="+t.UTC().Format(time.RFC3339))
 	}
-	out, stderr, err := r.git(append(args, logFormat, "--end-of-options", ref, "--")...)
-	if err != nil {
-		return nil, gitError(err, stderr)
-	}
-	return parseLog(out)
+	return r.log(ctx, append(args, logFormat, "--end-of-options", ref, "--")...)
 }
 
 // Altered returns the paths commit id altered, relative to the repo root and
 // sorted. A merge gives its paths against the first parent.
-func (r *repo) Altered(id string) ([]string, error) {
-	out, stderr, err := r.git("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", "--root", "--diff-merges=first-parent", "--end-of-options", id)
+func (r *repo) Altered(ctx context.Context, id string) ([]string, error) {
+	out, stderr, err := r.git(ctx, "diff-tree", "--no-commit-id", "--name-only", "-r", "-z", "--root", "--diff-merges=first-parent", "--end-of-options", id)
 	if err != nil {
 		return nil, gitError(err, stderr)
 	}
-	paths := []string{}
-	for _, p := range strings.Split(out, "\x00") {
-		if p != "" {
-			paths = append(paths, p)
-		}
-	}
-	sort.Strings(paths)
-	return paths, nil
+	return nulPaths(out), nil
 }
 
 // Latest returns the newest n non-merge commits reachable from ref.
-func (r *repo) Latest(ref string, n int) ([]vcs.Change, error) {
-	out, stderr, err := r.git("log", "--no-merges", "-n", strconv.Itoa(n), logFormat, "--end-of-options", ref, "--")
+func (r *repo) Latest(ctx context.Context, ref string, n int) ([]vcs.Change, error) {
+	return r.log(ctx, "--no-merges", "-n", strconv.Itoa(n), logFormat, "--end-of-options", ref, "--")
+}
+
+// log runs git log with args and reads the changes it prints.
+func (r *repo) log(ctx context.Context, args ...string) ([]vcs.Change, error) {
+	out, stderr, err := r.git(ctx, append([]string{"log"}, args...)...)
 	if err != nil {
 		return nil, gitError(err, stderr)
 	}
@@ -147,54 +135,57 @@ func (r *repo) Reverts(c vcs.Change) (string, bool) {
 
 // DefaultBranch returns origin's HEAD when the repo knows it, else the first
 // of origin/main, origin/master, main and master that exists.
-func (r *repo) DefaultBranch() (string, error) {
-	if out, _, err := r.git("symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); err == nil && strings.TrimSpace(out) != "" {
+func (r *repo) DefaultBranch(ctx context.Context) (string, error) {
+	if out, _, err := r.git(ctx, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); err == nil && strings.TrimSpace(out) != "" {
 		return strings.TrimSpace(out), nil
 	}
 	for _, ref := range []string{"refs/remotes/origin/main", "refs/remotes/origin/master", "refs/heads/main", "refs/heads/master"} {
-		if r.hasRef(ref) {
+		if r.hasRef(ctx, ref) {
 			return strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "refs/remotes/"), nil
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", fmt.Errorf("the default branch cannot be found: %w", err)
 	}
 	return "", errors.New("the default branch cannot be found: no origin/HEAD, origin/main, origin/master, main or master")
 }
 
 // Branch returns name and origin/name, each only when it exists.
-func (r *repo) Branch(name string) []string {
+func (r *repo) Branch(ctx context.Context, name string) []string {
 	refs := []string{}
-	if r.hasRef("refs/heads/" + name) {
+	if r.hasRef(ctx, "refs/heads/"+name) {
 		refs = append(refs, name)
 	}
-	if r.hasRef("refs/remotes/origin/" + name) {
+	if r.hasRef(ctx, "refs/remotes/origin/"+name) {
 		refs = append(refs, "origin/"+name)
 	}
 	return refs
 }
 
-func (r *repo) hasRef(ref string) bool {
-	_, _, err := r.git("rev-parse", "--verify", "--quiet", "--end-of-options", ref)
+func (r *repo) hasRef(ctx context.Context, ref string) bool {
+	_, _, err := r.git(ctx, "rev-parse", "--verify", "--quiet", "--end-of-options", ref)
 	return err == nil
 }
 
 // HasChange reports whether id, full or abbreviated, names exactly one commit.
-func (r *repo) HasChange(id string) bool {
+func (r *repo) HasChange(ctx context.Context, id string) bool {
 	if id == "" {
 		return false
 	}
-	_, _, err := r.git("rev-parse", "--verify", "--quiet", "--end-of-options", id+"^{commit}")
+	_, _, err := r.git(ctx, "rev-parse", "--verify", "--quiet", "--end-of-options", id+"^{commit}")
 	return err == nil
 }
 
 // Partial reports whether the repo is a shallow clone.
-func (r *repo) Partial() bool {
-	out, _, err := r.git("rev-parse", "--is-shallow-repository")
+func (r *repo) Partial(ctx context.Context) bool {
+	out, _, err := r.git(ctx, "rev-parse", "--is-shallow-repository")
 	return err == nil && strings.TrimSpace(out) == "true"
 }
 
 // StoreDir returns "physa" inside git's common directory, which every
 // worktree of the repo shares.
-func (r *repo) StoreDir() (string, error) {
-	out, stderr, err := r.git("rev-parse", "--path-format=absolute", "--git-common-dir")
+func (r *repo) StoreDir(ctx context.Context) (string, error) {
+	out, stderr, err := r.git(ctx, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return "", gitError(err, stderr)
 	}
@@ -202,9 +193,9 @@ func (r *repo) StoreDir() (string, error) {
 }
 
 // Files lists the files directly under dir in commit id, not its subdirectories.
-func (r *repo) Files(id, dir string) ([]string, error) {
+func (r *repo) Files(ctx context.Context, id, dir string) ([]string, error) {
 	dir = strings.TrimSuffix(dir, "/")
-	out, stderr, err := r.git("ls-tree", "-z", "--format=%(objecttype) %(path)", "--end-of-options", id, "--", dir+"/")
+	out, stderr, err := r.git(ctx, "ls-tree", "-z", "--format=%(objecttype) %(path)", "--end-of-options", id, "--", dir+"/")
 	if err != nil {
 		return nil, gitError(err, stderr)
 	}
@@ -220,40 +211,36 @@ func (r *repo) Files(id, dir string) ([]string, error) {
 // Listed lists the working tree's files git tracks or does not ignore, as
 // slash paths from the root. The pathspec ":/" keeps the list whole when the
 // repo is read from a subdirectory.
-func (r *repo) Listed() ([]string, error) {
-	out, stderr, err := r.git("ls-files", "-z", "--cached", "--others", "--exclude-standard", "--full-name", "--", ":/")
+func (r *repo) Listed(ctx context.Context) ([]string, error) {
+	out, stderr, err := r.git(ctx, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--full-name", "--", ":/")
 	if err != nil {
 		return nil, gitError(err, stderr)
 	}
-	seen := map[string]bool{}
-	files := []string{}
+	return nulPaths(out), nil
+}
+
+// nulPaths returns the paths git printed split by NUL, sorted and without
+// duplicates.
+func nulPaths(out string) []string {
+	paths := []string{}
 	for _, p := range strings.Split(out, "\x00") {
-		if p != "" && !seen[p] {
-			seen[p] = true
-			files = append(files, p)
+		if p != "" {
+			paths = append(paths, p)
 		}
 	}
-	sort.Strings(files)
-	return files, nil
+	sort.Strings(paths)
+	return slices.Compact(paths)
 }
 
 // Tracked lists the files git tracks with their linguist-vendored and
 // linguist-generated marks. Git reads the marks from every .gitattributes, in
 // one call run from the root, since git reads paths against its directory.
-func (r *repo) Tracked() ([]vcs.TrackedFile, error) {
-	out, stderr, err := r.git("ls-files", "-z", "--cached", "--full-name", "--", ":/")
+func (r *repo) Tracked(ctx context.Context) ([]vcs.TrackedFile, error) {
+	out, stderr, err := r.git(ctx, "ls-files", "-z", "--cached", "--full-name", "--", ":/")
 	if err != nil {
 		return nil, gitError(err, stderr)
 	}
-	seen := map[string]bool{}
-	paths := []string{}
-	for _, p := range strings.Split(out, "\x00") {
-		if p != "" && !seen[p] {
-			seen[p] = true
-			paths = append(paths, p)
-		}
-	}
-	sort.Strings(paths)
+	paths := nulPaths(out)
 	files := make([]vcs.TrackedFile, len(paths))
 	for i, p := range paths {
 		files[i].Path = p
@@ -261,7 +248,7 @@ func (r *repo) Tracked() ([]vcs.TrackedFile, error) {
 	if len(files) == 0 {
 		return files, nil
 	}
-	top, stderr, err := r.git("rev-parse", "--show-toplevel")
+	top, stderr, err := r.git(ctx, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return nil, gitError(err, stderr)
 	}
@@ -269,7 +256,7 @@ func (r *repo) Tracked() ([]vcs.TrackedFile, error) {
 	for i, f := range files {
 		index[f.Path] = i
 	}
-	attrs, stderr, err := runGit(strings.TrimSpace(top), strings.Join(paths, "\x00")+"\x00", os.Environ(),
+	attrs, stderr, err := runGit(ctx, strings.TrimSpace(top), strings.Join(paths, "\x00")+"\x00", os.Environ(),
 		"check-attr", "-z", "--stdin", "linguist-vendored", "linguist-generated")
 	if err != nil {
 		return nil, gitError(err, stderr)
@@ -292,11 +279,11 @@ func (r *repo) Tracked() ([]vcs.TrackedFile, error) {
 }
 
 // Resolve returns the full id of the commit ref names.
-func (r *repo) Resolve(ref string) (string, bool) {
+func (r *repo) Resolve(ctx context.Context, ref string) (string, bool) {
 	if ref == "" {
 		return "", false
 	}
-	out, _, err := r.git("rev-parse", "--verify", "--quiet", "--end-of-options", ref+"^{commit}")
+	out, _, err := r.git(ctx, "rev-parse", "--verify", "--quiet", "--end-of-options", ref+"^{commit}")
 	if err != nil {
 		return "", false
 	}
@@ -310,15 +297,11 @@ var trailerKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*$`)
 // Trailer asks git for the non-merge commits reachable from ref with a line
 // starting "key:", newest first, and returns the first whose trailers carry
 // key.
-func (r *repo) Trailer(ref, key string) (vcs.Change, bool, error) {
+func (r *repo) Trailer(ctx context.Context, ref, key string) (vcs.Change, bool, error) {
 	if !trailerKey.MatchString(key) {
 		return vcs.Change{}, false, fmt.Errorf("%q is not a trailer key", key)
 	}
-	out, stderr, err := r.git("log", "--no-merges", "-i", "--grep=^"+key+":", logFormat, "--end-of-options", ref, "--")
-	if err != nil {
-		return vcs.Change{}, false, gitError(err, stderr)
-	}
-	changes, err := parseLog(out)
+	changes, err := r.log(ctx, "--no-merges", "-i", "--grep=^"+key+":", logFormat, "--end-of-options", ref, "--")
 	if err != nil {
 		return vcs.Change{}, false, err
 	}
@@ -331,11 +314,11 @@ func (r *repo) Trailer(ref, key string) (vcs.Change, bool, error) {
 }
 
 // IsAncestor reports whether commit a is b or reachable from b.
-func (r *repo) IsAncestor(a, b string) bool {
+func (r *repo) IsAncestor(ctx context.Context, a, b string) bool {
 	if a == "" || b == "" {
 		return false
 	}
-	_, _, err := r.git("merge-base", "--is-ancestor", "--end-of-options", a, b)
+	_, _, err := r.git(ctx, "merge-base", "--is-ancestor", "--end-of-options", a, b)
 	return err == nil
 }
 
@@ -390,14 +373,14 @@ func isTrailerBlock(para []string) bool {
 }
 
 // git runs one read-only git command in the repo's directory.
-func (r *repo) git(args ...string) (stdout, stderr string, err error) {
-	return runGit(r.dir, "", os.Environ(), args...)
+func (r *repo) git(ctx context.Context, args ...string) (stdout, stderr string, err error) {
+	return runGit(ctx, r.dir, "", os.Environ(), args...)
 }
 
 // runGit runs one git command in dir with env, stdin as its input, git's
 // messages in C.
-func runGit(dir, stdin string, env []string, args ...string) (stdout, stderr string, err error) {
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+func runGit(ctx context.Context, dir, stdin string, env []string, args ...string) (stdout, stderr string, err error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 	cmd.Env = append(env, "LC_ALL=C")
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
@@ -405,14 +388,26 @@ func runGit(dir, stdin string, env []string, args ...string) (stdout, stderr str
 	var out, errBuf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errBuf
 	err = cmd.Run()
-	return out.String(), strings.TrimSpace(errBuf.String()), err
+	return out.String(), strings.TrimSpace(errBuf.String()), withCtx(ctx, err)
+}
+
+// withCtx adds ctx's error to err, a failed run's, when ctx has ended and err
+// does not already carry it.
+func withCtx(ctx context.Context, err error) error {
+	if err == nil || ctx.Err() == nil || errors.Is(err, ctx.Err()) {
+		return err
+	}
+	return fmt.Errorf("%w (%w)", err, ctx.Err())
 }
 
 // gitError makes git's stderr the error text, or the run error when git
-// printed nothing.
+// printed nothing. A run its ctx ended also carries the ctx's error.
 func gitError(err error, stderr string) error {
-	if stderr != "" {
-		return errors.New(stderr)
+	if stderr == "" {
+		return err
 	}
-	return err
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("%s: %w", stderr, err)
+	}
+	return errors.New(stderr)
 }

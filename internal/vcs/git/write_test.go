@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -38,7 +39,7 @@ func newWriter(t *testing.T) (vcs.Writer, string, string) {
 	commit(t, dir, "feat: Base")
 	run(t, dir, "push", "-q", "origin", "main")
 	run(t, dir, "fetch", "-q", "origin")
-	w, err := OpenWriter(dir)
+	w, err := OpenWriter(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,14 +84,14 @@ func sideChange(t *testing.T, dir, branch, name, body, message string) string {
 func TestResolve(t *testing.T) {
 	r, dir := newRepo(t)
 	id := commit(t, dir, "feat: One")
-	if got, ok := r.Resolve("main"); !ok || got != id {
+	if got, ok := r.Resolve(t.Context(), "main"); !ok || got != id {
 		t.Errorf("Resolve(main) = %q, %v, want %q", got, ok, id)
 	}
-	if got, ok := r.Resolve(id[:7]); !ok || got != id {
+	if got, ok := r.Resolve(t.Context(), id[:7]); !ok || got != id {
 		t.Errorf("Resolve(short) = %q, %v", got, ok)
 	}
 	for _, ref := range []string{"nope", "", "--all"} {
-		if got, ok := r.Resolve(ref); ok {
+		if got, ok := r.Resolve(t.Context(), ref); ok {
 			t.Errorf("Resolve(%q) = %q, want false", ref, got)
 		}
 	}
@@ -103,20 +104,20 @@ func TestTrailer(t *testing.T) {
 	commit(t, dir, "fix: Body only\n\nLearned-through: is written in this body\n\nand prose follows it.")
 	commit(t, dir, "feat: Subject only Learned-through: 3333333")
 	commit(t, dir, "chore: Nothing")
-	got, ok, err := r.Trailer("HEAD", "Learned-through")
+	got, ok, err := r.Trailer(t.Context(), "HEAD", "Learned-through")
 	if err != nil || !ok || got.ID != want {
 		t.Fatalf("Trailer = %+v, %v, %v, want %s", got, ok, err, want)
 	}
 	if got.Subject != "feat: Newer" {
 		t.Errorf("subject = %q", got.Subject)
 	}
-	if _, ok, err := r.Trailer("HEAD", "Learned"); err != nil || ok {
+	if _, ok, err := r.Trailer(t.Context(), "HEAD", "Learned"); err != nil || ok {
 		t.Errorf("Learned = %v, %v, want none", ok, err)
 	}
-	if _, _, err := r.Trailer("nope", "Learned-through"); err == nil {
+	if _, _, err := r.Trailer(t.Context(), "nope", "Learned-through"); err == nil {
 		t.Error("an invalid ref is no error")
 	}
-	if _, _, err := r.Trailer("HEAD", "Learned.*"); err == nil {
+	if _, _, err := r.Trailer(t.Context(), "HEAD", "Learned.*"); err == nil {
 		t.Error("a key that is not a trailer key is no error")
 	}
 }
@@ -129,7 +130,7 @@ func TestTrailerSkipsMerges(t *testing.T) {
 	run(t, dir, "checkout", "-q", "main")
 	commit(t, dir, "main work")
 	run(t, dir, "merge", "-q", "--no-ff", "-m", "Merge side\n\nLearned-through: "+base, "side")
-	if got, ok, err := r.Trailer("HEAD", "Learned-through"); err != nil || ok {
+	if got, ok, err := r.Trailer(t.Context(), "HEAD", "Learned-through"); err != nil || ok {
 		t.Errorf("Trailer = %+v, %v, %v, want the merge skipped", got, ok, err)
 	}
 }
@@ -148,7 +149,7 @@ func TestIsAncestor(t *testing.T) {
 		{other, second, false}, {first, other, true}, {"nope", second, false}, {"", second, false},
 	}
 	for _, c := range cases {
-		if got := r.IsAncestor(c.a, c.b); got != c.want {
+		if got := r.IsAncestor(t.Context(), c.a, c.b); got != c.want {
 			t.Errorf("IsAncestor(%.7s, %.7s) = %v, want %v", c.a, c.b, got, c.want)
 		}
 	}
@@ -157,43 +158,43 @@ func TestIsAncestor(t *testing.T) {
 func TestFetch(t *testing.T) {
 	w, dir, bare := newWriter(t)
 	unchanged(t, dir)
-	if err := w.Fetch("main", "physa/learn"); err != nil {
+	if err := w.Fetch(t.Context(), "main", "physa/learn"); err != nil {
 		t.Fatalf("fetching an absent branch: %v", err)
 	}
-	if len(w.Branch("physa/learn")) != 0 {
-		t.Errorf("Branch = %v, want none", w.Branch("physa/learn"))
+	if len(w.Branch(t.Context(), "physa/learn")) != 0 {
+		t.Errorf("Branch = %v, want none", w.Branch(t.Context(), "physa/learn"))
 	}
-	main, _ := w.Resolve("main")
+	main, _ := w.Resolve(t.Context(), "main")
 	run(t, bare, "update-ref", "refs/heads/physa/learn", main)
-	if err := w.Fetch("physa/learn"); err != nil {
+	if err := w.Fetch(t.Context(), "physa/learn"); err != nil {
 		t.Fatal(err)
 	}
-	if got, ok := w.Resolve("refs/remotes/origin/physa/learn"); !ok || got != main {
+	if got, ok := w.Resolve(t.Context(), "refs/remotes/origin/physa/learn"); !ok || got != main {
 		t.Errorf("origin/physa/learn = %q, %v, want %s", got, ok, main)
 	}
 	run(t, bare, "update-ref", "-d", "refs/heads/physa/learn")
-	if err := w.Fetch("physa/learn"); err != nil {
+	if err := w.Fetch(t.Context(), "physa/learn"); err != nil {
 		t.Fatal(err)
 	}
-	if got, ok := w.Resolve("refs/remotes/origin/physa/learn"); ok {
+	if got, ok := w.Resolve(t.Context(), "refs/remotes/origin/physa/learn"); ok {
 		t.Errorf("stale origin/physa/learn kept at %s", got)
 	}
-	if err := w.Fetch("bad..name"); err == nil {
+	if err := w.Fetch(t.Context(), "bad..name"); err == nil {
 		t.Error("a bad branch name is no error")
 	}
 }
 
 func TestCheckedOut(t *testing.T) {
 	w, dir, _ := newWriter(t)
-	if ok, err := w.CheckedOut("main"); err != nil || !ok {
+	if ok, err := w.CheckedOut(t.Context(), "main"); err != nil || !ok {
 		t.Errorf("CheckedOut(main) = %v, %v, want true", ok, err)
 	}
-	if ok, err := w.CheckedOut("physa/learn"); err != nil || ok {
+	if ok, err := w.CheckedOut(t.Context(), "physa/learn"); err != nil || ok {
 		t.Errorf("CheckedOut(physa/learn) = %v, %v, want false", ok, err)
 	}
 	other := filepath.Join(t.TempDir(), "other")
 	run(t, dir, "worktree", "add", "-q", "-b", "physa/learn", other)
-	if ok, err := w.CheckedOut("physa/learn"); err != nil || !ok {
+	if ok, err := w.CheckedOut(t.Context(), "physa/learn"); err != nil || !ok {
 		t.Errorf("CheckedOut in a linked worktree = %v, %v, want true", ok, err)
 	}
 }
@@ -201,11 +202,11 @@ func TestCheckedOut(t *testing.T) {
 func TestCopyLifecycle(t *testing.T) {
 	w, dir, _ := newWriter(t)
 	unchanged(t, dir)
-	c, err := w.NewCopy("main")
+	c, err := w.NewCopy(t.Context(), "main")
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, _ := w.StoreDir()
+	store, _ := w.StoreDir(t.Context())
 	if rel, err := filepath.Rel(store, c.Dir()); err != nil || strings.HasPrefix(rel, "..") {
 		t.Fatalf("copy %s is not under the store %s", c.Dir(), store)
 	}
@@ -218,7 +219,7 @@ func TestCopyLifecycle(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(c.Dir(), "a.txt")); err != nil {
 		t.Errorf("the copy lacks the base's files: %v", err)
 	}
-	if err := c.Remove(); err != nil {
+	if err := c.Remove(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(run(t, dir, "worktree", "list", "--porcelain"), c.Dir()) {
@@ -227,7 +228,7 @@ func TestCopyLifecycle(t *testing.T) {
 	if _, err := os.Stat(filepath.Dir(c.Dir())); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("the temp dir is left: %v", err)
 	}
-	if _, err := w.NewCopy("nope"); err == nil {
+	if _, err := w.NewCopy(t.Context(), "nope"); err == nil {
 		t.Error("a copy of no change is no error")
 	}
 }
@@ -236,12 +237,12 @@ func TestReplay(t *testing.T) {
 	w, dir, _ := newWriter(t)
 	x := sideChange(t, dir, "x", "a.txt", "two\n", "docs: Change a\n\nCapability: learning")
 	unchanged(t, dir)
-	c, err := w.NewCopy("main")
+	c, err := w.NewCopy(t.Context(), "main")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Remove()
-	ok, err := c.Replay(x)
+	defer c.Remove(t.Context())
+	ok, err := c.Replay(t.Context(), x)
 	if err != nil || !ok {
 		t.Fatalf("Replay = %v, %v, want true", ok, err)
 	}
@@ -252,7 +253,7 @@ func TestReplay(t *testing.T) {
 		t.Errorf("a.txt = %q", b)
 	}
 	head := run(t, c.Dir(), "rev-parse", "HEAD")
-	ok, err = c.Replay(x)
+	ok, err = c.Replay(t.Context(), x)
 	if err != nil || ok {
 		t.Fatalf("Replay of an applied change = %v, %v, want false", ok, err)
 	}
@@ -269,16 +270,16 @@ func TestReplayConflict(t *testing.T) {
 	x := sideChange(t, dir, "x", "a.txt", "two\n", "docs: Two")
 	y := sideChange(t, dir, "y", "a.txt", "three\n", "docs: Three")
 	unchanged(t, dir)
-	c, err := w.NewCopy("main")
+	c, err := w.NewCopy(t.Context(), "main")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Remove()
-	if ok, err := c.Replay(x); err != nil || !ok {
+	defer c.Remove(t.Context())
+	if ok, err := c.Replay(t.Context(), x); err != nil || !ok {
 		t.Fatalf("Replay(x) = %v, %v", ok, err)
 	}
 	head := run(t, c.Dir(), "rev-parse", "HEAD")
-	ok, err := c.Replay(y)
+	ok, err := c.Replay(t.Context(), y)
 	if !errors.Is(err, vcs.ErrConflict) || ok {
 		t.Fatalf("Replay(y) = %v, %v, want ErrConflict", ok, err)
 	}
@@ -298,32 +299,32 @@ func TestReplayConflict(t *testing.T) {
 func TestCommit(t *testing.T) {
 	w, dir, _ := newWriter(t)
 	unchanged(t, dir)
-	c, err := w.NewCopy("main")
+	c, err := w.NewCopy(t.Context(), "main")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Remove()
+	defer c.Remove(t.Context())
 	base := run(t, c.Dir(), "rev-parse", "HEAD")
 	msg := "docs(map): Learn from 0 changes\n\nNo proposals; the watermark advances.\n\nLearned-through: " + base + "\nCapability: learning\n"
-	got, err := c.Commit(msg)
+	got, err := c.Commit(t.Context(), msg)
 	if err != nil {
 		t.Fatalf("an empty commit: %v", err)
 	}
 	if got.Subject != "docs(map): Learn from 0 changes" || got.ID != run(t, c.Dir(), "rev-parse", "HEAD") || got.ID == base {
 		t.Errorf("change = %+v", got)
 	}
-	if found, ok, err := w.Trailer(got.ID, "Learned-through"); err != nil || !ok || found.ID != got.ID {
+	if found, ok, err := w.Trailer(t.Context(), got.ID, "Learned-through"); err != nil || !ok || found.ID != got.ID {
 		t.Errorf("the trailer is not read back: %+v, %v, %v", found, ok, err)
 	}
 	writeFile(t, c.Dir(), "new.txt", "new\n")
-	got, err = c.Commit("docs: Add new")
+	got, err = c.Commit(t.Context(), "docs: Add new")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if files, _ := w.Files(got.ID, "."); strings.Join(files, ",") != "a.txt,new.txt" {
+	if files, _ := w.Files(t.Context(), got.ID, "."); strings.Join(files, ",") != "a.txt,new.txt" {
 		t.Errorf("files = %v, want the new file staged", files)
 	}
-	if _, err := c.Commit("  \n"); err == nil {
+	if _, err := c.Commit(t.Context(), "  \n"); err == nil {
 		t.Error("an empty message is no error")
 	}
 }
@@ -331,39 +332,39 @@ func TestCommit(t *testing.T) {
 func TestSetBranchLease(t *testing.T) {
 	w, dir, _ := newWriter(t)
 	unchanged(t, dir)
-	main, _ := w.Resolve("main")
-	if err := w.SetBranch("physa/learn", main, ""); err != nil {
+	main, _ := w.Resolve(t.Context(), "main")
+	if err := w.SetBranch(t.Context(), "physa/learn", main, ""); err != nil {
 		t.Fatal(err)
 	}
-	c, err := w.NewCopy("main")
+	c, err := w.NewCopy(t.Context(), "main")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Remove()
-	next, err := c.Commit("docs: Next")
+	defer c.Remove(t.Context())
+	next, err := c.Commit(t.Context(), "docs: Next")
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = w.SetBranch("physa/learn", next.ID, "")
+	err = w.SetBranch(t.Context(), "physa/learn", next.ID, "")
 	if !errors.Is(err, vcs.ErrLease) {
 		t.Errorf("old \"\" on an existing branch = %v, want ErrLease", err)
 	}
 	t.Logf("must-not-exist: %v", err)
-	err = w.SetBranch("physa/learn", next.ID, next.ID)
+	err = w.SetBranch(t.Context(), "physa/learn", next.ID, next.ID)
 	if !errors.Is(err, vcs.ErrLease) {
 		t.Errorf("a wrong old = %v, want ErrLease", err)
 	}
 	t.Logf("wrong old: %v", err)
-	if got, _ := w.Resolve("physa/learn"); got != main {
+	if got, _ := w.Resolve(t.Context(), "physa/learn"); got != main {
 		t.Errorf("a lost lease moved the branch to %s", got)
 	}
-	if err := w.SetBranch("physa/learn", next.ID, main); err != nil {
+	if err := w.SetBranch(t.Context(), "physa/learn", next.ID, main); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := w.Resolve("physa/learn"); got != next.ID {
+	if got, _ := w.Resolve(t.Context(), "physa/learn"); got != next.ID {
 		t.Errorf("physa/learn = %s, want %s", got, next.ID)
 	}
-	if err := w.SetBranch("main", next.ID, main); err == nil || errors.Is(err, vcs.ErrLease) {
+	if err := w.SetBranch(t.Context(), "main", next.ID, main); err == nil || errors.Is(err, vcs.ErrLease) {
 		t.Errorf("moving the checked-out branch = %v, want refused", err)
 	}
 }
@@ -371,28 +372,28 @@ func TestSetBranchLease(t *testing.T) {
 func TestPushLease(t *testing.T) {
 	w, dir, bare := newWriter(t)
 	unchanged(t, dir)
-	main, _ := w.Resolve("main")
-	if err := w.Push("physa/learn", main, ""); err != nil {
+	main, _ := w.Resolve(t.Context(), "main")
+	if err := w.Push(t.Context(), "physa/learn", main, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := run(t, bare, "rev-parse", "refs/heads/physa/learn"); got != main {
 		t.Fatalf("remote physa/learn = %s, want %s", got, main)
 	}
-	c, err := w.NewCopy("main")
+	c, err := w.NewCopy(t.Context(), "main")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Remove()
-	next, err := c.Commit("docs: Next")
+	defer c.Remove(t.Context())
+	next, err := c.Commit(t.Context(), "docs: Next")
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = w.Push("physa/learn", next.ID, "")
+	err = w.Push(t.Context(), "physa/learn", next.ID, "")
 	if !errors.Is(err, vcs.ErrLease) {
 		t.Errorf("expect \"\" on an existing remote branch = %v, want ErrLease", err)
 	}
 	t.Logf("must-not-exist: %v", err)
-	err = w.Push("physa/learn", next.ID, next.ID)
+	err = w.Push(t.Context(), "physa/learn", next.ID, next.ID)
 	if !errors.Is(err, vcs.ErrLease) {
 		t.Errorf("a stale lease = %v, want ErrLease", err)
 	}
@@ -401,13 +402,13 @@ func TestPushLease(t *testing.T) {
 		t.Errorf("a stale lease moved the remote to %s", got)
 	}
 	t.Log("remote unchanged: physa/learn " + main[:7])
-	if err := w.Push("physa/learn", next.ID, main); err != nil {
+	if err := w.Push(t.Context(), "physa/learn", next.ID, main); err != nil {
 		t.Fatal(err)
 	}
 	if got := run(t, bare, "rev-parse", "refs/heads/physa/learn"); got != next.ID {
 		t.Errorf("remote physa/learn = %s, want %s", got, next.ID)
 	}
-	if err := w.Push("physa/learn", next.ID, "--all"); err == nil {
+	if err := w.Push(t.Context(), "physa/learn", next.ID, "--all"); err == nil {
 		t.Error("an expect that is no change id is no error")
 	}
 }
@@ -419,26 +420,51 @@ func TestCopySkipsHooks(t *testing.T) {
 	x := sideChange(t, dir, "x", "a.txt", "two\n", "docs: Change a\n\nCapability: learning")
 	unchanged(t, dir)
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "s1")
-	c, err := w.NewCopy("main")
+	c, err := w.NewCopy(t.Context(), "main")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Remove()
+	defer c.Remove(t.Context())
 	run(t, c.Dir(), "commit", "-q", "--allow-empty", "-m", "docs: Control\n\nCapability: learning")
 	if got := message(t, c.Dir(), "HEAD"); !strings.HasSuffix(got, "\nSession: s1") {
 		t.Fatalf("the hook is not active in the copy, so the test proves nothing: %q", got)
 	}
-	if ok, err := c.Replay(x); err != nil || !ok {
+	if ok, err := c.Replay(t.Context(), x); err != nil || !ok {
 		t.Fatalf("Replay = %v, %v", ok, err)
 	}
 	if got := message(t, c.Dir(), "HEAD"); got != "docs: Change a\n\nCapability: learning" {
 		t.Errorf("a replayed message = %q, want it as written", got)
 	}
-	got, err := c.Commit("docs(map): Learn from 1 change\n\nCapability: learning\n")
+	got, err := c.Commit(t.Context(), "docs(map): Learn from 1 change\n\nCapability: learning\n")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Message != "docs(map): Learn from 1 change\n\nCapability: learning\n" || strings.Contains(message(t, c.Dir(), "HEAD"), "Session:") {
 		t.Errorf("a committed message = %q, want it as written", got.Message)
+	}
+}
+
+func TestFetchCancel(t *testing.T) {
+	w, _, _ := newWriter(t)
+	if err := w.Fetch(cancelled(t), "main"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
+func TestPushCancel(t *testing.T) {
+	w, dir, _ := newWriter(t)
+	head := run(t, dir, "rev-parse", "HEAD")
+	err := w.Push(cancelled(t), "learn", head, "")
+	if !errors.Is(err, context.Canceled) || errors.Is(err, vcs.ErrLease) {
+		t.Fatalf("err = %v, want context.Canceled and not ErrLease", err)
+	}
+}
+
+func TestSetBranchCancel(t *testing.T) {
+	w, dir, _ := newWriter(t)
+	head := run(t, dir, "rev-parse", "HEAD")
+	err := w.SetBranch(cancelled(t), "learn", head, head)
+	if !errors.Is(err, context.Canceled) || errors.Is(err, vcs.ErrLease) {
+		t.Fatalf("err = %v, want context.Canceled and not ErrLease", err)
 	}
 }

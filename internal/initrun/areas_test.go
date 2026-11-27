@@ -87,10 +87,10 @@ func TestAreasPrintsTheAreas(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if _, ok, err := initrecord.Of(st).Areas(); !ok || err != nil {
+	if _, ok, err := initrecord.Of(st).Areas(context.Background()); !ok || err != nil {
 		t.Errorf("areas stored: %v %v", ok, err)
 	}
-	if spent, err := initrecord.Of(st).Spending(); err != nil || len(spent) == 0 || spent[len(spent)-1].Phase != "areas" {
+	if spent, err := initrecord.Of(st).Spending(context.Background()); err != nil || len(spent) == 0 || spent[len(spent)-1].Phase != "areas" {
 		t.Errorf("spending %v %v", spent, err)
 	}
 }
@@ -188,7 +188,7 @@ func TestAreasNeverReachTheMap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, ok, err := initrecord.Of(st).Areas()
+	_, ok, err := initrecord.Of(st).Areas(context.Background())
 	st.Close()
 	if !ok || err != nil {
 		t.Fatalf("the areas were not kept through propose and recover: %v %v", ok, err)

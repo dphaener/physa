@@ -119,7 +119,7 @@ func doPoll(ctx context.Context, in state.Intent, newForge func(string) forge.Fo
 		return "", err
 	}
 	root := filepath.Dir(filepath.Dir(p.Store))
-	repo, err := git.Open(root)
+	repo, err := git.Open(ctx, root)
 	if err != nil {
 		return "", fmt.Errorf("open the repo at %s: %w", root, err)
 	}

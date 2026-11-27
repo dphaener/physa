@@ -193,8 +193,8 @@ func remoteRepo(t *testing.T) (dir, bare string) {
 // store, forge f and agent a, and the git writer and hooks.
 func fullEnv(t *testing.T, f forge.Forge, a adapter.Adapter) Env {
 	env := testEnv(t, f, a)
-	env.Writer = git.OpenWriter
-	env.Hooks = git.OpenHooks
+	env.Writer = func(d string) (vcs.Writer, error) { return git.OpenWriter(context.Background(), d) }
+	env.Hooks = func(d string) (vcs.Hooks, error) { return git.OpenHooks(context.Background(), d) }
 	env.Stdin = strings.NewReader("")
 	env.IsTerminal = func() bool { return false }
 	return env
@@ -217,7 +217,7 @@ func checkTree(t *testing.T, dir, ref string) {
 	t.Helper()
 	clone := t.TempDir()
 	gitIn(t, clone, "clone", "-q", "--branch", ref, dir, ".")
-	res, err := mapcheck.CheckWith(clone, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(d) }})
+	res, err := mapcheck.CheckWith(clone, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil || len(res.Problems) > 0 {
 		t.Errorf("map check on %s: %v %v", ref, err, res.Problems)
 	}
@@ -363,7 +363,7 @@ func TestFullTableAgreesWithTheRunAt1HourWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	rows, err := initrecord.Of(st).Spending()
+	rows, err := initrecord.Of(st).Spending(context.Background())
 	var w, in int64
 	for _, p := range rows {
 		w, in = w+p.Spend.Tokens, in+p.Raw.Input
@@ -437,7 +437,7 @@ func storedRow(t *testing.T, env Env, c string) initrecord.Recovered {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	rows, err := initrecord.Of(st).Recovered()
+	rows, err := initrecord.Of(st).Recovered(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -618,7 +618,7 @@ func TestMappedRepoIsRefusedBeforeAnythingIsSpent(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, ok, _ := st.Gathered(); ok {
+			if _, ok, _ := st.Gathered(context.Background()); ok {
 				t.Errorf("%s %v: a gather was stored", p, args)
 			}
 			st.Close()

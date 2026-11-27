@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -53,20 +54,20 @@ func runInit(args ...string) (int, string, string) {
 
 func storedGather(t *testing.T, dir string) store.Gather {
 	t.Helper()
-	repo, err := git.Open(dir)
+	repo, err := git.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sd, err := repo.StoreDir()
+	sd, err := repo.StoreDir(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Open(sd)
+	st, err := store.Open(context.Background(), sd)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	g, ok, err := st.Gathered()
+	g, ok, err := st.Gathered(context.Background())
 	if err != nil || !ok {
 		t.Fatalf("gathered: ok %v, err %v", ok, err)
 	}

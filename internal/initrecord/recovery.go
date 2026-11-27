@@ -1,6 +1,7 @@
 package initrecord
 
 import (
+	"context"
 	"database/sql"
 	"time"
 )
@@ -33,8 +34,8 @@ type Recovered struct {
 // PutRecovered stores rs in one transaction: a capability already stored is
 // replaced, every other stored capability is kept. A row with KeepEarlier
 // leaves an earlier row that holds a file as it is.
-func (s *Store) PutRecovered(rs []Recovered) error {
-	tx, err := s.DB().Begin()
+func (s *Store) PutRecovered(ctx context.Context, rs []Recovered) error {
+	tx, err := s.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -46,7 +47,7 @@ func (s *Store) PutRecovered(rs []Recovered) error {
 		}
 		if r.KeepEarlier {
 			var file string
-			err := tx.QueryRow(`SELECT file FROM init_recovery WHERE capability = ?`, r.Capability).Scan(&file)
+			err := tx.QueryRowContext(ctx, `SELECT file FROM init_recovery WHERE capability = ?`, r.Capability).Scan(&file)
 			if err != nil && err != sql.ErrNoRows {
 				return err
 			}
@@ -54,7 +55,7 @@ func (s *Store) PutRecovered(rs []Recovered) error {
 				continue
 			}
 		}
-		if _, err := tx.Exec(`INSERT OR REPLACE INTO init_recovery (capability, proposal_at, at, status, file, terms, details, session_id, model, attempts, appetite, input, cached_input, output) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO init_recovery (capability, proposal_at, at, status, file, terms, details, session_id, model, attempts, appetite, input, cached_input, output) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			r.Capability, ts(r.ProposalAt), ts(r.At), r.Status, r.File, r.Terms, string(details), r.SessionID, r.Model, r.Attempts, r.Appetite, r.Input, r.CachedInput, r.Output); err != nil {
 			return err
 		}
@@ -63,8 +64,8 @@ func (s *Store) PutRecovered(rs []Recovered) error {
 }
 
 // Recovered returns the stored recoveries ordered by capability.
-func (s *Store) Recovered() ([]Recovered, error) {
-	rows, err := s.DB().Query(`SELECT capability, proposal_at, at, status, file, terms, details, session_id, model, attempts, appetite, input, cached_input, output FROM init_recovery ORDER BY capability`)
+func (s *Store) Recovered(ctx context.Context) ([]Recovered, error) {
+	rows, err := s.DB().QueryContext(ctx, `SELECT capability, proposal_at, at, status, file, terms, details, session_id, model, attempts, appetite, input, cached_input, output FROM init_recovery ORDER BY capability`)
 	if err != nil {
 		return nil, err
 	}

@@ -10,6 +10,8 @@
 package history
 
 import (
+	"context"
+
 	"github.com/dphaener/physa/internal/vcs"
 )
 
@@ -34,7 +36,7 @@ type Commit struct {
 // with the capabilities its trailers name. The adapter's own message is the
 // error when the range is not valid.
 func Read(repo vcs.Repo, rng string) ([]Commit, error) {
-	changes, err := repo.Changes(rng)
+	changes, err := repo.Changes(context.TODO(), rng)
 	if err != nil {
 		return nil, err
 	}

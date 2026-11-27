@@ -55,14 +55,14 @@ var ErrNoProposal = errors.New("nothing proposed yet; run physa init --propose f
 // Store is what Run needs of the store: the gather, the proposal or the walk
 // and placements, the seed of recovery's order, and what was recovered.
 type Store interface {
-	Gathered() (store.Gather, bool, error)
-	Proposed() (initrecord.Proposal, bool, error)
-	Walk() (initrecord.Walk, bool, error)
-	Place() (initrecord.Place, bool, error)
-	RecoverSeed() (uint64, bool, error)
-	PutRecoverSeed(uint64, time.Time) error
-	PutRecovered([]initrecord.Recovered) error
-	Recovered() ([]initrecord.Recovered, error)
+	Gathered(ctx context.Context) (store.Gather, bool, error)
+	Proposed(ctx context.Context) (initrecord.Proposal, bool, error)
+	Walk(ctx context.Context) (initrecord.Walk, bool, error)
+	Place(ctx context.Context) (initrecord.Place, bool, error)
+	RecoverSeed(ctx context.Context) (uint64, bool, error)
+	PutRecoverSeed(context.Context, uint64, time.Time) error
+	PutRecovered(context.Context, []initrecord.Recovered) error
+	Recovered(ctx context.Context) ([]initrecord.Recovered, error)
 }
 
 // Session says how Run runs its sessions.
@@ -156,16 +156,16 @@ type job struct {
 // reaches, is not an error: the Report says so.
 func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	var rep Report
-	p, proposed, err := st.Proposed()
-	w, walked, werr := st.Walk()
-	_, placed, perr := st.Place()
+	p, proposed, err := st.Proposed(ctx)
+	w, walked, werr := st.Walk(ctx)
+	_, placed, perr := st.Place(ctx)
 	if err = cmp.Or(err, werr, perr); err != nil {
 		return rep, err
 	}
 	if walked = walked && placed; !walked && !proposed {
 		return rep, ErrNoProposal
 	}
-	g, ok, err := st.Gathered()
+	g, ok, err := st.Gathered(ctx)
 	if err != nil {
 		return rep, err
 	}
@@ -190,7 +190,7 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 			product = noPromise
 		}
 		at, rep.From, what = w.At, "walk", "the walk and placements"
-		jobs, err = walkJobs(st, w, g, s, product, date)
+		jobs, err = walkJobs(ctx, st, w, g, s, product, date)
 	} else {
 		jobs, err = proposalJobs(g, stored.Proposal.Capabilities, s.Only, product, date)
 	}
@@ -261,7 +261,7 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 			Input: o.Tokens.Input, CachedInput: o.Tokens.CachedInput, Output: o.Tokens.Output,
 		}
 	}
-	if err := st.PutRecovered(rows); err != nil {
+	if err := st.PutRecovered(ctx, rows); err != nil {
 		return rep, err
 	}
 	return rep, ctx.Err()
@@ -304,8 +304,8 @@ func proposalJobs(g store.Gather, proposed []mapping.Capability, only []string, 
 // footprint and what the stored placement places with it. The seed of the
 // order is the stored one, or the gather's, stored before any session
 // starts, so a later run takes the same order.
-func walkJobs(st Store, w initrecord.Walk, g store.Gather, s Session, product string, date time.Time) ([]job, error) {
-	seed, ok, err := st.RecoverSeed()
+func walkJobs(ctx context.Context, st Store, w initrecord.Walk, g store.Gather, s Session, product string, date time.Time) ([]job, error) {
+	seed, ok, err := st.RecoverSeed(ctx)
 	if !ok {
 		seed = recoverinput.Seed(g)
 	}
@@ -314,7 +314,7 @@ func walkJobs(st Store, w initrecord.Walk, g store.Gather, s Session, product st
 		caps, err = recoverinput.Chosen(st, s.Root, w, g, s.Only, seed)
 	}
 	if err == nil && !ok && len(s.Only) == 0 {
-		err = st.PutRecoverSeed(seed, date)
+		err = st.PutRecoverSeed(ctx, seed, date)
 	}
 	if err != nil {
 		return nil, err

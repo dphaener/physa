@@ -1,6 +1,7 @@
 package consolidate
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -50,11 +51,37 @@ type input struct {
 	refused     []consolidating.Refusal
 }
 
+// Load reads the stored consolidation, false when none is stored.
+func Load(st *initrecord.Store) (Result, bool, error) {
+	var r Result
+	c, ok, err := st.Consolidated(context.TODO())
+	if err == nil && ok {
+		err = json.Unmarshal(c.Body, &r)
+	}
+	return r, ok && err == nil, err
+}
+
+// Current says whether a consolidation is stored and still matches what it
+// was made from: the recovered rows of the walk eligible now, the walk and
+// the product's promise. Any later recovery, of one more capability too,
+// makes it stale.
+func Current(st *initrecord.Store) (bool, error) {
+	r, ok, err := Load(st)
+	if err != nil || !ok {
+		return false, err
+	}
+	in, err := read(context.TODO(), st, "")
+	if errors.As(err, new(missing)) {
+		err = nil
+	}
+	return err == nil && in.fingerprint == r.Fingerprint, err
+}
+
 // read gathers the input from st: the rows recovered from the stored walk
 // with status recovered and text, in walk order, each parsed with its area
 // and footprint (root gives its line counts). A piece not stored yet is a
 // missing error naming the phases to run first.
-func read(st *initrecord.Store, root string) (input, error) {
+func read(ctx context.Context, st *initrecord.Store, root string) (input, error) {
 	var in input
 	wr, walked, err := walk.Load(st)
 	if err != nil {
@@ -70,10 +97,10 @@ func read(st *initrecord.Store, root string) (input, error) {
 	if err != nil {
 		return in, err
 	}
-	if in.promise, in.stated, err = promise(st); err != nil {
+	if in.promise, in.stated, err = promise(ctx, st); err != nil {
 		return in, err
 	}
-	rows, err := st.Recovered()
+	rows, err := st.Recovered(ctx)
 	if err != nil {
 		return in, err
 	}
@@ -116,8 +143,8 @@ func read(st *initrecord.Store, root string) (input, error) {
 
 // promise is the stored proposal's product promise, or
 // recoverinput.NoPromise and false on the walk path with none stated.
-func promise(st *initrecord.Store) (string, bool, error) {
-	prop, ok, err := st.Proposed()
+func promise(ctx context.Context, st *initrecord.Store) (string, bool, error) {
+	prop, ok, err := st.Proposed(ctx)
 	var s mapping.Stored
 	if err == nil && ok {
 		err = json.Unmarshal(prop.Body, &s)

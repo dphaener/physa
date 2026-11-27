@@ -33,6 +33,7 @@
 package vcs
 
 import (
+	"context"
 	"errors"
 	"regexp"
 	"slices"
@@ -65,52 +66,52 @@ type Change struct {
 type Repo interface {
 	// Changes returns the non-merge changes of the range rng, newest first.
 	// The adapter's own message is the error when the range is not valid.
-	Changes(rng string) ([]Change, error)
+	Changes(ctx context.Context, rng string) ([]Change, error)
 	// Since returns the non-merge changes reachable from ref committed after
 	// t, newest first. A zero t means all of them. The adapter's own message
 	// is the error when ref is not valid.
-	Since(ref string, t time.Time) ([]Change, error)
+	Since(ctx context.Context, ref string, t time.Time) ([]Change, error)
 	// Altered returns the paths change id altered, relative to the repo root
 	// and sorted; a merge's are against its first parent. A change with no
 	// paths, such as an empty one, gives an empty list. The adapter's own message is the error when id is not valid.
-	Altered(id string) ([]string, error)
+	Altered(ctx context.Context, id string) ([]string, error)
 	// Latest returns the newest n non-merge changes reachable from ref, newest
 	// first. The adapter's own message is the error when ref is not valid.
-	Latest(ref string, n int) ([]Change, error)
+	Latest(ctx context.Context, ref string, n int) ([]Change, error)
 	// Reverts returns the id, as written in c's message, of the change c says
 	// it reverts. The id may be abbreviated.
 	Reverts(c Change) (id string, ok bool)
 	// DefaultBranch returns the ref of the shared default branch, preferring
 	// the remote's. It is an error when none can be found.
-	DefaultBranch() (string, error)
+	DefaultBranch(ctx context.Context) (string, error)
 	// Branch returns the refs that hold the branch name here and on the
 	// default branch's remote, only those that exist. It is empty when
 	// neither does.
-	Branch(name string) []string
+	Branch(ctx context.Context, name string) []string
 	// HasChange reports whether id, full or abbreviated, names exactly one
 	// change. A missing or ambiguous id is false.
-	HasChange(id string) bool
+	HasChange(ctx context.Context, id string) bool
 	// Partial reports whether the history is incomplete, as in a shallow
 	// clone.
-	Partial() bool
+	Partial(ctx context.Context) bool
 	// StoreDir returns the absolute directory where Physa's store lives,
 	// shared by every working copy of the repo.
-	StoreDir() (string, error)
+	StoreDir(ctx context.Context) (string, error)
 	// Files returns the names of the files directly under dir, relative to
 	// the repo's working directory, as change id leaves them. It is empty
 	// when dir is absent.
-	Files(id, dir string) ([]string, error)
+	Files(ctx context.Context, id, dir string) ([]string, error)
 	// Resolve returns the full id of the change ref names, false when ref
 	// names none.
-	Resolve(ref string) (id string, ok bool)
+	Resolve(ctx context.Context, ref string) (id string, ok bool)
 	// Trailer returns the newest non-merge change reachable from ref whose
 	// trailers, never its body, carry key, matched case-insensitively. It is
 	// false when no change does. The adapter's own message is the error when
 	// ref is not valid.
-	Trailer(ref, key string) (Change, bool, error)
+	Trailer(ctx context.Context, ref, key string) (Change, bool, error)
 	// IsAncestor reports whether change a is change b or part of b's history.
 	// It is false when either does not exist.
-	IsAncestor(a, b string) bool
+	IsAncestor(ctx context.Context, a, b string) bool
 }
 
 // Lister is an optional part of a Repo, for an adapter that can list the
@@ -121,7 +122,7 @@ type Lister interface {
 	// ignore, tracked and untracked alike, as slash paths relative to the root.
 	// The list is sorted and has no duplicates. It never holds the .git
 	// directory or the files git ignores.
-	Listed() ([]string, error)
+	Listed(ctx context.Context) ([]string, error)
 }
 
 // TrackedFile is a file the repo tracks, with the marks the repo gives it.
@@ -143,7 +144,7 @@ type Tracker interface {
 	// ones, as slash paths relative to the root. The list is sorted and has no
 	// duplicates. A mark counts only when the repo sets it, as git reads every
 	// .gitattributes; unset, false and unspecified do not count.
-	Tracked() ([]TrackedFile, error)
+	Tracked(ctx context.Context) ([]TrackedFile, error)
 }
 
 // Writer is a history Physa can read and write, for learning's branch. It
@@ -154,21 +155,21 @@ type Writer interface {
 	// Fetch brings each branch from the default branch's remote into its
 	// remote-tracking ref. A branch the remote lacks is no error, and a stale
 	// remote-tracking ref for it is deleted.
-	Fetch(branches ...string) error
+	Fetch(ctx context.Context, branches ...string) error
 	// CheckedOut reports whether any working copy of the repo has branch
 	// checked out.
-	CheckedOut(branch string) (bool, error)
+	CheckedOut(ctx context.Context, branch string) (bool, error)
 	// NewCopy makes an isolated working copy, not on any branch, at the change
 	// base names, in a fresh directory under StoreDir. The caller removes it.
-	NewCopy(base string) (Copy, error)
+	NewCopy(ctx context.Context, base string) (Copy, error)
 	// SetBranch points branch name at change id, only if it still holds old;
 	// old "" means it must not exist yet. A mismatch is ErrLease. A branch
 	// checked out in any working copy is refused.
-	SetBranch(name, id, old string) error
+	SetBranch(ctx context.Context, name, id, old string) error
 	// Push sets the remote's branch to change id, only if the remote still
 	// holds expect; expect "" means the remote must not have the branch. A
 	// stale lease is ErrLease.
-	Push(branch, id, expect string) error
+	Push(ctx context.Context, branch, id, expect string) error
 }
 
 // Copy is an isolated working copy made by a Writer.
@@ -179,12 +180,12 @@ type Copy interface {
 	// change with id's message and author. It is false, recording nothing,
 	// when the edits change nothing. A conflict is ErrConflict and leaves the
 	// copy as it was.
-	Replay(id string) (bool, error)
+	Replay(ctx context.Context, id string) (bool, error)
 	// Commit records everything in the copy as a new change with message,
 	// even when nothing changed, and returns it.
-	Commit(message string) (Change, error)
+	Commit(ctx context.Context, message string) (Change, error)
 	// Remove deletes the copy and forgets it.
-	Remove() error
+	Remove(ctx context.Context) error
 }
 
 // Merges is a Repo that also lists merges. It is separate from Repo because
@@ -192,24 +193,24 @@ type Copy interface {
 type Merges interface {
 	// Merges returns the merges on ref's first-parent line committed after
 	// t, newest first. A zero t means all of them.
-	Merges(ref string, t time.Time) ([]Change, error)
+	Merges(ctx context.Context, ref string, t time.Time) ([]Change, error)
 }
 
 // prMerge is the subject a forge gives the merge of a PR, "Merge pull
 // request #12 from …".
 var prMerge = regexp.MustCompile(`^Merge pull request #\d+\b`)
 
-// SinceWithPRMerges is r.Since(ref, t) with, when r lists merges, the
+// SinceWithPRMerges is r.Since(ctx, ref, t) with, when r lists merges, the
 // merges of PRs on ref's first-parent line, newest first. In a repo that
 // lands PRs as merge commits a PR's own changes rarely name it, so only its
 // merge ties the PR to its files.
-func SinceWithPRMerges(r Repo, ref string, t time.Time) ([]Change, error) {
-	changes, err := r.Since(ref, t)
+func SinceWithPRMerges(ctx context.Context, r Repo, ref string, t time.Time) ([]Change, error) {
+	changes, err := r.Since(ctx, ref, t)
 	m, ok := r.(Merges)
 	if err != nil || !ok {
 		return changes, err
 	}
-	merges, err := m.Merges(ref, t)
+	merges, err := m.Merges(ctx, ref, t)
 	if err != nil {
 		return nil, err
 	}

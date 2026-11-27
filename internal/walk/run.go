@@ -33,8 +33,8 @@ const (
 
 // Store is init's record as the walk uses it.
 type Store interface {
-	Areas() (initrecord.Areas, bool, error)
-	PutWalk(initrecord.Walk) error
+	Areas(ctx context.Context) (initrecord.Areas, bool, error)
+	PutWalk(context.Context, initrecord.Walk) error
 }
 
 // Session is the agent, the root its sessions read, progress and the clock.
@@ -75,7 +75,7 @@ type Result struct {
 // The walk is stored in init's record only when every area ended whole;
 // otherwise the error names each that failed. Nothing reaches the repo or map.
 func Run(ctx context.Context, st Store, s Session) (Result, error) {
-	stored, _, err := st.Areas()
+	stored, _, err := st.Areas(ctx)
 	if err != nil {
 		return Result{}, err
 	}
@@ -112,7 +112,7 @@ func Run(ctx context.Context, st Store, s Session) (Result, error) {
 	}
 	body, _ := json.Marshal(rec) // strings only: it cannot fail
 	t := r.res.Tokens
-	return r.res, st.PutWalk(initrecord.Walk{AreasAt: stored.At, At: now().UTC(), Model: r.res.Model, Input: t.Input, CachedInput: t.CachedInput, Output: t.Output, Body: body})
+	return r.res, st.PutWalk(ctx, initrecord.Walk{AreasAt: stored.At, At: now().UTC(), Model: r.res.Model, Input: t.Input, CachedInput: t.CachedInput, Output: t.Output, Body: body})
 }
 
 // job is one area's walk, written only by the goroutine walking it.

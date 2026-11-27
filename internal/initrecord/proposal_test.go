@@ -18,10 +18,10 @@ func sampleProposal() Proposal {
 func TestProposalRoundTrip(t *testing.T) {
 	s, _ := open(t)
 	want := sampleProposal()
-	if err := s.PutProposal(want); err != nil {
+	if err := s.PutProposal(t.Context(), want); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.Proposed()
+	got, ok, err := s.Proposed(t.Context())
 	if err != nil || !ok {
 		t.Fatalf("Proposed = %v, %v", ok, err)
 	}
@@ -33,15 +33,15 @@ func TestProposalRoundTrip(t *testing.T) {
 func TestProposalReplaces(t *testing.T) {
 	s, _ := open(t)
 	first := sampleProposal()
-	if err := s.PutProposal(first); err != nil {
+	if err := s.PutProposal(t.Context(), first); err != nil {
 		t.Fatal(err)
 	}
 	second := sampleProposal()
 	second.SessionID, second.Body = "sess-2", []byte(`{"promise":"q"}`)
-	if err := s.PutProposal(second); err != nil {
+	if err := s.PutProposal(t.Context(), second); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.Proposed()
+	got, ok, err := s.Proposed(t.Context())
 	if err != nil || !ok || got.SessionID != "sess-2" || string(got.Body) != `{"promise":"q"}` {
 		t.Errorf("got %+v, %v, %v; want the second proposal", got, ok, err)
 	}
@@ -53,26 +53,26 @@ func TestProposalReplaces(t *testing.T) {
 
 func TestProposedFreshStoreIsFalse(t *testing.T) {
 	s, _ := open(t)
-	if _, ok, err := s.Proposed(); ok || err != nil {
+	if _, ok, err := s.Proposed(t.Context()); ok || err != nil {
 		t.Errorf("Proposed = %v, %v; want false, nil", ok, err)
 	}
-	if rs, err := s.Recovered(); len(rs) != 0 || err != nil {
+	if rs, err := s.Recovered(t.Context()); len(rs) != 0 || err != nil {
 		t.Errorf("Recovered = %d rows, %v; want none", len(rs), err)
 	}
 }
 
 func TestPutGatherClearsProposal(t *testing.T) {
 	s, _ := open(t)
-	if err := s.PutGather(sampleGather()); err != nil {
+	if err := s.PutGather(t.Context(), sampleGather()); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PutProposal(sampleProposal()); err != nil {
+	if err := s.PutProposal(t.Context(), sampleProposal()); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PutGather(sampleGather()); err != nil {
+	if err := s.PutGather(t.Context(), sampleGather()); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.Proposed(); ok || err != nil {
+	if _, ok, err := s.Proposed(t.Context()); ok || err != nil {
 		t.Errorf("Proposed after a new gather = %v, %v; want false, nil", ok, err)
 	}
 }
@@ -83,25 +83,25 @@ func TestSpentAddsPerPhaseAndIsCleared(t *testing.T) {
 		return Spent{Phase: phase, Count: spend.Count{Raw: adapter.Tokens{Input: in, CachedInput: cached, Output: out}, Spend: spend.Spend{Tokens: w, MicroUSD: usd, Unpriced: unpriced}}}
 	}
 	for _, p := range []Spent{sp("recover", 10, 0, 0, 20, 80, false), sp("discover", 1, 0, 0, 1, 0, true), sp("propose", 5, 1, 2, 15, 60, false), sp("recover", 3, 0, 1, 9, 36, false)} {
-		if err := s.AddSpent(p); err != nil {
+		if err := s.AddSpent(t.Context(), p); err != nil {
 			t.Fatal(err)
 		}
 	}
-	got, err := s.Spending()
+	got, err := s.Spending(t.Context())
 	want := []Spent{sp("discover", 1, 0, 0, 1, 0, true), sp("propose", 5, 1, 2, 15, 60, false), sp("recover", 13, 0, 1, 29, 116, false)}
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("Spending = %+v, %v\nwant %+v", got, err, want)
 	}
-	if err := s.PutProposal(Proposal{Body: []byte("{}")}); err != nil {
+	if err := s.PutProposal(t.Context(), Proposal{Body: []byte("{}")}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := s.Spending(); len(got) != 1 || got[0].Phase != "discover" {
+	if got, _ := s.Spending(t.Context()); len(got) != 1 || got[0].Phase != "discover" {
 		t.Errorf("after a new proposal: %+v", got)
 	}
-	if err := s.PutGather(store.Gather{}); err != nil {
+	if err := s.PutGather(t.Context(), store.Gather{}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := s.Spending(); len(got) != 0 {
+	if got, _ := s.Spending(t.Context()); len(got) != 0 {
 		t.Errorf("after a new gather: %+v", got)
 	}
 }

@@ -145,15 +145,15 @@ func fenceJSON(s string) string { return "Here.\n\n```json\n" + s + "\n```\n" }
 // setup returns the store holding a gather and the session for dir.
 func setup(t *testing.T, dir string, f *fakeAgent) (*initrecord.Store, Session) {
 	t.Helper()
-	st, err := store.Open(t.TempDir())
+	st, err := store.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	if err := st.PutGather(store.Gather{Run: store.GatherRun{At: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}}); err != nil {
+	if err := st.PutGather(context.Background(), store.Gather{Run: store.GatherRun{At: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}}); err != nil {
 		t.Fatal(err)
 	}
-	repo, err := git.Open(dir)
+	repo, err := git.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestRunFixRoundResumesTheSession(t *testing.T) {
 	if res.Tokens.Input != 30 || res.Model != "fake-model" {
 		t.Errorf("tokens %v model %q", res.Tokens, res.Model)
 	}
-	a, _, _ := st.Areas()
+	a, _, _ := st.Areas(context.Background())
 	if a.Input != 30 || a.Output != 9 || a.Model != "fake-model" || !a.GatherAt.Equal(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("stored row: %+v", a)
 	}
@@ -518,7 +518,7 @@ func TestRunNoSourceLeft(t *testing.T) {
 }
 
 func TestRunNeedsAGather(t *testing.T) {
-	st, err := store.Open(t.TempDir())
+	st, err := store.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

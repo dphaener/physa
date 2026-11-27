@@ -2,6 +2,7 @@ package sessionhook
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,7 +28,7 @@ func repo(t *testing.T) (string, vcs.Hooks) {
 	if err := os.WriteFile(filepath.Join(root, Hook), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	h, err := git.OpenHooks(root)
+	h, err := git.OpenHooks(context.Background(), root)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,10 +16,10 @@ func sampleRecovered(name string) Recovered {
 func TestRecoveredRoundTrip(t *testing.T) {
 	s, _ := open(t)
 	want := []Recovered{sampleRecovered("alpha"), sampleRecovered("beta")}
-	if err := s.PutRecovered([]Recovered{want[1], want[0]}); err != nil {
+	if err := s.PutRecovered(t.Context(), []Recovered{want[1], want[0]}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.Recovered()
+	got, err := s.Recovered(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,15 +30,15 @@ func TestRecoveredRoundTrip(t *testing.T) {
 
 func TestRecoveredReplaceKeepsOthers(t *testing.T) {
 	s, _ := open(t)
-	if err := s.PutRecovered([]Recovered{sampleRecovered("alpha"), sampleRecovered("beta")}); err != nil {
+	if err := s.PutRecovered(t.Context(), []Recovered{sampleRecovered("alpha"), sampleRecovered("beta")}); err != nil {
 		t.Fatal(err)
 	}
 	again := sampleRecovered("beta")
 	again.Status, again.File = "failed", "# changed\n"
-	if err := s.PutRecovered([]Recovered{again}); err != nil {
+	if err := s.PutRecovered(t.Context(), []Recovered{again}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.Recovered()
+	got, err := s.Recovered(t.Context())
 	if err != nil || len(got) != 2 {
 		t.Fatalf("Recovered = %d rows, %v; want 2", len(got), err)
 	}
@@ -52,13 +52,13 @@ func TestRecoveredReplaceKeepsOthers(t *testing.T) {
 
 func TestRecoveredClearedByNewGather(t *testing.T) {
 	s, _ := open(t)
-	if err := s.PutRecovered([]Recovered{sampleRecovered("alpha")}); err != nil {
+	if err := s.PutRecovered(t.Context(), []Recovered{sampleRecovered("alpha")}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PutGather(sampleGather()); err != nil {
+	if err := s.PutGather(t.Context(), sampleGather()); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.Recovered()
+	got, err := s.Recovered(t.Context())
 	if err != nil || len(got) != 0 {
 		t.Errorf("Recovered after a new gather = %d rows, %v; want none", len(got), err)
 	}
@@ -66,13 +66,13 @@ func TestRecoveredClearedByNewGather(t *testing.T) {
 
 func TestRecoveredClearedByNewProposal(t *testing.T) {
 	s, _ := open(t)
-	if err := s.PutRecovered([]Recovered{sampleRecovered("alpha")}); err != nil {
+	if err := s.PutRecovered(t.Context(), []Recovered{sampleRecovered("alpha")}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PutProposal(sampleProposal()); err != nil {
+	if err := s.PutProposal(t.Context(), sampleProposal()); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.Recovered()
+	got, err := s.Recovered(t.Context())
 	if err != nil || len(got) != 0 {
 		t.Errorf("Recovered after a new proposal = %d rows, %v; want none", len(got), err)
 	}
@@ -80,7 +80,7 @@ func TestRecoveredClearedByNewProposal(t *testing.T) {
 
 func TestRecoveredEmptyStore(t *testing.T) {
 	s, _ := open(t)
-	got, err := s.Recovered()
+	got, err := s.Recovered(t.Context())
 	if err != nil || len(got) != 0 {
 		t.Errorf("Recovered = %d rows, %v; want none", len(got), err)
 	}
@@ -89,15 +89,15 @@ func TestRecoveredEmptyStore(t *testing.T) {
 func TestRecoveredKeepEarlierKeepsARecoveredFile(t *testing.T) {
 	s, _ := open(t)
 	first := sampleRecovered("alpha")
-	if err := s.PutRecovered([]Recovered{first}); err != nil {
+	if err := s.PutRecovered(t.Context(), []Recovered{first}); err != nil {
 		t.Fatal(err)
 	}
 	later := Recovered{Capability: "alpha", ProposalAt: first.ProposalAt, At: first.At.Add(time.Hour), Status: "not yet recovered", KeepEarlier: true}
 	fresh := Recovered{Capability: "beta", ProposalAt: first.ProposalAt, At: first.At, Status: "not yet recovered", KeepEarlier: true}
-	if err := s.PutRecovered([]Recovered{later, fresh}); err != nil {
+	if err := s.PutRecovered(t.Context(), []Recovered{later, fresh}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.Recovered()
+	got, err := s.Recovered(t.Context())
 	if err != nil || len(got) != 2 {
 		t.Fatalf("Recovered = %+v, %v", got, err)
 	}
@@ -109,10 +109,10 @@ func TestRecoveredKeepEarlierKeepsARecoveredFile(t *testing.T) {
 	}
 	// Without KeepEarlier the row replaces the earlier one.
 	later.KeepEarlier = false
-	if err := s.PutRecovered([]Recovered{later}); err != nil {
+	if err := s.PutRecovered(t.Context(), []Recovered{later}); err != nil {
 		t.Fatal(err)
 	}
-	got, _ = s.Recovered()
+	got, _ = s.Recovered(t.Context())
 	if got[0].Status != "not yet recovered" || got[0].File != "" {
 		t.Errorf("alpha = %+v; want replaced", got[0])
 	}

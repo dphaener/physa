@@ -153,7 +153,7 @@ func (c fixCap) file() string {
 // placements, and each capability recovered from it.
 func seed(t *testing.T, caps []fixCap, renamed []walk.Rename) *initrecord.Store {
 	t.Helper()
-	s, err := store.Open(t.TempDir())
+	s, err := store.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,13 +168,13 @@ func seed(t *testing.T, caps []fixCap, renamed []walk.Rename) *initrecord.Store 
 			File: c.file(), Terms: c.terms, SessionID: "rec-" + c.name, Details: []byte(`{"dropped":[{"kind":"rule","heading":"Lost one","reasons":["no anchor"]}]}`)})
 	}
 	body, _ := json.Marshal(wr)
-	if err := st.PutWalk(initrecord.Walk{AreasAt: walkAt.Add(-time.Hour), At: walkAt, Model: "m", Body: body}); err != nil {
+	if err := st.PutWalk(context.Background(), initrecord.Walk{AreasAt: walkAt.Add(-time.Hour), At: walkAt, Model: "m", Body: body}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.PutPlace(initrecord.Place{WalkAt: walkAt, At: walkAt, Body: []byte(`{}`)}); err != nil {
+	if err := st.PutPlace(context.Background(), initrecord.Place{WalkAt: walkAt, At: walkAt, Body: []byte(`{}`)}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.PutRecovered(rows); err != nil {
+	if err := st.PutRecovered(context.Background(), rows); err != nil {
 		t.Fatal(err)
 	}
 	return st
@@ -217,7 +217,7 @@ func capOf(t *testing.T, st *initrecord.Store, res Result, name string) capabili
 			return p
 		}
 	}
-	rows, _ := st.Recovered()
+	rows, _ := st.Recovered(context.Background())
 	for _, r := range rows {
 		if r.Capability == name && slices.Contains(res.Left, name) {
 			p, _ := capabilitytext.Parse(name, capabilitytext.Area{}, r.File, r.Terms)
@@ -609,9 +609,9 @@ func TestCurrentGoesStaleOnNewRecovery(t *testing.T) {
 	if cur, _ := Current(st); !cur {
 		t.Fatal("not current right after the run")
 	}
-	rows, _ := st.Recovered()
+	rows, _ := st.Recovered(context.Background())
 	rows[0].Terms = "**Seat**: A paid place."
-	if err := st.PutRecovered(rows[:1]); err != nil {
+	if err := st.PutRecovered(context.Background(), rows[:1]); err != nil {
 		t.Fatal(err)
 	}
 	if cur, err := Current(st); cur || err != nil {
@@ -620,7 +620,7 @@ func TestCurrentGoesStaleOnNewRecovery(t *testing.T) {
 }
 
 func TestNoWalkIsClearError(t *testing.T) {
-	s, err := store.Open(t.TempDir())
+	s, err := store.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -636,8 +636,8 @@ func TestNoWalkIsClearError(t *testing.T) {
 		t.Errorf("Current = %v, %v; want false, nil", cur, err)
 	}
 	body, _ := json.Marshal(walk.Record{})
-	st.PutWalk(initrecord.Walk{At: walkAt, Body: body})
-	st.PutPlace(initrecord.Place{WalkAt: walkAt, At: walkAt, Body: []byte(`{}`)})
+	st.PutWalk(context.Background(), initrecord.Walk{At: walkAt, Body: body})
+	st.PutPlace(context.Background(), initrecord.Place{WalkAt: walkAt, At: walkAt, Body: []byte(`{}`)})
 	if _, err := runWith(st, f); err == nil || !strings.Contains(err.Error(), "--recover") {
 		t.Fatalf("err = %v; want --recover first", err)
 	} else {

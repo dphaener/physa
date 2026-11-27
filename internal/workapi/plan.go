@@ -78,7 +78,7 @@ func showPursuit(ctx context.Context, st work.Submitter, repo, slug string) (cli
 		return client.PursuitOut{}, err
 	}
 	var landed map[string]progress.Landing
-	if r, err := git.Open(repo); err != nil {
+	if r, err := git.Open(ctx, repo); err != nil {
 		log.Printf("pursuit.show %s: progress from version control: %v", slug, err)
 	} else if landed, err = progress.Landed(r, slug, d.CreatedAt); err != nil {
 		log.Printf("pursuit.show %s: progress from version control: %v", slug, err)

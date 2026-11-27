@@ -1,6 +1,7 @@
 package recoverinput
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -15,14 +16,16 @@ type listStore struct {
 	place bool
 }
 
-func (s listStore) Walk() (initrecord.Walk, bool, error) {
+func (s listStore) Walk(ctx context.Context) (initrecord.Walk, bool, error) {
 	if s.walk == nil {
 		return initrecord.Walk{}, false, nil
 	}
 	return *s.walk, true, nil
 }
 
-func (s listStore) Place() (initrecord.Place, bool, error) { return initrecord.Place{}, s.place, nil }
+func (s listStore) Place(ctx context.Context) (initrecord.Place, bool, error) {
+	return initrecord.Place{}, s.place, nil
+}
 
 func storedWalk(t *testing.T, at time.Time) *initrecord.Walk {
 	t.Helper()

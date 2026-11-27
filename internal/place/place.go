@@ -5,6 +5,7 @@
 package place
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,10 +27,10 @@ const (
 
 // Store is init's record as Run reads and writes it.
 type Store interface {
-	Gathered() (store.Gather, bool, error)
-	Areas() (initrecord.Areas, bool, error)
-	Walk() (initrecord.Walk, bool, error)
-	PutPlace(initrecord.Place) error
+	Gathered(ctx context.Context) (store.Gather, bool, error)
+	Areas(ctx context.Context) (initrecord.Areas, bool, error)
+	Walk(ctx context.Context) (initrecord.Walk, bool, error)
+	PutPlace(context.Context, initrecord.Place) error
 }
 
 // Result is what placement did, in counts.
@@ -66,14 +67,15 @@ type Without struct {
 // stores the placement in init's record. It needs the walk and the gather,
 // and says which phase to run when one is missing, before anything else.
 func Run(st Store) (Result, error) {
-	w, ok, err := st.Walk()
+	ctx := context.TODO()
+	w, ok, err := st.Walk(ctx)
 	if err == nil && !ok {
 		err = errors.New("no walk stored yet; run physa init --walk first")
 	}
 	if err != nil {
 		return Result{}, err
 	}
-	g, ok, err := st.Gathered()
+	g, ok, err := st.Gathered(ctx)
 	if err == nil && !ok {
 		err = errors.New("no gather stored yet; run physa init --gather first")
 	}
@@ -96,7 +98,7 @@ func Run(st Store) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := st.PutPlace(initrecord.Place{WalkAt: w.At, At: time.Now().UTC(), Body: body}); err != nil {
+	if err := st.PutPlace(ctx, initrecord.Place{WalkAt: w.At, At: time.Now().UTC(), Body: body}); err != nil {
 		return Result{}, err
 	}
 	return res, nil

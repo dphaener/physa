@@ -1,6 +1,7 @@
 package gather
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -13,18 +14,18 @@ import (
 // branch, falling back to HEAD, with the merges of PRs on its first-parent
 // line, each with its trailers, the change it reverts and the files it
 // altered, a merge's against its first parent.
-func readHistory(repo vcs.Repo, since time.Time) ([]store.GatheredChange, error) {
-	ref, err := repo.DefaultBranch()
+func readHistory(ctx context.Context, repo vcs.Repo, since time.Time) ([]store.GatheredChange, error) {
+	ref, err := repo.DefaultBranch(ctx)
 	if err != nil {
 		ref = "HEAD"
 	}
-	changes, err := vcs.SinceWithPRMerges(repo, ref, since)
+	changes, err := vcs.SinceWithPRMerges(ctx, repo, ref, since)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the history: %w", err)
 	}
 	out := make([]store.GatheredChange, 0, len(changes))
 	for _, c := range changes {
-		files, err := repo.Altered(c.ID)
+		files, err := repo.Altered(ctx, c.ID)
 		if err != nil {
 			return nil, fmt.Errorf("cannot list the files of %s: %w", c.Short, err)
 		}

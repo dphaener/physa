@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -37,7 +38,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	openStore = func(string) (*store.Store, error) { return store.Open(dir) }
+	openStore = func(string) (*store.Store, error) { return store.Open(context.Background(), dir) }
 	// Nor the real ~/.claude, nor the running session's id.
 	claudeDir, err := os.MkdirTemp("", "physa-test-claude")
 	if err != nil {

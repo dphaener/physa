@@ -37,7 +37,7 @@ var bg = context.Background()
 
 func openStore(t *testing.T, dir string) *store.Store {
 	t.Helper()
-	st, err := store.Open(dir)
+	st, err := store.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}

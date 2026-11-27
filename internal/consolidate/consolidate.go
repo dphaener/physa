@@ -10,15 +10,12 @@
 package consolidate
 
 import (
-	"encoding/json"
-	"errors"
 	"io"
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/capabilitytext"
 	"github.com/dphaener/physa/internal/consolidating"
-	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/recovering"
 )
 
@@ -116,30 +113,4 @@ func (r Result) ExitCode() int {
 		}
 	}
 	return 0
-}
-
-// Load reads the stored consolidation, false when none is stored.
-func Load(st *initrecord.Store) (Result, bool, error) {
-	var r Result
-	c, ok, err := st.Consolidated()
-	if err == nil && ok {
-		err = json.Unmarshal(c.Body, &r)
-	}
-	return r, ok && err == nil, err
-}
-
-// Current says whether a consolidation is stored and still matches what it
-// was made from: the recovered rows of the walk eligible now, the walk and
-// the product's promise. Any later recovery, of one more capability too,
-// makes it stale.
-func Current(st *initrecord.Store) (bool, error) {
-	r, ok, err := Load(st)
-	if err != nil || !ok {
-		return false, err
-	}
-	in, err := read(st, "")
-	if errors.As(err, new(missing)) {
-		err = nil
-	}
-	return err == nil && in.fingerprint == r.Fingerprint, err
 }

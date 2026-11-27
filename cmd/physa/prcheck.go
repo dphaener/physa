@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,7 +40,7 @@ func runChanges(dir, name string, o changesOptions, stdout, stderr io.Writer) (p
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return prcheck.Result{}, false
 	}
-	repo, err := git.Open(dir)
+	repo, err := git.Open(context.TODO(), dir)
 	if err != nil {
 		return fail(err)
 	}

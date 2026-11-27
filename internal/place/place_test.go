@@ -2,6 +2,7 @@ package place
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"go/parser"
 	"go/token"
@@ -26,28 +27,28 @@ type fake struct {
 	put         []initrecord.Place
 }
 
-func (f *fake) Gathered() (store.Gather, bool, error) {
+func (f *fake) Gathered(ctx context.Context) (store.Gather, bool, error) {
 	if f.gather == nil {
 		return store.Gather{}, false, nil
 	}
 	return *f.gather, true, nil
 }
 
-func (f *fake) Areas() (initrecord.Areas, bool, error) {
+func (f *fake) Areas(ctx context.Context) (initrecord.Areas, bool, error) {
 	if f.areas == nil {
 		return initrecord.Areas{}, false, nil
 	}
 	return *f.areas, true, nil
 }
 
-func (f *fake) Walk() (initrecord.Walk, bool, error) {
+func (f *fake) Walk(ctx context.Context) (initrecord.Walk, bool, error) {
 	if f.walk == nil {
 		return initrecord.Walk{}, false, nil
 	}
 	return initrecord.Walk{At: f.walkAt, Body: f.walk.Body}, true, nil
 }
 
-func (f *fake) PutPlace(p initrecord.Place) error {
+func (f *fake) PutPlace(ctx context.Context, p initrecord.Place) error {
 	f.put = append(f.put, p)
 	return nil
 }
@@ -285,7 +286,7 @@ func TestRunNeedsTheEarlierPhases(t *testing.T) {
 // TestRunOnInitsRecord runs against the real store: the record the phases
 // write is the record Run reads, and Load reads back what it stored.
 func TestRunOnInitsRecord(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,16 +298,16 @@ func TestRunOnInitsRecord(t *testing.T) {
 	f := stored(t)
 	t0 := time.Date(2026, 11, 26, 8, 0, 0, 0, time.UTC)
 	f.gather.Run = store.GatherRun{At: t0, Since: t0.AddDate(-1, 0, 0)}
-	if err := st.PutGather(*f.gather); err != nil {
+	if err := st.PutGather(context.Background(), *f.gather); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Run(st); err == nil || !strings.Contains(err.Error(), "--walk first") {
 		t.Fatalf("err = %v; want the walk asked for first", err)
 	}
-	if err := st.PutAreas(initrecord.Areas{GatherAt: t0, At: t0, Body: f.areas.Body}); err != nil {
+	if err := st.PutAreas(context.Background(), initrecord.Areas{GatherAt: t0, At: t0, Body: f.areas.Body}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.PutWalk(initrecord.Walk{AreasAt: t0, At: f.walkAt, Body: f.walk.Body}); err != nil {
+	if err := st.PutWalk(context.Background(), initrecord.Walk{AreasAt: t0, At: f.walkAt, Body: f.walk.Body}); err != nil {
 		t.Fatal(err)
 	}
 	res, err := Run(st)
@@ -320,7 +321,7 @@ func TestRunOnInitsRecord(t *testing.T) {
 	if len(rec.PRs) != res.PRsPlaced || len(rec.Changes) != res.ChangesPlaced+res.ChangesWithPR || rec.FilesWeighed != 5 {
 		t.Errorf("record %+v does not match result %+v", rec, res)
 	}
-	p, _, _ := st.Place()
+	p, _, _ := st.Place(context.Background())
 	if !p.WalkAt.Equal(f.walkAt) {
 		t.Errorf("walk_at = %v; want %v", p.WalkAt, f.walkAt)
 	}

@@ -2,6 +2,7 @@ package skillcli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -85,7 +86,7 @@ func (e env) sessionText() string {
 	if info, err := os.Stat(filepath.Join(wd, ".physa")); err != nil || !info.IsDir() {
 		return ""
 	}
-	if _, err := git.Open(wd); err != nil {
+	if _, err := git.Open(context.TODO(), wd); err != nil {
 		return ""
 	}
 	m, _, err := mapfile.Read(wd)

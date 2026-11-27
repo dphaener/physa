@@ -15,7 +15,7 @@ type oneResult struct{ r adapter.Result }
 
 func (oneResult) Name() string { return "claude-code" }
 func (a oneResult) Start(context.Context, adapter.Spec) (adapter.Session, error) {
-	return session1{a.r}, nil
+	return session1(a), nil
 }
 
 type session1 struct{ r adapter.Result }

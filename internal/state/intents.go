@@ -121,7 +121,7 @@ func (s *State) dueIntent() (*Intent, time.Duration, error) {
 		s.boot = max(s.boot, in.ID)
 		return &in, 0, nil
 	}
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		err = s.db.QueryRowContext(s.ctx, `SELECT min(next_at) FROM intents WHERE state = 'pending' AND kind IN `+s.mine, s.names...).Scan(&next)
 	}
 	if err != nil || !next.Valid {

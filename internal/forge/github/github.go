@@ -44,10 +44,6 @@ type Runner func(ctx context.Context, dir string, args ...string) (stdout []byte
 // StdinRunner is a Runner that also passes stdin to gh when it is not nil.
 type StdinRunner func(ctx context.Context, dir string, stdin []byte, args ...string) (stdout []byte, err error)
 
-func ghRunner(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	return ghStdinRunner(ctx, dir, nil, args...)
-}
-
 // ghTimeout bounds every gh call, so a hung gh never holds up a caller or an
 // engine shutdown.
 const ghTimeout = 30 * time.Second

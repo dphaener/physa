@@ -402,14 +402,16 @@ func TestProductMissing(t *testing.T) {
 func TestDeterminism(t *testing.T) {
 	r := Request{Capabilities: []string{"beta", "alpha"}, WithQuestions: true}
 	a, b := build(t, fixture(), r), build(t, fixture(), r)
-	if md(t, a) != md(t, b) || md(t, a) != md(t, a) {
+	again := md(t, a)
+	if md(t, a) != md(t, b) || md(t, a) != again {
 		t.Errorf("markdown differs between runs")
 	}
 	if !bytes.Equal(jsonOut(t, a), jsonOut(t, b)) {
 		t.Errorf("JSON differs between runs")
 	}
 	slugs := []string{"pricing", "beta-rule", "alpha-decision"}
-	if takenMD(t, take(t, fixture(), slugs...)) != takenMD(t, take(t, fixture(), slugs...)) {
+	takenOnce, takenTwice := takenMD(t, take(t, fixture(), slugs...)), takenMD(t, take(t, fixture(), slugs...))
+	if takenOnce != takenTwice {
 		t.Errorf("taken entries differ between runs")
 	}
 }

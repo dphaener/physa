@@ -44,7 +44,8 @@ func TestFixPrompt(t *testing.T) {
 			t.Errorf("lacks %q:\n%s", s, p)
 		}
 	}
-	if FixPrompt([]string{"a"}, nil) != FixPrompt([]string{"a"}, nil) {
+	first, second := FixPrompt([]string{"a"}, nil), FixPrompt([]string{"a"}, nil)
+	if first != second {
 		t.Error("not deterministic")
 	}
 }

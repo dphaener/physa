@@ -3,6 +3,7 @@ package enginestart
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"time"
 
@@ -72,8 +73,7 @@ func probe(ctx context.Context, socket string, timeout time.Duration) (*client.C
 	err = c.Call(cctx, "engine.status", nil, &s)
 	cancel()
 	if err != nil {
-		c.Close()
-		return nil, s, err
+		return nil, s, errors.Join(err, c.Close())
 	}
 	return c, s, nil
 }
@@ -85,6 +85,8 @@ func answering(ctx context.Context, socket string, timeout time.Duration) (engin
 	if err != nil {
 		return s, false
 	}
-	c.Close()
+	// The engine answered, which is all this reports; closing the
+	// connection is best effort.
+	_ = c.Close()
 	return s, true
 }

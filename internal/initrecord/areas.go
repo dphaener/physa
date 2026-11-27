@@ -3,6 +3,7 @@ package initrecord
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 )
 
@@ -45,7 +46,7 @@ func (s *Store) Areas(ctx context.Context) (Areas, bool, error) {
 	var gatherAt, at string
 	err := s.DB().QueryRowContext(ctx, `SELECT gather_at, at, model, input, cached_input, output, body FROM init_areas WHERE id = 1`).Scan(&gatherAt, &at, &a.Model, &a.Input, &a.CachedInput, &a.Output, &a.Body)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			err = nil
 		}
 		return Areas{}, false, err

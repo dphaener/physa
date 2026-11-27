@@ -139,8 +139,7 @@ func run(dir, physa, agent, since, maxPRs string) (string, error) {
 		start := time.Now()
 		err = cmd.Run()
 		ph := Phase{Seconds: time.Since(start).Round(time.Second).Seconds()}
-		out.Close()
-		errOut.Close()
+		err = errors.Join(err, out.Close(), errOut.Close())
 		var exit *exec.ExitError
 		switch {
 		case errors.As(err, &exit):
@@ -222,7 +221,12 @@ func warn(w io.Writer, kept string, rec Record) {
 				Reason string `json:"reason"`
 			} `json:"prs"`
 		}
-		readJSON(filepath.Join(kept, "gather.json"), &raw)
-		fmt.Fprintf(w, "initstats: warning: no PRs were gathered (%s), so propose and recovery read docs and changes only\n", raw.PRs.Reason)
+		var reason string
+		if _, err := readJSON(filepath.Join(kept, "gather.json"), &raw); err != nil {
+			reason = "the reason could not be read: " + err.Error()
+		} else {
+			reason = raw.PRs.Reason
+		}
+		fmt.Fprintf(w, "initstats: warning: no PRs were gathered (%s), so propose and recovery read docs and changes only\n", reason)
 	}
 }

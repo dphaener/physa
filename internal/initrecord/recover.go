@@ -3,6 +3,7 @@ package initrecord
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 )
 
@@ -21,7 +22,7 @@ func (s *Store) RecoverSeed(ctx context.Context) (seed uint64, ok bool, err erro
 	var at string
 	err = s.DB().QueryRowContext(ctx, `SELECT seed, at FROM init_recover WHERE id = 1`).Scan(&v, &at)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			err = nil
 		}
 		return 0, false, err

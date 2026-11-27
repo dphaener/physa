@@ -111,7 +111,7 @@ func (p pursuits) signalInEditor(ideaText string, stderr io.Writer) (signal.Sign
 		}
 		sig, err := signal.Parse(string(b), time.Now())
 		if err == nil {
-			os.Remove(path)
+			_ = os.Remove(path) // best effort: the signal is parsed, and a stray temp file harms nothing
 			return sig, true
 		}
 		ideacli.Failed(stderr, "pursue", err)

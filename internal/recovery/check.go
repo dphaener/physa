@@ -75,8 +75,7 @@ func (c checker) scratch(name, file, terms string) (string, []mapfile.Problem, e
 		}
 	}
 	if err != nil {
-		os.RemoveAll(dir)
-		return "", nil, err
+		return "", nil, errors.Join(err, os.RemoveAll(dir))
 	}
 	return dir, split, nil
 }

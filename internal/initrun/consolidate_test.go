@@ -48,13 +48,6 @@ func (a *consolidateAgent) Start(_ context.Context, s adapter.Spec) (adapter.Ses
 	text := `{"merge":[],"move":[],"drop":[]}`
 	switch s.System {
 	case consolidateprompt.Consolidate: // the default
-	default: // a capability's recovering, which writes it again with a new rule
-		name := "x"
-		if m := recoverName.FindStringSubmatch(s.Prompt); m != nil {
-			name = m[1]
-		}
-		text = "````markdown\n# " + name + "\n\n## Rules\n\n" + consEntry("Again "+name, name+"-again", "#5", "It is recovered again.") + "````\n"
-		return fakeSession{f: &fakeAgent{result: adapter.Result{Text: text, Model: "fake-model", Tokens: adapter.Tokens{Input: 10, Output: 2}, SessionID: s.SessionID}}, usage: s.Usage}, nil
 	case consolidateprompt.Merge:
 		text = `{"merge":[` + a.merge + `]}`
 	case consolidateprompt.Lift:
@@ -70,6 +63,13 @@ func (a *consolidateAgent) Start(_ context.Context, s adapter.Spec) (adapter.Ses
 			}
 		}
 		text = `{"lift":[` + strings.Join(items, ",") + `]}`
+	default: // a capability's recovering, which writes it again with a new rule
+		name := "x"
+		if m := recoverName.FindStringSubmatch(s.Prompt); m != nil {
+			name = m[1]
+		}
+		text = "````markdown\n# " + name + "\n\n## Rules\n\n" + consEntry("Again "+name, name+"-again", "#5", "It is recovered again.") + "````\n"
+		return fakeSession{f: &fakeAgent{result: adapter.Result{Text: text, Model: "fake-model", Tokens: adapter.Tokens{Input: 10, Output: 2}, SessionID: s.SessionID}}, usage: s.Usage}, nil
 	}
 	return fakeSession{f: &fakeAgent{result: adapter.Result{Text: "```json\n" + text + "\n```\n", Model: "fake-model", Tokens: adapter.Tokens{Input: 10, Output: 2}, SessionID: s.SessionID}}, usage: s.Usage}, nil
 }

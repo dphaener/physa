@@ -144,15 +144,6 @@ func (te *tenv) fails(args ...string) string {
 	return errs
 }
 
-func (te *tenv) file(name, content string) string {
-	te.t.Helper()
-	p := filepath.Join(te.tmp, name)
-	if err := os.WriteFile(p, []byte(content), 0o755); err != nil {
-		te.t.Fatal(err)
-	}
-	return p
-}
-
 func TestAddShowsUniqueSlugs(t *testing.T) {
 	te := newTest(t)
 	if out := te.must("idea", "add", "Try a quiet mode"); out != "Added idea try-a-quiet-mode\n" {

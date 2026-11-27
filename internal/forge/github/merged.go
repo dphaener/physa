@@ -10,9 +10,6 @@ import (
 	"github.com/dphaener/physa/internal/forge"
 )
 
-// mergedPage is how many PRs one query asks for.
-const mergedPage = 25
-
 // mergedQuery asks for a page of merged PRs, the most recently updated first,
 // with their conversation, reviews (with state) and inline comments, and the
 // issues each closes.

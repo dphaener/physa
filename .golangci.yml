@@ -1,0 +1,37 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - errcheck
+    - errorlint
+    - unused
+  settings:
+    errcheck:
+      exclude-functions:
+        # Terminal and report writes: a failed write is not something
+        # anyone acts on.
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    errorlint:
+      # Off on purpose: a %v that hides a cause is deliberate (the sentinel is
+      # wrapped with %w and the cause hidden with %v). See
+      # docs/research/go-architecture.md (E3) and the map's rule error-shape
+      # in go-architecture.
+      errorf: false
+      comparison: true
+      asserts: true
+  exclusions:
+    rules:
+      # A test's cleanup errors are not the code under test. errorlint and
+      # unused still run on tests.
+      - linters: [errcheck]
+        path: _test\.go
+      # Deferred cleanup: Close after an earlier error, Rollback after Commit
+      # (a no-op error) and RemoveAll of a temp dir (best effort) have nothing
+      # to act on.
+      - linters: [errcheck]
+        source: '^\s*defer\s+[\w.]+\.(Close|Rollback)\(\)|^\s*defer\s+os\.RemoveAll\('
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -73,12 +73,10 @@ func Add(dir, root string) (added bool, err error) {
 		return false, err
 	}
 	if _, err := f.WriteString(root + "\n"); err != nil {
-		f.Close()
-		return false, err
+		return false, errors.Join(err, f.Close())
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
-		return false, err
+		return false, errors.Join(err, f.Close())
 	}
 	return true, f.Close()
 }

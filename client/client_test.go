@@ -2,6 +2,7 @@ package client_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -125,7 +126,8 @@ func TestErrorReply(t *testing.T) {
 	socket, _ := serve(t, double())
 	c := dial(t, timeout(t), socket)
 	err := c.Call(timeout(t), "test.double", map[string]string{"n": "two"}, nil)
-	e, ok := err.(*api.Error)
+	var e *api.Error
+	ok := errors.As(err, &e)
 	if !ok || e.Code != api.CodeBadRequest || e.Message != "params.n: must be an integer" {
 		t.Fatalf("err = %#v", err)
 	}

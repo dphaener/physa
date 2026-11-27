@@ -25,7 +25,7 @@ import (
 // ctx ends, engine.stop is called, or nothing was pending for the idle
 // duration. Each of those returns nil. Another engine holding the lock
 // returns *RunningError.
-func Run(ctx context.Context, o Options) error {
+func Run(ctx context.Context, o Options) (err error) {
 	p, err := PathsIn(o.Dir)
 	if err != nil {
 		return err
@@ -37,7 +37,7 @@ func Run(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
-	defer releaseLock(lock)
+	defer func() { err = errors.Join(err, releaseLock(lock)) }()
 	if err := writePID(lock); err != nil {
 		return fmt.Errorf("writing the pid to %s: %w", p.Lock, err)
 	}
@@ -51,8 +51,7 @@ func Run(ctx context.Context, o Options) error {
 		return err
 	}
 	if err := os.Chmod(p.Socket, 0o600); err != nil {
-		ln.Close()
-		return err
+		return errors.Join(err, ln.Close())
 	}
 
 	idle := o.Idle
@@ -76,7 +75,7 @@ func Run(ctx context.Context, o Options) error {
 	})
 
 	why, runErr := e.wait(ctx, idle, served)
-	ln.Close() // removes the socket
+	_ = ln.Close() // removes the socket; failing, os.Remove below reports it
 	if why == idled && e.pending() {
 		// A client connected while the engine was going; it is closed
 		// going-away below and enginestart starts a new engine.
@@ -84,16 +83,16 @@ func Run(ctx context.Context, o Options) error {
 	}
 	shut, cancel := context.WithTimeout(context.Background(), time.Second)
 	if hs.Shutdown(shut) != nil {
-		hs.Close()
+		_ = hs.Close() // reports the closed listener; still closes the connections
 	}
 	cancel()
-	// An error here means some connections were closed without a
-	// handshake: the shutdown is still finished.
 	closing, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	srv.Close(closing)
+	_ = srv.Close(closing) // an error: some closed without a handshake, still finished
 	cancel()
-	if why != serveFailed {
-		<-served
+	if why != serveFailed { // Serve returns as ln closes; any other error is a failure
+		if err := <-served; !errors.Is(err, net.ErrClosed) && !errors.Is(err, http.ErrServerClosed) && runErr == nil {
+			runErr = fmt.Errorf("serving the API: %w", err)
+		}
 	}
 	stopOpening()
 	opened.Wait()
@@ -150,7 +149,7 @@ func takeLock(path string) (*os.File, error) {
 	}
 	for {
 		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err != syscall.EINTR {
+		if !errors.Is(err, syscall.EINTR) {
 			break
 		}
 	}
@@ -191,8 +190,11 @@ func writePID(f *os.File) error {
 	return err
 }
 
-// releaseLock unlocks and closes the lock file, leaving it on disk.
-func releaseLock(f *os.File) {
-	syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-	f.Close()
+// releaseLock unlocks and closes the lock file, leaving it on disk. It
+// closes it even when unlocking fails, which releases the lock too.
+func releaseLock(f *os.File) error {
+	if err := errors.Join(syscall.Flock(int(f.Fd()), syscall.LOCK_UN), f.Close()); err != nil {
+		return fmt.Errorf("releasing the lock %s: %w", f.Name(), err)
+	}
+	return nil
 }

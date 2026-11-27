@@ -3,6 +3,7 @@ package initrecord
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 )
 
@@ -29,7 +30,7 @@ func (s *Store) Consolidated(ctx context.Context) (Consolidated, bool, error) {
 	var walkAt, at string
 	err := s.DB().QueryRowContext(ctx, `SELECT walk_at, at, model, input, cached_input, output, body FROM init_consolidate WHERE id = 1`).Scan(&walkAt, &at, &c.Model, &c.Input, &c.CachedInput, &c.Output, &c.Body)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			err = nil
 		}
 		return Consolidated{}, false, err

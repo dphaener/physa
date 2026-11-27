@@ -75,7 +75,7 @@ Where `candidates.md` names a tool, I'm the source: go vet, staticcheck and gola
 
 There are 40 candidates, architecture-level only. gofmt and the linters own formatting and naming nits, so they aren't here. Each candidate has a one-line rule, the source's reason in its own words, a tool that can check it if one exists, and both sides where sources disagree. Quotes are short and verbatim from the pages listed in `sources.md`. Where a rule or a reason is my inference rather than a source's, the entry says so (**Myxo's**).
 
-These are candidates for the owner to accept, change or drop. None is settled.
+The owner settled these on 2026-11-27 ("yes to all"), as the last section records.
 
 Short names for sources: **EG** Effective Go, **CRC** Code Review Comments, **Layout** Organizing a Go module, **Race** the race detector article, **Proverbs** Go Proverbs, **G-Dec** and **G-BP** Google Decisions and Best Practices, **Uber** Uber guide, **Cheney** Practical Go, **BJ** Ben Johnson.
 
@@ -288,3 +288,20 @@ Short names for sources: **EG** Effective Go, **CRC** Code Review Comments, **La
 - `go.uber.org/atomic`: Uber-specific, and `sync/atomic`'s typed values (Go 1.19+) cover it.
 - Functional options versus option structs: a constructor style, not architecture. Physa's sessions use plain option structs, which is fine by both Google and Uber.
 - golang-standards/project-layout: see `sources.md`.
+
+## Settled with the owner (2026-11-27)
+
+The owner accepted every recommendation ("yes to all").
+
+- **D1.** The 800-line limit stays, and a split follows the package's purpose, never its line count. Reason: 18 of 84 packages sat near the limit, recovery was split four ways, and draft is imported by eleven packages as a helper. The limit has kept packages readable.
+- **D2.** A context is threaded from the command down. Reason: the map side starts every phase on a background context, so Ctrl-C works only by killing the process group and partial work is not recorded. Every new phase makes the fix bigger.
+- **D3.** No swapped package variables in tests; then tests run in parallel. Reason: at least eight seams are package variables that tests reassign, so no test can use `t.Parallel`.
+- **D4.** Consumers declare small interfaces of the methods they use. The three shared ports (version control, the forge and the agent adapter) stay, as a decision. Reason: `vcs.Repo` has 14 methods and most of its 23 users need one to three. A port with adapters beneath it is a recognised school, Ben Johnson's, and the vcs package's own promise is that nothing reads version control except through it.
+- **D5.** A public package exposes no internal type; the client gets its own wire type. Reason: a program outside the repo can read the field but cannot name, build or declare the type, and the internal package can no longer change freely.
+- **D6.** Errors are matched with `errors.Is` and `errors.As`, never by text.
+- **D7.** No timing thresholds in the default test run; latency checks move to benchmarks. Reason: a median under 50 ms fails under `-race` and on a loaded runner.
+- **D8.** Six small rules, fixed as nearby code is touched, not in a sweep: package names say what they provide (P1), exported structs do not embed types they are not (I5), no context stored in a struct (X2), an injected logger, not the global one (L2), no silently discarded error (E2), no dead code (A4).
+- **D9.** Tools enforce what they can: staticcheck and a small golangci-lint set (errcheck with `fmt.Fprint` and deferred `Close` excluded, errorlint, unused) join vet, `-race` and codecheck in CI, and the map keeps only rules a tool cannot check. Reason: the broad set gave 3,015 findings, mostly noise.
+- **D10.** The rules live in a go-architecture capability with the promise "Physa's Go code stays easy to change: each iteration builds on the last without being held back by earlier choices." Physa's departures (the line limit, the shared ports, the map never importing the engine) are decisions with their reasons.
+- **R2.** The 26 rules Physa follows are accepted as a batch, as rules.
+- **Third departure.** The map never imports the engine, so the map stays usable alone (AGENTS.md: two products in one binary, "the map ... usable alone"), and codecheck enforces it. P6's sources ask only that dependencies point one way.

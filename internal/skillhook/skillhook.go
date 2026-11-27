@@ -1,5 +1,6 @@
-// Package skillhook is Physa's session hook in Claude Code's settings.json:
-// one SessionStart entry that runs "physa skill session" at the start of every
+// Package skillhook is Physa's session hook in a hooks file of Claude Code's
+// settings shape, which Claude Code's settings.json and Codex's hooks.json
+// share: one SessionStart entry that runs "physa skill session" at the start of every
 // session, and whether the entry at a path is current, stale, missing or not
 // safe to edit. It writes and removes only Physa's entry. Every other key,
 // hook event and SessionStart entry keeps its value and its order, and is

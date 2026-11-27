@@ -9,6 +9,7 @@
 package initbranch
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path"
@@ -191,6 +192,7 @@ type state struct {
 // or refreshes the open one. A lost lease is an error, never retried. The
 // Outcome holds what was done even when it returns an error.
 func Run(w vcs.Writer, m Map, o Options) (Outcome, error) {
+	ctx := context.TODO()
 	var out Outcome
 	if o.PR && !o.Push {
 		return out, errors.New("a PR needs the branch pushed")
@@ -198,22 +200,22 @@ func Run(w vcs.Writer, m Map, o Options) (Outcome, error) {
 	if err := m.valid(); err != nil {
 		return out, err
 	}
-	st, err := read(w, o.Push)
+	st, err := read(ctx, w, o.Push)
 	if err != nil {
 		return out, err
 	}
-	if err := inCopy(w, st.def, func(c vcs.Copy) error {
-		return commit(w, c, m, o, &out)
+	if err := inCopy(ctx, w, st.def, func(c vcs.Copy) error {
+		return commit(ctx, w, c, m, o, &out)
 	}); err != nil {
 		return out, err
 	}
 	if o.Push {
-		if err := w.Push(Branch, out.Commit.ID, st.remote); err != nil {
+		if err := w.Push(ctx, Branch, out.Commit.ID, st.remote); err != nil {
 			return out, leaseError(err, "on the remote")
 		}
 		out.Pushed = true
 	}
-	if err := w.SetBranch(Branch, out.Commit.ID, st.local); err != nil {
+	if err := w.SetBranch(ctx, Branch, out.Commit.ID, st.local); err != nil {
 		return out, leaseError(err, "here")
 	}
 	if o.PR {
@@ -235,7 +237,7 @@ func leaseError(err error, where string) error {
 
 // commit writes m into the copy, checks it and commits it, filling out's
 // Commit, Files and Body. A map that fails the check commits nothing.
-func commit(w vcs.Writer, c vcs.Copy, m Map, o Options, out *Outcome) error {
+func commit(ctx context.Context, w vcs.Writer, c vcs.Copy, m Map, o Options, out *Outcome) error {
 	files, m, err := writeAll(c.Dir(), m)
 	if err != nil {
 		return err
@@ -256,7 +258,7 @@ func commit(w vcs.Writer, c vcs.Copy, m Map, o Options, out *Outcome) error {
 	if err != nil {
 		return err
 	}
-	ch, err := c.Commit(message(m))
+	ch, err := c.Commit(ctx, message(m))
 	if err != nil {
 		return err
 	}
@@ -287,9 +289,9 @@ func (m Map) valid() error {
 // read fetches the default branch and the init branch when pushing, refuses
 // an init branch checked out anywhere and a default branch holding a map,
 // and reads where each stands.
-func read(w vcs.Writer, push bool) (state, error) {
+func read(ctx context.Context, w vcs.Writer, push bool) (state, error) {
 	var st state
-	def, err := w.DefaultBranch()
+	def, err := w.DefaultBranch(ctx)
 	if err != nil {
 		return st, err
 	}
@@ -298,11 +300,11 @@ func read(w vcs.Writer, push bool) (state, error) {
 		st.name = name
 	}
 	if push {
-		if err := w.Fetch(st.name, Branch); err != nil {
+		if err := w.Fetch(ctx, st.name, Branch); err != nil {
 			return st, err
 		}
 	}
-	out, err := w.CheckedOut(Branch)
+	out, err := w.CheckedOut(ctx, Branch)
 	if err != nil {
 		return st, err
 	}
@@ -312,8 +314,8 @@ func read(w vcs.Writer, push bool) (state, error) {
 	if err := HasMap(w); err != nil {
 		return st, err
 	}
-	for _, ref := range w.Branch(Branch) {
-		id, _ := w.Resolve(ref)
+	for _, ref := range w.Branch(ctx, Branch) {
+		id, _ := w.Resolve(ctx, ref)
 		if ref == Branch {
 			st.local = id
 		} else {
@@ -327,12 +329,13 @@ func read(w vcs.Writer, push bool) (state, error) {
 // when the default branch holds either of mapfolder.Products, else nil. Files
 // lists only blobs directly under a directory, so each one's is listed.
 func HasMap(w vcs.Writer) error {
-	def, err := w.DefaultBranch()
+	ctx := context.TODO()
+	def, err := w.DefaultBranch(ctx)
 	if err != nil {
 		return err
 	}
 	for _, p := range mapfolder.Products {
-		files, err := w.Files(def, path.Dir(p))
+		files, err := w.Files(ctx, def, path.Dir(p))
 		if err != nil {
 			return err
 		}
@@ -345,13 +348,13 @@ func HasMap(w vcs.Writer) error {
 
 // inCopy makes a working copy at def and calls fn with it. The copy is
 // always removed.
-func inCopy(w vcs.Writer, def string, fn func(vcs.Copy) error) (err error) {
-	c, err := w.NewCopy(def)
+func inCopy(ctx context.Context, w vcs.Writer, def string, fn func(vcs.Copy) error) (err error) {
+	c, err := w.NewCopy(ctx, def)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if rmErr := c.Remove(); rmErr != nil && err == nil {
+		if rmErr := c.Remove(context.WithoutCancel(ctx)); rmErr != nil && err == nil {
 			err = rmErr
 		}
 	}()

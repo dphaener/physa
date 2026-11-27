@@ -1,6 +1,7 @@
 package recoverinput
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -109,12 +110,13 @@ func Add(sum *adapter.Tokens, t adapter.Tokens) {
 // source at at, for a run that names none with only; a named capability is
 // always recovered again, so only non-empty gives nil.
 func Kept(st interface {
-	Recovered() ([]initrecord.Recovered, error)
+	Recovered(ctx context.Context) ([]initrecord.Recovered, error)
 }, only []string, at time.Time) (map[string]bool, error) {
+	ctx := context.TODO()
 	if len(only) > 0 {
 		return nil, nil
 	}
-	rows, err := st.Recovered()
+	rows, err := st.Recovered(ctx)
 	return Done(rows, at), err
 }
 

@@ -1,6 +1,7 @@
 package areas
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -36,12 +37,13 @@ type AreaRecord struct {
 
 // Loader is the store as Load reads it.
 type Loader interface {
-	Areas() (initrecord.Areas, bool, error)
+	Areas(ctx context.Context) (initrecord.Areas, bool, error)
 }
 
 // Load reads the stored areas and decodes their body, false when none exist.
 func Load(st Loader) (Record, bool, error) {
-	a, ok, err := st.Areas()
+	ctx := context.TODO()
+	a, ok, err := st.Areas(ctx)
 	if err != nil || !ok {
 		return Record{}, false, err
 	}

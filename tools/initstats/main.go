@@ -16,6 +16,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -98,11 +99,12 @@ type Phase struct {
 // run runs the phases in dir and keeps their output; it returns the folder.
 // A phase that fails ends the run, since the next one reads what it stored.
 func run(dir, physa, agent, since, maxPRs string) (string, error) {
-	repo, err := git.Open(dir)
+	ctx := context.TODO()
+	repo, err := git.Open(ctx, dir)
 	if err != nil {
 		return "", err
 	}
-	store, err := repo.StoreDir()
+	store, err := repo.StoreDir(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -191,11 +193,12 @@ func clone() string {
 	if !ok {
 		return ""
 	}
-	repo, err := git.Open(filepath.Dir(file))
+	ctx := context.TODO()
+	repo, err := git.Open(ctx, filepath.Dir(file))
 	if err != nil {
 		return ""
 	}
-	id, ok := repo.Resolve("HEAD")
+	id, ok := repo.Resolve(ctx, "HEAD")
 	if !ok || len(id) < 12 {
 		return ""
 	}

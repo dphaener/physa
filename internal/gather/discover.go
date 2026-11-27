@@ -23,7 +23,7 @@ type Discover struct {
 // what it did. It never fails: an agent that is missing, a session that
 // fails, and a reply that names nothing leave the finds as they are and say
 // why.
-func discover(root string, repo vcs.Repo, d Discover, found []store.Doc) ([]store.Doc, []Skip, Discovery) {
+func discover(ctx context.Context, root string, repo vcs.Repo, d Discover, found []store.Doc) ([]store.Doc, []Skip, Discovery) {
 	var info Discovery
 	if d.Off != "" {
 		info.Why = d.Off
@@ -33,7 +33,7 @@ func discover(root string, repo vcs.Repo, d Discover, found []store.Doc) ([]stor
 		info.Why = "discovery not asked"
 		return nil, nil, info
 	}
-	listed := listedFiles(repo)
+	listed := listedFiles(ctx, repo)
 
 	s := d.Session
 	s.Root = root
@@ -79,12 +79,12 @@ func discover(root string, repo vcs.Repo, d Discover, found []store.Doc) ([]stor
 // listedFiles is the set of the repo's files the version-control interface
 // lists, which gather holds named sources to; nil when the repo cannot list
 // them, and the named sources are then checked against the working tree only.
-func listedFiles(repo vcs.Repo) map[string]bool {
+func listedFiles(ctx context.Context, repo vcs.Repo) map[string]bool {
 	l, ok := repo.(vcs.Lister)
 	if !ok {
 		return nil
 	}
-	paths, err := l.Listed()
+	paths, err := l.Listed(ctx)
 	if err != nil {
 		return nil
 	}

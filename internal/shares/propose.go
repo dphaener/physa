@@ -39,7 +39,7 @@ import (
 // session's output: "), stores nothing; the Result then still says what the
 // sessions used.
 func Propose(ctx context.Context, st mapping.Store, s mapping.Session) (mapping.Result, error) {
-	g, ok, err := st.Gathered()
+	g, ok, err := st.Gathered(ctx)
 	if err != nil {
 		return mapping.Result{}, err
 	}
@@ -89,7 +89,7 @@ func Propose(ctx context.Context, st mapping.Store, s mapping.Session) (mapping.
 	if s.Now != nil {
 		now = s.Now
 	}
-	err = st.PutProposal(initrecord.Proposal{
+	err = st.PutProposal(ctx, initrecord.Proposal{
 		GatherAt: g.Run.At, At: now().UTC(),
 		SessionID: p.res.SessionID, Model: p.res.Model,
 		Input: p.res.Tokens.Input, CachedInput: p.res.Tokens.CachedInput, Output: p.res.Tokens.Output,

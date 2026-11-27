@@ -2,6 +2,7 @@ package gather
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -65,7 +66,7 @@ func (r *testRepo) commit(message string, files ...string) string {
 
 func (r *testRepo) open() vcs.Repo {
 	r.t.Helper()
-	v, err := git.Open(r.dir)
+	v, err := git.Open(context.Background(), r.dir)
 	if err != nil {
 		r.t.Fatal(err)
 	}

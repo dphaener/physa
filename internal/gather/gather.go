@@ -15,6 +15,7 @@
 package gather
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -128,11 +129,12 @@ type Stopped = merged.Stopped
 // list, Run still returns the gather and its summary, with every PR listed
 // and the history of the whole bound, and a *Stopped error.
 func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now time.Time) (store.Gather, Summary, error) {
+	ctx := context.TODO()
 	docs, skipped, err := Docs(root)
 	if err != nil {
 		return store.Gather{}, Summary{}, fmt.Errorf("cannot read the docs: %w", err)
 	}
-	added, more, info := discover(root, repo, d, docs)
+	added, more, info := discover(ctx, root, repo, d, docs)
 	docs = append(docs, added...)
 	skipped = append(skipped, more...)
 	g := store.Gather{Docs: docs, Run: store.GatherRun{At: now, Since: o.Since, MaxPRs: o.MaxPRs}}
@@ -172,7 +174,7 @@ func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now ti
 	if g.Run.PRsLimited {
 		from = o.Since // to find the areas the PRs miss (quiet)
 	}
-	g.Changes, err = readHistory(repo, from)
+	g.Changes, err = readHistory(ctx, repo, from)
 	if err != nil {
 		return store.Gather{}, Summary{}, err
 	}
@@ -182,7 +184,7 @@ func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now ti
 	s.PRs = summarisePRs(g.PRs, reason)
 	useLogins(f, g.Changes)
 	s.History = summariseHistory(g.Changes)
-	s.History.Shallow = repo.Partial()
+	s.History.Shallow = repo.Partial(ctx)
 	s.EstimatedTokens = reading.GatherTokens(g)
 	return g, s, stop
 }

@@ -1,6 +1,7 @@
 package initrecord
 
 import (
+	"context"
 	"database/sql"
 	"time"
 )
@@ -23,19 +24,19 @@ type Proposal struct {
 // PutProposal replaces the stored init proposal with p. It also deletes the
 // stored recoveries and what proposing and recovering spent, which belong to
 // one proposal.
-func (s *Store) PutProposal(p Proposal) error {
-	tx, err := s.DB().Begin()
+func (s *Store) PutProposal(ctx context.Context, p Proposal) error {
+	tx, err := s.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM init_recovery`); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM init_recovery`); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM init_spend WHERE phase IN ('propose', 'recover')`); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM init_spend WHERE phase IN ('propose', 'recover')`); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`INSERT OR REPLACE INTO init_proposal (id, gather_at, at, session_id, model, appetite, input, cached_input, output, body) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO init_proposal (id, gather_at, at, session_id, model, appetite, input, cached_input, output, body) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ts(p.GatherAt), ts(p.At), p.SessionID, p.Model, p.Appetite, p.Input, p.CachedInput, p.Output, string(p.Body)); err != nil {
 		return err
 	}
@@ -43,10 +44,10 @@ func (s *Store) PutProposal(p Proposal) error {
 }
 
 // Proposed returns the stored init proposal, false when there is none.
-func (s *Store) Proposed() (Proposal, bool, error) {
+func (s *Store) Proposed(ctx context.Context) (Proposal, bool, error) {
 	var p Proposal
 	var gatherAt, at, body string
-	err := s.DB().QueryRow(`SELECT gather_at, at, session_id, model, appetite, input, cached_input, output, body FROM init_proposal WHERE id = 1`).
+	err := s.DB().QueryRowContext(ctx, `SELECT gather_at, at, session_id, model, appetite, input, cached_input, output, body FROM init_proposal WHERE id = 1`).
 		Scan(&gatherAt, &at, &p.SessionID, &p.Model, &p.Appetite, &p.Input, &p.CachedInput, &p.Output, &body)
 	if err == sql.ErrNoRows {
 		return Proposal{}, false, nil

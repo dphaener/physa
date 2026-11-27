@@ -32,8 +32,8 @@ const (
 
 // Store is init's record as the areas phase uses it.
 type Store interface {
-	Gathered() (store.Gather, bool, error)
-	PutAreas(initrecord.Areas) error
+	Gathered(ctx context.Context) (store.Gather, bool, error)
+	PutAreas(context.Context, initrecord.Areas) error
 }
 
 // Session is how the phase's sessions are run: the agent, the repo's root
@@ -86,7 +86,7 @@ type Result struct {
 // any error it stores nothing.
 func Run(ctx context.Context, st Store, s Session) (Result, error) {
 	res := Result{Left: map[string]int{}, Kinds: map[sourceset.Kind]int{}}
-	g, ok, err := st.Gathered()
+	g, ok, err := st.Gathered(ctx)
 	if err != nil {
 		return res, err
 	}
@@ -97,7 +97,7 @@ func Run(ctx context.Context, st Store, s Session) (Result, error) {
 	if !ok {
 		return res, errors.New("the repo cannot list its tracked files, so its areas cannot be found")
 	}
-	tracked, err := tr.Tracked()
+	tracked, err := tr.Tracked(ctx)
 	if err != nil {
 		return res, err
 	}
@@ -178,7 +178,7 @@ func Run(ctx context.Context, st Store, s Session) (Result, error) {
 	if s.Now != nil {
 		now = s.Now
 	}
-	return res, st.PutAreas(initrecord.Areas{
+	return res, st.PutAreas(ctx, initrecord.Areas{
 		GatherAt: g.Run.At, At: now().UTC(), Model: res.Model,
 		Input: res.Tokens.Input, CachedInput: res.Tokens.CachedInput, Output: res.Tokens.Output, Body: body,
 	})

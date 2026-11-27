@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"time"
@@ -87,8 +88,8 @@ func ts(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 // PutGather replaces the stored gather with g in one transaction: on any
 // error the earlier gather is left intact. It also deletes the stored init
 // areas, proposal, recoveries and spend, which belong to one gather.
-func (s *Store) PutGather(g Gather) error {
-	tx, err := s.db.Begin()
+func (s *Store) PutGather(ctx context.Context, g Gather) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -96,7 +97,7 @@ func (s *Store) PutGather(g Gather) error {
 	// ex runs a statement unless an earlier one failed; err keeps the first failure.
 	ex := func(q string, args ...any) {
 		if err == nil {
-			_, err = tx.Exec(q, args...)
+			_, err = tx.ExecContext(ctx, q, args...)
 		}
 	}
 	js := func(v any) string {
@@ -153,11 +154,11 @@ func b2i(b bool) int {
 }
 
 // Gathered returns the stored gather, false when nothing was gathered.
-func (s *Store) Gathered() (Gather, bool, error) {
+func (s *Store) Gathered(ctx context.Context) (Gather, bool, error) {
 	var g Gather
 	var at, since, reached string
 	var limited, stopped int
-	err := s.db.QueryRow(`SELECT at, since, max_prs, prs_limited, forge, forge_reason, stopped, stopped_reached, stopped_reason FROM gather_runs WHERE id = 1`).
+	err := s.db.QueryRowContext(ctx, `SELECT at, since, max_prs, prs_limited, forge, forge_reason, stopped, stopped_reached, stopped_reason FROM gather_runs WHERE id = 1`).
 		Scan(&at, &since, &g.Run.MaxPRs, &limited, &g.Run.Forge, &g.Run.ForgeReason, &stopped, &reached, &g.Run.StopReason)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -176,13 +177,13 @@ func (s *Store) Gathered() (Gather, bool, error) {
 	parse(&g.Run.At, at)
 	parse(&g.Run.Since, since)
 	if err == nil {
-		g.Docs, err = s.gatheredDocs()
+		g.Docs, err = s.gatheredDocs(ctx)
 	}
 	if err == nil {
-		g.Changes, err = s.gatheredChanges()
+		g.Changes, err = s.gatheredChanges(ctx)
 	}
 	if err == nil {
-		g.PRs, err = s.gatheredPRs()
+		g.PRs, err = s.gatheredPRs(ctx)
 	}
 	if err != nil {
 		return Gather{}, false, err
@@ -191,8 +192,8 @@ func (s *Store) Gathered() (Gather, bool, error) {
 }
 
 // each runs a query and calls scan for every row, closing the rows.
-func (s *Store) each(q string, scan func(*sql.Rows) error, args ...any) error {
-	rows, err := s.db.Query(q, args...)
+func (s *Store) each(ctx context.Context, q string, scan func(*sql.Rows) error, args ...any) error {
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return err
 	}
@@ -205,8 +206,8 @@ func (s *Store) each(q string, scan func(*sql.Rows) error, args ...any) error {
 	return rows.Err()
 }
 
-func (s *Store) gatheredDocs() (out []Doc, err error) {
-	err = s.each(`SELECT path, kind, body, reason FROM gather_docs ORDER BY path`, func(r *sql.Rows) error {
+func (s *Store) gatheredDocs(ctx context.Context) (out []Doc, err error) {
+	err = s.each(ctx, `SELECT path, kind, body, reason FROM gather_docs ORDER BY path`, func(r *sql.Rows) error {
 		var d Doc
 		err := r.Scan(&d.Path, &d.Kind, &d.Body, &d.Reason)
 		out = append(out, d)
@@ -215,8 +216,8 @@ func (s *Store) gatheredDocs() (out []Doc, err error) {
 	return out, err
 }
 
-func (s *Store) gatheredChanges() (out []GatheredChange, err error) {
-	err = s.each(`SELECT id, short, subject, message, author, at, trailers, reverts, files FROM gather_changes ORDER BY seq`, func(r *sql.Rows) error {
+func (s *Store) gatheredChanges(ctx context.Context) (out []GatheredChange, err error) {
+	err = s.each(ctx, `SELECT id, short, subject, message, author, at, trailers, reverts, files FROM gather_changes ORDER BY seq`, func(r *sql.Rows) error {
 		var c GatheredChange
 		var at, tj, fj string
 		if err := r.Scan(&c.ID, &c.Short, &c.Subject, &c.Message, &c.Author, &at, &tj, &c.Reverts, &fj); err != nil {
@@ -238,8 +239,8 @@ func (s *Store) gatheredChanges() (out []GatheredChange, err error) {
 	return out, err
 }
 
-func (s *Store) gatheredPRs() (out []GatheredPR, err error) {
-	err = s.each(`SELECT number, title, body, author, merged_by, merged_at, issues FROM gather_prs ORDER BY seq`, func(r *sql.Rows) error {
+func (s *Store) gatheredPRs(ctx context.Context) (out []GatheredPR, err error) {
+	err = s.each(ctx, `SELECT number, title, body, author, merged_by, merged_at, issues FROM gather_prs ORDER BY seq`, func(r *sql.Rows) error {
 		var p GatheredPR
 		var at, ij string
 		if err := r.Scan(&p.Number, &p.Title, &p.Body, &p.Author, &p.MergedBy, &at, &ij); err != nil {
@@ -256,13 +257,13 @@ func (s *Store) gatheredPRs() (out []GatheredPR, err error) {
 		return nil
 	})
 	for i := 0; err == nil && i < len(out); i++ {
-		out[i].Comments, err = s.gatheredComments(out[i].Number)
+		out[i].Comments, err = s.gatheredComments(ctx, out[i].Number)
 	}
 	return out, err
 }
 
-func (s *Store) gatheredComments(pr int) (out []GatheredComment, err error) {
-	err = s.each(`SELECT author, at, kind, requests_changes, body FROM gather_comments WHERE pr = ? ORDER BY seq`, func(r *sql.Rows) error {
+func (s *Store) gatheredComments(ctx context.Context, pr int) (out []GatheredComment, err error) {
+	err = s.each(ctx, `SELECT author, at, kind, requests_changes, body FROM gather_comments WHERE pr = ? ORDER BY seq`, func(r *sql.Rows) error {
 		var c GatheredComment
 		var at string
 		var rc int

@@ -1,6 +1,7 @@
 package learn
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -71,7 +72,7 @@ func (r *testRepo) revert() string {
 
 func (r *testRepo) open() vcs.Repo {
 	r.t.Helper()
-	repo, err := git.Open(r.dir)
+	repo, err := git.Open(context.Background(), r.dir)
 	if err != nil {
 		r.t.Fatal(err)
 	}

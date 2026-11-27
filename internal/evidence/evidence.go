@@ -7,6 +7,7 @@
 package evidence
 
 import (
+	"context"
 	"time"
 
 	"github.com/dphaener/physa/internal/history"
@@ -63,13 +64,13 @@ type Watermark struct {
 
 // Repo is the smallest part of vcs.Repo that observing reads.
 type Repo interface {
-	DefaultBranch() (string, error)
-	Changes(rng string) ([]vcs.Change, error)
-	Since(ref string, t time.Time) ([]vcs.Change, error)
+	DefaultBranch(ctx context.Context) (string, error)
+	Changes(ctx context.Context, rng string) ([]vcs.Change, error)
+	Since(ctx context.Context, ref string, t time.Time) ([]vcs.Change, error)
 	Reverts(c vcs.Change) (string, bool)
-	Resolve(ref string) (string, bool)
-	IsAncestor(a, b string) bool
-	Latest(ref string, n int) ([]vcs.Change, error)
+	Resolve(ctx context.Context, ref string) (string, bool)
+	IsAncestor(ctx context.Context, a, b string) bool
+	Latest(ctx context.Context, ref string, n int) ([]vcs.Change, error)
 }
 
 // Observe reads the changes landed since w and, when forge is not nil, the PRs
@@ -79,32 +80,33 @@ type Repo interface {
 // failure of version control is err. A repo with no default branch has no
 // changes and is no error.
 func Observe(repo Repo, forge Merged, w Watermark, now time.Time) (facts []Fact, next Watermark, forgeErr error, err error) {
+	ctx := context.TODO()
 	next = w
-	facts, next, err = observeChanges(repo, w, now)
+	facts, next, err = observeChanges(ctx, repo, w, now)
 	if err != nil {
 		return nil, w, nil, err
 	}
 	if forge != nil {
 		var ff []Fact
-		ff, next.Forge, forgeErr = observeForge(repo, forge, w.Forge, now)
+		ff, next.Forge, forgeErr = observeForge(ctx, repo, forge, w.Forge, now)
 		facts = append(facts, ff...)
 	}
 	return facts, next, forgeErr, nil
 }
 
-func observeChanges(repo Repo, w Watermark, now time.Time) ([]Fact, Watermark, error) {
-	ref, err := repo.DefaultBranch()
+func observeChanges(ctx context.Context, repo Repo, w Watermark, now time.Time) ([]Fact, Watermark, error) {
+	ref, err := repo.DefaultBranch(ctx)
 	if err != nil {
 		return nil, w, nil
 	}
 	var changes []vcs.Change
 	switch {
 	case w.Commit == "":
-		changes, err = repo.Since(ref, now.Add(-window))
-	case !repo.IsAncestor(w.Commit, ref):
-		changes, err = repo.Since(ref, w.Time.Add(-rewindSlack))
+		changes, err = repo.Since(ctx, ref, now.Add(-window))
+	case !repo.IsAncestor(ctx, w.Commit, ref):
+		changes, err = repo.Since(ctx, ref, w.Time.Add(-rewindSlack))
 	default:
-		changes, err = repo.Changes(w.Commit + ".." + ref)
+		changes, err = repo.Changes(ctx, w.Commit+".."+ref)
 	}
 	if err != nil {
 		return nil, w, err
@@ -114,11 +116,11 @@ func observeChanges(repo Repo, w Watermark, now time.Time) ([]Fact, Watermark, e
 		c := changes[i]
 		f := fromMessage(Fact{Kind: KindLanded, Commit: c.ID, At: c.Time, Source: SourceVCS}, c.Message)
 		facts = append(facts, f)
-		if rf, ok := reverted(repo, c); ok {
+		if rf, ok := reverted(ctx, repo, c); ok {
 			facts = append(facts, rf)
 		}
 	}
-	head, err := repo.Latest(ref, 1)
+	head, err := repo.Latest(ctx, ref, 1)
 	if err != nil {
 		return nil, w, err
 	}
@@ -131,17 +133,17 @@ func observeChanges(repo Repo, w Watermark, now time.Time) ([]Fact, Watermark, e
 
 // reverted returns the fact for the change that c reverts, when c reverts one
 // the repo has.
-func reverted(repo Repo, c vcs.Change) (Fact, bool) {
+func reverted(ctx context.Context, repo Repo, c vcs.Change) (Fact, bool) {
 	short, ok := repo.Reverts(c)
 	if !ok {
 		return Fact{}, false
 	}
-	id, ok := repo.Resolve(short)
+	id, ok := repo.Resolve(ctx, short)
 	if !ok {
 		return Fact{}, false
 	}
 	f := Fact{Kind: KindReverted, Commit: id, At: c.Time, Source: SourceVCS, ByCommit: c.ID}
-	if old, err := repo.Latest(id, 1); err == nil && len(old) == 1 {
+	if old, err := repo.Latest(ctx, id, 1); err == nil && len(old) == 1 {
 		f = fromMessage(f, old[0].Message)
 	}
 	return f, true

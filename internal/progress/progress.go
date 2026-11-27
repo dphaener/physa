@@ -4,6 +4,7 @@
 package progress
 
 import (
+	"context"
 	"regexp"
 	"strings"
 	"time"
@@ -24,8 +25,8 @@ var slug = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // Repo is the smallest part of vcs.Repo that progress reads.
 type Repo interface {
-	DefaultBranch() (string, error)
-	Since(ref string, t time.Time) ([]vcs.Change, error)
+	DefaultBranch(ctx context.Context) (string, error)
+	Since(ctx context.Context, ref string, t time.Time) ([]vcs.Change, error)
 }
 
 // Landing is the commit on the default branch where a change first landed.
@@ -50,15 +51,16 @@ func Parse(value string) (pursuit, change string, ok bool) {
 // with no default branch gives an empty map and no error: what cannot be
 // known is not guessed, so the caller shows none landed.
 func Landed(repo Repo, pursuit string, since time.Time) (map[string]Landing, error) {
+	ctx := context.TODO()
 	landed := map[string]Landing{}
-	ref, err := repo.DefaultBranch()
+	ref, err := repo.DefaultBranch(ctx)
 	if err != nil {
 		return landed, nil
 	}
 	if !since.IsZero() {
 		since = since.Add(-slack)
 	}
-	changes, err := repo.Since(ref, since)
+	changes, err := repo.Since(ctx, ref, since)
 	if err != nil {
 		return nil, err
 	}

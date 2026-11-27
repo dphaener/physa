@@ -7,6 +7,7 @@
 package consolidatedmap
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -27,6 +28,7 @@ const Stale = "the stored consolidation no longer matches the recovered capabili
 // dropped in recovery going to the one they merged into; the sessions of
 // consolidation are added to m's.
 func Apply(st *initrecord.Store, m initbranch.Map) (initbranch.Map, string, error) {
+	ctx := context.TODO()
 	res, ok, err := consolidate.Load(st)
 	if err != nil || !ok {
 		return m, "", err
@@ -34,7 +36,7 @@ func Apply(st *initrecord.Store, m initbranch.Map) (initbranch.Map, string, erro
 	if cur, err := consolidate.Current(st); err != nil || !cur {
 		return m, Stale, err
 	}
-	rows, err := st.Recovered()
+	rows, err := st.Recovered(ctx)
 	if err != nil {
 		return m, "", err
 	}

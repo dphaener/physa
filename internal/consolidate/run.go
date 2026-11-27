@@ -36,7 +36,7 @@ const notJudged = "the capability merge did not judge it"
 // Result's ExitCode (0, or 1 when any step was left as it was); an error is
 // exit code 2.
 func Run(ctx context.Context, st *initrecord.Store, s Session) (Result, error) {
-	in, err := read(st, s.Root)
+	in, err := read(ctx, st, s.Root)
 	if err != nil {
 		return Result{}, err
 	}
@@ -75,7 +75,7 @@ func Run(ctx context.Context, st *initrecord.Store, s Session) (Result, error) {
 	}
 	body, _ := json.Marshal(res) // plain values: it cannot fail
 	t := res.Tokens
-	return res, st.PutConsolidated(initrecord.Consolidated{WalkAt: in.walkAt, At: now().UTC(), Model: res.Model,
+	return res, st.PutConsolidated(ctx, initrecord.Consolidated{WalkAt: in.walkAt, At: now().UTC(), Model: res.Model,
 		Input: t.Input, CachedInput: t.CachedInput, Output: t.Output, Body: body})
 }
 

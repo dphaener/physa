@@ -11,6 +11,7 @@ package sessionhook
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
@@ -57,8 +58,9 @@ type Outcome struct {
 // holds exactly that hook, and an error, leaving the file, when it holds
 // anything else.
 func Install(root string, h vcs.Hooks) (Outcome, error) {
+	ctx := context.TODO()
 	shipped := ships(root)
-	path, set, err := h.HooksPath()
+	path, set, err := h.HooksPath(ctx)
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -69,9 +71,9 @@ func Install(root string, h vcs.Hooks) (Outcome, error) {
 		return Outcome{}, fmt.Errorf("core.hooksPath is already %q, so it was left alone; to stamp Session: on changes, call Physa's hook (%s in the Physa repo) from that directory's prepare-commit-msg hook", path, Hook)
 	}
 	if shipped {
-		return setPath(h)
+		return setPath(ctx, h)
 	}
-	return write(h)
+	return write(ctx, h)
 }
 
 // ships reports whether the repo at root ships an executable Hook.
@@ -81,15 +83,15 @@ func ships(root string) bool {
 }
 
 // setPath points the hooks path at Dir unless that would turn off a hook.
-func setPath(h vcs.Hooks) (Outcome, error) {
-	active, err := h.ActiveHooks()
+func setPath(ctx context.Context, h vcs.Hooks) (Outcome, error) {
+	active, err := h.ActiveHooks(ctx)
 	if err != nil {
 		return Outcome{}, err
 	}
 	if len(active) > 0 {
 		return Outcome{}, fmt.Errorf("the repo has active hooks (%s) that pointing core.hooksPath at %s would turn off, so nothing was changed; to stamp Session: on changes, call %s from your own prepare-commit-msg hook", strings.Join(active, ", "), Dir, Hook)
 	}
-	if err := h.SetHooksPath(Dir); err != nil {
+	if err := h.SetHooksPath(ctx, Dir); err != nil {
 		return Outcome{}, err
 	}
 	return Outcome{Set: true}, nil
@@ -97,8 +99,8 @@ func setPath(h vcs.Hooks) (Outcome, error) {
 
 // write puts the embedded hook in the default hooks directory, never over a
 // file that is already there.
-func write(h vcs.Hooks) (Outcome, error) {
-	dir, err := h.HooksDir()
+func write(ctx context.Context, h vcs.Hooks) (Outcome, error) {
+	dir, err := h.HooksDir(ctx)
 	if err != nil {
 		return Outcome{}, err
 	}

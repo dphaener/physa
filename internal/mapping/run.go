@@ -44,8 +44,8 @@ type Session struct {
 // Store is what Propose needs of the store: the gather to read and a place
 // for the proposal.
 type Store interface {
-	Gathered() (store.Gather, bool, error)
-	PutProposal(initrecord.Proposal) error
+	Gathered(ctx context.Context) (store.Gather, bool, error)
+	PutProposal(context.Context, initrecord.Proposal) error
 }
 
 // Result is how one run of Propose ended.
@@ -109,7 +109,7 @@ func (s Stored) Ran(id string) []string {
 // Result then still says what the session used.
 func Propose(ctx context.Context, st Store, s Session) (Result, error) {
 	var res Result
-	g, ok, err := st.Gathered()
+	g, ok, err := st.Gathered(ctx)
 	if err != nil {
 		return res, err
 	}
@@ -151,7 +151,7 @@ func Propose(ctx context.Context, st Store, s Session) (Result, error) {
 	if s.Now != nil {
 		now = s.Now
 	}
-	err = st.PutProposal(initrecord.Proposal{
+	err = st.PutProposal(ctx, initrecord.Proposal{
 		GatherAt: g.Run.At, At: now().UTC(),
 		SessionID: res.SessionID, Model: res.Model,
 		Input: res.Tokens.Input, CachedInput: res.Tokens.CachedInput, Output: res.Tokens.Output,

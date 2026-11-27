@@ -9,6 +9,7 @@
 package mapcheck
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -259,13 +260,14 @@ func (c *checker) commitAnchor(file string, line int, hash string) {
 			c.repo, c.repoErr = c.openRepo(c.root)
 		}
 	}
+	ctx := context.TODO()
 	switch {
 	case c.repoErr != nil:
 		// vcs.ErrNotRepo reads "not a repository under version control".
 		c.add(file, line, "anchor %q cannot resolve: %v", hash, c.repoErr)
-	case !c.repo.HasChange(hash):
+	case !c.repo.HasChange(ctx, hash):
 		hint := ""
-		if c.repo.Partial() {
+		if c.repo.Partial(ctx) {
 			hint = " (the clone is shallow; fetch its full history)"
 		}
 		c.add(file, line, "anchor %q does not name a commit in this repo%s", hash, hint)

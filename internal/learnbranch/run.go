@@ -137,14 +137,14 @@ func Run(ctx context.Context, w vcs.Writer, o Options) (Outcome, error) {
 	if o.PR && !o.Push {
 		return out, errors.New("a PR needs the branch pushed")
 	}
-	st, err := read(w, o.Push)
+	st, err := read(ctx, w, o.Push)
 	if err != nil {
 		return out, err
 	}
 	lo := learn.Options{Since: o.Since, Forge: o.Forge, ForgeReason: o.ForgeReason,
 		Records: o.Records, RecordsReason: o.RecordsReason, Sessions: o.Sessions}
 	var batch draft.Batch
-	err = inCopy(w, st.def, st.base(o.Push), func(c vcs.Copy, carried []string) error {
+	err = inCopy(ctx, w, st.def, st.base(o.Push), func(c vcs.Copy, carried []string) error {
 		m, res, err := Read(c.Dir(), w, lo)
 		if err != nil {
 			return err
@@ -161,19 +161,19 @@ func Run(ctx context.Context, w vcs.Writer, o Options) (Outcome, error) {
 		rec := record{changes: out.Result.Changes, watermark: out.Result.Watermark,
 			through: out.Result.Through, learned: out.Result.LearnedNow, carried: carried,
 			session: out.Report.DraftSession}
-		out.Commit, err = apply(w, c, batch, &out.Report, out.Report.Kept, rec, o.Session.Check)
+		out.Commit, err = apply(ctx, w, c, batch, &out.Report, out.Report.Kept, rec, o.Session.Check)
 		return err
 	})
 	if err != nil || out.Report.Session == propose.SessionStopped {
 		return out, err
 	}
 	if out.Commit != nil {
-		if err := write(w, &out, st, o, lo, batch); err != nil {
+		if err := write(ctx, w, &out, st, o, lo, batch); err != nil {
 			return out, err
 		}
 	}
 	if o.PR {
-		err = openPR(w, &out, st, o)
+		err = openPR(ctx, w, &out, st, o)
 		if errors.Is(err, forge.ErrUnavailable) || errors.Is(err, forge.ErrUnauthenticated) {
 			out.PR, err = PR{State: PRReady, Reason: forge.Reason(err)}, nil
 		}
@@ -214,26 +214,26 @@ func WriteRun(stdout, stderr io.Writer, o Outcome, asJSON, branch bool) error {
 // is lost, and then points the local branch at what was written. The local
 // branch moves only after the remote took the commit, so it never records
 // what the remote refused.
-func write(w vcs.Writer, out *Outcome, st state, o Options, lo learn.Options, b draft.Batch) error {
+func write(ctx context.Context, w vcs.Writer, out *Outcome, st state, o Options, lo learn.Options, b draft.Batch) error {
 	if o.Push {
-		err := w.Push(Branch, out.Commit.ID, st.remote)
+		err := w.Push(ctx, Branch, out.Commit.ID, st.remote)
 		if errors.Is(err, vcs.ErrLease) {
 			out.Redone = true
-			err = redo(w, out, lo, b, o.Session.Check)
+			err = redo(ctx, w, out, lo, b, o.Session.Check)
 		}
 		if err != nil || out.Commit == nil {
 			return err
 		}
 		out.Pushed = true
 	}
-	return w.SetBranch(Branch, out.Commit.ID, st.local)
+	return w.SetBranch(ctx, Branch, out.Commit.ID, st.local)
 }
 
 // read fetches the default branch and the learn branch when pushing,
 // refuses a learn branch checked out anywhere, and reads where each stands.
-func read(w vcs.Writer, push bool) (state, error) {
+func read(ctx context.Context, w vcs.Writer, push bool) (state, error) {
 	var st state
-	def, err := w.DefaultBranch()
+	def, err := w.DefaultBranch(ctx)
 	if err != nil {
 		return st, err
 	}
@@ -242,19 +242,19 @@ func read(w vcs.Writer, push bool) (state, error) {
 		st.name = name
 	}
 	if push {
-		if err := w.Fetch(st.name, Branch); err != nil {
+		if err := w.Fetch(ctx, st.name, Branch); err != nil {
 			return st, err
 		}
 	}
-	out, err := w.CheckedOut(Branch)
+	out, err := w.CheckedOut(ctx, Branch)
 	if err != nil {
 		return st, err
 	}
 	if out {
 		return st, fmt.Errorf("%s is checked out in a working copy; switch that copy to another branch first, as Physa never writes a checked-out branch", Branch)
 	}
-	for _, ref := range w.Branch(Branch) {
-		id, _ := w.Resolve(ref)
+	for _, ref := range w.Branch(ctx, Branch) {
+		id, _ := w.Resolve(ctx, ref)
 		if ref == Branch {
 			st.local = id
 		} else {
@@ -267,25 +267,25 @@ func read(w vcs.Writer, push bool) (state, error) {
 // inCopy makes a working copy at def, replays onto it every change of
 // def..base oldest first, and calls fn with it and the Learned ids of the
 // replayed changes that added nothing. The copy is always removed.
-func inCopy(w vcs.Writer, def, base string, fn func(vcs.Copy, []string) error) (err error) {
-	c, err := w.NewCopy(def)
+func inCopy(ctx context.Context, w vcs.Writer, def, base string, fn func(vcs.Copy, []string) error) (err error) {
+	c, err := w.NewCopy(ctx, def)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if rmErr := c.Remove(); rmErr != nil && err == nil {
+		if rmErr := c.Remove(context.WithoutCancel(ctx)); rmErr != nil && err == nil {
 			err = rmErr
 		}
 	}()
 	var carried []string
 	if base != "" {
-		changes, err := w.Changes(def + ".." + base)
+		changes, err := w.Changes(ctx, def+".."+base)
 		if err != nil {
 			return err
 		}
 		for i := len(changes) - 1; i >= 0; i-- {
 			ch := changes[i]
-			added, err := c.Replay(ch.ID)
+			added, err := c.Replay(ctx, ch.ID)
 			if errors.Is(err, vcs.ErrConflict) {
 				return fmt.Errorf("the unmerged change %s %q on %s conflicts with %s; drop or rebase it by hand, then run again", ch.Short, ch.Subject, Branch, def)
 			}
@@ -304,7 +304,7 @@ func inCopy(w vcs.Writer, def, base string, fn func(vcs.Copy, []string) error) (
 // dropped, and commits when there is anything to record: a proposal applied
 // or a watermark that moves.
 // It returns nil when it commits nothing.
-func apply(w vcs.Writer, c vcs.Copy, b draft.Batch, report *propose.Report, kept []propose.Kept, rec record, o propose.Options) (*Commit, error) {
+func apply(ctx context.Context, w vcs.Writer, c vcs.Copy, b draft.Batch, report *propose.Report, kept []propose.Kept, rec record, o propose.Options) (*Commit, error) {
 	applied, dropped := propose.ApplyAll(c.Dir(), b, kept, o)
 	report.Kept = append([]propose.Kept{}, applied...)
 	report.Dropped = append(report.Dropped, dropped...)
@@ -312,7 +312,7 @@ func apply(w vcs.Writer, c vcs.Copy, b draft.Batch, report *propose.Report, kept
 		return nil, nil
 	}
 	rec.applied = applied
-	ch, err := c.Commit(rec.message(w))
+	ch, err := c.Commit(ctx, rec.message(ctx, w))
 	if err != nil {
 		return nil, err
 	}
@@ -323,9 +323,9 @@ func apply(w vcs.Writer, c vcs.Copy, b draft.Batch, report *propose.Report, kept
 // what is learned, drops the applied proposals whose changes another run
 // learned meanwhile, takes the later watermark, rebuilds on the
 // remote's branch and pushes once more. No agent session is spent.
-func redo(w vcs.Writer, out *Outcome, lo learn.Options, b draft.Batch, o propose.Options) error {
+func redo(ctx context.Context, w vcs.Writer, out *Outcome, lo learn.Options, b draft.Batch, o propose.Options) error {
 	first := out.Result
-	st, err := read(w, true)
+	st, err := read(ctx, w, true)
 	if err != nil {
 		return err
 	}
@@ -352,22 +352,22 @@ func redo(w vcs.Writer, out *Outcome, lo learn.Options, b draft.Batch, o propose
 		keep = append(keep, propose.Kept{Proposal: k.Proposal})
 	}
 	through := first.Through
-	if now.Through != "" && (through == "" || w.IsAncestor(through, now.Through)) {
+	if now.Through != "" && (through == "" || w.IsAncestor(ctx, through, now.Through)) {
 		through = now.Through
 	}
 	out.Result.Through, out.Result.LearnedNow = through, append([]string{}, learned...)
 	out.Commit = nil
-	err = inCopy(w, st.def, st.base(true), func(c vcs.Copy, carried []string) error {
+	err = inCopy(ctx, w, st.def, st.base(true), func(c vcs.Copy, carried []string) error {
 		rec := record{changes: now.Changes, watermark: now.Watermark, through: through,
 			learned: learned, carried: carried, session: out.Report.DraftSession}
 		var err error
-		out.Commit, err = apply(w, c, b, &out.Report, keep, rec, o)
+		out.Commit, err = apply(ctx, w, c, b, &out.Report, keep, rec, o)
 		return err
 	})
 	if err != nil || out.Commit == nil {
 		return err
 	}
-	err = w.Push(Branch, out.Commit.ID, st.remote)
+	err = w.Push(ctx, Branch, out.Commit.ID, st.remote)
 	if errors.Is(err, vcs.ErrLease) {
 		return leaseTwice
 	}

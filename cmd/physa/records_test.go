@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -17,7 +18,7 @@ func useStore(t *testing.T) string {
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
 	dir := t.TempDir()
 	old := openStore
-	openStore = func(string) (*store.Store, error) { return store.Open(dir) }
+	openStore = func(string) (*store.Store, error) { return store.Open(context.Background(), dir) }
 	t.Cleanup(func() { openStore = old })
 	return dir
 }

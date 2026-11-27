@@ -11,7 +11,7 @@ import (
 func open(t *testing.T) (*Store, string) {
 	t.Helper()
 	dir := t.TempDir()
-	st, err := store.Open(dir)
+	st, err := store.Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}

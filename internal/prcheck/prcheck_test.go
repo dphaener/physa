@@ -1,6 +1,7 @@
 package prcheck
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -178,7 +179,7 @@ func mapRepo(t *testing.T) (vcs.Repo, string) {
 	gitIn(t, root, "init", "-q")
 	gitIn(t, root, "add", ".")
 	gitIn(t, root, "commit", "-q", "-m", "base")
-	repo, err := git.Open(root)
+	repo, err := git.Open(context.Background(), root)
 	if err != nil {
 		t.Fatal(err)
 	}

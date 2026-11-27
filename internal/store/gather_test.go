@@ -1,7 +1,9 @@
 package store
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -33,10 +35,10 @@ func sampleGather() Gather {
 func TestGatherRoundTrip(t *testing.T) {
 	s, _ := open(t)
 	want := sampleGather()
-	if err := s.PutGather(want); err != nil {
+	if err := s.PutGather(t.Context(), want); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.Gathered()
+	got, ok, err := s.Gathered(t.Context())
 	if err != nil || !ok {
 		t.Fatalf("Gathered = %v, %v", ok, err)
 	}
@@ -52,10 +54,10 @@ func TestGatherDocReasonRoundTrip(t *testing.T) {
 		Run:  GatherRun{At: time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC), Since: time.Date(2025, 11, 21, 9, 0, 0, 0, time.UTC)},
 		Docs: []Doc{{Path: "docs/vision.md", Kind: "overview", Body: "v", Reason: "states what the product is"}},
 	}
-	if err := s.PutGather(want); err != nil {
+	if err := s.PutGather(t.Context(), want); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.Gathered()
+	got, ok, err := s.Gathered(t.Context())
 	if err != nil || !ok {
 		t.Fatalf("Gathered = %v, %v", ok, err)
 	}
@@ -97,12 +99,12 @@ func TestGatherDocReasonEmptyBeforeMigrationEleven(t *testing.T) {
 	}
 	db.Close()
 
-	s, err := Open(dir)
+	s, err := Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	got, ok, err := s.Gathered()
+	got, ok, err := s.Gathered(t.Context())
 	if err != nil || !ok || len(got.Docs) != 1 {
 		t.Fatalf("Gathered = %v, %v, %+v", ok, err, got.Docs)
 	}
@@ -113,22 +115,22 @@ func TestGatherDocReasonEmptyBeforeMigrationEleven(t *testing.T) {
 
 func TestGatheredFreshStoreIsFalse(t *testing.T) {
 	s, _ := open(t)
-	if _, ok, err := s.Gathered(); ok || err != nil {
+	if _, ok, err := s.Gathered(t.Context()); ok || err != nil {
 		t.Errorf("Gathered = %v, %v; want false, nil", ok, err)
 	}
 }
 
 func TestPutGatherReplaces(t *testing.T) {
 	s, _ := open(t)
-	if err := s.PutGather(sampleGather()); err != nil {
+	if err := s.PutGather(t.Context(), sampleGather()); err != nil {
 		t.Fatal(err)
 	}
 	next := Gather{Run: GatherRun{At: time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC), Since: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), MaxPRs: 5, Forge: "", ForgeReason: "no forge"},
 		Docs: []Doc{{Path: "CLAUDE.md", Kind: "agents", Body: "x"}}}
-	if err := s.PutGather(next); err != nil {
+	if err := s.PutGather(t.Context(), next); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.Gathered()
+	got, ok, err := s.Gathered(t.Context())
 	if err != nil || !ok {
 		t.Fatalf("Gathered = %v, %v", ok, err)
 	}
@@ -153,16 +155,16 @@ func TestPutGatherReplaces(t *testing.T) {
 func TestPutGatherFailureRollsBack(t *testing.T) {
 	s, _ := open(t)
 	first := sampleGather()
-	if err := s.PutGather(first); err != nil {
+	if err := s.PutGather(t.Context(), first); err != nil {
 		t.Fatal(err)
 	}
 	bad := sampleGather()
 	bad.Docs = []Doc{{Path: "x", Kind: "k"}, {Path: "x", Kind: "k"}} // duplicate primary key
 	bad.Changes = nil
-	if err := s.PutGather(bad); err == nil {
+	if err := s.PutGather(t.Context(), bad); err == nil {
 		t.Fatal("PutGather with a duplicate doc path succeeded")
 	}
-	got, ok, err := s.Gathered()
+	got, ok, err := s.Gathered(t.Context())
 	if err != nil || !ok {
 		t.Fatalf("Gathered = %v, %v", ok, err)
 	}
@@ -177,10 +179,10 @@ func TestGatherStoppedRoundTrip(t *testing.T) {
 	want.Run.Stopped = true
 	want.Run.Reached = time.Date(2026, 5, 2, 8, 30, 0, 0, time.UTC)
 	want.Run.StopReason = "rate limit reached, resets in 40m"
-	if err := s.PutGather(want); err != nil {
+	if err := s.PutGather(t.Context(), want); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.Gathered()
+	got, ok, err := s.Gathered(t.Context())
 	if err != nil || !ok {
 		t.Fatalf("Gathered = %v, %v", ok, err)
 	}
@@ -192,10 +194,10 @@ func TestGatherStoppedRoundTrip(t *testing.T) {
 
 func TestGatherCompleteReadsNotStopped(t *testing.T) {
 	s, _ := open(t)
-	if err := s.PutGather(sampleGather()); err != nil {
+	if err := s.PutGather(t.Context(), sampleGather()); err != nil {
 		t.Fatal(err)
 	}
-	got, _, err := s.Gathered()
+	got, _, err := s.Gathered(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,16 +238,49 @@ func TestGatherNotStoppedBeforeMigrationFifteen(t *testing.T) {
 	}
 	db.Close()
 
-	s, err := Open(dir)
+	s, err := Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	got, ok, err := s.Gathered()
+	got, ok, err := s.Gathered(t.Context())
 	if err != nil || !ok {
 		t.Fatalf("Gathered = %v, %v", ok, err)
 	}
 	if r := got.Run; r.Stopped || !r.Reached.IsZero() || r.StopReason != "" {
 		t.Errorf("run = %+v; want not stopped", r)
+	}
+}
+
+func TestPutWithCancelledContextLeavesStoreUnchanged(t *testing.T) {
+	s, _ := open(t)
+	want := sampleGather()
+	if err := s.PutGather(t.Context(), want); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	other := sampleGather()
+	other.Run.MaxPRs = 5
+	if err := s.PutGather(ctx, other); !errors.Is(err, context.Canceled) {
+		t.Errorf("PutGather with a cancelled context = %v; want context.Canceled", err)
+	}
+	if err := s.PutSliceRecord(ctx, SliceRecord{At: time.Now(), Capabilities: []string{"map"}}); err == nil {
+		t.Error("PutSliceRecord with a cancelled context = nil; want an error")
+	}
+	got, ok, err := s.Gathered(t.Context())
+	if err != nil || !ok {
+		t.Fatalf("Gathered = %v, %v", ok, err)
+	}
+	want.PRs[1].Comments = nil
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("the store changed: got %+v\nwant %+v", got, want)
+	}
+	recs, err := s.SliceRecords(t.Context())
+	if err != nil || len(recs) != 0 {
+		t.Errorf("slice records = %v, %v; want none", recs, err)
+	}
+	if _, _, err := s.Gathered(ctx); err == nil {
+		t.Error("Gathered with a cancelled context = nil; want an error")
 	}
 }

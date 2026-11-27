@@ -65,7 +65,7 @@ type env struct {
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	dir := t.TempDir()
-	st, err := store.Open(dir)
+	st, err := store.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +363,7 @@ func TestWorkReplacesAndCurrent(t *testing.T) {
 	if n := e.one(`SELECT count(*) FROM session_changes`); n != "1" {
 		t.Errorf("session_changes = %s, want 1 (replaced)", n)
 	}
-	db, err := store.OpenReadOnly(filepath.Join(e.dir, "physa.db"))
+	db, err := store.OpenReadOnly(context.Background(), filepath.Join(e.dir, "physa.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +390,7 @@ func TestCurrentOlderStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw.Close()
-	db, err := store.OpenReadOnly(path)
+	db, err := store.OpenReadOnly(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}

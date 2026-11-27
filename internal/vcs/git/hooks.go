@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -26,8 +27,8 @@ var _ vcs.Hooks = (*hooks)(nil)
 
 // OpenHooks returns the hooks of the repository that contains dir. Its errors
 // are Open's.
-func OpenHooks(dir string) (vcs.Hooks, error) {
-	r, err := Open(dir)
+func OpenHooks(ctx context.Context, dir string) (vcs.Hooks, error) {
+	r, err := Open(ctx, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -37,10 +38,10 @@ func OpenHooks(dir string) (vcs.Hooks, error) {
 // HooksPath reads core.hooksPath from every scope git reads, since a global
 // setting is what the repo runs when the local one is unset. git config exits
 // 1, printing nothing, when the key is unset.
-func (h *hooks) HooksPath() (string, bool, error) {
-	out, stderr, err := h.git("config", "--get", hooksKey)
+func (h *hooks) HooksPath(ctx context.Context) (string, bool, error) {
+	out, stderr, err := h.git(ctx, "config", "--get", hooksKey)
 	var exit *exec.ExitError
-	if errors.As(err, &exit) && exit.ExitCode() == 1 && stderr == "" {
+	if ctx.Err() == nil && errors.As(err, &exit) && exit.ExitCode() == 1 && stderr == "" {
 		return "", false, nil
 	}
 	if err != nil {
@@ -50,11 +51,11 @@ func (h *hooks) HooksPath() (string, bool, error) {
 }
 
 // SetHooksPath writes core.hooksPath to the repo's own config only.
-func (h *hooks) SetHooksPath(p string) error {
+func (h *hooks) SetHooksPath(ctx context.Context, p string) error {
 	if p == "" {
 		return errors.New("a hooks path cannot be empty")
 	}
-	if _, stderr, err := h.git("config", "--local", hooksKey, p); err != nil {
+	if _, stderr, err := h.git(ctx, "config", "--local", hooksKey, p); err != nil {
 		return fmt.Errorf("%s cannot be set: %w", hooksKey, gitError(err, stderr))
 	}
 	return nil
@@ -63,8 +64,8 @@ func (h *hooks) SetHooksPath(p string) error {
 // ActiveHooks lists the hooks directory under git's common dir, the default
 // that every working copy of the repo shares. git rev-parse --git-path hooks
 // would follow core.hooksPath instead.
-func (h *hooks) ActiveHooks() ([]string, error) {
-	dir, err := h.HooksDir()
+func (h *hooks) ActiveHooks(ctx context.Context) ([]string, error) {
+	dir, err := h.HooksDir(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -91,8 +92,8 @@ func (h *hooks) ActiveHooks() ([]string, error) {
 }
 
 // HooksDir is the hooks directory under git's common dir.
-func (h *hooks) HooksDir() (string, error) {
-	out, stderr, err := h.git("rev-parse", "--path-format=absolute", "--git-common-dir")
+func (h *hooks) HooksDir(ctx context.Context) (string, error) {
+	out, stderr, err := h.git(ctx, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return "", gitError(err, stderr)
 	}
@@ -102,10 +103,10 @@ func (h *hooks) HooksDir() (string, error) {
 // Email reads user.email from every scope git reads, for the repository at
 // dir or outside any. It is "" with no error when unset: git config exits 1,
 // printing nothing. It never reads user.name.
-func Email(dir string) (string, error) {
-	out, stderr, err := runGit(dir, "", os.Environ(), "config", "--get", "user.email")
+func Email(ctx context.Context, dir string) (string, error) {
+	out, stderr, err := runGit(ctx, dir, "", os.Environ(), "config", "--get", "user.email")
 	var exit *exec.ExitError
-	if errors.As(err, &exit) && exit.ExitCode() == 1 && stderr == "" {
+	if ctx.Err() == nil && errors.As(err, &exit) && exit.ExitCode() == 1 && stderr == "" {
 		return "", nil
 	}
 	if err != nil {

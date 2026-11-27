@@ -1,6 +1,7 @@
 package history
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,7 +20,7 @@ func newRepo(t *testing.T) (vcs.Repo, string) {
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	dir := t.TempDir()
 	run(t, dir, "init", "-q")
-	r, err := git.Open(dir)
+	r, err := git.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}

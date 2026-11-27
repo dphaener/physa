@@ -37,7 +37,7 @@ func recoveredRows(t *testing.T, env Env) map[string]string {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	rows, err := initrecord.Of(st).Recovered()
+	rows, err := initrecord.Of(st).Recovered(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestCappedWalkStopsCleanly(t *testing.T) {
 	if _, ok, err := walk.Load(initrecord.Of(st)); ok || err != nil {
 		t.Errorf("a walk was stored: %v %v", ok, err)
 	}
-	if _, ok, err := initrecord.Of(st).Areas(); !ok || err != nil {
+	if _, ok, err := initrecord.Of(st).Areas(context.Background()); !ok || err != nil {
 		t.Errorf("the areas were not kept: %v %v", ok, err)
 	}
 }
@@ -194,7 +194,7 @@ func TestUsageCapWithoutUsageRefusesToStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if _, ok, err := st.Gathered(); ok || err != nil {
+	if _, ok, err := st.Gathered(context.Background()); ok || err != nil {
 		t.Errorf("gathered: %v %v", ok, err)
 	}
 }

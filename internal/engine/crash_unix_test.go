@@ -328,7 +328,7 @@ func TestKillAnyMoment(t *testing.T) {
 	if midFlight == 0 {
 		t.Fatalf("seed %d: no round of %d was a kill mid-flight (no intent was pending at any kill)", seed, rounds)
 	}
-	st, err := store.Open(storeDir)
+	st, err := store.Open(context.Background(), storeDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +411,7 @@ func killRound(ctx context.Context, r *crashRig, repo, storeDir string, next *at
 // asKilled opens the store with no engine running and counts the pending
 // intents and the kill.log lines whose intent is not done.
 func asKilled(storeDir string) (pending, ahead int, err error) {
-	st, err := store.Open(storeDir)
+	st, err := store.Open(context.Background(), storeDir)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -476,7 +476,7 @@ func logLines(storeDir string) ([]logLine, error) {
 // checkRound opens the store with no engine running and reports every way
 // state, events, intents and kill.log disagree, for the acknowledged n.
 func checkRound(storeDir string, acked []int) error {
-	st, err := store.Open(storeDir)
+	st, err := store.Open(context.Background(), storeDir)
 	if err != nil {
 		return err
 	}
@@ -627,7 +627,7 @@ func scanRows(rows *sql.Rows, err error) func(each func(scan func(...any) error)
 func goodStore(t *testing.T) string {
 	t.Helper()
 	dir := filepath.Join(newDir(t), "store")
-	st, err := store.Open(dir)
+	st, err := store.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -673,7 +673,7 @@ func TestKillCheckCatches(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			dir := goodStore(t)
 			if c.sql != "" {
-				st, err := store.Open(dir)
+				st, err := store.Open(context.Background(), dir)
 				if err != nil {
 					t.Fatal(err)
 				}

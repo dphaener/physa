@@ -1,6 +1,7 @@
 package recoverinput
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -39,14 +40,15 @@ func (s Source) Holds(proposalAt time.Time) bool {
 // promises in walk order when st holds both the walk and the placements,
 // else the proposal's capabilities when proposed is true, else ok is false.
 func Listed(st interface {
-	Walk() (initrecord.Walk, bool, error)
-	Place() (initrecord.Place, bool, error)
+	Walk(ctx context.Context) (initrecord.Walk, bool, error)
+	Place(ctx context.Context) (initrecord.Place, bool, error)
 }, proposed mapping.Proposal, hasProposal bool) (src Source, ok bool, err error) {
-	w, walked, err := st.Walk()
+	ctx := context.TODO()
+	w, walked, err := st.Walk(ctx)
 	if err != nil {
 		return src, false, err
 	}
-	if _, placed, err := st.Place(); err != nil {
+	if _, placed, err := st.Place(ctx); err != nil {
 		return src, false, err
 	} else if walked && placed {
 		var wr walk.Record

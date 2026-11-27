@@ -1,6 +1,7 @@
 package initrecord
 
 import (
+	"context"
 	"database/sql"
 	"time"
 )
@@ -17,16 +18,16 @@ type Consolidated struct {
 }
 
 // PutConsolidated replaces the stored consolidation with c.
-func (s *Store) PutConsolidated(c Consolidated) error {
-	_, err := s.DB().Exec(`INSERT OR REPLACE INTO init_consolidate (id, walk_at, at, model, input, cached_input, output, body) VALUES (1, ?, ?, ?, ?, ?, ?, ?)`, ts(c.WalkAt), ts(c.At), c.Model, c.Input, c.CachedInput, c.Output, string(c.Body))
+func (s *Store) PutConsolidated(ctx context.Context, c Consolidated) error {
+	_, err := s.DB().ExecContext(ctx, `INSERT OR REPLACE INTO init_consolidate (id, walk_at, at, model, input, cached_input, output, body) VALUES (1, ?, ?, ?, ?, ?, ?, ?)`, ts(c.WalkAt), ts(c.At), c.Model, c.Input, c.CachedInput, c.Output, string(c.Body))
 	return err
 }
 
 // Consolidated returns the stored consolidation, false when there is none.
-func (s *Store) Consolidated() (Consolidated, bool, error) {
+func (s *Store) Consolidated(ctx context.Context) (Consolidated, bool, error) {
 	var c Consolidated
 	var walkAt, at string
-	err := s.DB().QueryRow(`SELECT walk_at, at, model, input, cached_input, output, body FROM init_consolidate WHERE id = 1`).Scan(&walkAt, &at, &c.Model, &c.Input, &c.CachedInput, &c.Output, &c.Body)
+	err := s.DB().QueryRowContext(ctx, `SELECT walk_at, at, model, input, cached_input, output, body FROM init_consolidate WHERE id = 1`).Scan(&walkAt, &at, &c.Model, &c.Input, &c.CachedInput, &c.Output, &c.Body)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			err = nil

@@ -96,7 +96,7 @@ func consEnv(t *testing.T, a adapter.Adapter, caps []consCap) Env {
 	}
 	defer s.Close()
 	st := initrecord.Of(s)
-	if err := s.PutGather(store.Gather{Run: store.GatherRun{At: consolidateAt}}); err != nil {
+	if err := s.PutGather(context.Background(), store.Gather{Run: store.GatherRun{At: consolidateAt}}); err != nil {
 		t.Fatal(err)
 	}
 	var wr walk.Record
@@ -111,8 +111,8 @@ func consEnv(t *testing.T, a adapter.Adapter, caps []consCap) Env {
 			File: recovering.File(c.name, c.promise, body), SessionID: "rec-" + c.name, Details: []byte(`{}`)})
 	}
 	body, _ := json.Marshal(wr)
-	for _, err := range []error{st.PutWalk(initrecord.Walk{AreasAt: consolidateAt.Add(-time.Hour), At: consolidateAt, Model: "m", Body: body}),
-		st.PutPlace(initrecord.Place{WalkAt: consolidateAt, At: consolidateAt, Body: []byte(`{}`)}), st.PutRecovered(rows)} {
+	for _, err := range []error{st.PutWalk(context.Background(), initrecord.Walk{AreasAt: consolidateAt.Add(-time.Hour), At: consolidateAt, Model: "m", Body: body}),
+		st.PutPlace(context.Background(), initrecord.Place{WalkAt: consolidateAt, At: consolidateAt, Body: []byte(`{}`)}), st.PutRecovered(context.Background(), rows)} {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -146,7 +146,7 @@ func TestConsolidatePrintsAndStores(t *testing.T) {
 	if cur, err := consolidate.Current(initrecord.Of(st)); !cur || err != nil {
 		t.Errorf("consolidation stored and current: %v %v", cur, err)
 	}
-	if spent, err := initrecord.Of(st).Spending(); err != nil || len(spent) == 0 || spent[len(spent)-1].Phase != "consolidate" {
+	if spent, err := initrecord.Of(st).Spending(context.Background()); err != nil || len(spent) == 0 || spent[len(spent)-1].Phase != "consolidate" {
 		t.Errorf("spending %v %v", spent, err)
 	}
 	code, out, errOut = runInit(env, "--consolidate", "--json")
@@ -298,7 +298,7 @@ func TestConsolidateSpendAddsUp(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer st.Close()
-		rows, err := initrecord.Of(st).Spending()
+		rows, err := initrecord.Of(st).Spending(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -1,6 +1,7 @@
 package person
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -15,7 +16,7 @@ import (
 func ForRepo(dir string, f forge.Forge, stderr io.Writer) string {
 	cfg, err := ConfigDir()
 	if err == nil {
-		o := Options{ConfigDir: cfg, Email: func() (string, error) { return git.Email(dir) }}
+		o := Options{ConfigDir: cfg, Email: func() (string, error) { return git.Email(context.TODO(), dir) }}
 		if l, ok := f.(interface{ Login() (string, error) }); ok {
 			o.Login = l.Login
 		}

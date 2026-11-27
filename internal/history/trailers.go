@@ -1,6 +1,7 @@
 package history
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"regexp"
@@ -146,9 +147,10 @@ func splitSlugs(value string) []string {
 // before unknown slugs, each in the order written. The error is for a commit
 // whose files version control cannot list.
 func Check(repo vcs.Repo, commits []Commit) ([]Finding, error) {
+	ctx := context.TODO()
 	findings := []Finding{}
 	for _, c := range commits {
-		before, err := beforeTheMap(repo, c.Hash)
+		before, err := beforeTheMap(ctx, repo, c.Hash)
 		if err != nil {
 			return nil, err
 		}
@@ -167,7 +169,7 @@ func Check(repo vcs.Repo, commits []Commit) ([]Finding, error) {
 		if len(c.Capabilities) == 0 {
 			continue
 		}
-		known, err := slugsAt(repo, c.Hash, c.Capabilities)
+		known, err := slugsAt(ctx, repo, c.Hash, c.Capabilities)
 		if err != nil {
 			return nil, err
 		}
@@ -191,17 +193,17 @@ const (
 // beforeTheMap reports whether the parent of change id leaves no map: neither
 // the folder layout (a file under .physa/product/) nor the old one
 // (.physa/product.md). A root change has no parent, so it is before the map.
-func beforeTheMap(repo vcs.Repo, id string) (bool, error) {
-	parent, ok := repo.Resolve(id + "^")
+func beforeTheMap(ctx context.Context, repo vcs.Repo, id string) (bool, error) {
+	parent, ok := repo.Resolve(ctx, id+"^")
 	if !ok {
-		if _, found := repo.Resolve(id); found {
+		if _, found := repo.Resolve(ctx, id); found {
 			return true, nil
 		}
 		parent = id // not a change: list its files for the adapter's error
 	}
 	// Files lists only the files directly under a directory, never its
 	// subdirectories, so each layout's marker needs its own listing.
-	files, err := repo.Files(parent, mapDir)
+	files, err := repo.Files(ctx, parent, mapDir)
 	if err != nil {
 		return false, fmt.Errorf("cannot list the map at %s: %w", id, err)
 	}
@@ -210,7 +212,7 @@ func beforeTheMap(repo vcs.Repo, id string) (bool, error) {
 			return false, nil
 		}
 	}
-	product, err := repo.Files(parent, productDir)
+	product, err := repo.Files(ctx, parent, productDir)
 	if err != nil {
 		return false, fmt.Errorf("cannot list the map at %s: %w", id, err)
 	}
@@ -226,14 +228,14 @@ var validSlug = regexp.MustCompile(`^[a-z0-9-]+$`)
 // directory, so a capability's folder is found by listing that folder, once
 // for each valid slug named; the old <slug>.md listing is read only when a
 // slug is still unknown and the map has no .physa/product/ folder.
-func slugsAt(repo vcs.Repo, id string, named []string) (map[string]bool, error) {
+func slugsAt(ctx context.Context, repo vcs.Repo, id string, named []string) (map[string]bool, error) {
 	known := map[string]bool{}
 	var pending []string
 	for _, s := range named {
 		if !validSlug.MatchString(s) || known[s] {
 			continue
 		}
-		files, err := repo.Files(id, CapabilitiesDir+"/"+s)
+		files, err := repo.Files(ctx, id, CapabilitiesDir+"/"+s)
 		if err != nil {
 			return nil, fmt.Errorf("cannot list the map's capabilities at %s: %w", id, err)
 		}
@@ -246,14 +248,14 @@ func slugsAt(repo vcs.Repo, id string, named []string) (map[string]bool, error) 
 	if len(pending) == 0 {
 		return known, nil
 	}
-	product, err := repo.Files(id, productDir)
+	product, err := repo.Files(ctx, id, productDir)
 	if err != nil {
 		return nil, fmt.Errorf("cannot list the map's capabilities at %s: %w", id, err)
 	}
 	if len(product) > 0 {
 		return known, nil
 	}
-	old, err := repo.Files(id, CapabilitiesDir)
+	old, err := repo.Files(ctx, id, CapabilitiesDir)
 	if err != nil {
 		return nil, fmt.Errorf("cannot list the map's capabilities at %s: %w", id, err)
 	}

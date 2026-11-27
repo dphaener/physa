@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -280,7 +281,8 @@ const topExts = 10
 // shape lists the files init could read in dir: tracked, or untracked and not
 // ignored.
 func shape(dir string) (Repo, error) {
-	repo, err := git.Open(dir)
+	ctx := context.TODO()
+	repo, err := git.Open(ctx, dir)
 	if err != nil {
 		return Repo{}, err
 	}
@@ -288,7 +290,7 @@ func shape(dir string) (Repo, error) {
 	if !ok {
 		return Repo{}, nil
 	}
-	files, err := l.Listed()
+	files, err := l.Listed(ctx)
 	if err != nil {
 		return Repo{}, err
 	}

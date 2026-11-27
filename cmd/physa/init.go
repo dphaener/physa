@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/skillcli"
 	"github.com/dphaener/physa/internal/spend"
+	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
 )
 
@@ -25,13 +27,13 @@ func initCommand() *cobra.Command {
 			cache, _ := spend.Path() // no settings directory: prices are kept for the run only
 			return initrun.Run(f, args, command.Words(c), stdout, stderr, initrun.Env{
 				Store:      openStore,
-				Repo:       git.Open,
+				Repo:       openRepo,
 				Forge:      newForge,
 				PRExists:   prResolver,
 				Agent:      agentFor,
 				Now:        time.Now,
-				Writer:     git.OpenWriter,
-				Hooks:      git.OpenHooks,
+				Writer:     openWriter,
+				Hooks:      openHooks,
 				Stdin:      os.Stdin,
 				IsTerminal: func() bool { return output.IsTerminal(os.Stdin) },
 				Spend:      cache,
@@ -55,3 +57,11 @@ func skillNotice(name string) string {
 	}
 	return skillcli.Notice(a.Name(), home)
 }
+
+// openRepo, openWriter and openHooks open git's repo, writer and hooks at
+// dir, for the seams that take a directory alone.
+func openRepo(dir string) (vcs.Repo, error) { return git.Open(context.TODO(), dir) }
+
+func openWriter(dir string) (vcs.Writer, error) { return git.OpenWriter(context.TODO(), dir) }
+
+func openHooks(dir string) (vcs.Hooks, error) { return git.OpenHooks(context.TODO(), dir) }

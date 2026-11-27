@@ -82,7 +82,7 @@ func TestWalkPrintsTheFootprints(t *testing.T) {
 	if rec, ok, err := walk.Load(initrecord.Of(st)); !ok || err != nil || len(rec.Capabilities) != 2 {
 		t.Errorf("walk stored: %+v %v %v", rec, ok, err)
 	}
-	if spent, err := initrecord.Of(st).Spending(); err != nil || len(spent) == 0 || spent[len(spent)-1].Phase != "walk" {
+	if spent, err := initrecord.Of(st).Spending(context.Background()); err != nil || len(spent) == 0 || spent[len(spent)-1].Phase != "walk" {
 		t.Errorf("spending %v %v", spent, err)
 	}
 }
@@ -144,7 +144,9 @@ func TestWalkNeverReachesTheMap(t *testing.T) {
 	gitIn(t, dir, "commit", "-q", "-m", "feat: Add web", "--", "web/app.js")
 	a := &walkAgent{next: &areaAgent{next: newRoutedAgent()}}
 	env := fullEnv(t, &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}, a)
-	env.Store = func(string) (*store.Store, error) { return store.Open(filepath.Join(dir, ".git", "physa")) }
+	env.Store = func(string) (*store.Store, error) {
+		return store.Open(context.Background(), filepath.Join(dir, ".git", "physa"))
+	}
 	for _, args := range [][]string{{"--gather"}, {"--areas"}} {
 		if code, _, errOut := runInit(env, args...); code != 0 {
 			t.Fatalf("%v: %d %s", args, code, errOut)

@@ -141,7 +141,7 @@ func (s *Set) get(ctx context.Context, path string, register bool) (*state.State
 // later Get tries again.
 func (s *Set) start(sd string, e *entry) {
 	defer close(e.done)
-	st, err := store.Open(sd)
+	st, err := store.Open(context.TODO(), sd)
 	if err != nil {
 		e.err = fmt.Errorf("open its store: %w", err)
 		s.forget(sd, e)

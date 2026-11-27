@@ -24,7 +24,7 @@ import (
 // it printed, 1 when the breaker stopped the session, 2 on failure.
 func learnMap(dir string, o learnbranch.Flags, stdout, stderr io.Writer) int {
 	session := propose.Session{Agent: func() (adapter.Adapter, error) { return agentFor(o.Agent) }, Appetite: o.Appetite,
-		Progress: stderr, Check: propose.Options{OpenRepo: git.Open, PRExists: prResolver(dir)}}
+		Progress: stderr, Check: propose.Options{OpenRepo: openRepo, PRExists: prResolver(dir)}}
 	if !o.Signals {
 		session.Person = resolvePerson(dir, newForge(dir), stderr)
 	}
@@ -50,7 +50,7 @@ func learnMap(dir string, o learnbranch.Flags, stdout, stderr io.Writer) int {
 var resolvePerson = person.ForRepo
 
 func writeBranch(dir string, o learnbranch.Flags, s propose.Session) (learnbranch.Outcome, error) {
-	w, err := git.OpenWriter(dir)
+	w, err := git.OpenWriter(context.TODO(), dir)
 	if err != nil {
 		return learnbranch.Outcome{}, err
 	}
@@ -62,7 +62,7 @@ func writeBranch(dir string, o learnbranch.Flags, s propose.Session) (learnbranc
 
 // draftOnly drafts from the map and history in dir, or prints the signals.
 func draftOnly(dir string, o learnbranch.Flags, s propose.Session, stdout io.Writer) (propose.Report, error) {
-	repo, err := git.Open(dir)
+	repo, err := git.Open(context.TODO(), dir)
 	if err != nil {
 		return propose.Report{}, err
 	}
@@ -93,7 +93,7 @@ func sliceRecords(dir string) (recs []store.SliceRecord, reason string) {
 	s, err := openStore(dir)
 	if err == nil {
 		defer s.Close()
-		recs, err = s.SliceRecords()
+		recs, err = s.SliceRecords(context.TODO())
 	}
 	if err != nil {
 		return nil, err.Error()

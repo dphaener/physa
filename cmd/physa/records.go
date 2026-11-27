@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -16,15 +17,16 @@ var openStore = gitStore
 
 // gitStore opens the store that lives in the git directory of the repository at dir.
 func gitStore(dir string) (*store.Store, error) {
-	repo, err := git.Open(dir)
+	ctx := context.TODO()
+	repo, err := git.Open(ctx, dir)
 	if err != nil {
 		return nil, err
 	}
-	sd, err := repo.StoreDir()
+	sd, err := repo.StoreDir(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return store.Open(sd)
+	return store.Open(ctx, sd)
 }
 
 // withName names which extras a slice request asked for.
@@ -58,7 +60,7 @@ func recordSlice(dir string, req mapslice.Request, stderr io.Writer) {
 	} else {
 		rec.Capabilities, rec.With = req.Capabilities, withName(req)
 	}
-	err = s.PutSliceRecord(rec)
+	err = s.PutSliceRecord(context.TODO(), rec)
 	if err != nil {
 		fmt.Fprintf(stderr, "physa map slice: not recorded: %v\n", err)
 	}
@@ -73,7 +75,7 @@ func records(dir string, asJSON bool, stdout, stderr io.Writer) int {
 		return 2
 	}
 	defer s.Close()
-	recs, err := s.SliceRecords()
+	recs, err := s.SliceRecords(context.TODO())
 	if err != nil {
 		fmt.Fprintf(stderr, "physa map records: %v\n", err)
 		return 2

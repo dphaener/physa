@@ -1,6 +1,7 @@
 package newcodebase
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"github.com/dphaener/physa/internal/initbranch"
 	"github.com/dphaener/physa/internal/mapcheck"
 	"github.com/dphaener/physa/internal/store"
+	"github.com/dphaener/physa/internal/vcs"
 	"github.com/dphaener/physa/internal/vcs/git"
 )
 
@@ -204,7 +206,7 @@ func TestNewCodebaseWritesAValidProductFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w, err := git.OpenWriter(dir)
+	w, err := git.OpenWriter(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +223,7 @@ func TestNewCodebaseWritesAValidProductFolder(t *testing.T) {
 	}
 	tree := filepath.Join(t.TempDir(), "tree")
 	gitIn(t, dir, "worktree", "add", "-q", "--detach", tree, initbranch.Branch)
-	res, err := mapcheck.CheckWith(tree, mapcheck.Options{OpenRepo: git.Open})
+	res, err := mapcheck.CheckWith(tree, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil || len(res.Problems) > 0 || res.Capabilities != 0 {
 		t.Fatalf("check = %+v, %v", res, err)
 	}

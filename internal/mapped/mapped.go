@@ -5,6 +5,7 @@
 package mapped
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,7 +26,7 @@ func Refuse(open func(dir string) (vcs.Writer, error)) error {
 	if err != nil {
 		return err
 	}
-	if _, err := w.DefaultBranch(); err == nil {
+	if _, err := w.DefaultBranch(context.TODO()); err == nil {
 		return initbranch.HasMap(w)
 	}
 	for _, p := range mapfolder.Products {

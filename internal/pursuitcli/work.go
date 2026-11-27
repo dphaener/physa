@@ -1,6 +1,7 @@
 package pursuitcli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -107,18 +108,19 @@ func Current(wd, session string) (pursuit, change string, err error) {
 	if session == "" {
 		return "", "", nil
 	}
-	r, err := git.Open(wd)
+	ctx := context.TODO()
+	r, err := git.Open(ctx, wd)
 	if err != nil {
 		if errors.Is(err, vcs.ErrNotRepo) {
 			return "", "", nil
 		}
 		return "", "", err
 	}
-	dir, err := r.StoreDir()
+	dir, err := r.StoreDir(ctx)
 	if err != nil {
 		return "", "", err
 	}
-	db, err := store.OpenReadOnly(filepath.Join(dir, "physa.db"))
+	db, err := store.OpenReadOnly(ctx, filepath.Join(dir, "physa.db"))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", "", nil

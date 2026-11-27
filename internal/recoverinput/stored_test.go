@@ -1,6 +1,7 @@
 package recoverinput
 
 import (
+	"context"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -13,7 +14,7 @@ import (
 // placeStore holds one stored placement.
 type placeStore struct{ body []byte }
 
-func (s placeStore) Place() (initrecord.Place, bool, error) {
+func (s placeStore) Place(ctx context.Context) (initrecord.Place, bool, error) {
 	return initrecord.Place{Body: s.body}, s.body != nil, nil
 }
 

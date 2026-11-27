@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -13,7 +14,7 @@ import (
 // hook beside its own. It returns 0 when it did so or found it done, and
 // 2 when the repo cannot be opened or Install refuses, saying why.
 func hooks(dir string, stdout, stderr io.Writer) int {
-	h, err := git.OpenHooks(dir)
+	h, err := git.OpenHooks(context.TODO(), dir)
 	if err != nil {
 		return failed(stderr, "hooks", err)
 	}

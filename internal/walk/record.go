@@ -1,6 +1,7 @@
 package walk
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -58,8 +59,9 @@ type Rename struct {
 
 // Load reads the stored walk and decodes its body, false when none exists.
 func Load(st *initrecord.Store) (Record, bool, error) {
+	ctx := context.TODO()
 	var r Record
-	w, ok, err := st.Walk()
+	w, ok, err := st.Walk(ctx)
 	if err == nil && ok {
 		err = json.Unmarshal(w.Body, &r)
 	}

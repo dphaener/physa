@@ -59,9 +59,11 @@ type fakeStore struct {
 	put    []initrecord.Proposal
 }
 
-func (s *fakeStore) Gathered() (store.Gather, bool, error) { return s.gather, s.has, nil }
+func (s *fakeStore) Gathered(ctx context.Context) (store.Gather, bool, error) {
+	return s.gather, s.has, nil
+}
 
-func (s *fakeStore) PutProposal(p initrecord.Proposal) error {
+func (s *fakeStore) PutProposal(ctx context.Context, p initrecord.Proposal) error {
 	s.put = append(s.put, p)
 	return nil
 }

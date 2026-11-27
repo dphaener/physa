@@ -1,6 +1,7 @@
 package initrecord
 
 import (
+	"context"
 	"database/sql"
 	"time"
 )
@@ -18,29 +19,29 @@ type Walk struct {
 
 // PutWalk replaces the stored walk with w, and clears the placement and
 // consolidation made from the old one, in one transaction.
-func (s *Store) PutWalk(w Walk) error {
-	tx, err := s.DB().Begin()
+func (s *Store) PutWalk(ctx context.Context, w Walk) error {
+	tx, err := s.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM init_place`); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM init_place`); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM init_consolidate`); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM init_consolidate`); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`INSERT OR REPLACE INTO init_walk (id, areas_at, at, model, input, cached_input, output, body) VALUES (1, ?, ?, ?, ?, ?, ?, ?)`, ts(w.AreasAt), ts(w.At), w.Model, w.Input, w.CachedInput, w.Output, string(w.Body)); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO init_walk (id, areas_at, at, model, input, cached_input, output, body) VALUES (1, ?, ?, ?, ?, ?, ?, ?)`, ts(w.AreasAt), ts(w.At), w.Model, w.Input, w.CachedInput, w.Output, string(w.Body)); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
 // Walk returns the stored walk, false when there is none.
-func (s *Store) Walk() (Walk, bool, error) {
+func (s *Store) Walk(ctx context.Context) (Walk, bool, error) {
 	var w Walk
 	var areasAt, at string
-	err := s.DB().QueryRow(`SELECT areas_at, at, model, input, cached_input, output, body FROM init_walk WHERE id = 1`).Scan(&areasAt, &at, &w.Model, &w.Input, &w.CachedInput, &w.Output, &w.Body)
+	err := s.DB().QueryRowContext(ctx, `SELECT areas_at, at, model, input, cached_input, output, body FROM init_walk WHERE id = 1`).Scan(&areasAt, &at, &w.Model, &w.Input, &w.CachedInput, &w.Output, &w.Body)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			err = nil

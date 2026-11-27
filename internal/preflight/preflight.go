@@ -6,6 +6,7 @@
 package preflight
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"time"
@@ -48,13 +49,13 @@ func Stopped(run store.GatherRun) []string {
 
 // Gathered is the store as Stored reads it.
 type Gathered interface {
-	Gathered() (store.Gather, bool, error)
+	Gathered(ctx context.Context) (store.Gather, bool, error)
 }
 
 // Stored warns on w when st holds a gather the forge stopped short, as
 // Stopped says; no gather, or a complete one, says nothing.
 func Stored(w io.Writer, st Gathered) {
-	if g, ok, err := st.Gathered(); err == nil && ok {
+	if g, ok, err := st.Gathered(context.TODO()); err == nil && ok {
 		Warn(w, Stopped(g.Run))
 	}
 }

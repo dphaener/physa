@@ -63,7 +63,7 @@ func TestBetsBecomePursuits(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := apply(db, m.n, string(body)); err != nil {
+		if err := apply(t.Context(), db, m.n, string(body)); err != nil {
 			t.Fatalf("migration %s: %v", m.name, err)
 		}
 	}
@@ -82,7 +82,7 @@ func TestBetsBecomePursuits(t *testing.T) {
 			t.Fatalf("%s: %v", q, err)
 		}
 	}
-	if err := migrate(db); err != nil {
+	if err := migrate(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
 	var slug string
@@ -146,7 +146,7 @@ func TestMigrationFiveUpgradesVersionFourStore(t *testing.T) {
 	}
 	db.Close()
 
-	s, err := Open(dir)
+	s, err := Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestMigrationFiveUpgradesVersionFourStore(t *testing.T) {
 	if got, want := version(t, s), newestMigration(t); got != want {
 		t.Errorf("user_version = %d, want %d", got, want)
 	}
-	g, ok, err := s.Gathered()
+	g, ok, err := s.Gathered(t.Context())
 	if err != nil || !ok || g.Run.MaxPRs != 10 || g.Run.ForgeReason != "none" {
 		t.Errorf("gather after upgrade = %+v, %v, %v; want it intact", g.Run, ok, err)
 	}

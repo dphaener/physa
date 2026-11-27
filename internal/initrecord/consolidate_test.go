@@ -16,19 +16,19 @@ func sampleConsolidated() Consolidated {
 func TestConsolidatedRoundTripAndReplace(t *testing.T) {
 	s, _ := open(t)
 	want := sampleConsolidated()
-	if err := s.PutConsolidated(want); err != nil {
+	if err := s.PutConsolidated(t.Context(), want); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.Consolidated()
+	got, ok, err := s.Consolidated(t.Context())
 	if err != nil || !ok || !reflect.DeepEqual(got, want) {
 		t.Fatalf("Consolidated = %+v, %v, %v; want %+v", got, ok, err, want)
 	}
 	second := sampleConsolidated()
 	second.Body = []byte(`{"merged":[1]}`)
-	if err := s.PutConsolidated(second); err != nil {
+	if err := s.PutConsolidated(t.Context(), second); err != nil {
 		t.Fatal(err)
 	}
-	got, _, _ = s.Consolidated()
+	got, _, _ = s.Consolidated(t.Context())
 	if string(got.Body) != `{"merged":[1]}` {
 		t.Errorf("body = %s; want the second", got.Body)
 	}
@@ -40,27 +40,27 @@ func TestConsolidatedRoundTripAndReplace(t *testing.T) {
 
 func TestConsolidatedEmptyStoreHasNone(t *testing.T) {
 	s, _ := open(t)
-	if _, ok, err := s.Consolidated(); ok || err != nil {
+	if _, ok, err := s.Consolidated(t.Context()); ok || err != nil {
 		t.Fatalf("fresh Consolidated = %v, %v; want false, nil", ok, err)
 	}
 }
 
 func TestConsolidatedClearedByGatherAreasWalk(t *testing.T) {
 	cases := map[string]func(*Store) error{
-		"a new gather": func(s *Store) error { return s.PutGather(store.Gather{}) },
-		"new areas":    func(s *Store) error { return s.PutAreas(sampleAreas()) },
-		"a new walk":   func(s *Store) error { return s.PutWalk(sampleWalk()) },
+		"a new gather": func(s *Store) error { return s.PutGather(t.Context(), store.Gather{}) },
+		"new areas":    func(s *Store) error { return s.PutAreas(t.Context(), sampleAreas()) },
+		"a new walk":   func(s *Store) error { return s.PutWalk(t.Context(), sampleWalk()) },
 	}
 	for name, act := range cases {
 		t.Run(name, func(t *testing.T) {
 			s, _ := open(t)
-			if err := s.PutConsolidated(sampleConsolidated()); err != nil {
+			if err := s.PutConsolidated(t.Context(), sampleConsolidated()); err != nil {
 				t.Fatal(err)
 			}
 			if err := act(s); err != nil {
 				t.Fatal(err)
 			}
-			if _, ok, err := s.Consolidated(); ok || err != nil {
+			if _, ok, err := s.Consolidated(t.Context()); ok || err != nil {
 				t.Errorf("Consolidated after %s = %v, %v; want false, nil", name, ok, err)
 			}
 		})
@@ -69,13 +69,13 @@ func TestConsolidatedClearedByGatherAreasWalk(t *testing.T) {
 
 func TestPutRecoveredKeepsConsolidated(t *testing.T) {
 	s, _ := open(t)
-	if err := s.PutConsolidated(sampleConsolidated()); err != nil {
+	if err := s.PutConsolidated(t.Context(), sampleConsolidated()); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PutRecovered([]Recovered{sampleRecovered("a")}); err != nil {
+	if err := s.PutRecovered(t.Context(), []Recovered{sampleRecovered("a")}); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.Consolidated(); !ok || err != nil {
+	if _, ok, err := s.Consolidated(t.Context()); !ok || err != nil {
 		t.Errorf("Consolidated after recovery = %v, %v; want kept", ok, err)
 	}
 }

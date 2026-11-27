@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -29,7 +30,7 @@ func newRepo(t *testing.T) (vcs.Repo, string) {
 	t.Helper()
 	dir := t.TempDir()
 	run(t, dir, "init", "-q", "-b", "main")
-	r, err := Open(dir)
+	r, err := Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +44,7 @@ func commit(t *testing.T, dir, message string) string {
 }
 
 func TestOpenNotRepo(t *testing.T) {
-	_, err := Open(t.TempDir())
+	_, err := Open(t.Context(), t.TempDir())
 	if !errors.Is(err, vcs.ErrNotRepo) {
 		t.Fatalf("err = %v, want ErrNotRepo", err)
 	}
@@ -53,7 +54,7 @@ func TestChanges(t *testing.T) {
 	r, dir := newRepo(t)
 	first := commit(t, dir, "feat: First\n\nbody one\n\nCapability: map")
 	second := commit(t, dir, "fix: Second")
-	got, err := r.Changes("HEAD")
+	got, err := r.Changes(t.Context(), "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +67,7 @@ func TestChanges(t *testing.T) {
 	if !strings.HasPrefix(first, got[1].Short) || got[1].Short == "" {
 		t.Errorf("short %q is not a prefix of %q", got[1].Short, first)
 	}
-	one, err := r.Changes(first + ".." + second)
+	one, err := r.Changes(t.Context(), first+".."+second)
 	if err != nil || len(one) != 1 || one[0].ID != second {
 		t.Errorf("range = %+v, %v", one, err)
 	}
@@ -80,7 +81,7 @@ func TestChangesSkipsMerges(t *testing.T) {
 	run(t, dir, "checkout", "-q", "main")
 	commit(t, dir, "main work")
 	run(t, dir, "merge", "-q", "--no-ff", "-m", "merge side", "side")
-	got, err := r.Changes("HEAD")
+	got, err := r.Changes(t.Context(), "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +98,7 @@ func TestChangesSkipsMerges(t *testing.T) {
 func TestChangesBadRange(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "one")
-	_, err := r.Changes("nope..HEAD")
+	_, err := r.Changes(t.Context(), "nope..HEAD")
 	if err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Fatalf("err = %v, want git's own message naming the range", err)
 	}
@@ -106,10 +107,10 @@ func TestChangesBadRange(t *testing.T) {
 func TestHasChange(t *testing.T) {
 	r, dir := newRepo(t)
 	id := commit(t, dir, "one")
-	if !r.HasChange(id) || !r.HasChange(id[:8]) {
+	if !r.HasChange(t.Context(), id) || !r.HasChange(t.Context(), id[:8]) {
 		t.Error("full and abbreviated id should name the change")
 	}
-	if r.HasChange("") || r.HasChange("0123456789abcdef0123456789abcdef01234567") || r.HasChange("nope") {
+	if r.HasChange(t.Context(), "") || r.HasChange(t.Context(), "0123456789abcdef0123456789abcdef01234567") || r.HasChange(t.Context(), "nope") {
 		t.Error("empty or unknown id should not name a change")
 	}
 }
@@ -118,16 +119,16 @@ func TestPartial(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "one")
 	commit(t, dir, "two")
-	if r.Partial() {
+	if r.Partial(t.Context()) {
 		t.Error("a full repo is not partial")
 	}
 	clone := filepath.Join(t.TempDir(), "clone")
 	run(t, dir, "clone", "-q", "--depth", "1", "file://"+dir, clone)
-	c, err := Open(clone)
+	c, err := Open(t.Context(), clone)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.Partial() {
+	if !c.Partial(t.Context()) {
 		t.Error("a shallow clone is partial")
 	}
 }
@@ -135,7 +136,7 @@ func TestPartial(t *testing.T) {
 func TestStoreDir(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "one")
-	got, err := r.StoreDir()
+	got, err := r.StoreDir(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,11 +147,11 @@ func TestStoreDir(t *testing.T) {
 	}
 	wt := filepath.Join(t.TempDir(), "wt")
 	run(t, dir, "worktree", "add", "-q", "-b", "other", wt)
-	w, err := Open(wt)
+	w, err := Open(t.Context(), wt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wgot, err := w.StoreDir()
+	wgot, err := w.StoreDir(t.Context())
 	if err != nil || wgot != got {
 		t.Errorf("worktree StoreDir = %q, %v; want %q", wgot, err, got)
 	}
@@ -159,7 +160,7 @@ func TestStoreDir(t *testing.T) {
 func TestFiles(t *testing.T) {
 	r, dir := newRepo(t)
 	before := commit(t, dir, "empty")
-	if got, err := r.Files(before, "d"); err != nil || len(got) != 0 {
+	if got, err := r.Files(t.Context(), before, "d"); err != nil || len(got) != 0 {
 		t.Fatalf("absent dir: %v, %v", got, err)
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "d", "sub"), 0o755); err != nil {
@@ -172,17 +173,17 @@ func TestFiles(t *testing.T) {
 	}
 	run(t, dir, "add", ".")
 	after := commit(t, dir, "add")
-	got, err := r.Files(after, "d")
+	got, err := r.Files(t.Context(), after, "d")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := []string{"d/a.md"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Files = %v, want %v", got, want)
 	}
-	if got, _ := r.Files(before, "d"); len(got) != 0 {
+	if got, _ := r.Files(t.Context(), before, "d"); len(got) != 0 {
 		t.Errorf("before the change: %v", got)
 	}
-	if _, err := r.Files("nope", "d"); err == nil {
+	if _, err := r.Files(t.Context(), "nope", "d"); err == nil {
 		t.Error("unknown change should error")
 	}
 }
@@ -210,7 +211,7 @@ func TestListed(t *testing.T) {
 	if !ok {
 		t.Fatal("git repo should implement vcs.Lister")
 	}
-	got, err := lister.Listed()
+	got, err := lister.Listed(t.Context())
 	want := []string{".gitignore", "sub/deep.md", "tracked.md", "untracked.md"}
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("Listed = %v, %v; want %v", got, err, want)
@@ -224,11 +225,11 @@ func TestListed(t *testing.T) {
 		t.Errorf("the ignored file should exist on disk: %v", err)
 	}
 	sub := filepath.Join(dir, "sub")
-	fromSub, err := Open(sub)
+	fromSub, err := Open(t.Context(), sub)
 	if err != nil {
 		t.Fatal(err)
 	}
-	gotSub, err := fromSub.(vcs.Lister).Listed()
+	gotSub, err := fromSub.(vcs.Lister).Listed(t.Context())
 	if err != nil || !reflect.DeepEqual(gotSub, want) {
 		t.Errorf("Listed from a subdirectory = %v, %v; want the root's %v", gotSub, err, want)
 	}
@@ -273,15 +274,15 @@ func TestTracked(t *testing.T) {
 		{Path: "main.go"},
 		{Path: "third_party/lib/x.go", Vendored: true},
 	}
-	got, err := tracker.Tracked()
+	got, err := tracker.Tracked(t.Context())
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("Tracked = %v, %v; want %v", got, err, want)
 	}
-	fromSub, err := Open(filepath.Join(dir, "gen"))
+	fromSub, err := Open(t.Context(), filepath.Join(dir, "gen"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	gotSub, err := fromSub.(vcs.Tracker).Tracked()
+	gotSub, err := fromSub.(vcs.Tracker).Tracked(t.Context())
 	if err != nil || !reflect.DeepEqual(gotSub, want) {
 		t.Errorf("Tracked from a subdirectory = %v, %v; want the root's %v", gotSub, err, want)
 	}
@@ -289,7 +290,7 @@ func TestTracked(t *testing.T) {
 
 func TestTrackedEmpty(t *testing.T) {
 	r, _ := newRepo(t)
-	got, err := r.(vcs.Tracker).Tracked()
+	got, err := r.(vcs.Tracker).Tracked(t.Context())
 	if err != nil || len(got) != 0 {
 		t.Fatalf("Tracked = %v, %v; want none", got, err)
 	}
@@ -297,7 +298,7 @@ func TestTrackedEmpty(t *testing.T) {
 
 func TestTrackedNotRepo(t *testing.T) {
 	r := &repo{dir: t.TempDir()}
-	got, err := r.Tracked()
+	got, err := r.Tracked(t.Context())
 	t.Logf("Tracked in a folder that is no repo: %v", err)
 	if err == nil || got != nil || !strings.Contains(err.Error(), "not a git repository") {
 		t.Fatalf("Tracked = %v, %v; want an error naming git's message", got, err)
@@ -308,7 +309,7 @@ func TestChangeTime(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "one")
 	commit(t, dir, "two")
-	got, err := r.Changes("HEAD")
+	got, err := r.Changes(t.Context(), "HEAD")
 	if err != nil || len(got) != 2 {
 		t.Fatalf("%v, %v", got, err)
 	}
@@ -325,14 +326,14 @@ func TestLatest(t *testing.T) {
 	commit(t, dir, "one")
 	commit(t, dir, "two")
 	three := commit(t, dir, "three")
-	got, err := r.Latest("HEAD", 2)
+	got, err := r.Latest(t.Context(), "HEAD", 2)
 	if err != nil || len(got) != 2 || got[0].ID != three || got[1].Subject != "two" {
 		t.Fatalf("Latest(2) = %+v, %v", got, err)
 	}
 	if got[0].Time.IsZero() {
 		t.Error("time not set")
 	}
-	all, err := r.Latest("HEAD", 10)
+	all, err := r.Latest(t.Context(), "HEAD", 10)
 	if err != nil || len(all) != 3 {
 		t.Errorf("Latest(10) = %d changes, %v; want all 3", len(all), err)
 	}
@@ -341,7 +342,7 @@ func TestLatest(t *testing.T) {
 func TestLatestBadRef(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "one")
-	_, err := r.Latest("nope", 5)
+	_, err := r.Latest(t.Context(), "nope", 5)
 	if err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Fatalf("err = %v, want git's own message naming the ref", err)
 	}
@@ -355,7 +356,7 @@ func TestReverts(t *testing.T) {
 	run(t, dir, "add", ".")
 	target := commit(t, dir, "feat: Thing")
 	run(t, dir, "revert", "--no-edit", "HEAD")
-	got, err := r.Latest("HEAD", 1)
+	got, err := r.Latest(t.Context(), "HEAD", 1)
 	if err != nil || len(got) != 1 {
 		t.Fatal(got, err)
 	}
@@ -363,7 +364,7 @@ func TestReverts(t *testing.T) {
 		t.Errorf("Reverts = %q, %v; want %q", id, ok, target)
 	}
 	run(t, dir, "revert", "--no-edit", "HEAD")
-	again, _ := r.Latest("HEAD", 1)
+	again, _ := r.Latest(t.Context(), "HEAD", 1)
 	if id, ok := r.Reverts(again[0]); !ok || id != got[0].ID {
 		t.Errorf("revert of a revert = %q, %v; want %q", id, ok, got[0].ID)
 	}
@@ -393,21 +394,21 @@ func TestRevertsMessages(t *testing.T) {
 func TestDefaultBranch(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "one")
-	if got, err := r.DefaultBranch(); err != nil || got != "main" {
+	if got, err := r.DefaultBranch(t.Context()); err != nil || got != "main" {
 		t.Errorf("no remote: %q, %v; want main", got, err)
 	}
 	clone := filepath.Join(t.TempDir(), "clone")
 	run(t, dir, "clone", "-q", dir, clone)
-	c, err := Open(clone)
+	c, err := Open(t.Context(), clone)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := c.DefaultBranch(); err != nil || got != "origin/main" {
+	if got, err := c.DefaultBranch(t.Context()); err != nil || got != "origin/main" {
 		t.Errorf("clone: %q, %v; want origin/main", got, err)
 	}
 	// Without origin/HEAD the remote's main still wins.
 	run(t, clone, "remote", "set-head", "origin", "--delete")
-	if got, err := c.DefaultBranch(); err != nil || got != "origin/main" {
+	if got, err := c.DefaultBranch(t.Context()); err != nil || got != "origin/main" {
 		t.Errorf("clone without HEAD: %q, %v; want origin/main", got, err)
 	}
 }
@@ -416,7 +417,7 @@ func TestDefaultBranchMissing(t *testing.T) {
 	r, dir := newRepo(t)
 	run(t, dir, "checkout", "-q", "-b", "trunk")
 	commit(t, dir, "one")
-	got, err := r.DefaultBranch()
+	got, err := r.DefaultBranch(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "default branch cannot be found") {
 		t.Fatalf("DefaultBranch = %q, %v; want an error", got, err)
 	}
@@ -425,23 +426,23 @@ func TestDefaultBranchMissing(t *testing.T) {
 func TestBranch(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "one")
-	if got := r.Branch("physa/x"); len(got) != 0 {
+	if got := r.Branch(t.Context(), "physa/x"); len(got) != 0 {
 		t.Errorf("neither: %v", got)
 	}
 	remote := t.TempDir()
 	run(t, remote, "init", "-q", "--bare", "-b", "main")
 	run(t, dir, "remote", "add", "origin", remote)
 	run(t, dir, "branch", "physa/x")
-	if got := r.Branch("physa/x"); !reflect.DeepEqual(got, []string{"physa/x"}) {
+	if got := r.Branch(t.Context(), "physa/x"); !reflect.DeepEqual(got, []string{"physa/x"}) {
 		t.Errorf("local only: %v", got)
 	}
 	run(t, dir, "push", "-q", "origin", "physa/x")
 	run(t, dir, "fetch", "-q", "origin")
-	if got := r.Branch("physa/x"); !reflect.DeepEqual(got, []string{"physa/x", "origin/physa/x"}) {
+	if got := r.Branch(t.Context(), "physa/x"); !reflect.DeepEqual(got, []string{"physa/x", "origin/physa/x"}) {
 		t.Errorf("both: %v", got)
 	}
 	run(t, dir, "branch", "-q", "-D", "physa/x")
-	if got := r.Branch("physa/x"); !reflect.DeepEqual(got, []string{"origin/physa/x"}) {
+	if got := r.Branch(t.Context(), "physa/x"); !reflect.DeepEqual(got, []string{"origin/physa/x"}) {
 		t.Errorf("origin only: %v", got)
 	}
 }
@@ -454,7 +455,7 @@ func TestChangeAuthor(t *testing.T) {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("commit: %v\n%s", err, out)
 		}
-		got, err := r.Latest("HEAD", 1)
+		got, err := r.Latest(t.Context(), "HEAD", 1)
 		if err != nil || len(got) != 1 {
 			t.Fatalf("Latest = %+v, %v", got, err)
 		}
@@ -478,7 +479,7 @@ func TestSince(t *testing.T) {
 	commitAt(t, dir, "old", "2024-01-01T00:00:00Z")
 	newer := commitAt(t, dir, "new", "2024-03-01T00:00:00Z")
 	cut := time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)
-	got, err := r.Since("HEAD", cut)
+	got, err := r.Since(t.Context(), "HEAD", cut)
 	if err != nil || len(got) != 1 || got[0].ID != newer {
 		t.Fatalf("since = %+v, %v", got, err)
 	}
@@ -488,7 +489,7 @@ func TestSinceZeroTime(t *testing.T) {
 	r, dir := newRepo(t)
 	first := commitAt(t, dir, "old", "2001-01-01T00:00:00Z")
 	second := commitAt(t, dir, "new", "2024-03-01T00:00:00Z")
-	got, err := r.Since("HEAD", time.Time{})
+	got, err := r.Since(t.Context(), "HEAD", time.Time{})
 	if err != nil || len(got) != 2 || got[0].ID != second || got[1].ID != first {
 		t.Fatalf("since = %+v, %v", got, err)
 	}
@@ -497,7 +498,7 @@ func TestSinceZeroTime(t *testing.T) {
 func TestSinceBadRef(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "one")
-	if got, err := r.Since("nope", time.Time{}); err == nil {
+	if got, err := r.Since(t.Context(), "nope", time.Time{}); err == nil {
 		t.Fatalf("since = %+v, want an error", got)
 	}
 }
@@ -509,7 +510,7 @@ func TestAlteredRootCommit(t *testing.T) {
 	}
 	run(t, dir, "add", ".")
 	id := commit(t, dir, "root")
-	got, err := r.Altered(id)
+	got, err := r.Altered(t.Context(), id)
 	if err != nil || !reflect.DeepEqual(got, []string{"a.txt"}) {
 		t.Fatalf("altered = %v, %v", got, err)
 	}
@@ -529,11 +530,11 @@ func TestAlteredSubdirectories(t *testing.T) {
 	}
 	run(t, dir, "add", ".")
 	id := commit(t, dir, "two files")
-	got, err := r.Altered(id)
+	got, err := r.Altered(t.Context(), id)
 	if err != nil || !reflect.DeepEqual(got, []string{"a/c.go", "z/deep/b.go"}) {
 		t.Fatalf("altered = %v, %v", got, err)
 	}
-	empty, err := r.Altered(commit(t, dir, "empty"))
+	empty, err := r.Altered(t.Context(), commit(t, dir, "empty"))
 	if err != nil || empty == nil || len(empty) != 0 {
 		t.Fatalf("empty commit altered = %#v, %v", empty, err)
 	}
@@ -542,7 +543,7 @@ func TestAlteredSubdirectories(t *testing.T) {
 func TestAlteredBadID(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "one")
-	if got, err := r.Altered("deadbeefdeadbeef"); err == nil {
+	if got, err := r.Altered(t.Context(), "deadbeefdeadbeef"); err == nil {
 		t.Fatalf("altered = %v, want an error", got)
 	}
 }
@@ -551,14 +552,14 @@ func TestEmail(t *testing.T) {
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	_, dir := newRepo(t)
-	got, err := Email(dir)
+	got, err := Email(t.Context(), dir)
 	if err != nil || got != "" {
 		t.Errorf("unset: %q, %v", got, err)
 	}
 	if out, err := exec.Command("git", "-C", dir, "config", "--local", "user.email", "Darin.H@example.com").CombinedOutput(); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	if got, err = Email(dir); err != nil || got != "Darin.H@example.com" {
+	if got, err = Email(t.Context(), dir); err != nil || got != "Darin.H@example.com" {
 		t.Errorf("set: %q, %v", got, err)
 	}
 }
@@ -609,7 +610,7 @@ func mergeHistory(t *testing.T) (vcs.Repo, string, map[int]string) {
 
 func TestMergesFollowTheFirstParent(t *testing.T) {
 	r, _, prs := mergeHistory(t)
-	got, err := r.(vcs.Merges).Merges("main", time.Time{})
+	got, err := r.(vcs.Merges).Merges(t.Context(), "main", time.Time{})
 	var subjects []string
 	for _, c := range got {
 		subjects = append(subjects, c.Subject)
@@ -618,7 +619,7 @@ func TestMergesFollowTheFirstParent(t *testing.T) {
 		t.Fatalf("merges %v, %v", subjects, err)
 	}
 	for n, files := range map[int][]string{3: {"notes/model.rb", "notes/view.rb"}, 4: {"tags/tag.rb"}} {
-		if got, err := r.Altered(prs[n]); err != nil || !reflect.DeepEqual(got, files) {
+		if got, err := r.Altered(t.Context(), prs[n]); err != nil || !reflect.DeepEqual(got, files) {
 			t.Errorf("#%d's merge altered %v, %v; want %v", n, got, err, files)
 		}
 	}
@@ -626,7 +627,7 @@ func TestMergesFollowTheFirstParent(t *testing.T) {
 
 func TestSinceWithPRMergesAddsOnlyPRMerges(t *testing.T) {
 	r, _, prs := mergeHistory(t)
-	got, err := vcs.SinceWithPRMerges(r, "main", time.Time{})
+	got, err := vcs.SinceWithPRMerges(t.Context(), r, "main", time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -641,5 +642,35 @@ func TestSinceWithPRMergesAddsOnlyPRMerges(t *testing.T) {
 		"Add CHANGELOG.md", "Add notes/view.rb", "Add notes/model.rb", "Add README.md"}
 	if !reflect.DeepEqual(subjects, want) || got[3].ID != prs[3] {
 		t.Errorf("got %v\nwant %v", subjects, want)
+	}
+}
+
+// cancelled returns a context that is already cancelled.
+func cancelled(t *testing.T) context.Context {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	return ctx
+}
+
+func TestChangesCancel(t *testing.T) {
+	r, dir := newRepo(t)
+	commit(t, dir, "feat: First")
+	if _, err := r.Changes(cancelled(t), "HEAD"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
+func TestDefaultBranchCancel(t *testing.T) {
+	r, dir := newRepo(t)
+	commit(t, dir, "feat: First")
+	if _, err := r.DefaultBranch(cancelled(t)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
+func TestOpenCancel(t *testing.T) {
+	_, err := Open(cancelled(t), t.TempDir())
+	if !errors.Is(err, context.Canceled) || errors.Is(err, vcs.ErrNotRepo) {
+		t.Fatalf("err = %v, want context.Canceled and not ErrNotRepo", err)
 	}
 }

@@ -1,6 +1,7 @@
 package evidence
 
 import (
+	"context"
 	"time"
 
 	"github.com/dphaener/physa/internal/forge"
@@ -16,7 +17,7 @@ const forgeMax = 500
 // observeForge returns the lead time and CI facts of the PRs merged after
 // since, and the newest merged-at seen (since itself when none is newer).
 // When the forge fails it returns the error and since unmoved.
-func observeForge(repo Repo, f Merged, since, now time.Time) ([]Fact, time.Time, error) {
+func observeForge(ctx context.Context, repo Repo, f Merged, since, now time.Time) ([]Fact, time.Time, error) {
 	from := since
 	if from.IsZero() {
 		from = now.Add(-window)
@@ -36,8 +37,8 @@ func observeForge(repo Repo, f Merged, since, now time.Time) ([]Fact, time.Time,
 			newest = pr.MergedAt
 		}
 		base := Fact{Commit: pr.MergeCommit, PR: pr.Number, At: pr.MergedAt, Source: SourceForge}
-		if id, ok := repo.Resolve(pr.MergeCommit); ok && pr.MergeCommit != "" {
-			if c, err := repo.Latest(id, 1); err == nil && len(c) == 1 {
+		if id, ok := repo.Resolve(ctx, pr.MergeCommit); ok && pr.MergeCommit != "" {
+			if c, err := repo.Latest(ctx, id, 1); err == nil && len(c) == 1 {
 				base = fromMessage(base, c[0].Message)
 			}
 		}

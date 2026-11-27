@@ -1,6 +1,7 @@
 package initbranch
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/dphaener/physa/internal/spend"
@@ -98,7 +99,7 @@ func newFixture(t *testing.T, agents *string) *fixture {
 
 func (f *fixture) writer() vcs.Writer {
 	f.t.Helper()
-	w, err := git.OpenWriter(f.dir)
+	w, err := git.OpenWriter(context.Background(), f.dir)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -178,9 +179,9 @@ type racingWriter struct {
 	race func()
 }
 
-func (r *racingWriter) Push(branch, id, expect string) error {
+func (r *racingWriter) Push(ctx context.Context, branch, id, expect string) error {
 	r.race()
-	return r.Writer.Push(branch, id, expect)
+	return r.Writer.Push(ctx, branch, id, expect)
 }
 
 const deliveryFile = "# Delivery\n\n## Rules\n\n### Sends are queued\n`queued-sends` · from docs/vision.md\n" +
@@ -289,7 +290,7 @@ func TestBranchTreePassesTheMapCheck(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "check")
 	gitIn(t, f.dir, "worktree", "add", "-q", "--detach", dir, Branch)
 	defer gitIn(t, f.dir, "worktree", "remove", "--force", dir)
-	res, err := mapcheck.CheckWith(dir, mapcheck.Options{OpenRepo: git.Open})
+	res, err := mapcheck.CheckWith(dir, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil || len(res.Problems) > 0 || res.Capabilities != 2 {
 		t.Fatalf("check = %+v, %v", res, err)
 	}
@@ -567,7 +568,7 @@ func checkBranch(t *testing.T, f *fixture, capabilities int) {
 	dir := filepath.Join(t.TempDir(), "check")
 	gitIn(t, f.dir, "worktree", "add", "-q", "--detach", dir, Branch)
 	defer gitIn(t, f.dir, "worktree", "remove", "--force", dir)
-	res, err := mapcheck.CheckWith(dir, mapcheck.Options{OpenRepo: git.Open})
+	res, err := mapcheck.CheckWith(dir, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil || len(res.Problems) > 0 || res.Capabilities != capabilities {
 		t.Fatalf("check = %+v, %v", res, err)
 	}
@@ -664,7 +665,7 @@ func TestProductRulesAreWrittenAndPassTheCheck(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "check")
 	gitIn(t, f.dir, "worktree", "add", "-q", "--detach", dir, Branch)
 	defer gitIn(t, f.dir, "worktree", "remove", "--force", dir)
-	res, err := mapcheck.CheckWith(dir, mapcheck.Options{OpenRepo: git.Open})
+	res, err := mapcheck.CheckWith(dir, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil || len(res.Problems) > 0 {
 		t.Fatalf("check = %+v, %v", res, err)
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 
@@ -148,7 +149,7 @@ func changes(dir string, o changesOptions, stdout, stderr io.Writer) int {
 		return failed(stderr, "changes", err)
 	}
 	noteProblems(stderr, "changes", len(problems))
-	repo, err := git.Open(dir)
+	repo, err := git.Open(context.TODO(), dir)
 	if err != nil {
 		return failed(stderr, "changes", err)
 	}

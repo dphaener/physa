@@ -1,6 +1,7 @@
 package evidence
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -30,7 +31,7 @@ func newRepo(t *testing.T) (vcs.Repo, string) {
 	t.Helper()
 	dir := t.TempDir()
 	run(t, dir, "init", "-q", "-b", "main")
-	r, err := git.Open(dir)
+	r, err := git.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}

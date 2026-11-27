@@ -396,7 +396,7 @@ func repoStatus(t *testing.T, c *client.Client) []string {
 // no engine has the store open.
 func storeCount(t *testing.T, repo, query string, args ...any) int {
 	t.Helper()
-	st, err := store.Open(filepath.Join(repo, ".git", "physa"))
+	st, err := store.Open(context.Background(), filepath.Join(repo, ".git", "physa"))
 	if err != nil {
 		t.Fatal(err)
 	}

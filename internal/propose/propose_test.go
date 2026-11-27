@@ -2,6 +2,7 @@ package propose
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -105,7 +106,7 @@ func newFixture(t *testing.T) *fixture {
 }
 
 func (f *fixture) opts() Options {
-	return Options{OpenRepo: git.Open}
+	return Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }}
 }
 
 // snapshot reads every file under dir.
@@ -332,7 +333,7 @@ func TestResolversAreAskedOnce(t *testing.T) {
 		"### Bills are exact\n`exact-bills` · #12\nBills are exact.\nBecause: trust.\n")
 	var prs, opens int
 	o := Options{
-		OpenRepo: func(root string) (vcs.Repo, error) { opens++; return git.Open(root) },
+		OpenRepo: func(root string) (vcs.Repo, error) { opens++; return git.Open(context.Background(), root) },
 		PRExists: func(n int) (bool, error) { prs++; return n == 12, nil },
 	}
 	ps := []draft.Proposal{f.rule("a-rule", f.c2), f.rule("b-rule", f.c2), f.rule("c-rule", f.c2)}
@@ -350,7 +351,7 @@ func TestResolverErrorIsTheSameEveryTime(t *testing.T) {
 	folder(t, f.root, ".physa/capabilities/billing", "---\npromise: Billed.\n---\n# Billing\n\n## Rules\n\n"+
 		"### Bills are exact\n`exact-bills` · #12\nBills are exact.\nBecause: trust.\n")
 	calls := 0
-	o := Options{OpenRepo: git.Open, PRExists: func(int) (bool, error) { calls++; return false, errors.New("gh is not installed") }}
+	o := Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }, PRExists: func(int) (bool, error) { calls++; return false, errors.New("gh is not installed") }}
 	kept, _ := Check(f.root, f.batch, []draft.Proposal{f.rule("a-rule", f.c2)}, o)
 	if len(kept) != 1 || calls != 1 {
 		t.Errorf("kept %d, resolver called %d times", len(kept), calls)
@@ -501,7 +502,7 @@ func TestApplyAllLandsEachInOrder(t *testing.T) {
 		strings.Contains(text, "promise: "+deliveryPromise+"\n") {
 		t.Errorf("the promise was not replaced in place:\n%s", text)
 	}
-	res, err := mapcheck.CheckWith(f.root, mapcheck.Options{OpenRepo: git.Open})
+	res, err := mapcheck.CheckWith(f.root, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil || len(res.Problems) != 0 {
 		t.Errorf("map check: %v %v", err, res.Problems)
 	}
@@ -559,7 +560,7 @@ func read(t *testing.T, root, rel string) string {
 // checked fails t unless the map under root passes the map check.
 func checked(t *testing.T, root string) {
 	t.Helper()
-	res, err := mapcheck.CheckWith(root, mapcheck.Options{OpenRepo: git.Open})
+	res, err := mapcheck.CheckWith(root, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil || len(res.Problems) != 0 {
 		t.Errorf("map check: %v %v", err, res.Problems)
 	}

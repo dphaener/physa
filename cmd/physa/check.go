@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -53,11 +54,12 @@ func checkCommand() *cobra.Command {
 func checkBare(dir string, o changesOptions, stdout, stderr io.Writer) int {
 	const name = "physa check"
 	if !o.given {
-		repo, err := git.Open(dir)
+		ctx := context.TODO()
+		repo, err := git.Open(ctx, dir)
 		if err != nil {
 			return checkMap(dir, name, stdout, stderr)
 		}
-		if _, err := repo.Changes(o.rng); err != nil {
+		if _, err := repo.Changes(ctx, o.rng); err != nil {
 			return checkMap(dir, name, stdout, stderr)
 		}
 	}
@@ -74,7 +76,7 @@ func checkBare(dir string, o changesOptions, stdout, stderr io.Writer) int {
 // checkMap reports the map in dir: 0 when it is sound, 1 with problems, 2 when
 // it cannot be read. Its messages start with name.
 func checkMap(dir, name string, stdout, stderr io.Writer) int {
-	res, err := mapcheck.CheckWith(dir, mapcheck.Options{PRExists: prResolver(dir), OpenRepo: git.Open})
+	res, err := mapcheck.CheckWith(dir, mapcheck.Options{PRExists: prResolver(dir), OpenRepo: openRepo})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 2

@@ -64,6 +64,7 @@ func TestErrorClasses(t *testing.T) {
 		{"auth login", &Error{ExitCode: 1, Stderr: "run: gh auth login"}, forge.ErrUnauthenticated, "gh is not authenticated"},
 		{"401", &Error{ExitCode: 1, Stderr: "HTTP 401: Bad credentials"}, forge.ErrUnauthenticated, "gh is not authenticated"},
 		{"no remote", &Error{ExitCode: 1, Stderr: "none of the git remotes configured for this repository point to a known GitHub host"}, forge.ErrUnavailable, "gh finds no GitHub remote"},
+		{"no remotes", &Error{ExitCode: 1, Stderr: "no git remotes found"}, forge.ErrUnavailable, "gh finds no GitHub remote"},
 		{"not git", &Error{ExitCode: 1, Stderr: "fatal: not a git repository (or any of the parent directories): .git"}, forge.ErrUnavailable, "gh finds no GitHub remote"},
 		{"404", &Error{ExitCode: 1, Stderr: "HTTP 404"}, forge.ErrNotFound, "not found on GitHub"},
 	}

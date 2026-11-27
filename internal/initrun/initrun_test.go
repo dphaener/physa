@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -473,7 +472,7 @@ func TestStoredMapGivesOneSessionPerShareAndTheMerge(t *testing.T) {
 type downForge struct{ mergedFake }
 
 func (downForge) MergedPRs(time.Time, int) ([]forge.PR, bool, error) {
-	return nil, false, errors.New("gh is not logged in")
+	return nil, false, &forge.Error{Class: forge.ErrUnauthenticated, Reason: "gh is not logged in"}
 }
 
 // TestGatherWarnsWhenThePRsAreMissing checks that a gather the forge gave

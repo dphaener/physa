@@ -170,3 +170,82 @@ func TestPutGatherFailureRollsBack(t *testing.T) {
 		t.Errorf("earlier gather changed: %+v", got)
 	}
 }
+
+func TestGatherStoppedRoundTrip(t *testing.T) {
+	s, _ := open(t)
+	want := sampleGather()
+	want.Run.Stopped = true
+	want.Run.Reached = time.Date(2026, 5, 2, 8, 30, 0, 0, time.UTC)
+	want.Run.StopReason = "rate limit reached, resets in 40m"
+	if err := s.PutGather(want); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.Gathered()
+	if err != nil || !ok {
+		t.Fatalf("Gathered = %v, %v", ok, err)
+	}
+	r := got.Run
+	if !r.Stopped || !r.Reached.Equal(want.Run.Reached) || r.StopReason != want.Run.StopReason {
+		t.Errorf("run = %+v; want the mark, date and reason back", r)
+	}
+}
+
+func TestGatherCompleteReadsNotStopped(t *testing.T) {
+	s, _ := open(t)
+	if err := s.PutGather(sampleGather()); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := s.Gathered()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := got.Run; r.Stopped || !r.Reached.IsZero() || r.StopReason != "" {
+		t.Errorf("run = %+v; want not stopped, zero Reached, empty reason", r)
+	}
+}
+
+func TestGatherNotStoppedBeforeMigrationFifteen(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, "physa.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms, err := migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range ms {
+		if m.n > 14 {
+			break
+		}
+		body, err := migrationFiles.ReadFile("migrations/" + m.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, q := range []string{
+		`INSERT INTO gather_runs (id, at, since, max_prs, prs_limited, forge, forge_reason) VALUES (1, '2026-11-21T09:00:00Z', '2025-11-21T09:00:00Z', 10, 0, '', '')`,
+		"PRAGMA user_version = 14",
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	got, ok, err := s.Gathered()
+	if err != nil || !ok {
+		t.Fatalf("Gathered = %v, %v", ok, err)
+	}
+	if r := got.Run; r.Stopped || !r.Reached.IsZero() || r.StopReason != "" {
+		t.Errorf("run = %+v; want not stopped", r)
+	}
+}

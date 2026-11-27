@@ -46,3 +46,26 @@ func TestWriteJSON(t *testing.T) {
 		t.Errorf("err %v, json\n%s", err, b.String())
 	}
 }
+
+func TestExitCode(t *testing.T) {
+	of := func(statuses ...string) recovery.Report {
+		var r recovery.Report
+		for _, s := range statuses {
+			r.Capabilities = append(r.Capabilities, recovery.Outcome{Status: s})
+		}
+		return r
+	}
+	for _, c := range []struct {
+		r    recovery.Report
+		want int
+	}{
+		{of(), 0},
+		{of(recovery.StatusRecovered, recovery.StatusRecovered), 0},
+		{of(recovery.StatusRecovered, recovery.StatusNotYet), 1},
+		{of(recovery.StatusNotYet, recovery.StatusFailed, recovery.StatusRecovered), 2},
+	} {
+		if got := ExitCode(c.r); got != c.want {
+			t.Errorf("ExitCode(%d capabilities) = %d, want %d", len(c.r.Capabilities), got, c.want)
+		}
+	}
+}

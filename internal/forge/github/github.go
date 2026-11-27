@@ -20,9 +20,10 @@ import (
 )
 
 var (
-	_ forge.Forge  = (*Client)(nil)
-	_ forge.PRs    = (*Client)(nil)
-	_ forge.Merged = (*Client)(nil)
+	_ forge.Forge       = (*Client)(nil)
+	_ forge.PRs         = (*Client)(nil)
+	_ forge.Merged      = (*Client)(nil)
+	_ forge.MergedPages = (*Client)(nil)
 )
 
 // Error is a gh command that exited non-zero.
@@ -122,7 +123,8 @@ func classify(err error) error {
 	switch {
 	case ge.ExitCode == 4, strings.Contains(stderr, "gh auth login"), strings.Contains(stderr, "HTTP 401"):
 		return &forge.Error{Class: forge.ErrUnauthenticated, Reason: "gh is not authenticated", Detail: stderr}
-	case strings.Contains(stderr, "none of the git remotes"), strings.Contains(stderr, "not a git repository"):
+	case strings.Contains(stderr, "none of the git remotes"), strings.Contains(stderr, "no git remotes found"),
+		strings.Contains(stderr, "not a git repository"):
 		return &forge.Error{Class: forge.ErrUnavailable, Reason: "gh finds no GitHub remote", Detail: stderr}
 	case strings.Contains(stderr, "HTTP 404"):
 		return &forge.Error{Class: forge.ErrNotFound, Reason: "not found on GitHub", Detail: stderr}

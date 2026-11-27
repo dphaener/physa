@@ -11,7 +11,10 @@ import (
 	"github.com/dphaener/physa/internal/forge"
 )
 
-var _ forge.Merged = (*Client)(nil)
+var (
+	_ forge.Merged      = (*Client)(nil)
+	_ forge.MergedPages = (*Client)(nil)
+)
 
 // pager answers each graphql call with the next canned page.
 type pager struct {
@@ -72,6 +75,9 @@ func TestMergedPRsTwoPagesStopsAtSince(t *testing.T) {
 	}
 	if strings.Join(p.calls[1], " ") == strings.Join(p.calls[2], " ") || !strings.Contains(strings.Join(p.calls[2], " "), "cursor=c1") {
 		t.Errorf("second page did not use the cursor: %q", p.calls[2])
+	}
+	if p.calls[1][2] != "--include" || p.calls[2][2] != "--include" {
+		t.Errorf("pages not asked with --include: %q", p.calls[1])
 	}
 	for _, a := range p.calls[1] {
 		if strings.HasPrefix(a, "cursor=") {
@@ -159,6 +165,13 @@ func TestMergedPRsErrors(t *testing.T) {
 	s := &script{errs: map[string]error{"repo view": &exec.Error{Name: "gh", Err: exec.ErrNotFound}}}
 	if _, _, err := NewWithRunner(".", s.run).MergedPRs(since, 5); !errors.Is(err, forge.ErrUnavailable) {
 		t.Errorf("gh missing: %v", err)
+	}
+	for _, stderr := range []string{"no git remotes found",
+		"none of the git remotes configured for this repository point to a known GitHub host"} {
+		s = &script{errs: map[string]error{"repo view": &Error{ExitCode: 1, Stderr: stderr}}}
+		if _, err := NewWithRunner(".", s.run).MergedPage(since, ""); !errors.Is(err, forge.ErrUnavailable) || forge.Reason(err) != "gh finds no GitHub remote" {
+			t.Errorf("%s: %v", stderr, err)
+		}
 	}
 	s = &script{answers: map[string]string{"repo view": repoView},
 		errs: map[string]error{"api graphql": &Error{ExitCode: 4, Stderr: "HTTP 401: Bad credentials"}}}

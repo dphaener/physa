@@ -34,7 +34,11 @@ func WriteText(w io.Writer, s Summary) error {
 	if s.Bound.FromFlag {
 		from = "from --since"
 	}
-	p("Bound: since %s (%s), at most %d PRs.", s.Bound.Since, from, s.Bound.MaxPRs)
+	limit := "no PR limit"
+	if s.Bound.MaxPRs > 0 {
+		limit = fmt.Sprintf("at most %d PRs", s.Bound.MaxPRs)
+	}
+	p("Bound: since %s (%s), %s.", s.Bound.Since, from, limit)
 	if s.Bound.PRLimitReached {
 		p("The PR limit was reached first; history starts at %s.", s.Bound.HistorySince)
 	}

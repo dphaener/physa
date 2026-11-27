@@ -17,7 +17,6 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/dphaener/physa/internal/command"
-	"github.com/dphaener/physa/internal/gather"
 )
 
 // Usage is the command's synopsis lines.
@@ -29,7 +28,8 @@ var Usage = []string{
 }
 
 // Flags is a physa init command line as its declared flags read it. Since is
-// the bound's start: the date given (SinceSet), or twelve months before now.
+// the bound's start: the date given (SinceSet), or twelve months before now;
+// MaxPRs is --max-prs, or 0 for no PR limit.
 // Gather, Propose and Recover select one phase; none selects the full run.
 // Agent is empty when not given; Only empty means every capability. Yes goes
 // on past the full run's estimate without asking. Write, Push, PR and Hooks
@@ -69,7 +69,7 @@ func (o *Flags) Declare(fs *pflag.FlagSet) {
 	fs.StringVar(&o.Agent, "agent", "", "the agent to run")
 	fs.StringVar(&o.Answers, "answers", "", "a new codebase's answers file")
 	fs.StringVar(&o.since, "since", "", "gather from this day, YYYY-MM-DD")
-	fs.StringVar(&o.maxPRs, "max-prs", "", "gather at most this many merged PRs")
+	fs.StringVar(&o.maxPRs, "max-prs", "", "gather at most this many merged PRs (default: every PR of the bound)")
 }
 
 // read finishes the parsed line against now and reports whether it is a good
@@ -79,7 +79,7 @@ func (o *Flags) Declare(fs *pflag.FlagSet) {
 // run, --write with --recover or the full run, --push with --write, --pr
 // with --push and --hooks with --write.
 func (o *Flags) read(args []string, now time.Time) bool {
-	o.Since, o.MaxPRs = now.AddDate(-1, 0, 0), gather.DefaultMaxPRs
+	o.Since, o.MaxPRs = now.AddDate(-1, 0, 0), 0 // no PR limit unless --max-prs gives one
 	if o.SinceSet = o.fs.Changed("since"); o.SinceSet {
 		t, err := time.Parse("2006-01-02", o.since)
 		if err != nil {

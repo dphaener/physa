@@ -1,6 +1,6 @@
 # Architecture 16: the engine runs the work
 
-Draft 0.1, 2026-11-27; settled with the owner on a design page on 2026-11-26, question by question (§9), except the signal (§10). Uses `.physa/glossary.md` terms only. Serves Myxo's idea `engine-runs-work`: "The engine runs the work: it starts a pursuit's harness runs change by change, supervises them, records findings and asks, and moves on when a change lands, so no person or orchestrating agent has to push it."
+Draft 0.1, 2026-11-27; settled with the owner on a design page on 2026-11-26, question by question (§9), and the signal in review (§10). Uses `.physa/glossary.md` terms only. Serves Myxo's idea `engine-runs-work`: "The engine runs the work: it starts a pursuit's harness runs change by change, supervises them, records findings and asks, and moves on when a change lands, so no person or orchestrating agent has to push it."
 
 Today the engine keeps records: ideas, pursuits, plans, spend and evidence. Building a pursuit still needs an orchestrating agent to start a harness for each change, watch for its PR and move to the next one, and a person or a watch to merge. The engine's promise is the opposite: "Work keeps moving through its lifecycle without a person or an orchestrating agent pushing it."
 
@@ -112,6 +112,8 @@ On the design page, each answered on its card:
 
 Round 1 (the loop, §1): "1. Yes 2. Yes, but this changes with earned releases 3. Yes".
 
-## 10. Question for the owner
+## 10. The signal, settled (2026-11-27)
 
-1. **The signal for `engine-runs-work`**: claim, a pursuit with a plan moves from its first change to its last with no person or orchestrating agent starting runs or moving it on; for, pursuits whose changes all ran and landed through the engine, with people only reviewing; against, pursuits that still need an agent or a person to start runs or move to the next change; window 2027-06-01; resolver, Darin, reading the engine's run records. Yes?
+The owner, in review of #42: "Yes this is correct".
+
+The signal for `engine-runs-work`: claim, a pursuit with a plan moves from its first change to its last with no person or orchestrating agent starting runs or moving it on; for, pursuits whose changes all ran and landed through the engine, with people only reviewing; against, pursuits that still need an agent or a person to start runs or move to the next change; window 2027-06-01; resolver, Darin, reading the engine's run records.

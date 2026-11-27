@@ -44,13 +44,13 @@ func Run(ctx context.Context, st *initrecord.Store, s Session) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	r := &runner{ctx: ctx, a: a, s: s, window: adapter.Window(a)}
+	r := &runner{a: a, s: s, window: adapter.Window(a)}
 	c := &run{runner: r, in: in, state: consolidating.New(cmp.Or(s.Product, "Product"), in.caps, nil), unjudged: map[string]bool{}}
 	for _, f := range in.refused {
 		c.state.Refuse(f)
 	}
-	for _, step := range []func(){c.merge, func() { c.state.ExactDuplicates(repeats.Normal) }, c.areas, c.lift} {
-		if step(); ctx.Err() != nil {
+	for _, step := range []func(context.Context){c.merge, func(context.Context) { c.state.ExactDuplicates(repeats.Normal) }, c.areas, c.lift} {
+		if step(ctx); ctx.Err() != nil {
 			return Result{}, ctx.Err()
 		} else if s.Stopped != nil && s.Stopped() {
 			return Result{}, errors.New("the cap was reached, so nothing is stored")
@@ -64,7 +64,7 @@ func Run(ctx context.Context, st *initrecord.Store, s Session) (Result, error) {
 		}
 		return Result{}, errors.New("the consolidation fails its guard, so nothing is stored: " + strings.Join(why, "; "))
 	}
-	if err := formCheck(out, in.promise, s.Root); err != nil {
+	if err := formCheck(ctx, out, in.promise, s.Root); err != nil {
 		return Result{}, err
 	}
 	res := in.result(out, rec)
@@ -122,7 +122,7 @@ func rules(caps []capabilitytext.Capability) []repeats.Rule {
 // merge is step 1: the candidate groups go to one session with every
 // capability or, when that does not fit, to batches given only their own,
 // halved until each fits; merges apply in batch order, then reply order.
-func (c *run) merge() {
+func (c *run) merge(ctx context.Context) {
 	caps := c.state.Capabilities()
 	var rcaps []repeats.Capability
 	for _, x := range caps {
@@ -149,7 +149,7 @@ func (c *run) merge() {
 			msg:   consolidateprompt.MergeMessage(caps, b, every),
 			parse: func(t string) (err error) { replies[i], err = consolidateprompt.ParseMerge(t); return err }}
 	}
-	c.all(asks)
+	c.all(ctx, asks)
 	taken := map[string]bool{}
 	for i, b := range batches {
 		if !c.answered(asks[i]) {
@@ -208,7 +208,7 @@ type areaAsk struct {
 // areas is step 3: one session per area with two live entries or more,
 // split by capability into sessions that fit; choices apply once all have
 // returned, in area order, then session order, then reply order.
-func (c *run) areas() {
+func (c *run) areas(ctx context.Context) {
 	fits := func(xs ...capabilitytext.Capability) bool {
 		return c.fits(consolidateprompt.Consolidate, consolidateprompt.AreaMessage(xs))
 	}
@@ -245,7 +245,7 @@ func (c *run) areas() {
 			jobs, asks = append(jobs, j), append(asks, j.q)
 		}
 	}
-	c.all(asks)
+	c.all(ctx, asks)
 	for _, j := range jobs {
 		if c.answered(j.q) {
 			ch, unshown := j.reply.Choices(j.caps)
@@ -259,7 +259,7 @@ func (c *run) areas() {
 // sessions in batches of LiftBatch groups, halved until each fits, and lifts
 // apply in batch order, then reply order. A group holding a rule of a
 // capability whose merge no session judged is refused, never lifted.
-func (c *run) lift() {
+func (c *run) lift(ctx context.Context) {
 	caps := c.state.Capabilities()
 	var groups []repeats.RuleGroup
 	for _, g := range repeats.RuleGroups(rules(caps)) {
@@ -288,7 +288,7 @@ func (c *run) lift() {
 		asks[i] = &ask{step: StepLift, item: fmt.Sprintf("batch %d of %d", i+1, len(batches)), system: consolidateprompt.Lift, msg: msg(b),
 			parse: func(t string) (err error) { replies[i], err = consolidateprompt.ParseLift(t); return err }}
 	}
-	c.all(asks)
+	c.all(ctx, asks)
 	for i, b := range batches {
 		if c.answered(asks[i]) {
 			c.faults(StepLift, replies[i].Faults)

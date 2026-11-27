@@ -258,3 +258,18 @@ func TestMapBelowEngine(t *testing.T) {
 	}
 	t.Logf("reported: %s: %s: %s", vs[0].Dir, vs[0].Rule, vs[0].Message)
 }
+
+func TestFreshContextOnMapSide(t *testing.T) {
+	vs := mustCheck(t, "testdata/freshctx")
+	var got []string
+	for _, v := range vs {
+		got = append(got, v.Dir+" "+v.Rule+" "+v.Message)
+	}
+	want := []string{
+		"internal/runner context-from-command runner.go:10 makes a fresh context; take the command's ctx instead",
+		"internal/runner context-from-command runner.go:13 makes a fresh context; take the command's ctx instead",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

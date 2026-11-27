@@ -2,6 +2,7 @@ package person
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +18,7 @@ type loginForge struct {
 	err   error
 }
 
-func (f loginForge) Login() (string, error) { return f.login, f.err }
+func (f loginForge) Login(_ context.Context) (string, error) { return f.login, f.err }
 
 func TestForRepo(t *testing.T) {
 	repo := t.TempDir()
@@ -29,7 +30,7 @@ func TestForRepo(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	if got := ForRepo(repo, loginForge{login: "dphaener"}, &stderr); got != "dphaener" || stderr.Len() != 0 {
+	if got := ForRepo(t.Context(), repo, loginForge{login: "dphaener"}, &stderr); got != "dphaener" || stderr.Len() != 0 {
 		t.Errorf("forge login: %q, stderr %q", got, stderr.String())
 	}
 	cfg, _ := ConfigDir()
@@ -41,7 +42,7 @@ func TestForRepo(t *testing.T) {
 	if out, err := exec.Command("git", "-C", repo, "config", "user.email", "ana@example.com").CombinedOutput(); err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	if got := ForRepo(repo, nil, &stderr); got != "ana" {
+	if got := ForRepo(t.Context(), repo, nil, &stderr); got != "ana" {
 		t.Errorf("email: %q", got)
 	}
 
@@ -49,7 +50,7 @@ func TestForRepo(t *testing.T) {
 	if out, err := exec.Command("git", "-C", repo, "config", "--unset", "user.email").CombinedOutput(); err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	if got := ForRepo(repo, nil, &stderr); got != "" || !strings.Contains(stderr.String(), "physa: no person named: ") {
+	if got := ForRepo(t.Context(), repo, nil, &stderr); got != "" || !strings.Contains(stderr.String(), "physa: no person named: ") {
 		t.Errorf("unknown: %q, stderr %q", got, stderr.String())
 	}
 }

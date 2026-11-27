@@ -22,14 +22,14 @@ func checkCommand() *cobra.Command {
 	}
 	var bare, sub changesOptions
 	return command.Declare(command.New("check", "Check the map and the changes of a range against it.", usage,
-		func(args []string, stdout, stderr io.Writer) int {
+		func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			if !bare.takeRange(args) {
 				return command.BadUsage
 			}
-			return checkBare(".", bare, stdout, stderr)
+			return checkBare(ctx, ".", bare, stdout, stderr)
 		},
 		command.New("map", "Check the map: 0 when sound, 1 with problems, 2 when it cannot be read.", []string{"physa check map [dir]"},
-			func(args []string, stdout, stderr io.Writer) int {
+			func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 				if len(args) > 1 {
 					return command.BadUsage
 				}
@@ -37,33 +37,32 @@ func checkCommand() *cobra.Command {
 				if len(args) == 1 {
 					dir = args[0]
 				}
-				return checkMap(dir, "physa check map", stdout, stderr)
+				return checkMap(ctx, dir, "physa check map", stdout, stderr)
 			}),
 		command.Declare(command.New("changes", "Check each change of a range, and the map as each leaves it.", []string{"physa check changes [<range>] [--json] [--strict]"},
-			func(args []string, stdout, stderr io.Writer) int {
+			func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 				if !sub.takeRange(args) {
 					return command.BadUsage
 				}
-				return checkChanges(".", "physa check changes", sub, stdout, stderr)
+				return checkChanges(ctx, ".", "physa check changes", sub, stdout, stderr)
 			}), func(fs *pflag.FlagSet) { sub = changesOptions{}; sub.declare(fs, true) }),
 	), func(fs *pflag.FlagSet) { bare = changesOptions{}; bare.declare(fs, false) })
 }
 
 // checkBare is physa check: the change check when a range is given or the
 // default range resolves, else the map check alone.
-func checkBare(dir string, o changesOptions, stdout, stderr io.Writer) int {
+func checkBare(ctx context.Context, dir string, o changesOptions, stdout, stderr io.Writer) int {
 	const name = "physa check"
 	if !o.given {
-		ctx := context.TODO()
 		repo, err := git.Open(ctx, dir)
 		if err != nil {
-			return checkMap(dir, name, stdout, stderr)
+			return checkMap(ctx, dir, name, stdout, stderr)
 		}
 		if _, err := repo.Changes(ctx, o.rng); err != nil {
-			return checkMap(dir, name, stdout, stderr)
+			return checkMap(ctx, dir, name, stdout, stderr)
 		}
 	}
-	r, ok := runChanges(dir, name, o, stdout, stderr)
+	r, ok := runChanges(ctx, dir, name, o, stdout, stderr)
 	if !ok {
 		return 2
 	}
@@ -75,8 +74,8 @@ func checkBare(dir string, o changesOptions, stdout, stderr io.Writer) int {
 
 // checkMap reports the map in dir: 0 when it is sound, 1 with problems, 2 when
 // it cannot be read. Its messages start with name.
-func checkMap(dir, name string, stdout, stderr io.Writer) int {
-	res, err := mapcheck.CheckWith(dir, mapcheck.Options{PRExists: prResolver(dir), OpenRepo: openRepo})
+func checkMap(ctx context.Context, dir, name string, stdout, stderr io.Writer) int {
+	res, err := mapcheck.CheckWith(ctx, dir, mapcheck.Options{PRExists: prResolver(dir), OpenRepo: openRepo})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 2

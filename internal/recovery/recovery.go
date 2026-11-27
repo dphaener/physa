@@ -78,10 +78,10 @@ type Session struct {
 	Root string
 	// PRExists tells whether a PR exists, asked only for numbers the gather
 	// does not hold. Nil checks #N anchors for form only.
-	PRExists func(int) (bool, error)
+	PRExists func(context.Context, int) (bool, error)
 	// OpenRepo opens Root's version control to resolve commit anchors. Nil
 	// leaves each unresolved, a problem.
-	OpenRepo func(string) (vcs.Repo, error)
+	OpenRepo func(context.Context, string) (vcs.Repo, error)
 	// Progress receives one line before the sessions start and one as each
 	// capability ends; nil drops them.
 	Progress io.Writer
@@ -153,7 +153,9 @@ type job struct {
 // Neither a walk with its placements nor a proposal (ErrNoProposal), and a
 // name in s.Only the source lacks, are errors that resolve no agent and
 // store nothing. A capability that fails, or that a cancelled run never
-// reaches, is not an error: the Report says so.
+// reaches or cuts short, is not an error: the Report says so. A cancelled
+// run still stores every capability's row, the recovered ones kept, and
+// then returns ctx's error.
 func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	var rep Report
 	p, proposed, err := st.Proposed(ctx)
@@ -197,7 +199,7 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	if err != nil {
 		return rep, err
 	}
-	done, err := recoverinput.Kept(st, s.Only, at) // a continued run keeps what this gather and source recovered
+	done, err := recoverinput.Kept(ctx, st, s.Only, at) // a continued run keeps what this gather and source recovered
 	if err != nil {
 		return rep, err
 	}
@@ -261,7 +263,7 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 			Input: o.Tokens.Input, CachedInput: o.Tokens.CachedInput, Output: o.Tokens.Output,
 		}
 	}
-	if err := st.PutRecovered(ctx, rows); err != nil {
+	if err := st.PutRecovered(context.WithoutCancel(ctx), rows); err != nil { // a cancel keeps what finished
 		return rep, err
 	}
 	return rep, ctx.Err()
@@ -311,7 +313,7 @@ func walkJobs(ctx context.Context, st Store, w initrecord.Walk, g store.Gather, 
 	}
 	var caps []recoverinput.Walked
 	if err == nil {
-		caps, err = recoverinput.Chosen(st, s.Root, w, g, s.Only, seed)
+		caps, err = recoverinput.Chosen(ctx, st, s.Root, w, g, s.Only, seed)
 	}
 	if err == nil && !ok && len(s.Only) == 0 {
 		err = st.PutRecoverSeed(ctx, seed, date)
@@ -325,6 +327,17 @@ func walkJobs(ctx context.Context, st Store, w initrecord.Walk, g store.Gather, 
 			Promise: c.Promise, Area: c.Area, Footprint: &c.Footprint, Date: date, Sources: reading.Of(c.Sources, recovering.Reads)})
 	}
 	return jobs, nil
+}
+
+// Recovered is how many capabilities r holds as recovered.
+func (r Report) Recovered() int {
+	n := 0
+	for _, o := range r.Capabilities {
+		if o.Status == StatusRecovered {
+			n++
+		}
+	}
+	return n
 }
 
 // Whole reports whether every capability r holds got its session: none is

@@ -78,9 +78,11 @@ func (r *testRepo) at(days int) time.Time { return base.Add(time.Duration(days) 
 // plainForge implements forge.Forge only.
 type plainForge struct{}
 
-func (plainForge) Name() string                            { return "fake" }
-func (plainForge) PRExists(int) (bool, error)              { return false, nil }
-func (plainForge) ChangePR(string) (forge.PR, bool, error) { return forge.PR{}, false, nil }
+func (plainForge) Name() string                                { return "fake" }
+func (plainForge) PRExists(context.Context, int) (bool, error) { return false, nil }
+func (plainForge) ChangePR(context.Context, string) (forge.PR, bool, error) {
+	return forge.PR{}, false, nil
+}
 
 // mergedForge also implements forge.Merged.
 type mergedForge struct {
@@ -90,7 +92,7 @@ type mergedForge struct {
 	err  error
 }
 
-func (m mergedForge) MergedPRs(time.Time, int) ([]forge.PR, bool, error) {
+func (m mergedForge) MergedPRs(context.Context, time.Time, int) ([]forge.PR, bool, error) {
 	return m.prs, m.more, m.err
 }
 
@@ -98,7 +100,7 @@ func gatherNow(t *testing.T) time.Time { return base.Add(60 * 24 * time.Hour) }
 
 func run(t *testing.T, r *testRepo, f forge.Forge, o Bounds) (Summary, int) {
 	t.Helper()
-	g, s, err := Run(r.dir, r.open(), f, o, Discover{}, gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), f, o, Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +125,7 @@ func TestRunHistory(t *testing.T) {
 	r.git("revert", "--no-edit", bad)
 	r.n++
 	write(t, r.dir, "AGENTS.md", "agents")
-	g, s, err := Run(r.dir, r.open(), nil, bounds(t), Discover{}, gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), nil, bounds(t), Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +190,7 @@ func TestRunUnavailableForgeError(t *testing.T) {
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	f := mergedForge{err: &forge.Error{Class: forge.ErrUnavailable, Reason: "gh is not installed"}}
-	g, s, err := Run(r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatalf("an unavailable forge failed the run: %v", err)
 	}
@@ -220,7 +222,7 @@ type pageAnswer struct {
 	err  error
 }
 
-func (p *pagesForge) MergedPage(_ time.Time, cursor string) (forge.Page, error) {
+func (p *pagesForge) MergedPage(_ context.Context, _ time.Time, cursor string) (forge.Page, error) {
 	p.cursors = append(p.cursors, cursor)
 	if len(p.answers) == 0 {
 		return forge.Page{}, errors.New("fake forge: no answer left")
@@ -255,7 +257,7 @@ func TestRunWaitsOutRateLimitAndKeepsEveryPage(t *testing.T) {
 		onePage("", forge.PR{Number: 2, MergedAt: r.at(2)}, forge.PR{Number: 1, MergedAt: r.at(1)}),
 	}}
 	var slept []time.Duration
-	g, s, err := Run(r.dir, r.open(), f, bounds(t, func(b *Bounds) { b.Wait = fakeWait(0, &slept) }), Discover{}, gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), f, bounds(t, func(b *Bounds) { b.Wait = fakeWait(0, &slept) }), Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatalf("a rate limit waited out failed the run: %v", err)
 	}
@@ -282,7 +284,7 @@ func TestRunStoppedPastRateLimitKeepsThePRs(t *testing.T) {
 	}}
 	var slept []time.Duration
 	limit := 3 * time.Minute // 60s and 120s are slept; 240s more is refused
-	g, s, err := Run(r.dir, r.open(), f, bounds(t, func(b *Bounds) { b.Wait = fakeWait(limit, &slept) }), Discover{}, gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), f, bounds(t, func(b *Bounds) { b.Wait = fakeWait(limit, &slept) }), Discover{}, gatherNow(t))
 	var stop *Stopped
 	if !errors.As(err, &stop) {
 		t.Fatalf("err = %v, want a *Stopped", err)
@@ -332,7 +334,7 @@ func TestRunStoppedOnPlainError(t *testing.T) {
 		"merged":    mergedForge{err: errors.New("boom")},
 		"not found": &pagesForge{answers: []pageAnswer{{err: &forge.Error{Class: forge.ErrNotFound, Reason: "the repo is not on GitHub"}}}},
 	} {
-		g, s, err := Run(r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
+		g, s, err := Run(t.Context(), r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
 		var stop *Stopped
 		if !errors.As(err, &stop) {
 			t.Fatalf("%s: err = %v, want a *Stopped", name, err)
@@ -355,12 +357,12 @@ func TestRunStoppedWhenUnavailableAfterPRs(t *testing.T) {
 	r.commit("feat: x", "a")
 	unauthenticated := pageAnswer{err: &forge.Error{Class: forge.ErrUnauthenticated, Reason: "gh is not logged in"}}
 	f := &pagesForge{answers: []pageAnswer{onePage("c1", forge.PR{Number: 2, MergedAt: r.at(1)}), unauthenticated}}
-	g, _, err := Run(r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
+	g, _, err := Run(t.Context(), r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
 	var stop *Stopped
 	if !errors.As(err, &stop) || len(g.PRs) != 1 {
 		t.Fatalf("err = %v, %d PRs", err, len(g.PRs))
 	}
-	g, s, err := Run(r.dir, r.open(), &pagesForge{answers: []pageAnswer{unauthenticated}}, bounds(t), Discover{}, gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), &pagesForge{answers: []pageAnswer{unauthenticated}}, bounds(t), Discover{}, gatherNow(t))
 	if err != nil || s.PRs.Available || s.PRs.Reason != "gh is not logged in" || len(g.PRs) != 0 {
 		t.Errorf("unauthenticated before any PR: %v %+v", err, s.PRs)
 	}
@@ -370,7 +372,7 @@ func TestRunNoRemoteBeforeAnyPRIsUnavailable(t *testing.T) {
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	noRemote := pageAnswer{err: &forge.Error{Class: forge.ErrUnavailable, Reason: "gh finds no GitHub remote", Detail: "no git remotes found"}}
-	g, s, err := Run(r.dir, r.open(), &pagesForge{answers: []pageAnswer{noRemote}}, bounds(t), Discover{}, gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), &pagesForge{answers: []pageAnswer{noRemote}}, bounds(t), Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatalf("a repo with no remote stopped the gather: %v", err)
 	}
@@ -385,9 +387,9 @@ type cappedForge struct {
 	max *int
 }
 
-func (c cappedForge) MergedPRs(since time.Time, max int) ([]forge.PR, bool, error) {
+func (c cappedForge) MergedPRs(_ context.Context, since time.Time, max int) ([]forge.PR, bool, error) {
 	*c.max = max
-	return c.mergedForge.MergedPRs(since, max)
+	return c.mergedForge.MergedPRs(context.Background(), since, max)
 }
 
 func TestRunNoLimitListsEveryPRSince(t *testing.T) {
@@ -400,7 +402,7 @@ func TestRunNoLimitListsEveryPRSince(t *testing.T) {
 			onePage("", forge.PR{Number: 1, MergedAt: r.at(1)}, forge.PR{Number: 0, MergedAt: r.at(-400)}),
 		}}
 	}
-	g, s, err := Run(r.dir, r.open(), pages(), bounds(t), Discover{}, gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), pages(), bounds(t), Discover{}, gatherNow(t))
 	if err != nil || len(g.PRs) != 4 || s.Bound.MaxPRs != 0 || s.Bound.PRLimitReached {
 		t.Errorf("no limit: %v, %d PRs, bound %+v", err, len(g.PRs), s.Bound)
 	}
@@ -408,12 +410,12 @@ func TestRunNoLimitListsEveryPRSince(t *testing.T) {
 	if err := WriteText(&buf, s); err != nil || !strings.Contains(buf.String(), "(the last 12 months), no PR limit.\n") {
 		t.Errorf("%v\n%s", err, buf.String())
 	}
-	g, s, err = Run(r.dir, r.open(), pages(), bounds(t, func(b *Bounds) { b.MaxPRs = 2 }), Discover{}, gatherNow(t))
+	g, s, err = Run(t.Context(), r.dir, r.open(), pages(), bounds(t, func(b *Bounds) { b.MaxPRs = 2 }), Discover{}, gatherNow(t))
 	if err != nil || len(g.PRs) != 2 || !s.Bound.PRLimitReached || s.Bound.MaxPRs != 2 {
 		t.Errorf("max 2: %v, %d PRs, bound %+v", err, len(g.PRs), s.Bound)
 	}
 	var asked int
-	if _, _, err := Run(r.dir, r.open(), cappedForge{max: &asked}, bounds(t), Discover{}, gatherNow(t)); err != nil || asked < 1<<30 {
+	if _, _, err := Run(t.Context(), r.dir, r.open(), cappedForge{max: &asked}, bounds(t), Discover{}, gatherNow(t)); err != nil || asked < 1<<30 {
 		t.Errorf("a forge offering only Merged was asked for at most %d PRs (%v)", asked, err)
 	}
 }
@@ -427,7 +429,7 @@ func TestRunMoreStartsHistoryAtOldestPR(t *testing.T) {
 	f := mergedForge{more: true, prs: []forge.PR{
 		{Number: 9, MergedAt: r.at(4)}, {Number: 8, MergedAt: r.at(3)},
 	}}
-	g, s, err := Run(r.dir, r.open(), f, bounds(t, func(b *Bounds) { b.MaxPRs = 2 }), Discover{}, gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), f, bounds(t, func(b *Bounds) { b.MaxPRs = 2 }), Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,7 +459,7 @@ func TestRunPRCounts(t *testing.T) {
 			}},
 		{Number: 1, Title: "one", MergedAt: r.at(0)},
 	}}
-	g, s, err := Run(r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,7 +484,7 @@ func TestRunTokenEstimate(t *testing.T) {
 	r.commit("feat: x\n\nCapability: a", "f.go")
 	write(t, r.dir, "README.md", strings.Repeat("r", 100))
 	f := mergedForge{prs: []forge.PR{{Number: 1, Title: "t", Body: strings.Repeat("b", 50), MergedAt: r.at(1)}}}
-	g, s, err := Run(r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -649,16 +651,18 @@ type loginForge struct {
 	err    error
 }
 
-func (f loginForge) ChangeLogins(ids []string) (map[string]string, error) { return f.logins, f.err }
+func (f loginForge) ChangeLogins(_ context.Context, ids []string) (map[string]string, error) {
+	return f.logins, f.err
+}
 
 func TestUseLoginsNamesChangesByLogin(t *testing.T) {
 	changes := []store.GatheredChange{{ID: "aaa", Author: "Dana Lee"}, {ID: "bbb", Author: "Sam"}}
-	useLogins(loginForge{logins: map[string]string{"aaa": "dana"}}, changes)
+	useLogins(t.Context(), loginForge{logins: map[string]string{"aaa": "dana"}}, changes)
 	if changes[0].Author != "dana" || changes[1].Author != "Sam" {
 		t.Errorf("authors = %q, %q", changes[0].Author, changes[1].Author)
 	}
-	useLogins(loginForge{err: errors.New("down")}, changes)
-	useLogins(plainForge{}, changes)
+	useLogins(t.Context(), loginForge{err: errors.New("down")}, changes)
+	useLogins(t.Context(), plainForge{}, changes)
 	if changes[0].Author != "dana" {
 		t.Errorf("a failing or plain forge changed the authors")
 	}
@@ -693,7 +697,7 @@ type changeForge struct {
 	byID map[string]int
 }
 
-func (c changeForge) ChangePR(id string) (forge.PR, bool, error) {
+func (c changeForge) ChangePR(_ context.Context, id string) (forge.PR, bool, error) {
 	n, ok := c.byID[id]
 	return forge.PR{Number: n}, ok, nil
 }
@@ -707,7 +711,7 @@ func TestRunGathersPRsForAreasThePRsMiss(t *testing.T) {
 	r.commit("Add notes (#4)", "notes/model.rb")
 	r.commit("Edit notes (#5)", "notes/model.rb")
 	f := changeForge{mergedForge{more: true, prs: []forge.PR{{Number: 5, MergedAt: r.at(5)}, {Number: 4, MergedAt: r.at(4)}}}, byID}
-	g, s, err := Run(r.dir, r.open(), f, bounds(t, func(b *Bounds) { b.MaxPRs = 2 }), Discover{}, gatherNow(t))
+	g, s, err := Run(t.Context(), r.dir, r.open(), f, bounds(t, func(b *Bounds) { b.MaxPRs = 2 }), Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -737,7 +741,7 @@ func TestRunTiesPRsLandedAsMergesToTheirFiles(t *testing.T) {
 		r.git("merge", "-q", "--no-ff", "-m", fmt.Sprintf("Merge pull request #%d from dana/%s", n, area), area)
 	}
 	f := mergedForge{prs: []forge.PR{{Number: 8}, {Number: 7}}}
-	g, _, err := Run(r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
+	g, _, err := Run(t.Context(), r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -756,7 +760,7 @@ func TestRunCompleteGatherIsNotMarkedStopped(t *testing.T) {
 	r := newTestRepo(t)
 	r.commit("feat: x", "a")
 	f := &pagesForge{answers: []pageAnswer{onePage("", forge.PR{Number: 2, MergedAt: r.at(1)})}}
-	g, _, err := Run(r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
+	g, _, err := Run(t.Context(), r.dir, r.open(), f, bounds(t), Discover{}, gatherNow(t))
 	if err != nil || len(g.PRs) != 1 {
 		t.Fatalf("err = %v, %d PRs", err, len(g.PRs))
 	}

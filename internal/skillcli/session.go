@@ -42,18 +42,18 @@ func (e env) sessionCommand() *cobra.Command {
 	return command.New("session",
 		"Print what a session needs to know about this repo's Physa map; the session hook runs it. "+
 			"It prints nothing outside a repo with a map or on any fault, and always exits 0.",
-		[]string{sessionUsage}, func(args []string, stdout, _ io.Writer) int {
+		[]string{sessionUsage}, func(ctx context.Context, args []string, stdout, _ io.Writer) int {
 			if len(args) > 0 {
 				return command.BadUsage
 			}
-			e.sessionLines(stdout)
+			e.sessionLines(ctx, stdout)
 			return 0
 		})
 }
 
 // sessionLines writes the session's few lines to stdout when every step succeeded
 // within the deadline, and nothing otherwise. It never writes to stderr.
-func (e env) sessionLines(stdout io.Writer) {
+func (e env) sessionLines(ctx context.Context, stdout io.Writer) {
 	deadline := e.deadline
 	if deadline <= 0 {
 		deadline = defaultDeadline
@@ -65,7 +65,7 @@ func (e env) sessionLines(stdout io.Writer) {
 				done <- ""
 			}
 		}()
-		done <- e.sessionText()
+		done <- e.sessionText(ctx)
 	}()
 	select {
 	case text := <-done:
@@ -75,7 +75,7 @@ func (e env) sessionLines(stdout io.Writer) {
 }
 
 // sessionText is the whole output, or "" when any step fails.
-func (e env) sessionText() string {
+func (e env) sessionText(ctx context.Context) string {
 	if e.getwd == nil || e.getenv == nil {
 		return ""
 	}
@@ -86,7 +86,7 @@ func (e env) sessionText() string {
 	if info, err := os.Stat(filepath.Join(wd, ".physa")); err != nil || !info.IsDir() {
 		return ""
 	}
-	if _, err := git.Open(context.TODO(), wd); err != nil {
+	if _, err := git.Open(ctx, wd); err != nil {
 		return ""
 	}
 	m, _, err := mapfile.Read(wd)

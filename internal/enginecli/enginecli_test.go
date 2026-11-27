@@ -104,7 +104,7 @@ func idleDir(t *testing.T) *testEngine {
 
 func (te *testEngine) run(args ...string) (int, string, string) {
 	var out, errb bytes.Buffer
-	code := command.Execute(te.root, args, &out, &errb)
+	code := command.Execute(context.Background(), te.root, args, &out, &errb)
 	return code, out.String(), errb.String()
 }
 

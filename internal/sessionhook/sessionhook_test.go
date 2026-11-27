@@ -53,14 +53,14 @@ func hooksPath(t *testing.T, root string) string {
 
 func TestInstallSets(t *testing.T) {
 	root, h := repo(t)
-	got, err := Install(root, h)
+	got, err := Install(t.Context(), root, h)
 	if err != nil || got != (Outcome{Set: true}) {
 		t.Fatalf("Install = %+v, %v, want Set", got, err)
 	}
 	if p := hooksPath(t, root); p != Dir {
 		t.Errorf("core.hooksPath = %q, want %q", p, Dir)
 	}
-	got, err = Install(root, h)
+	got, err = Install(t.Context(), root, h)
 	if err != nil || got != (Outcome{Already: true}) {
 		t.Errorf("Install again = %+v, %v, want Already", got, err)
 	}
@@ -73,7 +73,7 @@ func TestInstallAlready(t *testing.T) {
 			p = filepath.Join(root, Dir)
 		}
 		gitRun(t, root, "config", "--local", "core.hooksPath", p)
-		got, err := Install(root, h)
+		got, err := Install(t.Context(), root, h)
 		if err != nil || got != (Outcome{Already: true}) {
 			t.Errorf("hooksPath %q: Install = %+v, %v, want Already", p, got, err)
 		}
@@ -86,7 +86,7 @@ func TestInstallAlready(t *testing.T) {
 func TestInstallRefusesHooksPathElsewhere(t *testing.T) {
 	root, h := repo(t)
 	gitRun(t, root, "config", "--local", "core.hooksPath", ".githooks")
-	got, err := Install(root, h)
+	got, err := Install(t.Context(), root, h)
 	if err == nil || got != (Outcome{}) {
 		t.Fatalf("Install = %+v, %v, want an error", got, err)
 	}
@@ -109,7 +109,7 @@ func TestInstallRefusesActiveHooks(t *testing.T) {
 	if err := os.WriteFile(active, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	got, err := Install(root, h)
+	got, err := Install(t.Context(), root, h)
 	if err == nil || got != (Outcome{}) {
 		t.Fatalf("Install = %+v, %v, want an error", got, err)
 	}
@@ -155,7 +155,7 @@ func TestInstallWritesEmbeddedHook(t *testing.T) {
 	if err := os.WriteFile(pre, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	got, err := Install(root, h)
+	got, err := Install(t.Context(), root, h)
 	file := filepath.Join(root, ".git", "hooks", name)
 	if err != nil || got != (Outcome{Written: true, Path: file}) {
 		t.Fatalf("Install = %+v, %v, want Written", got, err)
@@ -173,7 +173,7 @@ func TestInstallWritesEmbeddedHook(t *testing.T) {
 	if info, err := os.Stat(pre); err != nil || info.Mode().Perm()&0o111 == 0 {
 		t.Errorf("pre-commit not kept executable: %v, %v", info, err)
 	}
-	got, err = Install(root, h)
+	got, err = Install(t.Context(), root, h)
 	if err != nil || got != (Outcome{Already: true, Path: file}) {
 		t.Errorf("Install again = %+v, %v, want Already", got, err)
 	}
@@ -184,7 +184,7 @@ func TestInstallCreatesHooksDir(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(root, ".git", "hooks")); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := Install(root, h); err != nil || !got.Written {
+	if got, err := Install(t.Context(), root, h); err != nil || !got.Written {
 		t.Fatalf("Install = %+v, %v, want Written", got, err)
 	}
 }
@@ -195,7 +195,7 @@ func TestInstallRefusesDifferentHook(t *testing.T) {
 	if err := os.WriteFile(file, []byte("#!/bin/sh\necho mine\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := Install(root, h)
+	got, err := Install(t.Context(), root, h)
 	if err == nil || got != (Outcome{}) {
 		t.Fatalf("Install = %+v, %v, want an error", got, err)
 	}
@@ -214,7 +214,7 @@ func TestInstallRefusesDifferentHook(t *testing.T) {
 func TestInstallRefusesHooksPathWhenNothingShipped(t *testing.T) {
 	root, h := bare(t)
 	gitRun(t, root, "config", "--local", "core.hooksPath", Dir)
-	got, err := Install(root, h)
+	got, err := Install(t.Context(), root, h)
 	if err == nil || got != (Outcome{}) {
 		t.Fatalf("Install = %+v, %v, want an error", got, err)
 	}
@@ -228,7 +228,7 @@ func TestInstallNonExecutableShippedHookWritesEmbedded(t *testing.T) {
 	if err := os.Chmod(filepath.Join(root, Hook), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := Install(root, h)
+	got, err := Install(t.Context(), root, h)
 	if err != nil || !got.Written {
 		t.Errorf("Install = %+v, %v, want Written", got, err)
 	}
@@ -356,7 +356,7 @@ func TestInstallReplacesEarlierHooks(t *testing.T) {
 			if err := os.WriteFile(file, old, 0o644); err != nil {
 				t.Fatal(err)
 			}
-			got, err := Install(root, h)
+			got, err := Install(t.Context(), root, h)
 			if err != nil || got != (Outcome{Written: true, Path: file}) {
 				t.Fatalf("Install = %+v, %v, want Written", got, err)
 			}

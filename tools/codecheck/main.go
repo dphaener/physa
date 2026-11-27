@@ -5,7 +5,9 @@
 // the engine's tables (a string literal holding SQL that inserts into,
 // updates or deletes from one). It also checks that nothing outside the git adapter
 // (internal/vcs/git) runs git: a non-test file calling exec.Command or
-// exec.CommandContext with the literal program "git" is reported.
+// exec.CommandContext with the literal program "git" is reported. It also
+// checks that a non-test file on the map's side never makes a fresh context
+// with context.Background or context.TODO: the command's context comes down.
 package main
 
 import (
@@ -87,6 +89,7 @@ const (
 	ruleDoc     = "package-doc"
 	ruleGit     = "git-adapter-only"
 	ruleTables  = "engine-tables-writer"
+	ruleContext = "context-from-command"
 )
 
 // stateDir is the one package, with its subdirectories, that may write the
@@ -264,6 +267,11 @@ func checkPackage(root, module string, pk *pkg, budgets map[string]int) ([]Viola
 				out = append(out, Violation{pk.dir, ruleGit, fmt.Sprintf("%s:%d runs git; only %s may", name, fset.Position(pos).Line, gitAdapterDir)})
 			}
 		}
+		if mapSide {
+			for _, pos := range freshContexts(f) {
+				out = append(out, Violation{pk.dir, ruleContext, fmt.Sprintf("%s:%d makes a fresh context; take the command's ctx instead", name, fset.Position(pos).Line)})
+			}
+		}
 		if pk.dir != stateDir && !strings.HasPrefix(pk.dir, stateDir+"/") {
 			for _, w := range tableWrites(f, fset) {
 				out = append(out, Violation{pk.dir, ruleTables, fmt.Sprintf("%s:%d: writes the engine's table %s; only %s writes it (03 §5.1)", name, w.line, w.table, stateDir)})
@@ -347,6 +355,43 @@ func gitCalls(f *ast.File) []token.Pos {
 			if v, err := strconv.Unquote(lit.Value); err == nil && v == "git" {
 				out = append(out, call.Pos())
 			}
+		}
+		return true
+	})
+	return out
+}
+
+// freshContexts returns the positions of calls to the context package's
+// Background or TODO, honouring an import alias of "context".
+func freshContexts(f *ast.File) []token.Pos {
+	names := map[string]bool{}
+	for _, imp := range f.Imports {
+		if ip, err := strconv.Unquote(imp.Path.Value); err != nil || ip != "context" {
+			continue
+		}
+		name := "context"
+		if imp.Name != nil {
+			name = imp.Name.Name
+		}
+		if name != "_" && name != "." {
+			names[name] = true
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	var out []token.Pos
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if id, ok := sel.X.(*ast.Ident); ok && names[id.Name] && (sel.Sel.Name == "Background" || sel.Sel.Name == "TODO") {
+			out = append(out, call.Pos())
 		}
 		return true
 	})

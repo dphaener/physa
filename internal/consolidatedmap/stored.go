@@ -27,13 +27,12 @@ const Stale = "the stored consolidation no longer matches the recovered capabili
 // back as it was). Capabilities merged away drop out of m, their entries
 // dropped in recovery going to the one they merged into; the sessions of
 // consolidation are added to m's.
-func Apply(st *initrecord.Store, m initbranch.Map) (initbranch.Map, string, error) {
-	ctx := context.TODO()
-	res, ok, err := consolidate.Load(st)
+func Apply(ctx context.Context, st *initrecord.Store, m initbranch.Map) (initbranch.Map, string, error) {
+	res, ok, err := consolidate.Load(ctx, st)
 	if err != nil || !ok {
 		return m, "", err
 	}
-	if cur, err := consolidate.Current(st); err != nil || !cur {
+	if cur, err := consolidate.Current(ctx, st); err != nil || !cur {
 		return m, Stale, err
 	}
 	rows, err := st.Recovered(ctx)

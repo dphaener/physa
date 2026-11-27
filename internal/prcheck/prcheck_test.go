@@ -192,7 +192,7 @@ func TestRunClean(t *testing.T) {
 	folder(t, root, mapfolder.CapabilityDir("new"), "")
 	gitIn(t, root, "add", ".")
 	gitIn(t, root, "commit", "-q", "-m", "feat: new\n\nCapability: new")
-	r, err := Run(root, repo, "HEAD~2..HEAD", nil)
+	r, err := Run(t.Context(), root, repo, "HEAD~2..HEAD", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestRunFindings(t *testing.T) {
 	gitIn(t, root, "commit", "-q", "-m", "feat: later\n\nCapability: later")
 	full := gitIn(t, root, "rev-parse", "HEAD")
 	folder(t, root, mapfolder.CapabilityDir("a"), "## Rules\n\n### R\n`r` · from docs/nope.md · "+full[:7]+"\nBecause: y.\n")
-	r, err := Run(root, repo, "HEAD~2..HEAD", nil)
+	r, err := Run(t.Context(), root, repo, "HEAD~2..HEAD", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,15 +226,15 @@ func TestRunFindings(t *testing.T) {
 
 func TestRunErrors(t *testing.T) {
 	repo, root := mapRepo(t)
-	if _, err := Run(root, repo, "nope..HEAD", nil); err == nil || !strings.Contains(err.Error(), "nope") {
+	if _, err := Run(t.Context(), root, repo, "nope..HEAD", nil); err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Errorf("bad range: want git's message, got %v", err)
 	}
-	if _, err := Run(t.TempDir(), repo, "HEAD", nil); err == nil {
+	if _, err := Run(t.Context(), t.TempDir(), repo, "HEAD", nil); err == nil {
 		t.Error("no map: want an error")
 	}
-	prErr := func(int) (bool, error) { return false, errors.New("gh is not authenticated") }
+	prErr := func(context.Context, int) (bool, error) { return false, errors.New("gh is not authenticated") }
 	folder(t, root, mapfolder.CapabilityDir("a"), "## Rules\n\n### R\n`r` · from .physa/README.md · #3\nBecause: y.\n")
-	r, err := Run(root, repo, "HEAD..HEAD", prErr)
+	r, err := Run(t.Context(), root, repo, "HEAD..HEAD", prErr)
 	if err != nil || r.Map.Note != "gh is not authenticated" || !r.Clean() {
 		t.Errorf("resolver error: got %+v %v", r, err)
 	}

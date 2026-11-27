@@ -416,6 +416,37 @@ func TestSessionCancel(t *testing.T) {
 	}
 }
 
+func TestSessionCancelSendsInterrupt(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake agent is a shell script")
+	}
+	dir := t.TempDir()
+	mark := filepath.Join(dir, "interrupted")
+	cmd := filepath.Join(dir, "claude")
+	script := "#!/bin/sh\ntrap 'echo got > " + mark + "; exit 0' INT\ncat > /dev/null\necho ready > " + filepath.Join(dir, "ready") + "\nsleep 60 >/dev/null 2>&1 &\nwait\n"
+	if err := os.WriteFile(cmd, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	sess, err := (&Adapter{Command: cmd}).Start(ctx, adapter.Spec{Prompt: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 500; i++ {
+		if _, err := os.Stat(filepath.Join(dir, "ready")); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	if _, err = sess.Wait(); !errors.Is(err, context.Canceled) || !errors.Is(err, adapter.ErrFailed) {
+		t.Fatalf("err = %v, want ErrFailed and context.Canceled", err)
+	}
+	if _, err := os.Stat(mark); err != nil {
+		t.Errorf("the agent was not sent an interrupt: %v", err)
+	}
+}
+
 func TestStartNotInstalled(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "no-such-claude")
 	_, err := (&Adapter{Command: missing}).Start(context.Background(), adapter.Spec{Prompt: "p"})

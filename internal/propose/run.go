@@ -83,7 +83,7 @@ func Run(ctx context.Context, root string, m *mapfile.Map, res learn.Result, s S
 		report.Dropped = append(report.Dropped, Dropped{Reason: perr.Error()})
 		return report, nil
 	}
-	kept, dropped := Check(root, batch, proposals, s.Check)
+	kept, dropped := Check(ctx, root, batch, proposals, s.Check)
 	report.Kept = append(report.Kept, kept...)
 	report.Dropped = append(report.Dropped, dropped...)
 	report.Dropped = append(report.Dropped, FromMalformed(malformed)...)

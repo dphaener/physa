@@ -22,10 +22,12 @@ import (
 // mergedFake is a forge that lists the merged PRs it was given.
 type mergedFake struct{ prs []forge.PR }
 
-func (mergedFake) Name() string                            { return "fake" }
-func (mergedFake) PRExists(int) (bool, error)              { return false, nil }
-func (mergedFake) ChangePR(string) (forge.PR, bool, error) { return forge.PR{}, false, nil }
-func (m mergedFake) MergedPRs(time.Time, int) ([]forge.PR, bool, error) {
+func (mergedFake) Name() string                                { return "fake" }
+func (mergedFake) PRExists(context.Context, int) (bool, error) { return false, nil }
+func (mergedFake) ChangePR(context.Context, string) (forge.PR, bool, error) {
+	return forge.PR{}, false, nil
+}
+func (m mergedFake) MergedPRs(context.Context, time.Time, int) ([]forge.PR, bool, error) {
 	return m.prs, false, nil
 }
 
@@ -48,7 +50,7 @@ func useRepoStore(t *testing.T, dir string) {
 
 func runInit(args ...string) (int, string, string) {
 	var stdout, stderr bytes.Buffer
-	code := run(append([]string{"init"}, args...), &stdout, &stderr)
+	code := run(context.Background(), append([]string{"init"}, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 

@@ -2,6 +2,7 @@ package skillcli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"strings"
 	"testing"
@@ -11,7 +12,7 @@ import (
 
 func run(args ...string) (int, string, string) {
 	var out, errb bytes.Buffer
-	code := command.Execute(command.New("physa", "", nil, nil, Command(nil)), args, &out, &errb)
+	code := command.Execute(context.Background(), command.New("physa", "", nil, nil, Command(nil)), args, &out, &errb)
 	return code, out.String(), errb.String()
 }
 

@@ -57,8 +57,7 @@ type Outcome struct {
 // hooks directory, leaving the hooks path alone; it is Already when the file
 // holds exactly that hook, and an error, leaving the file, when it holds
 // anything else.
-func Install(root string, h vcs.Hooks) (Outcome, error) {
-	ctx := context.TODO()
+func Install(ctx context.Context, root string, h vcs.Hooks) (Outcome, error) {
 	shipped := ships(root)
 	path, set, err := h.HooksPath(ctx)
 	if err != nil {

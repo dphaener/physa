@@ -58,8 +58,7 @@ type Rename struct {
 }
 
 // Load reads the stored walk and decodes its body, false when none exists.
-func Load(st *initrecord.Store) (Record, bool, error) {
-	ctx := context.TODO()
+func Load(ctx context.Context, st *initrecord.Store) (Record, bool, error) {
 	var r Record
 	w, ok, err := st.Walk(ctx)
 	if err == nil && ok {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +18,7 @@ import (
 func runPRCheck(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(append([]string{"check", "changes"}, args...), &stdout, &stderr)
+	code := run(t.Context(), append([]string{"check", "changes"}, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -82,7 +83,7 @@ func TestPRCheckNoGHFallsBack(t *testing.T) {
 
 func TestCheckHelpNamesChanges(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"check", "--help"}, &stdout, &stderr); code != 0 {
+	if code := run(t.Context(), []string{"check", "--help"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
 	if want := "physa check changes [<range>] [--json] [--strict]"; !strings.Contains(stdout.String(), want) {
@@ -161,7 +162,7 @@ func checkWithAnchor(t *testing.T, anchor string) (int, string, string) {
 	t.Helper()
 	root := tempMap(t, "`r` · from docs/d.md · "+anchor)
 	var stdout, stderr bytes.Buffer
-	code := checkMap(root, "physa check map", &stdout, &stderr)
+	code := checkMap(t.Context(), root, "physa check map", &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -192,7 +193,7 @@ func useNoGH(t *testing.T) {
 	t.Helper()
 	old := newForge
 	newForge = func(dir string) forge.Forge {
-		return github.NewWithRunner(dir, func(string, ...string) ([]byte, error) { return nil, errNoGH })
+		return github.NewWithRunner(dir, func(context.Context, string, ...string) ([]byte, error) { return nil, errNoGH })
 	}
 	t.Cleanup(func() { newForge = old })
 }
@@ -200,7 +201,7 @@ func useNoGH(t *testing.T) {
 func TestCheckFormOnlyUnauthenticated(t *testing.T) {
 	old := newForge
 	newForge = func(dir string) forge.Forge {
-		return github.NewWithRunner(dir, func(_ string, args ...string) ([]byte, error) {
+		return github.NewWithRunner(dir, func(_ context.Context, _ string, args ...string) ([]byte, error) {
 			return nil, &github.Error{Args: args, Stderr: "HTTP 401: Bad credentials", ExitCode: 1}
 		})
 	}
@@ -214,7 +215,7 @@ func TestCheckFormOnlyUnauthenticated(t *testing.T) {
 func runCheck(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(append([]string{"check"}, args...), &stdout, &stderr)
+	code := run(t.Context(), append([]string{"check"}, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -270,10 +271,10 @@ func TestBareCheckBadRangeAndUsage(t *testing.T) {
 
 func TestDefaultFakeForgeKnowsNoPR(t *testing.T) {
 	f := newForge(t.TempDir())
-	if ok, err := f.PRExists(1); ok || err != nil {
+	if ok, err := f.PRExists(t.Context(), 1); ok || err != nil {
 		t.Errorf("PRExists: %v, %v", ok, err)
 	}
-	if _, ok, err := f.ChangePR("c0ffee"); ok || err != nil {
+	if _, ok, err := f.ChangePR(t.Context(), "c0ffee"); ok || err != nil {
 		t.Errorf("ChangePR: %v, %v", ok, err)
 	}
 }

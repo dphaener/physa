@@ -90,7 +90,7 @@ func consEnv(t *testing.T, a adapter.Adapter, caps []consCap) Env {
 	t.Helper()
 	newRepo(t)
 	env := testEnv(t, nil, a)
-	s, err := env.Store(".")
+	s, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,12 +138,12 @@ func TestConsolidatePrintsAndStores(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "Merged capabilities sign-in, sign-in-2 into sign-in") || !strings.Contains(out, "Model: fake-model") {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if cur, err := consolidate.Current(initrecord.Of(st)); !cur || err != nil {
+	if cur, err := consolidate.Current(t.Context(), initrecord.Of(st)); !cur || err != nil {
 		t.Errorf("consolidation stored and current: %v %v", cur, err)
 	}
 	if spent, err := initrecord.Of(st).Spending(context.Background()); err != nil || len(spent) == 0 || spent[len(spent)-1].Phase != "consolidate" {
@@ -269,12 +269,12 @@ func TestCappedConsolidateStoresNothing(t *testing.T) {
 		t.Errorf("the cap's stop is said as a failure:\n%s", errOut)
 	}
 	consolidated := func() bool {
-		st, err := env.Store(".")
+		st, err := env.Store(context.Background(), ".")
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer st.Close()
-		cur, err := consolidate.Current(initrecord.Of(st))
+		cur, err := consolidate.Current(t.Context(), initrecord.Of(st))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -293,7 +293,7 @@ func TestCappedConsolidateStoresNothing(t *testing.T) {
 func TestConsolidateSpendAddsUp(t *testing.T) {
 	env := consEnv(t, &consolidateAgent{merge: mergeSignIn}, mergeCaps)
 	spent := func() int64 {
-		st, err := env.Store(".")
+		st, err := env.Store(context.Background(), ".")
 		if err != nil {
 			t.Fatal(err)
 		}

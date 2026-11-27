@@ -53,8 +53,10 @@ type Env struct {
 // usual name, the real environment, terminal and pickers.
 func New(newForge func(dir string) forge.Forge) *Env {
 	return &Env{
-		Forge:   newForge,
-		Person:  person.ForRepo,
+		Forge: newForge,
+		Person: func(dir string, f forge.Forge, stderr io.Writer) string {
+			return person.ForRepo(context.TODO(), dir, f, stderr) // Who has no ctx yet
+		},
 		Getenv:  os.Getenv,
 		Pick:    func(t string, items []picker.Item) (string, error) { return picker.Pick(os.Stdin, os.Stdout, t, items) },
 		Confirm: func(q string) (bool, error) { return picker.Confirm(os.Stdin, os.Stdout, q) },

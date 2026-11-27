@@ -133,7 +133,7 @@ type Options struct {
 	ForgeReason string
 	// PRExists resolves #N anchors for the map check; nil checks their
 	// form only.
-	PRExists func(int) (bool, error)
+	PRExists func(context.Context, int) (bool, error)
 }
 
 // Commit is the change a run wrote to the branch.
@@ -191,8 +191,7 @@ type state struct {
 // branch only after the remote took the change. With o.PR it opens the PR,
 // or refreshes the open one. A lost lease is an error, never retried. The
 // Outcome holds what was done even when it returns an error.
-func Run(w vcs.Writer, m Map, o Options) (Outcome, error) {
-	ctx := context.TODO()
+func Run(ctx context.Context, w vcs.Writer, m Map, o Options) (Outcome, error) {
 	var out Outcome
 	if o.PR && !o.Push {
 		return out, errors.New("a PR needs the branch pushed")
@@ -219,7 +218,7 @@ func Run(w vcs.Writer, m Map, o Options) (Outcome, error) {
 		return out, leaseError(err, "here")
 	}
 	if o.PR {
-		err = openPR(&out, st, o)
+		err = openPR(ctx, &out, st, o)
 		if errors.Is(err, forge.ErrUnavailable) || errors.Is(err, forge.ErrUnauthenticated) {
 			out.PR, err = PR{State: PRReady, Reason: forge.Reason(err)}, nil
 		}
@@ -242,8 +241,8 @@ func commit(ctx context.Context, w vcs.Writer, c vcs.Copy, m Map, o Options, out
 	if err != nil {
 		return err
 	}
-	res, err := mapcheck.CheckWith(c.Dir(), mapcheck.Options{PRExists: o.PRExists,
-		OpenRepo: func(string) (vcs.Repo, error) { return w, nil }})
+	res, err := mapcheck.CheckWith(ctx, c.Dir(), mapcheck.Options{PRExists: o.PRExists,
+		OpenRepo: func(context.Context, string) (vcs.Repo, error) { return w, nil }})
 	if err != nil {
 		return fmt.Errorf("the map init wrote cannot be read: %w", err)
 	}
@@ -311,7 +310,7 @@ func read(ctx context.Context, w vcs.Writer, push bool) (state, error) {
 	if out {
 		return st, fmt.Errorf("%s is checked out in a working copy; switch that copy to another branch first, as Physa never writes a checked-out branch", Branch)
 	}
-	if err := HasMap(w); err != nil {
+	if err := HasMap(ctx, w); err != nil {
 		return st, err
 	}
 	for _, ref := range w.Branch(ctx, Branch) {
@@ -328,8 +327,7 @@ func read(ctx context.Context, w vcs.Writer, push bool) (state, error) {
 // HasMap returns an error naming the file found and saying how to proceed
 // when the default branch holds either of mapfolder.Products, else nil. Files
 // lists only blobs directly under a directory, so each one's is listed.
-func HasMap(w vcs.Writer) error {
-	ctx := context.TODO()
+func HasMap(ctx context.Context, w vcs.Writer) error {
 	def, err := w.DefaultBranch(ctx)
 	if err != nil {
 		return err

@@ -79,7 +79,7 @@ func Run(ctx context.Context, st Store, s Session) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	from, ok, err := areas.Load(st)
+	from, ok, err := areas.Load(ctx, st)
 	if err == nil && (!ok || len(from.Areas) == 0) {
 		err = errors.New("no areas stored yet; run physa init --areas first")
 	}
@@ -90,7 +90,7 @@ func Run(ctx context.Context, st Store, s Session) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	r := &runner{ctx: ctx, a: a, s: s, split: from.Split, sizes: map[string]int{}}
+	r := &runner{a: a, s: s, split: from.Split, sizes: map[string]int{}}
 	var jobs []*job
 	for _, ar := range from.Areas {
 		jobs = append(jobs, &job{system: Walk + "\n" + Split, area: Area{Name: ar.Name, Promise: ar.Promise, Files: ar.Files}})
@@ -100,7 +100,10 @@ func Run(ctx context.Context, st Store, s Session) (Result, error) {
 			}
 		}
 	}
-	r.all(jobs)
+	r.all(ctx, jobs)
+	if err := ctx.Err(); err != nil {
+		return r.res, err // a cancelled walk stores nothing
+	}
 	rec, failed := collect(jobs, &r.res)
 	rec.Sessions = r.ids
 	if len(failed) > 0 {
@@ -127,7 +130,6 @@ type job struct {
 
 // runner holds what every area's session shares.
 type runner struct {
-	ctx   context.Context
 	a     adapter.Adapter
 	s     Session
 	split sourceset.Division
@@ -140,7 +142,7 @@ type runner struct {
 
 // all walks jobs in order, at most Concurrency at once, each one's parts
 // after it when it split, and returns when none is left.
-func (r *runner) all(jobs []*job) {
+func (r *runner) all(ctx context.Context, jobs []*job) {
 	slots := make(chan struct{}, Concurrency)
 	var wg sync.WaitGroup
 	var start func(jobs []*job)
@@ -150,7 +152,7 @@ func (r *runner) all(jobs []*job) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				j.err = r.walk(j)
+				j.err = r.walk(ctx, j)
 				<-slots
 				start(j.parts)
 			}()
@@ -163,7 +165,11 @@ func (r *runner) all(jobs []*job) {
 // turn sends prompt to j's session, read-only in the root, and adds what it
 // used to the result. The first prompt starts the session; when the agent
 // cannot resume, a later one starts afresh after the area's message and sofar.
-func (r *runner) turn(j *job, sofar, prompt, what string) (string, error) {
+func (r *runner) turn(ctx context.Context, j *job, sofar, prompt, what string) (string, error) {
+	// A cancelled ctx starts no session.
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	spec := adapter.Spec{Prompt: prompt, SessionID: j.id, Resume: j.id != "", Dir: r.s.Root, ReadOnly: true}
 	var last atomic.Pointer[adapter.Tokens]
 	spec.Usage = func(t adapter.Tokens) { last.Store(&t) }
@@ -177,10 +183,10 @@ func (r *runner) turn(j *job, sofar, prompt, what string) (string, error) {
 		fmt.Fprintf(r.s.Progress, "physa init: walk: %s: %s; session %s\n", j.area.Name, what, spec.SessionID)
 	}
 	r.mu.Unlock()
-	sess, err := r.a.Start(r.ctx, spec)
+	sess, err := r.a.Start(ctx, spec)
 	if spec.Resume && errors.Is(err, adapter.ErrNoResume) {
 		j.id = ""
-		return r.turn(j, "", j.msg+"\n"+sofar+prompt, what+" to a new session, as the agent cannot resume")
+		return r.turn(ctx, j, "", j.msg+"\n"+sofar+prompt, what+" to a new session, as the agent cannot resume")
 	}
 	if err != nil {
 		return "", err
@@ -200,16 +206,16 @@ func (r *runner) turn(j *job, sofar, prompt, what string) (string, error) {
 // walk runs one area's session to its end: the answer, one more turn when
 // it cannot be read, then a fix round for each answer a check faults. It
 // leaves in j the footprints, or the parts of a top-level area that split.
-func (r *runner) walk(j *job) error {
+func (r *runner) walk(ctx context.Context, j *job) error {
 	a := j.area
 	j.msg, j.unclaimed = Message(a, r.split, r.sizes), len(a.Files)
-	text, err := r.turn(j, "", j.msg, "walking "+sourceset.FileCount(len(a.Files)))
+	text, err := r.turn(ctx, j, "", j.msg, "walking "+sourceset.FileCount(len(a.Files)))
 	if err != nil {
 		return err
 	}
 	ans, err := Parse(text)
 	if err != nil {
-		if text, err = r.turn(j, "", fmt.Sprintf(answerNow, err), "asked to answer now"); err != nil {
+		if text, err = r.turn(ctx, j, "", fmt.Sprintf(answerNow, err), "asked to answer now"); err != nil {
 			return err
 		}
 		if ans, err = Parse(text); err != nil {
@@ -242,7 +248,7 @@ func (r *runner) walk(j *job) error {
 		}
 		j.rounds++
 		sofar, _ := json.Marshal(ans)
-		if text, err = r.turn(j, fmt.Sprintf(answerSoFar, sofar), FixPrompt(p), fmt.Sprintf("fix round %d", round+1)); err != nil {
+		if text, err = r.turn(ctx, j, fmt.Sprintf(answerSoFar, sofar), FixPrompt(p), fmt.Sprintf("fix round %d", round+1)); err != nil {
 			return err
 		}
 		if whole, err := Parse(text); err == nil {

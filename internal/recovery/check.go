@@ -1,6 +1,7 @@
 package recovery
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -39,8 +40,8 @@ type answer struct {
 // root the repo's root.
 type checker struct {
 	product, root string
-	prExists      func(int) (bool, error)
-	openRepo      func(string) (vcs.Repo, error)
+	prExists      func(context.Context, int) (bool, error)
+	openRepo      func(context.Context, string) (vcs.Repo, error)
 }
 
 // scratch writes a map holding one capability, its folder split from its
@@ -85,7 +86,7 @@ func (c checker) scratch(name, file, terms string) (string, []mapfile.Problem, e
 // names outside its anchors (pathlint), on that file and line; a problem in
 // the scratch map's own files would be Physa's bug, and is left out. The
 // error is for a scratch map that could not be written or read.
-func (c checker) run(name, file, terms string) ([]mapfile.Problem, error) {
+func (c checker) run(ctx context.Context, name, file, terms string) ([]mapfile.Problem, error) {
 	dir, out, err := c.scratch(name, file, terms)
 	if err != nil {
 		return nil, err
@@ -93,9 +94,9 @@ func (c checker) run(name, file, terms string) ([]mapfile.Problem, error) {
 	defer os.RemoveAll(dir)
 	o := mapcheck.Options{DocRoot: c.root, PRExists: c.prExists}
 	if c.openRepo != nil {
-		o.OpenRepo = func(string) (vcs.Repo, error) { return c.openRepo(c.root) }
+		o.OpenRepo = func(ctx context.Context, _ string) (vcs.Repo, error) { return c.openRepo(ctx, c.root) }
 	}
-	res, err := mapcheck.CheckWith(dir, o)
+	res, err := mapcheck.CheckWith(ctx, dir, o)
 	for _, p := range res.Problems {
 		if strings.HasPrefix(p.Path, mapfolder.CapabilityDir(name)+"/") || p.Path == recovering.GlossaryPath {
 			out = append(out, p)
@@ -153,7 +154,7 @@ func describe(a answer) []string { return recovering.Describe(a.file, a.terms, a
 // holds (failed, with those problems, and nothing kept). Problems in the
 // glossary outside any term drop every term: the capability is worth
 // keeping without them.
-func (c checker) settle(name string, a answer, out *Outcome) error {
+func (c checker) settle(ctx context.Context, name string, a answer, out *Outcome) error {
 	path := mapfolder.CapabilityDir(name)
 	for len(a.problems) > 0 {
 		file, entries, rest := recovering.Drop(path, a.file, a.problems)
@@ -178,7 +179,7 @@ func (c checker) settle(name string, a answer, out *Outcome) error {
 		out.Dropped = append(append(out.Dropped, entries...), gone...)
 		a.file, a.terms = file, terms
 		var err error
-		if a.problems, err = c.run(name, a.file, a.terms); err != nil {
+		if a.problems, err = c.run(ctx, name, a.file, a.terms); err != nil {
 			return err
 		}
 	}

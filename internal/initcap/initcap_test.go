@@ -75,3 +75,26 @@ func TestShowSpendsInTheCapsUnit(t *testing.T) {
 		}
 	}
 }
+
+// TestContinueKeepsTheCap checks that the line an interrupt prints keeps the
+// --cap typed, quoted when it holds a $, where the cap's own line drops it.
+func TestContinueKeepsTheCap(t *testing.T) {
+	for _, c := range []struct {
+		words      []string
+		recovering bool
+		again      string
+		cont       string
+	}{
+		{[]string{"--walk", "--cap", "$5"}, false, "physa init --walk", "physa init --walk --cap '$5'"},
+		{[]string{"--recover", "--cap=80%"}, false, "physa init --recover", "physa init --recover --cap=80%"},
+		{[]string{"--cap", "2m", "--json"}, true, "physa init --recover --json", "physa init --recover --cap 2m --json"},
+		{[]string{"--areas"}, false, "physa init --areas", "physa init --areas"},
+	} {
+		if got := Again(c.words, c.recovering); got != c.again {
+			t.Errorf("Again(%q, %v) = %q, want %q", c.words, c.recovering, got, c.again)
+		}
+		if got := Continue(c.words, c.recovering); got != c.cont {
+			t.Errorf("Continue(%q, %v) = %q, want %q", c.words, c.recovering, got, c.cont)
+		}
+	}
+}

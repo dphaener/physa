@@ -120,7 +120,7 @@ func (f *fixture) opts(a *fakeAgent, push, pr bool) Options {
 		Session: propose.Session{
 			Agent:    func() (adapter.Adapter, error) { return a, nil },
 			Appetite: 40000,
-			Check:    propose.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }},
+			Check:    propose.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }},
 		}}
 }
 
@@ -227,26 +227,26 @@ type fakeForge struct {
 	calls  []string
 }
 
-func (f *fakeForge) Name() string               { return "fake" }
-func (f *fakeForge) PRExists(int) (bool, error) { return false, nil }
-func (f *fakeForge) ChangePR(id string) (forge.PR, bool, error) {
+func (f *fakeForge) Name() string                                { return "fake" }
+func (f *fakeForge) PRExists(context.Context, int) (bool, error) { return false, nil }
+func (f *fakeForge) ChangePR(_ context.Context, id string) (forge.PR, bool, error) {
 	if err := f.errFor[id]; err != nil {
 		return forge.PR{}, false, err
 	}
 	pr, ok := f.prs[id]
 	return pr, ok, nil
 }
-func (f *fakeForge) OpenPR(head string) (int, string, bool, error) {
+func (f *fakeForge) OpenPR(_ context.Context, head string) (int, string, bool, error) {
 	f.calls = append(f.calls, "list "+head)
 	return f.number, f.url(), f.open, nil
 }
-func (f *fakeForge) CreatePR(head, base, title, body string) (int, string, error) {
+func (f *fakeForge) CreatePR(_ context.Context, head, base, title, body string) (int, string, error) {
 	f.calls = append(f.calls, "create "+head+" "+base+" "+title)
 	f.open, f.body = true, body
 	f.number++
 	return f.number, f.url(), nil
 }
-func (f *fakeForge) EditPR(n int, body string) error {
+func (f *fakeForge) EditPR(_ context.Context, n int, body string) error {
 	f.calls = append(f.calls, fmt.Sprintf("edit %d", n))
 	f.body = body
 	return nil

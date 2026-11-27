@@ -20,15 +20,15 @@ import (
 // InstallHook installs the Session: hook in the repo here and says what
 // happened; any error is a refusal, with its reason. hooks gives the repo's
 // hooks for the directory it is called with.
-func InstallHook(hooks func(dir string) (vcs.Hooks, error)) initbranch.Hook {
+func InstallHook(ctx context.Context, hooks func(ctx context.Context, dir string) (vcs.Hooks, error)) initbranch.Hook {
 	root, err := filepath.Abs(".")
 	var h vcs.Hooks
 	if err == nil {
-		h, err = hooks(".")
+		h, err = hooks(ctx, ".")
 	}
 	var got sessionhook.Outcome
 	if err == nil {
-		got, err = sessionhook.Install(root, h)
+		got, err = sessionhook.Install(ctx, root, h)
 	}
 	switch {
 	case err != nil:
@@ -45,23 +45,23 @@ func InstallHook(hooks func(dir string) (vcs.Hooks, error)) initbranch.Hook {
 // body, or refreshes the open one's body. A forge that cannot open PRs, is
 // unavailable or is not signed in leaves the branch ready, with the reason.
 // It never merges a PR.
-func Open(w vcs.Writer, f forge.Forge, out initbranch.Outcome) (initbranch.PR, error) {
+func Open(ctx context.Context, w vcs.Writer, f forge.Forge, out initbranch.Outcome) (initbranch.PR, error) {
 	prs, ok := f.(forge.PRs)
 	if !ok {
 		return initbranch.PR{State: initbranch.PRReady, Reason: "the forge cannot open PRs"}, nil
 	}
 	pr := initbranch.PR{State: initbranch.PRRefreshed}
-	n, url, open, err := prs.OpenPR(initbranch.Branch)
+	n, url, open, err := prs.OpenPR(ctx, initbranch.Branch)
 	if err == nil && open {
-		err = prs.EditPR(n, out.Body)
+		err = prs.EditPR(ctx, n, out.Body)
 	} else if err == nil {
 		pr.State = initbranch.PROpened
 		var def string
-		if def, err = w.DefaultBranch(context.TODO()); err == nil {
+		if def, err = w.DefaultBranch(ctx); err == nil {
 			if remote, name, ok := strings.Cut(def, "/"); ok && remote != "" {
 				def = name
 			}
-			n, url, err = prs.CreatePR(initbranch.Branch, def, out.Commit.Subject, out.Body)
+			n, url, err = prs.CreatePR(ctx, initbranch.Branch, def, out.Commit.Subject, out.Body)
 		}
 	}
 	if errors.Is(err, forge.ErrUnavailable) || errors.Is(err, forge.ErrUnauthenticated) {

@@ -36,10 +36,12 @@ func newEnv(t *testing.T) *env { return newEnvWith(t, &fakeForge{}) }
 // fakeForge is a forge with no merged PRs.
 type fakeForge struct{}
 
-func (*fakeForge) Name() string                            { return "fake" }
-func (*fakeForge) PRExists(int) (bool, error)              { return false, nil }
-func (*fakeForge) ChangePR(string) (forge.PR, bool, error) { return forge.PR{}, false, nil }
-func (*fakeForge) MergedPRs(time.Time, int) ([]forge.PR, bool, error) {
+func (*fakeForge) Name() string                                { return "fake" }
+func (*fakeForge) PRExists(context.Context, int) (bool, error) { return false, nil }
+func (*fakeForge) ChangePR(context.Context, string) (forge.PR, bool, error) {
+	return forge.PR{}, false, nil
+}
+func (*fakeForge) MergedPRs(context.Context, time.Time, int) ([]forge.PR, bool, error) {
 	return nil, false, nil
 }
 
@@ -470,7 +472,7 @@ func TestIdeaAddNamesThePersonWhenLeftOut(t *testing.T) {
 	e := newEnv(t)
 	named := "cy"
 	old := namePerson
-	namePerson = func(string) string { return named }
+	namePerson = func(context.Context, string) string { return named }
 	t.Cleanup(func() { namePerson = old })
 
 	var idea client.IdeaOut

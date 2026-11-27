@@ -1,6 +1,7 @@
 package initbranch
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -11,23 +12,23 @@ import (
 
 // openPR opens the branch's PR, or refreshes the open one with the new body.
 // Without a forge the branch is ready for review. It never merges a PR.
-func openPR(out *Outcome, st state, o Options) error {
+func openPR(ctx context.Context, out *Outcome, st state, o Options) error {
 	if o.PRs == nil {
 		out.PR = PR{State: PRReady, Reason: o.ForgeReason}
 		return nil
 	}
-	n, url, open, err := o.PRs.OpenPR(Branch)
+	n, url, open, err := o.PRs.OpenPR(ctx, Branch)
 	if err != nil {
 		return fmt.Errorf("the PR of %s cannot be read: %w", Branch, err)
 	}
 	if open {
-		if err := o.PRs.EditPR(n, out.Body); err != nil {
+		if err := o.PRs.EditPR(ctx, n, out.Body); err != nil {
 			return fmt.Errorf("PR #%d cannot be refreshed: %w", n, err)
 		}
 		out.PR = PR{State: PRRefreshed, Number: n, URL: url}
 		return nil
 	}
-	n, url, err = o.PRs.CreatePR(Branch, st.name, out.Commit.Subject, out.Body)
+	n, url, err = o.PRs.CreatePR(ctx, Branch, st.name, out.Commit.Subject, out.Body)
 	if err != nil {
 		return fmt.Errorf("the PR of %s cannot be opened: %w", Branch, err)
 	}

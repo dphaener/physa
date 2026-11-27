@@ -23,9 +23,9 @@ func initCommand() *cobra.Command {
 	var f initrun.Flags
 	var c *cobra.Command
 	c = command.Declare(command.New("init", summary, initrun.Usage,
-		func(args []string, stdout, stderr io.Writer) int {
+		func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			cache, _ := spend.Path() // no settings directory: prices are kept for the run only
-			return initrun.Run(f, args, command.Words(c), stdout, stderr, initrun.Env{
+			return initrun.Run(ctx, f, args, command.Words(c), stdout, stderr, initrun.Env{
 				Store:      openStore,
 				Repo:       openRepo,
 				Forge:      newForge,
@@ -59,9 +59,11 @@ func skillNotice(name string) string {
 }
 
 // openRepo, openWriter and openHooks open git's repo, writer and hooks at
-// dir, for the seams that take a directory alone.
-func openRepo(dir string) (vcs.Repo, error) { return git.Open(context.TODO(), dir) }
+// dir, for the seams that take a context and a directory.
+func openRepo(ctx context.Context, dir string) (vcs.Repo, error) { return git.Open(ctx, dir) }
 
-func openWriter(dir string) (vcs.Writer, error) { return git.OpenWriter(context.TODO(), dir) }
+func openWriter(ctx context.Context, dir string) (vcs.Writer, error) {
+	return git.OpenWriter(ctx, dir)
+}
 
-func openHooks(dir string) (vcs.Hooks, error) { return git.OpenHooks(context.TODO(), dir) }
+func openHooks(ctx context.Context, dir string) (vcs.Hooks, error) { return git.OpenHooks(ctx, dir) }

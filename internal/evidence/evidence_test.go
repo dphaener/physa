@@ -59,7 +59,7 @@ type fakeForge struct {
 	from time.Time
 }
 
-func (f *fakeForge) MergedPRs(since time.Time, max int) ([]forge.PR, bool, error) {
+func (f *fakeForge) MergedPRs(_ context.Context, since time.Time, max int) ([]forge.PR, bool, error) {
 	f.from = since
 	return f.prs, false, f.err
 }

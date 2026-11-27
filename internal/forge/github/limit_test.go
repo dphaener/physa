@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"slices"
@@ -19,7 +20,7 @@ type oneAnswer struct {
 	calls [][]string
 }
 
-func (o *oneAnswer) run(_ string, args ...string) ([]byte, error) {
+func (o *oneAnswer) run(_ context.Context, _ string, args ...string) ([]byte, error) {
 	o.calls = append(o.calls, args)
 	if args[0] == "repo" {
 		return []byte(repoView), nil
@@ -41,7 +42,7 @@ func included(status string, body string, headers ...string) string {
 // pageLimit asks for one page with o and returns its error as a RateLimit.
 func pageLimit(t *testing.T, o *oneAnswer) *forge.RateLimit {
 	t.Helper()
-	_, err := NewWithRunner(".", o.run).MergedPage(at("2026-11-01T00:00:00Z"), "")
+	_, err := NewWithRunner(".", o.run).MergedPage(t.Context(), at("2026-11-01T00:00:00Z"), "")
 	var l *forge.RateLimit
 	if !errors.As(err, &l) {
 		t.Fatalf("err = %v (%T), want a *forge.RateLimit", err, err)
@@ -69,7 +70,7 @@ func TestMergedPageIncludeParses(t *testing.T) {
 		node(3, "2026-11-10T00:00:00Z", "2026-11-12T00:00:00Z", ""),
 		node(2, "2026-10-08T00:00:00Z", "2026-11-09T00:00:00Z", "")),
 		"Content-Type: application/json; charset=utf-8", "X-Ratelimit-Remaining: 4990", "X-Ratelimit-Reset: 1795000000")}
-	page, err := NewWithRunner(".", o.run).MergedPage(at("2026-11-01T00:00:00Z"), "")
+	page, err := NewWithRunner(".", o.run).MergedPage(t.Context(), at("2026-11-01T00:00:00Z"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +94,7 @@ func TestMergedPageNext(t *testing.T) {
 	}
 	for _, c := range cases {
 		o := &oneAnswer{out: c.out}
-		page, err := NewWithRunner(".", o.run).MergedPage(since, "c0")
+		page, err := NewWithRunner(".", o.run).MergedPage(t.Context(), since, "c0")
 		if err != nil || page.Next != c.want || page.PRs == nil {
 			t.Errorf("%s: next %q, prs %v, err %v; want next %q", c.name, page.Next, page.PRs, err, c.want)
 		}
@@ -175,31 +176,31 @@ func TestLimitNotALimit(t *testing.T) {
 	// The request that spends the last point still answers with its page.
 	o := &oneAnswer{out: included("200 OK", pageOf("", node(1, "2026-11-10T00:00:00Z", "2026-11-10T00:00:00Z", "")),
 		"X-Ratelimit-Remaining: 0", "X-Ratelimit-Reset: 1795000000")}
-	if page, err := NewWithRunner(".", o.run).MergedPage(since, ""); err != nil || len(page.PRs) != 1 {
+	if page, err := NewWithRunner(".", o.run).MergedPage(t.Context(), since, ""); err != nil || len(page.PRs) != 1 {
 		t.Errorf("last point: %v, %v", page, err)
 	}
 	// A 403 that is not a limit, and a plain GraphQL error, stay plain errors.
 	o = &oneAnswer{out: included("403 Forbidden", `{"message":"Resource not accessible by integration"}`, "X-Ratelimit-Remaining: 10"),
 		err: &Error{ExitCode: 1, Stderr: "gh: Resource not accessible by integration (HTTP 403)"}}
 	var l *forge.RateLimit
-	if _, err := NewWithRunner(".", o.run).MergedPage(since, ""); err == nil || errors.As(err, &l) {
+	if _, err := NewWithRunner(".", o.run).MergedPage(t.Context(), since, ""); err == nil || errors.As(err, &l) {
 		t.Errorf("403 not a limit: %v", err)
 	}
 	o = &oneAnswer{out: included("200 OK", `{"data":null,"errors":[{"type":"NOT_FOUND","message":"Could not resolve to a Repository"}]}`),
 		err: &Error{ExitCode: 1, Stderr: "gh: Could not resolve to a Repository"}}
-	if _, err := NewWithRunner(".", o.run).MergedPage(since, ""); err == nil || errors.As(err, &l) || !strings.Contains(err.Error(), "Could not resolve") {
+	if _, err := NewWithRunner(".", o.run).MergedPage(t.Context(), since, ""); err == nil || errors.As(err, &l) || !strings.Contains(err.Error(), "Could not resolve") {
 		t.Errorf("graphql error: %v", err)
 	}
 	// An unauthenticated gh is still classed as one.
 	o = &oneAnswer{err: &Error{ExitCode: 4, Stderr: "HTTP 401: Bad credentials"}}
-	if _, err := NewWithRunner(".", o.run).MergedPage(since, ""); !errors.Is(err, forge.ErrUnauthenticated) {
+	if _, err := NewWithRunner(".", o.run).MergedPage(t.Context(), since, ""); !errors.Is(err, forge.ErrUnauthenticated) {
 		t.Errorf("401: %v", err)
 	}
 }
 
 func TestMergedPRsReturnsRateLimit(t *testing.T) {
 	o := &oneAnswer{err: &Error{ExitCode: 1, Stderr: "API rate limit exceeded (HTTP 403)"}}
-	prs, more, err := NewWithRunner(".", o.run).MergedPRs(at("2026-11-01T00:00:00Z"), 10)
+	prs, more, err := NewWithRunner(".", o.run).MergedPRs(t.Context(), at("2026-11-01T00:00:00Z"), 10)
 	var l *forge.RateLimit
 	if !errors.As(err, &l) || prs != nil || more {
 		t.Errorf("got %v, %v, %v", prs, more, err)

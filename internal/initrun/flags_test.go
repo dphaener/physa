@@ -1,6 +1,7 @@
 package initrun
 
 import (
+	"context"
 	"io"
 	"strings"
 	"testing"
@@ -23,11 +24,11 @@ func execute(args []string, stdout, stderr io.Writer, job func(f Flags, pos, wor
 	var f Flags
 	var c *cobra.Command
 	code := command.BadUsage
-	c = command.Declare(command.New("init", "", Usage, func(pos []string, stdout, stderr io.Writer) int {
+	c = command.Declare(command.New("init", "", Usage, func(_ context.Context, pos []string, stdout, stderr io.Writer) int {
 		code = job(f, pos, command.Words(c), stdout, stderr)
 		return code
 	}), f.Declare)
-	command.Execute(command.New("physa", "", nil, nil, c), append([]string{"init"}, args...), stdout, stderr)
+	command.Execute(context.Background(), command.New("physa", "", nil, nil, c), append([]string{"init"}, args...), stdout, stderr)
 	return code
 }
 

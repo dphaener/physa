@@ -123,7 +123,7 @@ func (te *tenv) run(args ...string) (int, string, string) {
 	te.t.Helper()
 	var out, errb bytes.Buffer
 	root := command.New("physa", "", nil, nil, commandsFor(te.e)...)
-	code := command.Execute(root, args, &out, &errb)
+	code := command.Execute(context.Background(), root, args, &out, &errb)
 	return code, out.String(), errb.String()
 }
 
@@ -764,7 +764,7 @@ func TestHelpListsPlanAndWork(t *testing.T) {
 	te := newTest(t)
 	var out bytes.Buffer
 	root := command.New("physa", "", nil, nil, commandsFor(te.e)...)
-	command.Execute(root, []string{"pursuit", "--help"}, &out, io.Discard)
+	command.Execute(t.Context(), root, []string{"pursuit", "--help"}, &out, io.Discard)
 	for _, want := range []string{"physa pursuit plan set", "physa pursuit plan show", "physa pursuit work"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("help lacks %q:\n%s", want, out.String())

@@ -119,7 +119,7 @@ func (f *fixture) run(m Map, o Options, w vcs.Writer) (Outcome, error) {
 		w = f.writer()
 	}
 	before := f.state()
-	out, err := Run(w, m, o)
+	out, err := Run(context.Background(), w, m, o)
 	if after := f.state(); after != before {
 		f.t.Errorf("the working copy changed:\nbefore %s\nafter  %s", before, after)
 	}
@@ -142,17 +142,17 @@ type fakeForge struct {
 	calls  []string
 }
 
-func (f *fakeForge) OpenPR(head string) (int, string, bool, error) {
+func (f *fakeForge) OpenPR(_ context.Context, head string) (int, string, bool, error) {
 	f.calls = append(f.calls, "list "+head)
 	return f.number, f.url(), f.open, nil
 }
-func (f *fakeForge) CreatePR(head, base, title, body string) (int, string, error) {
+func (f *fakeForge) CreatePR(_ context.Context, head, base, title, body string) (int, string, error) {
 	f.calls = append(f.calls, "create "+head+" "+base+" "+title)
 	f.open, f.body = true, body
 	f.number++
 	return f.number, f.url(), nil
 }
-func (f *fakeForge) EditPR(n int, body string) error {
+func (f *fakeForge) EditPR(_ context.Context, n int, body string) error {
 	f.calls = append(f.calls, fmt.Sprintf("edit %d", n))
 	f.body = body
 	return nil
@@ -164,13 +164,13 @@ var _ forge.PRs = (*fakeForge)(nil)
 // unavailable is a forge that cannot answer.
 type unavailable struct{}
 
-func (unavailable) OpenPR(string) (int, string, bool, error) {
+func (unavailable) OpenPR(context.Context, string) (int, string, bool, error) {
 	return 0, "", false, &forge.Error{Class: forge.ErrUnavailable, Reason: "gh is not installed"}
 }
-func (unavailable) CreatePR(string, string, string, string) (int, string, error) {
+func (unavailable) CreatePR(context.Context, string, string, string, string) (int, string, error) {
 	return 0, "", errors.New("not called")
 }
-func (unavailable) EditPR(int, string) error { return errors.New("not called") }
+func (unavailable) EditPR(context.Context, int, string) error { return errors.New("not called") }
 
 // racingWriter stands for someone else pushing the remote's physa/init just
 // before this run pushes.
@@ -290,7 +290,7 @@ func TestBranchTreePassesTheMapCheck(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "check")
 	gitIn(t, f.dir, "worktree", "add", "-q", "--detach", dir, Branch)
 	defer gitIn(t, f.dir, "worktree", "remove", "--force", dir)
-	res, err := mapcheck.CheckWith(dir, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
+	res, err := mapcheck.CheckWith(t.Context(), dir, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil || len(res.Problems) > 0 || res.Capabilities != 2 {
 		t.Fatalf("check = %+v, %v", res, err)
 	}
@@ -393,7 +393,7 @@ func TestCheckedOutBranchIsRefused(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "wt")
 	gitIn(t, f.dir, "worktree", "add", "-q", dir, Branch)
 	defer gitIn(t, f.dir, "worktree", "remove", "--force", dir)
-	_, err := Run(f.writer(), sample(f), Options{})
+	_, err := Run(t.Context(), f.writer(), sample(f), Options{})
 	if err == nil || !strings.Contains(err.Error(), "checked out") {
 		t.Fatalf("err = %v, want a refusal", err)
 	}
@@ -545,14 +545,14 @@ func TestHasMap(t *testing.T) {
 	for _, p := range mapfolder.Products {
 		t.Run(p, func(t *testing.T) {
 			f := newFixture(t, nil)
-			if err := HasMap(f.writer()); err != nil {
+			if err := HasMap(t.Context(), f.writer()); err != nil {
 				t.Fatalf("HasMap without a map = %v", err)
 			}
 			writeFile(t, f.dir, p, "---\npromise: P.\n---\n\n# P\n\nP.\n")
 			gitIn(t, f.dir, "add", ".")
 			gitIn(t, f.dir, "commit", "-q", "-m", "docs(map): Add a map")
 			gitIn(t, f.dir, "push", "-q", "origin", "main")
-			err := HasMap(f.writer())
+			err := HasMap(t.Context(), f.writer())
 			t.Logf("HasMap: %v", err)
 			if err == nil || !strings.Contains(err.Error(), "the repo already has a map ("+p+" on ") || !strings.Contains(err.Error(), "run physa map learn") {
 				t.Fatalf("HasMap with a map = %v, want the refusal naming %s", err, p)
@@ -568,7 +568,7 @@ func checkBranch(t *testing.T, f *fixture, capabilities int) {
 	dir := filepath.Join(t.TempDir(), "check")
 	gitIn(t, f.dir, "worktree", "add", "-q", "--detach", dir, Branch)
 	defer gitIn(t, f.dir, "worktree", "remove", "--force", dir)
-	res, err := mapcheck.CheckWith(dir, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
+	res, err := mapcheck.CheckWith(t.Context(), dir, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil || len(res.Problems) > 0 || res.Capabilities != capabilities {
 		t.Fatalf("check = %+v, %v", res, err)
 	}
@@ -665,7 +665,7 @@ func TestProductRulesAreWrittenAndPassTheCheck(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "check")
 	gitIn(t, f.dir, "worktree", "add", "-q", "--detach", dir, Branch)
 	defer gitIn(t, f.dir, "worktree", "remove", "--force", dir)
-	res, err := mapcheck.CheckWith(dir, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
+	res, err := mapcheck.CheckWith(t.Context(), dir, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil || len(res.Problems) > 0 {
 		t.Fatalf("check = %+v, %v", res, err)
 	}

@@ -21,13 +21,13 @@ import (
 // (mapfolder.Products), naming the file found. With no default branch
 // to be found it checks the working tree instead, and leaves a missing
 // default branch for --write to report.
-func Refuse(open func(dir string) (vcs.Writer, error)) error {
-	w, err := open(".")
+func Refuse(ctx context.Context, open func(ctx context.Context, dir string) (vcs.Writer, error)) error {
+	w, err := open(ctx, ".")
 	if err != nil {
 		return err
 	}
-	if _, err := w.DefaultBranch(context.TODO()); err == nil {
-		return initbranch.HasMap(w)
+	if _, err := w.DefaultBranch(ctx); err == nil {
+		return initbranch.HasMap(ctx, w)
 	}
 	for _, p := range mapfolder.Products {
 		if _, err := os.Stat(filepath.FromSlash(p)); err == nil {
@@ -40,8 +40,8 @@ func Refuse(open func(dir string) (vcs.Writer, error)) error {
 // DiscoveryOff is why --gather alone starts no discovery agent, or empty to
 // start one: the repo has a map, by the early refusal's check, or whether it
 // has one could not be told.
-func DiscoveryOff(open func(dir string) (vcs.Writer, error)) string {
-	switch err := Refuse(open); {
+func DiscoveryOff(ctx context.Context, open func(ctx context.Context, dir string) (vcs.Writer, error)) string {
+	switch err := Refuse(ctx, open); {
 	case err == nil:
 		return ""
 	case strings.Contains(err.Error(), "already has a map"):

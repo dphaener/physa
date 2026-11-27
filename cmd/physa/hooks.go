@@ -13,12 +13,12 @@ import (
 // pointing its hooks at the hook the repo ships or by writing Physa's embedded
 // hook beside its own. It returns 0 when it did so or found it done, and
 // 2 when the repo cannot be opened or Install refuses, saying why.
-func hooks(dir string, stdout, stderr io.Writer) int {
-	h, err := git.OpenHooks(context.TODO(), dir)
+func hooks(ctx context.Context, dir string, stdout, stderr io.Writer) int {
+	h, err := git.OpenHooks(ctx, dir)
 	if err != nil {
 		return failed(stderr, "hooks", err)
 	}
-	out, err := sessionhook.Install(dir, h)
+	out, err := sessionhook.Install(ctx, dir, h)
 	if err != nil {
 		return failed(stderr, "hooks", err)
 	}

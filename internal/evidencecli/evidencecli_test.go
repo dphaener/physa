@@ -114,7 +114,7 @@ func newTest(t *testing.T, messages ...string) *ideacli.Env {
 func evidence(e *ideacli.Env, args ...string) (int, string, string) {
 	var out, errb bytes.Buffer
 	root := command.New("physa", "", nil, nil, commandFor(e))
-	code := command.Execute(root, append([]string{"evidence"}, args...), &out, &errb)
+	code := command.Execute(context.Background(), root, append([]string{"evidence"}, args...), &out, &errb)
 	return code, out.String(), errb.String()
 }
 

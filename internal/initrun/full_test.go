@@ -40,13 +40,13 @@ type prForge struct {
 	edits   int
 }
 
-func (f *prForge) OpenPR(string) (int, string, bool, error) {
+func (f *prForge) OpenPR(context.Context, string) (int, string, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return 7, "https://example.com/pr/7", f.open, nil
 }
 
-func (f *prForge) CreatePR(head, base, title, body string) (int, string, error) {
+func (f *prForge) CreatePR(_ context.Context, head, base, title, body string) (int, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.open = true
@@ -55,7 +55,7 @@ func (f *prForge) CreatePR(head, base, title, body string) (int, string, error) 
 	return 7, "https://example.com/pr/7", nil
 }
 
-func (f *prForge) EditPR(int, string) error {
+func (f *prForge) EditPR(context.Context, int, string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.edits++
@@ -193,8 +193,8 @@ func remoteRepo(t *testing.T) (dir, bare string) {
 // store, forge f and agent a, and the git writer and hooks.
 func fullEnv(t *testing.T, f forge.Forge, a adapter.Adapter) Env {
 	env := testEnv(t, f, a)
-	env.Writer = func(d string) (vcs.Writer, error) { return git.OpenWriter(context.Background(), d) }
-	env.Hooks = func(d string) (vcs.Hooks, error) { return git.OpenHooks(context.Background(), d) }
+	env.Writer = func(_ context.Context, d string) (vcs.Writer, error) { return git.OpenWriter(context.Background(), d) }
+	env.Hooks = func(_ context.Context, d string) (vcs.Hooks, error) { return git.OpenHooks(context.Background(), d) }
 	env.Stdin = strings.NewReader("")
 	env.IsTerminal = func() bool { return false }
 	return env
@@ -217,7 +217,7 @@ func checkTree(t *testing.T, dir, ref string) {
 	t.Helper()
 	clone := t.TempDir()
 	gitIn(t, clone, "clone", "-q", "--branch", ref, dir, ".")
-	res, err := mapcheck.CheckWith(clone, mapcheck.Options{OpenRepo: func(d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
+	res, err := mapcheck.CheckWith(t.Context(), clone, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
 	if err != nil || len(res.Problems) > 0 {
 		t.Errorf("map check on %s: %v %v", ref, err, res.Problems)
 	}
@@ -358,7 +358,7 @@ func TestFullTableAgreesWithTheRunAt1HourWrites(t *testing.T) {
 			t.Errorf("the table has no %s row:\n%s", phase, out)
 		}
 	}
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +432,7 @@ func TestFullJSONIsOneDocument(t *testing.T) {
 // storedRow returns the stored recovery of capability c.
 func storedRow(t *testing.T, env Env, c string) initrecord.Recovered {
 	t.Helper()
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -614,7 +614,7 @@ func TestMappedRepoIsRefusedBeforeAnythingIsSpent(t *testing.T) {
 			if len(a.started) != 0 {
 				t.Errorf("%s %v: %d agent sessions ran", p, args, len(a.started))
 			}
-			st, err := env.Store(".")
+			st, err := env.Store(context.Background(), ".")
 			if err != nil {
 				t.Fatal(err)
 			}

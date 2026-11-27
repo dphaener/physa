@@ -32,7 +32,7 @@ func workCommand(p pursuits) *cobra.Command {
 		"Record that this agent session works on a planned change, so its commits carry a Change: trailer. "+
 			"--current prints <pursuit>/<change> for the session, or nothing; it reads the store and never fails.",
 		[]string{"physa pursuit work <pursuit>/<change> [--json]", "physa pursuit work --current"},
-		func(args []string, stdout, stderr io.Writer) int {
+		func(_ context.Context, args []string, stdout, stderr io.Writer) int {
 			return p.work(args, current, asJSON, stdout, stderr)
 		}),
 		func(fs *pflag.FlagSet) {

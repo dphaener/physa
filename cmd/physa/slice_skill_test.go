@@ -29,7 +29,7 @@ func TestSliceSkillIsPrintedAndItsCommandsRun(t *testing.T) {
 	t.Chdir(skillMap(t))
 	useStore(t)
 	var out, errb bytes.Buffer
-	if code := run([]string{"map", "slice", "a"}, &out, &errb); code != 0 {
+	if code := run(t.Context(), []string{"map", "slice", "a"}, &out, &errb); code != 0 {
 		t.Fatalf("bare slice = %d; stderr %q", code, errb.String())
 	}
 	_, after, ok := strings.Cut(out.String(), "## Reading further\n\n")
@@ -69,7 +69,7 @@ func TestSliceSkillIsPrintedAndItsCommandsRun(t *testing.T) {
 			}
 		}
 		var o, e bytes.Buffer
-		if code := run(append([]string{"map", "slice"}, args...), &o, &e); code != 0 {
+		if code := run(t.Context(), append([]string{"map", "slice"}, args...), &o, &e); code != 0 {
 			t.Errorf("the skill's command %q ran as %v = %d; stderr %q", c[0], args, code, e.String())
 		}
 		if o.Len() == 0 {

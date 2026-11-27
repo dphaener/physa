@@ -12,6 +12,7 @@
 package command
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -33,9 +34,9 @@ func init() {
 // help is then printed to stderr and the exit code is 2.
 const BadUsage = -1
 
-// Run does a command's job with the arguments left after its name and returns
-// its exit code, or BadUsage.
-type Run func(args []string, stdout, stderr io.Writer) int
+// Run does a command's job with the command's context and the arguments
+// left after its name and returns its exit code, or BadUsage.
+type Run func(ctx context.Context, args []string, stdout, stderr io.Writer) int
 
 // usageKey is the annotation that holds a command's usage lines.
 const usageKey = "usage"
@@ -60,7 +61,7 @@ func New(name, summary string, usage []string, run Run, subs ...*cobra.Command) 
 				Help(c, c.ErrOrStderr())
 				return exitCode(2)
 			}
-			code := run(args, c.OutOrStdout(), c.ErrOrStderr())
+			code := run(c.Context(), args, c.OutOrStdout(), c.ErrOrStderr())
 			if code == BadUsage {
 				Help(c, c.ErrOrStderr())
 				code = 2
@@ -83,11 +84,11 @@ func New(name, summary string, usage []string, run Run, subs ...*cobra.Command) 
 	return c
 }
 
-// Execute runs one command line against root and returns the process exit
-// code: the command's own, 0 for --help, 2 for a bad line. The root's own
-// help subcommand, if it has one, is its help command; without one, help is
-// a word like any other and Cobra adds none.
-func Execute(root *cobra.Command, args []string, stdout, stderr io.Writer) int {
+// Execute runs one command line against root with ctx, which every job gets,
+// and returns the process exit code: the command's own, 0 for --help, 2 for
+// a bad line. The root's own help subcommand, if it has one, is its help
+// command; without one, help is a word like any other and Cobra adds none.
+func Execute(ctx context.Context, root *cobra.Command, args []string, stdout, stderr io.Writer) int {
 	root.SetArgs(append([]string{}, args...)) // never nil: nil makes Cobra read os.Args
 	root.SetOut(stdout)
 	root.SetErr(stderr)
@@ -107,7 +108,7 @@ func Execute(root *cobra.Command, args []string, stdout, stderr io.Writer) int {
 			}
 		}
 	}
-	_, err := root.ExecuteC()
+	_, err := root.ExecuteContextC(ctx)
 	var code exitCode
 	switch {
 	case err == nil:

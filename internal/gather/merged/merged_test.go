@@ -1,6 +1,7 @@
 package merged
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -27,7 +28,7 @@ type fakeForge struct {
 	cursors []string
 }
 
-func (f *fakeForge) MergedPage(_ time.Time, cursor string) (forge.Page, error) {
+func (f *fakeForge) MergedPage(_ context.Context, _ time.Time, cursor string) (forge.Page, error) {
 	f.cursors = append(f.cursors, cursor)
 	if len(f.answers) == 0 {
 		return forge.Page{}, errors.New("fake forge: no answer left")
@@ -91,7 +92,7 @@ func TestListSecondaryLimitAfterTwoPages(t *testing.T) {
 	}}
 	c := &clock{now: start}
 	var progress strings.Builder
-	prs, more, err := List(f, since, 0, c.wait(time.Hour, &progress))
+	prs, more, err := List(t.Context(), f, since, 0, c.wait(time.Hour, &progress))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -123,7 +124,7 @@ func TestListDoublesWithNoHints(t *testing.T) {
 		page("", pr(3, 3)),
 	}}
 	c := &clock{now: start}
-	prs, _, err := List(f, since, 0, c.wait(time.Hour, nil))
+	prs, _, err := List(t.Context(), f, since, 0, c.wait(time.Hour, nil))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -144,7 +145,7 @@ func TestListWaitsForPrimaryReset(t *testing.T) {
 	}}
 	c := &clock{now: start}
 	var progress strings.Builder
-	prs, _, err := List(f, since, 0, c.wait(0, &progress))
+	prs, _, err := List(t.Context(), f, since, 0, c.wait(0, &progress))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -165,7 +166,7 @@ func TestListRetryAfterBeforeReset(t *testing.T) {
 		page(""),
 	}}
 	c := &clock{now: start}
-	if _, _, err := List(f, since, 0, c.wait(0, nil)); err != nil {
+	if _, _, err := List(t.Context(), f, since, 0, c.wait(0, nil)); err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	if fmt.Sprint(c.slept) != "[30s]" {
@@ -182,7 +183,7 @@ func TestListRefusesPastLimit(t *testing.T) {
 	}}
 	c := &clock{now: start}
 	limit := 5 * time.Minute
-	prs, more, err := List(f, since, 0, c.wait(limit, nil))
+	prs, more, err := List(t.Context(), f, since, 0, c.wait(limit, nil))
 	var got *forge.RateLimit
 	if !errors.As(err, &got) {
 		t.Fatalf("err = %v, want a *forge.RateLimit", err)
@@ -214,7 +215,7 @@ func TestListMax(t *testing.T) {
 		}}
 	}
 	f := pages()
-	prs, more, err := List(f, since, 3, Wait{})
+	prs, more, err := List(t.Context(), f, since, 3, Wait{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -225,12 +226,12 @@ func TestListMax(t *testing.T) {
 		t.Errorf("max 3 asked %d pages, want 2", len(f.cursors))
 	}
 
-	prs, more, err = List(pages(), since, 5, Wait{})
+	prs, more, err = List(t.Context(), pages(), since, 5, Wait{})
 	if err != nil || more || numbers(prs) != "1,2,3,4,5" {
 		t.Errorf("max 5 (the list ends at 5): PRs %s more %v err %v, want 1-5, no more", numbers(prs), more, err)
 	}
 
-	prs, more, err = List(pages(), since, 0, Wait{})
+	prs, more, err = List(t.Context(), pages(), since, 0, Wait{})
 	if err != nil || more || numbers(prs) != "1,2,3,4,5" {
 		t.Errorf("max 0: PRs %s more %v err %v, want every PR since, no more", numbers(prs), more, err)
 	}
@@ -240,7 +241,7 @@ func TestListPlainError(t *testing.T) {
 	boom := errors.New("GitHub GraphQL: something broke")
 	f := &fakeForge{answers: []answer{{err: boom}}}
 	c := &clock{now: start}
-	prs, more, err := List(f, since, 0, c.wait(0, nil))
+	prs, more, err := List(t.Context(), f, since, 0, c.wait(0, nil))
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want the forge's error", err)
 	}
@@ -255,7 +256,7 @@ func TestListPlainError(t *testing.T) {
 func TestListPlainErrorKeepsPages(t *testing.T) {
 	boom := errors.New("boom")
 	f := &fakeForge{answers: []answer{page("c1", pr(1, 1)), {err: boom}}}
-	prs, _, err := List(f, since, 0, Wait{})
+	prs, _, err := List(t.Context(), f, since, 0, Wait{})
 	if !errors.Is(err, boom) || numbers(prs) != "1" {
 		t.Errorf("PRs %s err %v, want 1 and the error", numbers(prs), err)
 	}

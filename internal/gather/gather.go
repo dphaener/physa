@@ -128,8 +128,7 @@ type Stopped = merged.Stopped
 // finds join the docs; it never makes Run fail. When the forge stops the
 // list, Run still returns the gather and its summary, with every PR listed
 // and the history of the whole bound, and a *Stopped error.
-func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now time.Time) (store.Gather, Summary, error) {
-	ctx := context.TODO()
+func Run(ctx context.Context, root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now time.Time) (store.Gather, Summary, error) {
 	docs, skipped, err := Docs(root)
 	if err != nil {
 		return store.Gather{}, Summary{}, fmt.Errorf("cannot read the docs: %w", err)
@@ -151,7 +150,7 @@ func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now ti
 		s.Docs.Files = append(s.Docs.Files, DocFile{Path: d.Path, Kind: d.Kind, Reason: d.Reason})
 	}
 
-	listed, limited, reason, stop := merged.Read(f, o.Since, o.MaxPRs, o.Wait)
+	listed, limited, reason, stop := merged.Read(ctx, f, o.Since, o.MaxPRs, o.Wait)
 	if f != nil {
 		g.Run.Forge = f.Name()
 	}
@@ -179,10 +178,10 @@ func Run(root string, repo vcs.Repo, f forge.Forge, o Bounds, d Discover, now ti
 		return store.Gather{}, Summary{}, err
 	}
 	if g.Run.PRsLimited {
-		s.Quiet = quiet.Add(&g, histSince, f)
+		s.Quiet = quiet.Add(ctx, &g, histSince, f)
 	}
 	s.PRs = summarisePRs(g.PRs, reason)
-	useLogins(f, g.Changes)
+	useLogins(ctx, f, g.Changes)
 	s.History = summariseHistory(g.Changes)
 	s.History.Shallow = repo.Partial(ctx)
 	s.EstimatedTokens = reading.GatherTokens(g)
@@ -233,7 +232,7 @@ func summariseHistory(changes []store.GatheredChange) HistorySummary {
 
 // useLogins names each change's author by forge login where the forge can
 // say, as PRs are named; otherwise the version-control names stay.
-func useLogins(f forge.Forge, changes []store.GatheredChange) {
+func useLogins(ctx context.Context, f forge.Forge, changes []store.GatheredChange) {
 	l, ok := f.(forge.Logins)
 	if !ok || len(changes) == 0 {
 		return
@@ -242,7 +241,7 @@ func useLogins(f forge.Forge, changes []store.GatheredChange) {
 	for i, c := range changes {
 		ids[i] = c.ID
 	}
-	if logins, err := l.ChangeLogins(ids); err == nil {
+	if logins, err := l.ChangeLogins(ctx, ids); err == nil {
 		for i, c := range changes {
 			if login := logins[c.ID]; login != "" {
 				changes[i].Author = login

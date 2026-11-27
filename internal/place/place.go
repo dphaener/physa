@@ -66,8 +66,7 @@ type Without struct {
 // Run places every gathered PR and change by the stored footprints and
 // stores the placement in init's record. It needs the walk and the gather,
 // and says which phase to run when one is missing, before anything else.
-func Run(st Store) (Result, error) {
-	ctx := context.TODO()
+func Run(ctx context.Context, st Store) (Result, error) {
 	w, ok, err := st.Walk(ctx)
 	if err == nil && !ok {
 		err = errors.New("no walk stored yet; run physa init --walk first")
@@ -82,7 +81,7 @@ func Run(st Store) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	ar, ok, err := areas.Load(st)
+	ar, ok, err := areas.Load(ctx, st)
 	if err == nil && !ok {
 		err = errors.New("no areas stored yet; run physa init --areas first")
 	}

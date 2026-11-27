@@ -2,6 +2,7 @@ package skillcli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -63,7 +64,7 @@ func (b sessionEnv) run(args ...string) (int, string, string) {
 		deadline:        b.timeout,
 	}
 	var out, errb bytes.Buffer
-	code := command.Execute(command.New("physa", "", nil, nil, newCommand(e)), append([]string{"skill", "session"}, args...), &out, &errb)
+	code := command.Execute(context.Background(), command.New("physa", "", nil, nil, newCommand(e)), append([]string{"skill", "session"}, args...), &out, &errb)
 	return code, out.String(), errb.String()
 }
 

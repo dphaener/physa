@@ -87,9 +87,9 @@ type fakeForge struct {
 	calls  int
 }
 
-func (f *fakeForge) Name() string               { return "fake" }
-func (f *fakeForge) PRExists(int) (bool, error) { return false, nil }
-func (f *fakeForge) ChangePR(id string) (forge.PR, bool, error) {
+func (f *fakeForge) Name() string                                { return "fake" }
+func (f *fakeForge) PRExists(context.Context, int) (bool, error) { return false, nil }
+func (f *fakeForge) ChangePR(_ context.Context, id string) (forge.PR, bool, error) {
 	f.calls++
 	if f.err != nil {
 		return forge.PR{}, false, f.err
@@ -103,7 +103,7 @@ func (f *fakeForge) ChangePR(id string) (forge.PR, bool, error) {
 
 func run(t *testing.T, repo vcs.Repo, o Options) Result {
 	t.Helper()
-	res, err := Run(repo, o)
+	res, err := Run(t.Context(), repo, o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestSince(t *testing.T) {
 func TestBadSinceIsAnError(t *testing.T) {
 	r := newTestRepo(t, "main")
 	r.commit("one")
-	if _, err := Run(r.open(), Options{Since: "nosuchref"}); err == nil {
+	if _, err := Run(t.Context(), r.open(), Options{Since: "nosuchref"}); err == nil {
 		t.Error("want an error for a change that does not exist")
 	}
 }
@@ -184,7 +184,7 @@ func TestNoDefaultBranchIsAnError(t *testing.T) {
 	r := newTestRepo(t, "main")
 	r.git("checkout", "-q", "-b", "trunk")
 	r.commit("one")
-	if _, err := Run(r.open(), Options{}); err == nil || !strings.Contains(err.Error(), "default branch") {
+	if _, err := Run(t.Context(), r.open(), Options{}); err == nil || !strings.Contains(err.Error(), "default branch") {
 		t.Errorf("err = %v, want the default branch cannot be found", err)
 	}
 }
@@ -765,7 +765,7 @@ func TestWatermarkUnreachableIsIgnored(t *testing.T) {
 	b := r.commit("b")
 	r.onLearn(record(side))
 	r.commit("docs(learning): Learn (#8)\n\n" + record("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"))
-	res, err := Run(r.open(), Options{Forge: &fakeForge{}})
+	res, err := Run(t.Context(), r.open(), Options{Forge: &fakeForge{}})
 	if err != nil {
 		t.Fatalf("an unreachable watermark is an error: %v", err)
 	}

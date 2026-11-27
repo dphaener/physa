@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -40,6 +41,7 @@ type fakeAgent struct {
 	reply    func(area string, turn int, s adapter.Spec) string
 	noResume bool
 	refused  int
+	late     int // sessions started with a done ctx
 
 	gate          chan struct{} // when set, every Wait blocks until it closes
 	started       chan struct{}
@@ -55,9 +57,12 @@ type fakeSession struct {
 
 func (f *fakeAgent) Name() string { return "fake" }
 
-func (f *fakeAgent) Start(_ context.Context, s adapter.Spec) (adapter.Session, error) {
+func (f *fakeAgent) Start(ctx context.Context, s adapter.Spec) (adapter.Session, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if ctx.Err() != nil {
+		f.late++ // the fake takes it, so a session started after a cancel shows
+	}
 	if s.Resume && f.noResume {
 		return nil, adapter.ErrNoResume
 	}
@@ -190,7 +195,7 @@ func setup(t *testing.T, f *fakeAgent, list []areas.AreaRecord) (*initrecord.Sto
 
 func load(t *testing.T, st *initrecord.Store) (Record, bool) {
 	t.Helper()
-	r, ok, err := Load(st)
+	r, ok, err := Load(t.Context(), st)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -765,5 +770,40 @@ func TestCollectKeepsEntriesAsWrittenAndOldBodiesLoad(t *testing.T) {
 	}
 	if o := old.Capabilities[0]; len(o.Other) != 0 || o.Entries.Tests != nil || o.Entries.Docs != nil || o.Entries.Other != nil || len(o.Tests) != 1 {
 		t.Errorf("old body %+v", o)
+	}
+}
+
+// A cancel while the first Concurrency sessions run starts no session after
+// it: the agent receives exactly those, the run returns the cancel, and
+// nothing is stored.
+func TestRunCancelStartsNoSessionAfter(t *testing.T) {
+	var list []areas.AreaRecord
+	for _, n := range []string{"a", "b", "c", "d", "e", "f", "g"} {
+		list = append(list, areas.AreaRecord{Name: "area-" + n, Promise: "P.", Files: []string{"src/" + n + ".go"}})
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	f := &fakeAgent{reply: answers(nil), gate: make(chan struct{}), started: make(chan struct{}, len(list))}
+	st, s := setup(t, f, list)
+	done := make(chan error)
+	go func() {
+		_, err := Run(ctx, st, s)
+		done <- err
+	}()
+	for range Concurrency {
+		<-f.started
+	}
+	cancel()
+	close(f.gate)
+	err := <-done
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v; want cancelled", err)
+	}
+	t.Logf("the agent received %d of %d sessions, %d after the cancel; error: %v", len(f.specs), len(list), f.late, err)
+	if f.late != 0 || len(f.specs) != Concurrency {
+		t.Errorf("%d sessions started, %d after the cancel; want the %d before it", len(f.specs), f.late, Concurrency)
+	}
+	if _, ok := load(t, st); ok {
+		t.Error("a cancelled walk stored a record")
 	}
 }

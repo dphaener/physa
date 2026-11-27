@@ -10,6 +10,7 @@
 package quiet
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -61,7 +62,7 @@ var squash = regexp.MustCompile(`\s*\(#\d+\)\s*$`)
 // gives without a title or a merge date takes its change's subject and
 // date. A forge that cannot answer stops Reach, and the Summary says why;
 // what was found before is kept.
-func Reach(recent, older []store.GatheredChange, f forge.Forge, have map[int]bool) ([]store.GatheredPR, []store.GatheredChange, Summary) {
+func Reach(ctx context.Context, recent, older []store.GatheredChange, f forge.Forge, have map[int]bool) ([]store.GatheredPR, []store.GatheredChange, Summary) {
 	var sum Summary
 	touched := map[string]bool{}
 	for _, c := range recent {
@@ -88,7 +89,7 @@ func Reach(recent, older []store.GatheredChange, f forge.Forge, have map[int]boo
 			if !anyIn(c.Files, paths) {
 				continue
 			}
-			p, ok, err := f.ChangePR(c.ID)
+			p, ok, err := f.ChangePR(ctx, c.ID)
 			if err != nil {
 				sum.Why = forge.Reason(err)
 				sum.PRs = len(prs)
@@ -114,7 +115,7 @@ func Reach(recent, older []store.GatheredChange, f forge.Forge, have map[int]boo
 
 // Add keeps the changes of g since histSince, where its PRs start, and
 // adds to g what Reach finds in the older ones. It returns what Reach did.
-func Add(g *store.Gather, histSince time.Time, f forge.Forge) *Summary {
+func Add(ctx context.Context, g *store.Gather, histSince time.Time, f forge.Forge) *Summary {
 	var recent, older []store.GatheredChange
 	for _, c := range g.Changes {
 		if c.At.Before(histSince) {
@@ -127,7 +128,7 @@ func Add(g *store.Gather, histSince time.Time, f forge.Forge) *Summary {
 	for _, p := range g.PRs {
 		have[p.Number] = true
 	}
-	prs, changes, sum := Reach(recent, older, f, have)
+	prs, changes, sum := Reach(ctx, recent, older, f, have)
 	g.PRs, g.Changes = append(g.PRs, prs...), append(recent, changes...)
 	return &sum
 }

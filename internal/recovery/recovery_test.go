@@ -287,7 +287,7 @@ func newHarness(t *testing.T, scripts map[string][]step) *harness {
 	h.session = Session{
 		Agent:    func() (adapter.Adapter, error) { h.resolved++; return h.agent, nil },
 		Root:     h.root,
-		PRExists: func(n int) (bool, error) { return n == 12 || n == 7, nil },
+		PRExists: func(_ context.Context, n int) (bool, error) { return n == 12 || n == 7, nil },
 		Progress: h.progress,
 		Now:      func() time.Time { return runAt },
 	}
@@ -657,7 +657,7 @@ func TestScaffoldAloneChecksClean(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		res, err := mapcheck.Check(dir)
+		res, err := mapcheck.Check(t.Context(), dir)
 		if err != nil || len(res.Problems) != 0 || res.Capabilities != 1 || split != nil {
 			t.Errorf("product %q: %+v, split %v, error %v", product, res, split, err)
 		}
@@ -679,7 +679,7 @@ func TestCommitAnchorsResolveAgainstTheRepoAtRoot(t *testing.T) {
 	h := newHarness(t, map[string][]step{"export": {{text: reply(file, "")}, {text: reply(file, "")}, {text: reply(file, "")}}})
 	h.session.Only = []string{"export"}
 	var opened []string
-	h.session.OpenRepo = func(dir string) (vcs.Repo, error) {
+	h.session.OpenRepo = func(_ context.Context, dir string) (vcs.Repo, error) {
 		opened = append(opened, dir)
 		return fakeRepo{}, nil
 	}
@@ -790,7 +790,7 @@ func TestDropBadDecisionNamesItsFolderFile(t *testing.T) {
 	text := "# Notes\n\n## Rules\n\n" + rule("export-deleted") + "\n## Decisions\n\n" + decision
 	h := newHarness(t, map[string][]step{"export": {{text: reply(text, "")}, {text: reply(text, "")}, {text: reply(text, "")}}})
 	c := checker{product: "People keep their notes.", root: h.root, prExists: h.session.PRExists}
-	problems, err := c.run("export", recovering.File("export", "People can rely on export.", text), "")
+	problems, err := c.run(t.Context(), "export", recovering.File("export", "People can rely on export.", text), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1027,7 +1027,7 @@ func walkOrder(t *testing.T, h *harness, seed uint64) []string {
 	if err := json.Unmarshal(h.store.walk.Body, &wr); err != nil {
 		t.Fatal(err)
 	}
-	pr, _, err := place.Load(h.store)
+	pr, _, err := place.Load(t.Context(), h.store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1383,5 +1383,86 @@ func TestCappedSessionLeavesItNotYetRecovered(t *testing.T) {
 	}
 	if !strings.Contains(h.progress.String(), "physa init: search: "+StatusNotYet+"\n") {
 		t.Errorf("progress:\n%s", h.progress)
+	}
+}
+
+// TestCancelledRunKeepsWhatFinished checks that a run cancelled while three
+// sessions run stores the two whose sessions answered as recovered, leaves
+// the one the cancel cut short and the one never started not yet recovered,
+// never failed, starts no session after the cancel, and still stores into a
+// store that refuses a cancelled ctx, then returns the ctx's error.
+func TestCancelledRunKeepsWhatFinished(t *testing.T) {
+	st, err := store.Open(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	released := make(chan struct{})
+	h := newHarness(t, map[string][]step{
+		"export":  {{text: reply(good("export-rule"), ""), wait: released}},
+		"search":  {{text: reply(good("search-rule"), ""), wait: released}},
+		"sharing": {{err: fmt.Errorf("%w: %w", adapter.ErrFailed, context.Canceled), wait: released}},
+		"sync":    {{text: reply(good("sync-rule"), "")}},
+	})
+	h.session.Only = []string{"export", "search", "sharing", "sync"}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	started := 0
+	h.agent.onStart = func(string, int) { // every Concurrency session is running when the cancel comes
+		if started++; started == Concurrency {
+			cancel()
+			close(released)
+		}
+	}
+	rep, err := Run(ctx, realPuts{fakeStore: h.store, real: initrecord.Of(st)}, h.session)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err %v; want context.Canceled", err)
+	}
+	want := []string{"export: " + StatusRecovered, "search: " + StatusRecovered, "sharing: " + StatusNotYet, "sync: " + StatusNotYet}
+	if got := statuses(rep); !reflect.DeepEqual(got, want) {
+		t.Fatalf("statuses %q, want %q", got, want)
+	}
+	if o := rep.Capabilities[2]; o.Error != "" || o.File != "" {
+		t.Errorf("sharing: error %q, file %q", o.Error, o.File)
+	}
+	if n := h.agent.starts(); n != Concurrency {
+		t.Errorf("%d sessions started; want %d, none after the cancel", n, Concurrency)
+	}
+	rows, err := initrecord.Of(st).Recovered(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := map[string]string{}
+	for _, r := range rows {
+		stored[r.Capability] = r.Status
+	}
+	if want := map[string]string{"export": StatusRecovered, "search": StatusRecovered, "sharing": StatusNotYet, "sync": StatusNotYet}; !reflect.DeepEqual(stored, want) {
+		t.Errorf("stored %v, want %v", stored, want)
+	}
+	if rep.Recovered() != 2 {
+		t.Errorf("Recovered() %d, want 2", rep.Recovered())
+	}
+}
+
+// TestCancelStartsNoRetry checks that once the ctx is cancelled, an answer
+// with problems is not sent back: no resumed session starts, and the
+// capability is not yet recovered, not failed.
+func TestCancelStartsNoRetry(t *testing.T) {
+	h := newHarness(t, map[string][]step{
+		"export": {{text: reply("# Notes\n\n## Rules\n\n"+bare("export-signed"), "")}, {text: reply(good("export-signed"), "")}},
+	})
+	h.session.Only = []string{"export"}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	h.agent.onStart = func(string, int) { cancel() }
+	rep, err := Run(ctx, h.store, h.session)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err %v; want context.Canceled", err)
+	}
+	if got := statuses(rep); !reflect.DeepEqual(got, []string{"export: " + StatusNotYet}) || h.agent.starts() != 1 {
+		t.Errorf("statuses %q, %d sessions started", got, h.agent.starts())
+	}
+	if len(h.store.puts) != 1 || h.store.puts[0][0].Status != StatusNotYet {
+		t.Errorf("stored %+v", h.store.puts)
 	}
 }

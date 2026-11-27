@@ -232,7 +232,7 @@ func stored(t *testing.T) *fake {
 
 func TestRunStoresThePlacement(t *testing.T) {
 	st := stored(t)
-	res, err := Run(st)
+	res, err := Run(t.Context(), st)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +272,7 @@ func TestRunNeedsTheEarlierPhases(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			st := stored(t)
 			c.drop(st)
-			_, err := Run(st)
+			_, err := Run(t.Context(), st)
 			if err == nil || !strings.HasPrefix(err.Error(), c.want) {
 				t.Errorf("err = %v; want %q", err, c.want)
 			}
@@ -292,7 +292,7 @@ func TestRunOnInitsRecord(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 	st := initrecord.Of(db)
-	if _, ok, err := Load(st); ok || err != nil {
+	if _, ok, err := Load(t.Context(), st); ok || err != nil {
 		t.Fatalf("Load on a fresh store = %v, %v; want false, nil", ok, err)
 	}
 	f := stored(t)
@@ -301,7 +301,7 @@ func TestRunOnInitsRecord(t *testing.T) {
 	if err := st.PutGather(context.Background(), *f.gather); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Run(st); err == nil || !strings.Contains(err.Error(), "--walk first") {
+	if _, err := Run(t.Context(), st); err == nil || !strings.Contains(err.Error(), "--walk first") {
 		t.Fatalf("err = %v; want the walk asked for first", err)
 	}
 	if err := st.PutAreas(context.Background(), initrecord.Areas{GatherAt: t0, At: t0, Body: f.areas.Body}); err != nil {
@@ -310,11 +310,11 @@ func TestRunOnInitsRecord(t *testing.T) {
 	if err := st.PutWalk(context.Background(), initrecord.Walk{AreasAt: t0, At: f.walkAt, Body: f.walk.Body}); err != nil {
 		t.Fatal(err)
 	}
-	res, err := Run(st)
+	res, err := Run(t.Context(), st)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec, ok, err := Load(st)
+	rec, ok, err := Load(t.Context(), st)
 	if err != nil || !ok {
 		t.Fatalf("Load = %v, %v", ok, err)
 	}

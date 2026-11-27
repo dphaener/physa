@@ -44,7 +44,7 @@ func discover(ctx context.Context, root string, repo vcs.Repo, d Discover, found
 		resolveErr = err
 		return a, err
 	}
-	res, err := discovery.Run(context.Background(), s)
+	res, err := discovery.Run(ctx, s)
 	info.Model, info.Tokens = res.Model, res.Tokens
 	switch {
 	case resolveErr != nil:

@@ -22,12 +22,12 @@ import (
 // against the placement st holds and the gather g: those only names, in its
 // order and each once, or all of them in recovery's order for seed. A name
 // the walk lacks is an error naming it and the names the walk found.
-func Chosen(st place.Loader, root string, w initrecord.Walk, g store.Gather, only []string, seed uint64) ([]Walked, error) {
+func Chosen(ctx context.Context, st place.Loader, root string, w initrecord.Walk, g store.Gather, only []string, seed uint64) ([]Walked, error) {
 	var wr walk.Record
 	if err := json.Unmarshal(w.Body, &wr); err != nil {
 		return nil, fmt.Errorf("the stored walk cannot be read: %w", err)
 	}
-	pl, _, err := place.Load(st)
+	pl, _, err := place.Load(ctx, st)
 	if err != nil {
 		return nil, err
 	}
@@ -109,10 +109,9 @@ func Add(sum *adapter.Tokens, t adapter.Tokens) {
 // Kept is the set of capabilities init's record holds recovered from the
 // source at at, for a run that names none with only; a named capability is
 // always recovered again, so only non-empty gives nil.
-func Kept(st interface {
+func Kept(ctx context.Context, st interface {
 	Recovered(ctx context.Context) ([]initrecord.Recovered, error)
 }, only []string, at time.Time) (map[string]bool, error) {
-	ctx := context.TODO()
 	if len(only) > 0 {
 		return nil, nil
 	}
@@ -145,7 +144,7 @@ func TooLong(err error, system, message string, read reading.Report) error {
 // asking, and otherwise what exists says, each number asked once. It is safe
 // for capabilities checked at the same time, and asks exists one call at a
 // time. A nil exists gives nil: anchors are then checked for form only.
-func Resolver(g store.Gather, exists func(int) (bool, error)) func(int) (bool, error) {
+func Resolver(g store.Gather, exists func(context.Context, int) (bool, error)) func(context.Context, int) (bool, error) {
 	if exists == nil {
 		return nil
 	}
@@ -154,13 +153,13 @@ func Resolver(g store.Gather, exists func(int) (bool, error)) func(int) (bool, e
 		known[p.Number] = true
 	}
 	var mu sync.Mutex
-	return func(n int) (bool, error) {
+	return func(ctx context.Context, n int) (bool, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		if ok, seen := known[n]; seen {
 			return ok, nil
 		}
-		ok, err := exists(n)
+		ok, err := exists(ctx, n)
 		if err != nil {
 			return false, err
 		}

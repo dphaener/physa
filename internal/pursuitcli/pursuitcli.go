@@ -4,6 +4,7 @@
 package pursuitcli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -46,7 +47,7 @@ func commandsFor(env *ideacli.Env) []*cobra.Command {
 			"On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. "+
 			"--appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. "+
 			"Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.",
-		[]string{usagePursue}, func(args []string, stdout, stderr io.Writer) int {
+		[]string{usagePursue}, func(_ context.Context, args []string, stdout, stderr io.Writer) int {
 			return p.start(args, appetite, signalFrom, pursueJSON, stdout, stderr)
 		}), func(fs *pflag.FlagSet) {
 		ideacli.String(fs, "appetite", &appetite)
@@ -64,16 +65,22 @@ func commandsFor(env *ideacli.Env) []*cobra.Command {
 			"physa pursuit plan show [<pursuit>] [--history] [--json]",
 			"physa pursuit work <pursuit>/<change> [--json]",
 		},
-		func(args []string, stdout, stderr io.Writer) int { return p.list(args, groupJSON, stdout, stderr) },
+		func(_ context.Context, args []string, stdout, stderr io.Writer) int {
+			return p.list(args, groupJSON, stdout, stderr)
+		},
 		leaf("list", "physa pursuit list [--json]", "List the pursuits, newest first, with their appetite and what is spent.",
-			func(args []string, stdout, stderr io.Writer) int { return p.list(args, listJSON, stdout, stderr) },
+			func(_ context.Context, args []string, stdout, stderr io.Writer) int {
+				return p.list(args, listJSON, stdout, stderr)
+			},
 			func(fs *pflag.FlagSet) { ideacli.JSON(fs, &listJSON) }),
 		leaf("show", "physa pursuit show [<slug>] [--json]", "Show a pursuit: its facts, its signal, its progress as facts and what needs its person.",
-			func(args []string, stdout, stderr io.Writer) int { return p.show(args, showJSON, stdout, stderr) },
+			func(_ context.Context, args []string, stdout, stderr io.Writer) int {
+				return p.show(args, showJSON, stdout, stderr)
+			},
 			func(fs *pflag.FlagSet) { ideacli.JSON(fs, &showJSON) }),
 		leaf("stop", "physa pursuit stop [<slug>] [--reason <text>] [--yes] [--json]",
 			"Stop an active pursuit, asking first on a terminal unless --yes.",
-			func(args []string, stdout, stderr io.Writer) int {
+			func(_ context.Context, args []string, stdout, stderr io.Writer) int {
 				return p.stop(args, stopReason, stopYes, stopJSON, stdout, stderr)
 			},
 			func(fs *pflag.FlagSet) {

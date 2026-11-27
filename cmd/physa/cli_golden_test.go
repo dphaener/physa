@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -143,7 +144,7 @@ func renderGolden() string {
 	for _, line := range goldenLines {
 		args := strings.Fields(line)
 		var stdout, stderr bytes.Buffer
-		code := run(args, &stdout, &stderr)
+		code := run(context.Background(), args, &stdout, &stderr)
 		fmt.Fprintf(&out, "$ physa %s\nexit %d\n--- stdout\n%s--- stderr\n%s\n", line, code, stdout.String(), stderr.String())
 	}
 	return out.String()

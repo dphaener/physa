@@ -18,7 +18,7 @@ func useStore(t *testing.T) string {
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
 	dir := t.TempDir()
 	old := openStore
-	openStore = func(string) (*store.Store, error) { return store.Open(context.Background(), dir) }
+	openStore = func(context.Context, string) (*store.Store, error) { return store.Open(context.Background(), dir) }
 	t.Cleanup(func() { openStore = old })
 	return dir
 }
@@ -26,7 +26,7 @@ func useStore(t *testing.T) string {
 func listed(t *testing.T) []store.SliceRecord {
 	t.Helper()
 	var out, errb bytes.Buffer
-	if code := run([]string{"map", "records", "--json"}, &out, &errb); code != 0 {
+	if code := run(t.Context(), []string{"map", "records", "--json"}, &out, &errb); code != 0 {
 		t.Fatalf("records code = %d; stderr %q", code, errb.String())
 	}
 	var recs []struct {
@@ -55,11 +55,11 @@ func TestSliceRecordsEachPrintedSlice(t *testing.T) {
 	useStore(t)
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "s-1")
 	var out, errb bytes.Buffer
-	if code := run([]string{"map", "slice", "slices", "map", "--with", "all"}, &out, &errb); code != 0 {
+	if code := run(t.Context(), []string{"map", "slice", "slices", "map", "--with", "all"}, &out, &errb); code != 0 {
 		t.Fatalf("code = %d; stderr %q", code, errb.String())
 	}
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
-	if code := run([]string{"map", "slice", "map"}, &out, &errb); code != 0 {
+	if code := run(t.Context(), []string{"map", "slice", "map"}, &out, &errb); code != 0 {
 		t.Fatalf("code = %d; stderr %q", code, errb.String())
 	}
 	recs := listed(t)
@@ -73,12 +73,12 @@ func TestSliceRecordsEachPrintedSlice(t *testing.T) {
 		t.Errorf("oldest = %+v, want slices,map with all session s-1", r)
 	}
 	var js, e bytes.Buffer
-	run([]string{"map", "records", "--json"}, &js, &e)
+	run(t.Context(), []string{"map", "records", "--json"}, &js, &e)
 	if !strings.Contains(js.String(), `"session":null`) || !strings.Contains(js.String(), `"entries":null`) {
 		t.Errorf("json = %q, want null session and entries", js.String())
 	}
 	var txt bytes.Buffer
-	run([]string{"map", "records"}, &txt, &e)
+	run(t.Context(), []string{"map", "records"}, &txt, &e)
 	lines := strings.Split(strings.TrimSpace(txt.String()), "\n")
 	if len(lines) != 2 || !strings.Contains(lines[0], " — map") || !strings.HasSuffix(lines[1], "s-1 slices,map with all") {
 		t.Errorf("records = %q", txt.String())
@@ -89,7 +89,7 @@ func TestEntryReadRecordedWithItsSlugs(t *testing.T) {
 	t.Chdir("../..")
 	useStore(t)
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "s-2")
-	if code := run([]string{"map", "slice", "--entry", "no-adr", "github-first"}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+	if code := run(t.Context(), []string{"map", "slice", "--entry", "no-adr", "github-first"}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
 		t.Fatalf("code = %d", code)
 	}
 	recs := listed(t)
@@ -100,7 +100,7 @@ func TestEntryReadRecordedWithItsSlugs(t *testing.T) {
 		t.Errorf("record = %+v, want entries no-adr,github-first with no capabilities", r)
 	}
 	var txt, e bytes.Buffer
-	run([]string{"map", "records"}, &txt, &e)
+	run(t.Context(), []string{"map", "records"}, &txt, &e)
 	if !strings.Contains(txt.String(), "entries no-adr, github-first") {
 		t.Errorf("records = %q, want the entries shown", txt.String())
 	}
@@ -110,7 +110,7 @@ func TestSliceWithDecisionsAndQuestionsRecorded(t *testing.T) {
 	t.Chdir("../..")
 	useStore(t)
 	for _, w := range []string{"decisions", "questions"} {
-		if code := run([]string{"map", "slice", "map", "--with", w}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+		if code := run(t.Context(), []string{"map", "slice", "map", "--with", w}, &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
 			t.Fatalf("code = %d", code)
 		}
 	}
@@ -124,7 +124,7 @@ func TestNoRecordForFailedSlices(t *testing.T) {
 	t.Chdir("../..")
 	useStore(t)
 	for _, args := range [][]string{{"slice", "nope"}, {"slice"}, {"slice", "map", "--with", "bad"}, {"map", "slice", "--entry", "nope"}} {
-		run(args, &bytes.Buffer{}, &bytes.Buffer{})
+		run(t.Context(), args, &bytes.Buffer{}, &bytes.Buffer{})
 	}
 	if recs := listed(t); len(recs) != 0 {
 		t.Errorf("records = %+v, want none", recs)
@@ -135,12 +135,12 @@ func TestFailingStoreStillPrintsSlice(t *testing.T) {
 	t.Chdir("../..")
 	useStore(t)
 	var want bytes.Buffer
-	run([]string{"map", "slice", "map"}, &want, &bytes.Buffer{})
+	run(t.Context(), []string{"map", "slice", "map"}, &want, &bytes.Buffer{})
 	old := openStore
-	openStore = func(string) (*store.Store, error) { return nil, errors.New("disk on fire") }
+	openStore = func(context.Context, string) (*store.Store, error) { return nil, errors.New("disk on fire") }
 	t.Cleanup(func() { openStore = old })
 	var out, errb bytes.Buffer
-	if code := run([]string{"map", "slice", "map"}, &out, &errb); code != 0 {
+	if code := run(t.Context(), []string{"map", "slice", "map"}, &out, &errb); code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
 	if out.String() != want.String() {
@@ -155,11 +155,11 @@ func TestRecordsEmpty(t *testing.T) {
 	t.Chdir("../..")
 	useStore(t)
 	var out bytes.Buffer
-	if code := run([]string{"map", "records"}, &out, &bytes.Buffer{}); code != 0 || out.String() != "No slice records.\n" {
+	if code := run(t.Context(), []string{"map", "records"}, &out, &bytes.Buffer{}); code != 0 || out.String() != "No slice records.\n" {
 		t.Errorf("code %d, out %q", code, out.String())
 	}
 	out.Reset()
-	if code := run([]string{"map", "records", "--json"}, &out, &bytes.Buffer{}); code != 0 || out.String() != "[]\n" {
+	if code := run(t.Context(), []string{"map", "records", "--json"}, &out, &bytes.Buffer{}); code != 0 || out.String() != "[]\n" {
 		t.Errorf("code %d, out %q", code, out.String())
 	}
 }
@@ -170,11 +170,11 @@ func TestRecordsOutsideRepoAndBadUsage(t *testing.T) {
 	openStore = gitStore // the real opener: a temp dir is no repo
 	t.Cleanup(func() { openStore = old })
 	var out, errb bytes.Buffer
-	if code := run([]string{"map", "records"}, &out, &errb); code != 2 || !strings.HasPrefix(errb.String(), "physa map records: ") {
+	if code := run(t.Context(), []string{"map", "records"}, &out, &errb); code != 2 || !strings.HasPrefix(errb.String(), "physa map records: ") {
 		t.Errorf("code %d, stderr %q", code, errb.String())
 	}
 	errb.Reset()
-	if code := run([]string{"map", "records", "--bad"}, &out, &errb); code != 2 || !strings.Contains(errb.String(), "physa map records [--json]") {
+	if code := run(t.Context(), []string{"map", "records", "--bad"}, &out, &errb); code != 2 || !strings.Contains(errb.String(), "physa map records [--json]") {
 		t.Errorf("code %d, stderr %q", code, errb.String())
 	}
 }

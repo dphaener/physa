@@ -1,6 +1,7 @@
 package pursuitcli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,7 +32,7 @@ func (p pursuits) planGroup() *cobra.Command {
 		command.Declare(command.New("set",
 			"Set a pursuit's plan as its next revision, reading the plan's JSON from --from, or from stdin off a terminal. "+
 				"A revision after the first needs --reason: what the plan missed. Agents may set a plan.",
-			[]string{set}, func(args []string, stdout, stderr io.Writer) int {
+			[]string{set}, func(_ context.Context, args []string, stdout, stderr io.Writer) int {
 				return p.planSet(args, setReason, setFrom, setJSON, stdout, stderr)
 			}), func(fs *pflag.FlagSet) {
 			ideacli.String(fs, "reason", &setReason)
@@ -40,7 +41,7 @@ func (p pursuits) planGroup() *cobra.Command {
 		}),
 		command.Declare(command.New("show",
 			"Show a pursuit's current plan and its changes; --history lists every revision, oldest first, with its reason.",
-			[]string{show}, func(args []string, stdout, stderr io.Writer) int {
+			[]string{show}, func(_ context.Context, args []string, stdout, stderr io.Writer) int {
 				return p.planShow(args, showHistory, showJSON, stdout, stderr)
 			}), func(fs *pflag.FlagSet) {
 			command.Switch(fs, "history", &showHistory, "")

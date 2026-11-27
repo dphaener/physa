@@ -7,6 +7,7 @@
 package prcheck
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -55,19 +56,19 @@ type Problem struct {
 // leaves it, and the map's own check, with commit anchors resolved in repo and
 // #N anchors through prExists (nil checks them for form only). The error is
 // for a map, a history or a range that cannot be read.
-func Run(dir string, repo vcs.Repo, rng string, prExists func(n int) (bool, error)) (Result, error) {
-	res, err := mapcheck.CheckWith(dir, mapcheck.Options{
+func Run(ctx context.Context, dir string, repo vcs.Repo, rng string, prExists func(ctx context.Context, n int) (bool, error)) (Result, error) {
+	res, err := mapcheck.CheckWith(ctx, dir, mapcheck.Options{
 		PRExists: prExists,
-		OpenRepo: func(string) (vcs.Repo, error) { return repo, nil },
+		OpenRepo: func(context.Context, string) (vcs.Repo, error) { return repo, nil },
 	})
 	if err != nil {
 		return Result{}, err
 	}
-	commits, err := history.Read(repo, rng)
+	commits, err := history.Read(ctx, repo, rng)
 	if err != nil {
 		return Result{}, err
 	}
-	findings, err := history.Check(repo, commits)
+	findings, err := history.Check(ctx, repo, commits)
 	if err != nil {
 		return Result{}, err
 	}

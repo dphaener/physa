@@ -13,9 +13,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -30,13 +33,25 @@ import (
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
+// main makes the one context every command's job gets, cancelled on an
+// interrupt or SIGTERM, and exits with the command's code. The first signal
+// cancels the context and gives the signals back to the default handling,
+// so a second one ends the process, even when it is blocked on a read that
+// takes no context, such as a question on the terminal.
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
+	code := run(ctx, os.Args[1:], os.Stdout, os.Stderr)
+	stop()
+	os.Exit(code)
 }
 
-// run executes one command line and returns the process exit code.
-func run(args []string, stdout, stderr io.Writer) int {
-	return command.Execute(rootCommand(), args, stdout, stderr)
+// run executes one command line with ctx and returns the process exit code.
+func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	return command.Execute(ctx, rootCommand(), args, stdout, stderr)
 }
 
 // rootCommand builds the tree of commands.
@@ -49,12 +64,12 @@ func rootCommand() *cobra.Command {
 	root.AddCommand(enginecli.Commands(version)...)
 	root.AddCommand(
 		command.New("sync", "Not built yet: it returns with digests, after the engine.", []string{"physa sync"},
-			func(_ []string, _, stderr io.Writer) int {
+			func(_ context.Context, _ []string, _, stderr io.Writer) int {
 				fmt.Fprintln(stderr, "physa sync: not yet; it returns with digests, after the engine (design 07 §7)")
 				return 2
 			}),
 		command.New("version", "Print the version of this build.", []string{"physa version"},
-			func(args []string, stdout, _ io.Writer) int {
+			func(_ context.Context, args []string, stdout, _ io.Writer) int {
 				if len(args) > 0 {
 					return command.BadUsage
 				}
@@ -62,7 +77,7 @@ func rootCommand() *cobra.Command {
 				return 0
 			}),
 		command.New("help", "Print the commands.", []string{"physa help"},
-			func(args []string, stdout, _ io.Writer) int {
+			func(_ context.Context, args []string, stdout, _ io.Writer) int {
 				if len(args) > 0 {
 					return command.BadUsage
 				}

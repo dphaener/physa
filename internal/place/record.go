@@ -76,8 +76,7 @@ type Loader interface {
 
 // Load reads the stored placement and decodes its body, false when none
 // exists.
-func Load(st Loader) (Record, bool, error) {
-	ctx := context.TODO()
+func Load(ctx context.Context, st Loader) (Record, bool, error) {
 	p, ok, err := st.Place(ctx)
 	if err != nil || !ok {
 		return Record{}, false, err

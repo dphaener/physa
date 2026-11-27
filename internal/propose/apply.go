@@ -1,6 +1,7 @@
 package propose
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -22,7 +23,7 @@ const mapDir = ".physa"
 // the copy, with document anchors resolved in root and commit anchors in its
 // version control. It returns the new entry's slug, or why p is dropped. The
 // scratch copy is removed before it returns.
-func tryOn(root string, m *mapfile.Map, p draft.Proposal, baseline map[string]int, o Options) (string, string) {
+func tryOn(ctx context.Context, root string, m *mapfile.Map, p draft.Proposal, baseline map[string]int, o Options) (string, string) {
 	tmp, err := os.MkdirTemp("", "physa-propose-")
 	if err != nil {
 		return "", "the scratch copy of the map cannot be made: " + err.Error()
@@ -31,7 +32,7 @@ func tryOn(root string, m *mapfile.Map, p draft.Proposal, baseline map[string]in
 	if err := copyMap(root, tmp); err != nil {
 		return "", "the scratch copy of the map cannot be made: " + err.Error()
 	}
-	return applyTo(tmp, root, m, p, baseline, o)
+	return applyTo(ctx, tmp, root, m, p, baseline, o)
 }
 
 // ApplyAll applies each of kept, in order, to the map under root itself and
@@ -40,14 +41,14 @@ func tryOn(root string, m *mapfile.Map, p draft.Proposal, baseline map[string]in
 // a problem, or does not read back as exactly one new entry citing its
 // changes, is undone and dropped with its reason. It writes only the map's
 // files under root's .physa/.
-func ApplyAll(root string, b draft.Batch, kept []Kept, o Options) ([]Kept, []Dropped) {
+func ApplyAll(ctx context.Context, root string, b draft.Batch, kept []Kept, o Options) ([]Kept, []Dropped) {
 	var (
 		applied []Kept
 		dropped []Dropped
 	)
 	co := once(o)
 	for _, k := range kept {
-		slug, reason := applyOne(root, k.Proposal, co)
+		slug, reason := applyOne(ctx, root, k.Proposal, co)
 		if reason != "" {
 			dropped = append(dropped, Dropped{Proposal: k.Proposal, Reason: reason})
 			continue
@@ -60,7 +61,7 @@ func ApplyAll(root string, b draft.Batch, kept []Kept, o Options) ([]Kept, []Dro
 // applyOne applies p to the map under root. When p is dropped, every file
 // of its capability's folder is put back as it was, and a kind file p made
 // is removed.
-func applyOne(root string, p draft.Proposal, o Options) (string, string) {
+func applyOne(ctx context.Context, root string, p draft.Proposal, o Options) (string, string) {
 	m, _, err := mapfile.Read(root)
 	if err != nil {
 		return "", "the map cannot be read: " + err.Error()
@@ -69,7 +70,7 @@ func applyOne(root string, p draft.Proposal, o Options) (string, string) {
 	if before == nil {
 		return "", fmt.Sprintf("the map has no capability `%s`", p.Capability)
 	}
-	base, err := mapcheck.CheckWith(root, mapcheck.Options{OpenRepo: o.OpenRepo, PRExists: o.PRExists})
+	base, err := mapcheck.CheckWith(ctx, root, mapcheck.Options{OpenRepo: o.OpenRepo, PRExists: o.PRExists})
 	if err != nil {
 		return "", "the map cannot be checked: " + err.Error()
 	}
@@ -78,7 +79,7 @@ func applyOne(root string, p draft.Proposal, o Options) (string, string) {
 	if err != nil {
 		return "", "the map cannot be read: " + err.Error()
 	}
-	slug, reason := applyTo(root, root, m, p, problemSet(base.Problems), o)
+	slug, reason := applyTo(ctx, root, root, m, p, problemSet(base.Problems), o)
 	if reason != "" {
 		if err := snap.Restore(dir); err != nil {
 			reason += "; and the folder cannot be restored: " + err.Error()
@@ -90,7 +91,7 @@ func applyOne(root string, p draft.Proposal, o Options) (string, string) {
 // applyTo edits the map under dir with p, checks it, with document anchors
 // resolved in docRoot, and reads it back. It returns the new entry's slug,
 // or why p is dropped; the edit stays in dir either way.
-func applyTo(dir, docRoot string, m *mapfile.Map, p draft.Proposal, baseline map[string]int, o Options) (string, string) {
+func applyTo(ctx context.Context, dir, docRoot string, m *mapfile.Map, p draft.Proposal, baseline map[string]int, o Options) (string, string) {
 	root, tmp := docRoot, dir
 	before := capability(m, p.Capability)
 	entry := strings.TrimSpace(strings.ReplaceAll(p.Entry, "\r\n", "\n"))
@@ -114,9 +115,9 @@ func applyTo(dir, docRoot string, m *mapfile.Map, p draft.Proposal, baseline map
 
 	opts := mapcheck.Options{DocRoot: root, PRExists: o.PRExists}
 	if o.OpenRepo != nil {
-		opts.OpenRepo = func(string) (vcs.Repo, error) { return o.OpenRepo(root) }
+		opts.OpenRepo = func(ctx context.Context, _ string) (vcs.Repo, error) { return o.OpenRepo(ctx, root) }
 	}
-	res, err := mapcheck.CheckWith(tmp, opts)
+	res, err := mapcheck.CheckWith(ctx, tmp, opts)
 	if err != nil {
 		return "", "the scratch copy of the map cannot be checked: " + err.Error()
 	}

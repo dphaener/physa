@@ -10,6 +10,7 @@
 package mapslice
 
 import (
+	"context"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -97,8 +98,8 @@ type Term struct {
 // problem physa check map would report, with anchors checked for their form
 // only, so neither history nor the forge is read; the error names every
 // problem by file and line.
-func Read(dir string) (*mapfile.Map, error) {
-	m, res, err := mapcheck.CheckRead(dir, mapcheck.Options{FormOnly: true})
+func Read(ctx context.Context, dir string) (*mapfile.Map, error) {
+	m, res, err := mapcheck.CheckRead(ctx, dir, mapcheck.Options{FormOnly: true})
 	if err != nil {
 		return nil, err
 	}

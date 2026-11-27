@@ -82,7 +82,7 @@ func TestAreasPrintsTheAreas(t *testing.T) {
 	if strings.Contains(out, "session") {
 		t.Errorf("stdout names a session:\n%s", out)
 	}
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestAreasNeverReachTheMap(t *testing.T) {
 			t.Fatalf("%v: %d %s", args, code, errOut)
 		}
 	}
-	st, err := env.Store(".")
+	st, err := env.Store(context.Background(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}

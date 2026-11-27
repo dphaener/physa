@@ -41,8 +41,7 @@ type Loader interface {
 }
 
 // Load reads the stored areas and decodes their body, false when none exist.
-func Load(st Loader) (Record, bool, error) {
-	ctx := context.TODO()
+func Load(ctx context.Context, st Loader) (Record, bool, error) {
 	a, ok, err := st.Areas(ctx)
 	if err != nil || !ok {
 		return Record{}, false, err

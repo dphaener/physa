@@ -39,7 +39,9 @@ func Refusal(method, agent string) string {
 // namePerson names who adds an idea when idea.add leaves the person out:
 // the person running Physa on this machine, named as the CLI names them,
 // so a view or harness need not. "" when no name can be had.
-var namePerson = func(dir string) string { return person.ForRepo(dir, github.New(dir), io.Discard) }
+var namePerson = func(ctx context.Context, dir string) string {
+	return person.ForRepo(ctx, dir, github.New(dir), io.Discard)
+}
 
 // open gets the repo's state; a repo the engine cannot serve is bad_request.
 func (g getter) open(ctx context.Context, repo string) (*state.State, error) {
@@ -116,7 +118,7 @@ func Methods(get func(ctx context.Context, repo string) (*state.State, error)) [
 				}
 				who := in.Person
 				if who == "" {
-					who = namePerson(in.Repo)
+					who = namePerson(ctx, in.Repo)
 				}
 				f, err := work.AddIdea(ctx, st, work.IdeaIn{Text: in.Text, Slug: in.Slug, Person: who})
 				return ideaOut(f), refused(err)

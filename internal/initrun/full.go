@@ -1,10 +1,12 @@
 package initrun
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 
 	"github.com/dphaener/physa/internal/initcost"
+	"github.com/dphaener/physa/internal/interrupt"
 	"github.com/dphaener/physa/internal/newcodebase"
 	"github.com/dphaener/physa/internal/preflight"
 	"github.com/dphaener/physa/internal/recovery"
@@ -18,28 +20,28 @@ import (
 // recovers, says what the run spent, and with --write writes physa/init.
 // Every run starts fresh: it replaces the stored gather, proposal and recoveries.
 // Before it writes, it asks Env.Skill for the line on the agent's Physa skill, which the PR body carries and Run says last.
-func (r *run) full() int {
+func (r *run) full(ctx context.Context) int {
 	if r.env.Skill != nil {
 		r.skill = r.env.Skill(r.o.Agent)
 	}
 	r.agent() // resolved here so the first line can say what a token is worth; gather reports a failure
 	fmt.Fprintf(r.stderr, "physa init: %s %s\n", r.guard.StartLine(), initcost.Unit(r.cache, r.meter.Name()))
-	g, sum, err := r.gatherInto("")
+	g, sum, err := r.gatherInto(ctx, "")
 	if err != nil {
-		return r.fail(err)
+		return r.fail(ctx, interrupt.Nothing("the gather"), err)
 	}
 	r.p.gather(sum)
 	if newcodebase.New(g) {
-		return r.newCodebase(g)
+		return r.newCodebase(ctx, g)
 	}
 	preflight.Warn(r.stderr, preflight.Gather(sum))
 	if _, err := r.agent(); err != nil {
 		return failed(r.stderr, err)
 	}
-	if code := r.propose(); code != 0 {
+	if code := r.propose(ctx); code != 0 {
 		return code
 	}
-	return r.recoverPhase(nil, func(recovery.Report) {
+	return r.recoverPhase(ctx, nil, func(recovery.Report) {
 		fmt.Fprintf(r.stderr, "physa init: this run spent %s.\n", r.o.Cap.Show(r.meter.Spent())) // in the cap's unit
 	})
 }
@@ -57,7 +59,7 @@ func (r *run) recoverySession(only []string) recovery.Session {
 // newCodebase starts a new codebase's map from the person's answers, read
 // from --answers or asked on a terminal; with neither it fails, saying how
 // to answer. It starts no session. --write writes the promise and terms.
-func (r *run) newCodebase(g store.Gather) int {
+func (r *run) newCodebase(ctx context.Context, g store.Gather) int {
 	terminal := r.env.IsTerminal != nil && r.env.IsTerminal() && r.env.Stdin != nil
 	a, err := newcodebase.Obtain(g, filepath.Base(r.root), r.o.Answers, terminal, r.env.Stdin, r.stderr)
 	if err != nil {
@@ -67,5 +69,5 @@ func (r *run) newCodebase(g store.Gather) int {
 	if !r.o.Write {
 		return 0
 	}
-	return writeMap(newMap(a, r.env, r.skill), r.o, r.env, r.p, r.stderr)
+	return writeMap(ctx, newMap(a, r.env, r.skill), r.o, r.env, r.p, r.stderr)
 }

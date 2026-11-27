@@ -6,6 +6,7 @@
 package evidencecli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strconv"
@@ -39,7 +40,7 @@ func commandFor(env *ideacli.Env) *cobra.Command {
 	return command.Declare(command.New("evidence",
 		"List the facts observed in version control and the forge, newest first: changes landed and reverted, a merged PR's lead time and its CI result. "+
 			"It reads what the engine stored and polls nothing.",
-		[]string{usage}, func(args []string, stdout, stderr io.Writer) int {
+		[]string{usage}, func(_ context.Context, args []string, stdout, stderr io.Writer) int {
 			if len(args) > 0 {
 				return command.BadUsage
 			}

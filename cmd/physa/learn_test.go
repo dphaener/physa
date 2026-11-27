@@ -24,16 +24,16 @@ type prForge struct {
 	pr     forge.PR
 }
 
-func (f prForge) Name() string               { return "fake" }
-func (f prForge) PRExists(int) (bool, error) { return false, nil }
-func (f prForge) ChangePR(id string) (forge.PR, bool, error) {
+func (f prForge) Name() string                                { return "fake" }
+func (f prForge) PRExists(context.Context, int) (bool, error) { return false, nil }
+func (f prForge) ChangePR(_ context.Context, id string) (forge.PR, bool, error) {
 	return f.pr, id == f.change, nil
 }
 
 func runLearn(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(append([]string{"map", "learn"}, args...), &stdout, &stderr)
+	code := run(t.Context(), append([]string{"map", "learn"}, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -106,7 +106,7 @@ func TestLearnBadSince(t *testing.T) {
 
 func TestLearnHelp(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	run([]string{"map", "learn", "--help"}, &stdout, &stderr)
+	run(t.Context(), []string{"map", "learn", "--help"}, &stdout, &stderr)
 	got := stdout.String() + stderr.String()
 	if !strings.Contains(got, "physa map learn [--signals] [--write [--push [--pr]]] [--since <change>] [--appetite <tokens>] [--agent <name>] [--json]") {
 		t.Errorf("help lacks usage: %q", got)
@@ -342,12 +342,14 @@ type prsForge struct {
 	created []string
 }
 
-func (f *prsForge) OpenPR(string) (int, string, bool, error) { return 0, "", false, nil }
-func (f *prsForge) CreatePR(head, base, title, body string) (int, string, error) {
+func (f *prsForge) OpenPR(context.Context, string) (int, string, bool, error) {
+	return 0, "", false, nil
+}
+func (f *prsForge) CreatePR(_ context.Context, head, base, title, body string) (int, string, error) {
 	f.created = append(f.created, head+" into "+base+": "+body)
 	return 9, "https://example.com/pr/9", nil
 }
-func (f *prsForge) EditPR(int, string) error { return nil }
+func (f *prsForge) EditPR(context.Context, int, string) error { return nil }
 
 // writeRepo is signalRepo with a local bare remote as origin, a fake forge
 // that opens PRs and an agent that proposes one good rule.
@@ -439,7 +441,7 @@ func TestLearnPushWithoutWriteIsBadUsage(t *testing.T) {
 // noPRs is a forge whose PRs cannot be reached, as when gh is not installed.
 type noPRs struct{ *prsForge }
 
-func (noPRs) OpenPR(string) (int, string, bool, error) {
+func (noPRs) OpenPR(context.Context, string) (int, string, bool, error) {
 	return 0, "", false, &forge.Error{Class: forge.ErrUnavailable, Reason: "gh is not installed"}
 }
 
@@ -519,7 +521,7 @@ func TestMapHooksSetsThenFindsItSet(t *testing.T) {
 		"core.hooksPath is already tools/hooks.\n",
 	} {
 		var stdout, stderr bytes.Buffer
-		if code := run([]string{"map", "hooks"}, &stdout, &stderr); code != 0 || stdout.String() != want || stderr.Len() != 0 {
+		if code := run(t.Context(), []string{"map", "hooks"}, &stdout, &stderr); code != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("code %d, stdout %q, stderr %q, want %q", code, stdout.String(), stderr.String(), want)
 		}
 	}
@@ -537,7 +539,7 @@ func TestMapHooksRefusesAnotherHooksPath(t *testing.T) {
 	gitIn(t, dir, "config", "core.hooksPath", ".githooks")
 	t.Chdir(dir)
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"map", "hooks"}, &stdout, &stderr)
+	code := run(t.Context(), []string{"map", "hooks"}, &stdout, &stderr)
 	if code != 2 || stdout.Len() != 0 || !strings.HasPrefix(stderr.String(), "physa map hooks: ") ||
 		!strings.Contains(stderr.String(), ".githooks") || !strings.Contains(stderr.String(), "left alone") {
 		t.Errorf("code %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
@@ -549,7 +551,7 @@ func TestMapHooksRefusesAnotherHooksPath(t *testing.T) {
 
 func TestMapHooksTakesNoArguments(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"map", "hooks", "x"}, &stdout, &stderr); code != 2 {
+	if code := run(t.Context(), []string{"map", "hooks", "x"}, &stdout, &stderr); code != 2 {
 		t.Errorf("code %d, stderr %q", code, stderr.String())
 	}
 }

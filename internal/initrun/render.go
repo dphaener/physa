@@ -74,9 +74,9 @@ func (p *printer) newCodebase(a newcodebase.Answers, write bool) {
 	p.value("new_codebase", text, v)
 }
 
-// wrote prints what writing physa/init did, then in text the PR body.
-func (p *printer) wrote(out initbranch.Outcome, hook initbranch.Hook) {
-	text, v := writereport.Describe(out, hook)
+// wrote prints what writing physa/init did, then in text the PR body; --json holds report when not nil.
+func (p *printer) wrote(out initbranch.Outcome, hook initbranch.Hook, report any) {
+	text, v := writereport.Describe(out, hook, report)
 	p.value("write", text, v)
 }
 

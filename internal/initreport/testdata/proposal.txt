@@ -1,0 +1,14 @@
+Measures of init's record, in counts:
+Source files: can't be given: no areas are stored.
+PRs and changes placed: can't be given: no placements are stored, since no walk is stored.
+PRs in one capability: can't be given: no walk is stored.
+Capabilities with no PR or change: can't be given: no walk is stored.
+Rules, by where their reasons came from: can't be given: no areas are stored, so a `from` path can't be told a test, a doc or a source file.
+Consolidation: can't be given: no consolidation is stored.
+Spend per phase:
+  discover: 1200 input, 300 cached input, 400 output; 3.4k tokens (about $0.05)
+  areas: 8000 input, 2000 cached input, 1500 output; 15k tokens (none: no price yet)
+  walk: 40000 input, 10000 cached input, 6000 output; 70k tokens (about $1.06)
+  recover: 90000 input, 30000 cached input, 12000 output; 150k tokens (about $2.25)
+  consolidate: 20000 input, 5000 cached input, 3000 output; 35k tokens (about $0.53)
+  total: 159200 input, 47300 cached input, 22900 output; 274k tokens (none: no price yet)

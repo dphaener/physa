@@ -37,7 +37,7 @@ func openPR(ctx context.Context, out *Outcome, st state, o Options) error {
 }
 
 // Body is the PR body for m (design 02 section 2.6): the capabilities
-// proposed, the entries recovered for each with their anchors or why it has
+// proposed, Summary.Measures when set, the entries recovered for each with their anchors or why it has
 // none, the questions raised, the entries dropped and the tokens spent, then
 // what happened to the Session: hook. Entries are read back from m's files
 // as the map reader reads them; Run's Outcome.Body is the same text, read
@@ -82,6 +82,9 @@ func body(m Map, read *mapfile.Map) string {
 	}
 	for _, c := range m.Capabilities {
 		fmt.Fprintf(&b, "- `%s`: %s\n", c.Name, c.Promise)
+	}
+	if m.Summary.Measures != "" {
+		b.WriteString("\n" + m.Summary.Measures)
 	}
 	if len(m.Capabilities) > 0 {
 		b.WriteString("\n## Entries recovered\n")

@@ -1,0 +1,34 @@
+## Measures
+
+- Source files: 12
+  - in a capability: 8 (67%)
+  - shared: 3 (25%)
+  - unclaimed: 1 (8%)
+- PRs placed: 3 of 6 (50%)
+  - placed nowhere, no files known from the gather: 1
+  - placed nowhere, none of its files belongs to a capability: 2
+- Changes no gathered PR holds, placed: 2 of 4 (50%)
+  - placed nowhere, no files known from the gather: 1
+  - placed nowhere, none of its files belongs to a capability: 1
+- Changes that follow their PR: 6
+- PRs in one capability: 2 of 3 (67%), of the PRs touching a source file a capability owns
+  - left out, touching no such file: 3
+- Capabilities with no PR or change: 2 of 5 (40%)
+- Rules, by where their reasons came from: 12
+  - a PR or change: 4 (33%)
+  - a doc, no PR: 2 (17%)
+  - a source file and a test: 1 (8%)
+  - a test only: 3 (25%)
+  - a source file only: 1 (8%)
+  - no anchor: 1 (8%)
+  - test-only rules carrying a Because: line: 2 of 3 (67%)
+  - product rules among them: 1
+  - product rules not counted, since their text can't be read: 1
+- Consolidation:
+  - capabilities merged: 1 group, 1 merged away
+  - entries merged: 1 exact, 1 near
+  - rules moved: 1
+  - questions dropped as answered: 1
+  - rules lifted to the product: 2
+  - refused: 2
+  - entries: 19 before, 12 after, and 2 product rules

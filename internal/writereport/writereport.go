@@ -10,9 +10,11 @@ import (
 )
 
 // Describe says what a run did: the
-// text a person reads, ending with the body, and the value --json prints. A
-// hook or PR never asked for reads "not asked".
-func Describe(out initbranch.Outcome, hook initbranch.Hook) (string, map[string]any) {
+// text a person reads, ending with the body, and the value --json prints,
+// which holds report, init's report, under "report" when it is not nil (the
+// text has its section in the body). A hook or PR never asked for reads
+// "not asked".
+func Describe(out initbranch.Outcome, hook initbranch.Hook, report any) (string, map[string]any) {
 	pr, h := out.PR, hook.State
 	if pr.State == initbranch.PRNotAsked {
 		pr.State = "not asked"
@@ -23,6 +25,9 @@ func Describe(out initbranch.Outcome, hook initbranch.Hook) (string, map[string]
 	v := map[string]any{"branch": initbranch.Branch, "files": out.Files, "pushed": out.Pushed, "body": out.Body,
 		"pr":   map[string]any{"state": pr.State, "number": pr.Number, "url": pr.URL, "reason": pr.Reason},
 		"hook": map[string]string{"state": h, "detail": hook.Detail}}
+	if report != nil {
+		v["report"] = report
+	}
 	var b strings.Builder
 	if c := out.Commit; c != nil {
 		v["commit"] = map[string]string{"id": c.ID, "short": c.Short, "subject": c.Subject}

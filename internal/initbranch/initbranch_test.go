@@ -541,6 +541,43 @@ func TestBodyWithoutSkillHasNoSection(t *testing.T) {
 	}
 }
 
+// measures is a report section as initreport.Section writes it: its heading,
+// a blank line and its list, ending with a line end.
+const measures = "## Measures\n\n- Source files: 3 in a capability (60%), 1 shared (20%), 1 unclaimed (20%), of 5\n"
+
+func TestBodyMeasuresSection(t *testing.T) {
+	f := newFixture(t, nil)
+	m := sample(f)
+	m.Summary.Measures = measures
+	out, err := f.run(m, Options{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := Body(m)
+	if body != out.Body {
+		t.Errorf("Body(m) differs from the run's body:\n%s\n---\n%s", body, out.Body)
+	}
+	want := "- `billing`: Customers pay for what they use.\n\n" + measures + "\n## Entries recovered\n"
+	if !strings.Contains(body, want) {
+		t.Errorf("body does not have the measures between the capabilities and the entries:\n%s", body)
+	}
+	if n := strings.Count(body, "## Measures"); n != 1 {
+		t.Errorf("body has the measures section %d times, want once:\n%s", n, body)
+	}
+}
+
+func TestBodyWithoutMeasuresHasNoSection(t *testing.T) {
+	f := newFixture(t, nil)
+	m := sample(f)
+	body := Body(m)
+	if strings.Contains(body, "## Measures") {
+		t.Errorf("body with empty Measures has the section:\n%s", body)
+	}
+	if want := "- `billing`: Customers pay for what they use.\n\n## Entries recovered\n"; !strings.Contains(body, want) {
+		t.Errorf("body with empty Measures changed between the capabilities and the entries:\n%s", body)
+	}
+}
+
 func TestHasMap(t *testing.T) {
 	for _, p := range mapfolder.Products {
 		t.Run(p, func(t *testing.T) {

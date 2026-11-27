@@ -18,6 +18,21 @@ func runSkill(args ...string) (int, string, string) {
 	return code, stdout.String(), stderr.String()
 }
 
+// isolate points every variable the skill commands read at a temporary
+// value, and returns the home directory.
+func isolate(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+	t.Setenv("PI_CODING_AGENT_DIR", filepath.Join(home, ".pi", "agent"))
+	t.Setenv("OPENCODE_CONFIG_DIR", t.TempDir())
+	return home
+}
+
 func TestSkillShowPrintsTheGuide(t *testing.T) {
 	code, stdout, stderr := runSkill("skill", "show")
 	if code != 0 || stdout != skillcli.Guide() || stderr != "" {
@@ -33,7 +48,7 @@ func TestSkillShowWithAnArgumentIsBadUsage(t *testing.T) {
 }
 
 func TestBareSkillPrintsStatus(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	isolate(t)
 	code, stdout, stderr := runSkill("skill")
 	if code != 0 || !strings.Contains(stdout, "Claude Code") || !strings.Contains(stdout, "missing") || stderr != "" {
 		t.Errorf("skill: exit %d, stdout %q, stderr %q", code, stdout, stderr)
@@ -41,9 +56,7 @@ func TestBareSkillPrintsStatus(t *testing.T) {
 }
 
 func TestSkillSetupStatusRemoveEndToEnd(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	home := isolate(t)
 	settings := filepath.Join(home, ".claude", "settings.json")
 	stub := filepath.Join(home, ".claude", "skills", "physa", "SKILL.md")
 	// The tests have no terminal, so setup needs --yes.
@@ -78,6 +91,37 @@ func TestSkillSetupStatusRemoveEndToEnd(t *testing.T) {
 	}
 	if b, err := os.ReadFile(settings); err != nil || strings.Contains(string(b), "physa skill session") || strings.Contains(string(b), "SessionStart") {
 		t.Errorf("settings.json after remove: %q, %v", b, err)
+	}
+}
+
+func TestSkillSetupWithCodexFoundEndToEnd(t *testing.T) {
+	home := isolate(t)
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	shared := filepath.Join(home, ".agents", "skills", "physa", "SKILL.md")
+	hooks := filepath.Join(home, ".codex", "hooks.json")
+	code, stdout, stderr := runSkill("skill", "setup", "--yes")
+	if code != 0 || !strings.Contains(stdout, "/hooks") {
+		t.Fatalf("setup --yes: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	if b, err := os.ReadFile(shared); err != nil || !strings.Contains(string(b), "physa skill show") {
+		t.Fatalf("shared stub: %q, %v", b, err)
+	}
+	if b, err := os.ReadFile(hooks); err != nil || strings.Count(string(b), "physa skill session") != 1 {
+		t.Fatalf("hooks.json: %q, %v", b, err)
+	}
+	if code, stdout, _ := runSkill("skill", "status"); code != 0 || !strings.Contains(stdout, "unsupported") || !strings.Contains(stdout, "not found") {
+		t.Fatalf("status: exit %d, stdout %q", code, stdout)
+	}
+	if code, _, stderr := runSkill("skill", "remove", "--yes"); code != 0 {
+		t.Fatalf("remove --yes: exit %d, stderr %q", code, stderr)
+	}
+	if _, err := os.Stat(shared); err == nil {
+		t.Error("the shared stub is still there")
+	}
+	if b, err := os.ReadFile(hooks); err != nil || strings.Contains(string(b), "physa skill session") {
+		t.Errorf("hooks.json after remove: %q, %v", b, err)
 	}
 }
 

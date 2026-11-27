@@ -5,11 +5,15 @@
 // the guide exactly as it is, on any output, with no styling; setup writes a
 // short stub into Claude Code's skills directory that tells the agent to run
 // show, and adds a session hook to Claude Code's settings.json that runs the
-// hidden session command when a session starts; status says whether the stub
-// and the hook are current, stale or missing, and remove deletes the stub and
-// takes out only Physa's hook entry. Setup and remove ask on a terminal and
-// need --yes off one, and never overwrite, remove or follow a SKILL.md Physa
-// did not write, or edit a settings.json Physa cannot read as JSON.
+// hidden session command when a session starts. For Codex, OpenCode and Pi,
+// each found by its config directory or its binary on PATH, setup writes the
+// same stub once to ~/.agents/skills/physa, and for Codex adds the hook to its
+// hooks.json; OpenCode and Pi have no hook Physa can install, and status says
+// so. Status lists the four agents, found or not, and says whether each stub
+// and hook is current, stale, missing or unsupported, and remove deletes the
+// stubs and takes out only Physa's hook entries. Setup and remove ask on a
+// terminal and need --yes off one, and never overwrite, remove or follow a
+// SKILL.md Physa did not write, or edit a hooks file Physa cannot read as JSON.
 package skillcli
 
 import (

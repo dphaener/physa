@@ -9,7 +9,7 @@ Draft 0.3, 2026-11-23. Uses `.physa/glossary.md` terms only. Reset around the co
 - **Learning** (08): `physa map learn` reads merged changes and their sessions and drafts one batched `physa/learn` PR for stewards to review.
 - **Init** (02): `physa init` finds its own sources, proposes capabilities and recovers each one's rules, decisions, questions and terms, every entry citing its source; it estimates its cost and asks before the large spend (10). A large repo's propose runs in shares and a merge (02 §2.3.1). Tried on nebari, where its PR is still open.
 - **The engine, without agents** (03): one engine per machine with its local store, events and durable intents; ideas and pursuits from the CLI (`physa idea`, `physa pursue`, `physa pursuit`, with a pursuit's plan of changes); spend counted and weighed from each adapter's cost (10); engineering evidence from version control and the forge (`physa evidence`).
-- **The skill for people's agents** (13): `physa skill show` prints the guide a person's agent loads, embedded in the binary; `setup`, `status` and `remove` for Claude Code are built, with the session hook that runs `physa skill session`; other agents and init's notice come next.
+- **The skill for people's agents** (13): `physa skill show` prints the guide a person's agent loads, embedded in the binary; `setup`, `status` and `remove` are built for Claude Code, Codex, OpenCode and Pi, with the session hook that runs `physa skill session` for Claude Code and Codex; init's notice comes next.
 
 ## What comes next
 

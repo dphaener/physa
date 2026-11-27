@@ -25,6 +25,8 @@ type harness struct {
 	answer      bool
 	asked       []string
 	stdout      bytes.Buffer
+	vars        map[string]string // what getenv reads; empty by default
+	binaries    map[string]bool   // what lookPath finds; none by default
 }
 
 func newHarness(t *testing.T) *harness { return &harness{home: t.TempDir()} }
@@ -33,7 +35,14 @@ func (h *harness) run(args ...string) (int, string, string) {
 	h.stdout.Reset()
 	var errb bytes.Buffer
 	e := env{
-		home:        func() (string, error) { return h.home, nil },
+		home:   func() (string, error) { return h.home, nil },
+		getenv: func(k string) string { return h.vars[k] },
+		lookPath: func(name string) (string, error) {
+			if h.binaries[name] {
+				return "/bin/" + name, nil
+			}
+			return "", errors.New("not found")
+		},
 		interactive: func() bool { return h.interactive },
 		confirm: func(q string) (bool, error) {
 			h.asked = append(h.asked, q+"|"+h.stdout.String())
@@ -74,13 +83,29 @@ type agentsOut struct {
 	Agents []agentJSON `json:"agents"`
 }
 
-func decode(t *testing.T, s string) agentJSON {
+// decodeAll reads the four agents, in order.
+func decodeAll(t *testing.T, s string) []agentJSON {
 	t.Helper()
 	var o agentsOut
-	if err := json.Unmarshal([]byte(s), &o); err != nil || len(o.Agents) != 1 {
-		t.Fatalf("not one agent: %q, %v", s, err)
+	if err := json.Unmarshal([]byte(s), &o); err != nil || len(o.Agents) != 4 {
+		t.Fatalf("not four agents: %q, %v", s, err)
 	}
-	return o.Agents[0]
+	return o.Agents
+}
+
+// decode reads Claude Code's object, the first of the four.
+func decode(t *testing.T, s string) agentJSON { return decodeAll(t, s)[0] }
+
+func (h *harness) agent(t *testing.T, name string) agentJSON {
+	t.Helper()
+	_, out, _ := h.run("status", "--json")
+	for _, a := range decodeAll(t, out) {
+		if a.Agent == name {
+			return a
+		}
+	}
+	t.Fatalf("no agent %s", name)
+	return agentJSON{}
 }
 
 func (h *harness) state(t *testing.T) string {
@@ -164,7 +189,7 @@ func TestStatusJSONReportsClaudeCode(t *testing.T) {
 func TestSetupOffATerminalWithoutYesWritesNothing(t *testing.T) {
 	h := newHarness(t)
 	code, out, errs := h.run("setup")
-	if code != 2 || out != "" || !strings.Contains(errs, "--yes") || !strings.Contains(errs, "nothing written") {
+	if code != 2 || strings.Contains(out, "written") || !strings.Contains(errs, "--yes") || !strings.Contains(errs, "nothing written") {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	if entries, _ := os.ReadDir(h.home); len(entries) != 0 {
@@ -319,11 +344,11 @@ func (h *harness) read(t *testing.T) string {
 func (h *harness) hookState(t *testing.T) string {
 	t.Helper()
 	_, out, _ := h.run("status", "--json")
-	var o struct{ Agents []agentJSON }
-	if err := json.Unmarshal([]byte(out), &o); err != nil || len(o.Agents) != 1 || o.Agents[0].Hook == nil {
-		t.Fatalf("no hook object: %q, %v", out, err)
+	a := decode(t, out)
+	if a.Hook == nil {
+		t.Fatalf("no hook object: %q", out)
 	}
-	return o.Agents[0].Hook.State
+	return a.Hook.State
 }
 
 func TestSetupAddsOneHookKeepingEverythingElse(t *testing.T) {
@@ -445,5 +470,246 @@ func TestStatusJSONCarriesTheHookObject(t *testing.T) {
 	_, out, _ = h.run("setup", "--yes", "--json")
 	if !strings.Contains(out, `"action": "written"`) {
 		t.Fatalf("%q", out)
+	}
+}
+
+func (h *harness) agentsFiles() string {
+	return filepath.Join(h.home, ".agents", "skills", "physa", "SKILL.md")
+}
+
+func (h *harness) codexHooks() string {
+	if d := h.vars["CODEX_HOME"]; d != "" {
+		return filepath.Join(d, "hooks.json")
+	}
+	return filepath.Join(h.home, ".codex", "hooks.json")
+}
+
+func (h *harness) mkdir(t *testing.T, parts ...string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(append([]string{h.home}, parts...)...), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStatusListsFourAgentsFoundOrNot(t *testing.T) {
+	h := newHarness(t)
+	h.mkdir(t, ".codex")
+	_, out, _ := h.run("status", "--json")
+	got := decodeAll(t, out)
+	want := []struct {
+		name  string
+		found bool
+		hook  string
+	}{{"claude-code", false, "missing"}, {"codex", true, "missing"}, {"opencode", false, "unsupported"}, {"pi", false, "unsupported"}}
+	for i, w := range want {
+		if got[i].Agent != w.name || got[i].Found != w.found || got[i].Hook.State != w.hook {
+			t.Errorf("agent %d: %+v hook %+v, want %+v", i, got[i], got[i].Hook, w)
+		}
+	}
+	if got[2].Hook.Path != "" || got[1].Hook.Path != h.codexHooks() || got[2].Path != h.agentsFiles() {
+		t.Errorf("paths: %+v %+v", got[1].Hook, got[2])
+	}
+	if !strings.Contains(out, `"found": true`) || strings.Contains(out, `"path": ""`) {
+		t.Errorf("json: %s", out)
+	}
+	_, text, _ := h.run("status")
+	for _, w := range []string{"agent", "found", "Claude Code", "Codex", "OpenCode", "Pi", "not found", "unsupported"} {
+		if !strings.Contains(text, w) {
+			t.Errorf("status lacks %q: %s", w, text)
+		}
+	}
+}
+
+func TestSetupWithCodexFoundWritesTheSharedStubAndItsHook(t *testing.T) {
+	h := newHarness(t)
+	h.mkdir(t, ".codex")
+	code, out, errs := h.run("setup", "--yes")
+	if code != 0 || errs != "" {
+		t.Fatalf("setup: %d %q", code, errs)
+	}
+	if b, _ := os.ReadFile(h.agentsFiles()); string(b) != skillstub.Text() {
+		t.Fatalf("shared stub: %q", b)
+	}
+	if b, err := os.ReadFile(h.codexHooks()); err != nil || strings.Count(string(b), skillhook.Command) != 1 {
+		t.Fatalf("codex hooks: %q, %v", b, err)
+	}
+	if n := strings.Count(out, h.agentsFiles()); n != 1 {
+		t.Errorf("shared stub reported %d times: %s", n, out)
+	}
+	if !strings.Contains(out, "Codex skill: written") || !strings.Contains(out, "/hooks") {
+		t.Errorf("output: %s", out)
+	}
+	if !strings.Contains(out, "OpenCode: not found; skipped") && strings.Contains(out, "OpenCode") {
+		t.Errorf("output names OpenCode as acted on: %s", out)
+	}
+	_, out, _ = h.run("setup", "--yes")
+	if strings.Count(out, "already current") != 4 || !strings.Contains(out, "/hooks") {
+		t.Errorf("second setup: %s", out)
+	}
+}
+
+func TestSetupWithPiFoundByBinaryWritesTheStubAndNoCodexHook(t *testing.T) {
+	h := newHarness(t)
+	h.binaries = map[string]bool{"pi": true}
+	code, out, _ := h.run("setup", "--yes")
+	if code != 0 {
+		t.Fatalf("setup: %d", code)
+	}
+	if b, _ := os.ReadFile(h.agentsFiles()); string(b) != skillstub.Text() {
+		t.Fatalf("stub: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(h.home, ".codex")); err == nil {
+		t.Error("codex directory made")
+	}
+	if !strings.Contains(out, "Pi skill: written") || !strings.Contains(out, "Codex: not found; skipped") || strings.Contains(out, "/hooks") {
+		t.Errorf("output: %s", out)
+	}
+	if a := h.agent(t, "codex"); a.Found || a.Hook.Action != "" || a.Hook.State != "missing" {
+		t.Errorf("codex: %+v %+v", a, a.Hook)
+	}
+}
+
+func TestCodexHomeMovesTheHookFile(t *testing.T) {
+	h := newHarness(t)
+	h.vars = map[string]string{"CODEX_HOME": filepath.Join(h.home, "elsewhere")}
+	h.mkdir(t, "elsewhere")
+	if code, _, errs := h.run("setup", "--yes"); code != 0 {
+		t.Fatalf("setup: %d %q", code, errs)
+	}
+	if b, err := os.ReadFile(h.codexHooks()); err != nil || !strings.Contains(string(b), skillhook.Command) {
+		t.Fatalf("hooks: %q, %v", b, err)
+	}
+	if _, err := os.Stat(filepath.Join(h.home, ".codex")); err == nil {
+		t.Error("default codex directory made")
+	}
+}
+
+func TestSetupWithNoOtherAgentFoundWritesNothingForThem(t *testing.T) {
+	h := newHarness(t)
+	code, out, _ := h.run("setup", "--yes")
+	if code != 0 {
+		t.Fatalf("setup: %d", code)
+	}
+	for _, d := range []string{".agents", ".codex"} {
+		if _, err := os.Stat(filepath.Join(h.home, d)); err == nil {
+			t.Errorf("%s was made", d)
+		}
+	}
+	if !strings.Contains(out, "Codex, OpenCode and Pi: not found; skipped") || !strings.Contains(out, "Codex: not found; skipped") {
+		t.Errorf("output: %s", out)
+	}
+	_, js, _ := h.run("setup", "--yes", "--json")
+	if a := decodeAll(t, js)[2]; a.Found || a.Action != "skipped" {
+		t.Errorf("opencode: %+v", a)
+	}
+	_, status, _ := h.run("status")
+	if strings.Count(status, "not found") < 6 {
+		t.Errorf("status: %s", status)
+	}
+	h.mkdir(t, ".codex")
+	if code, _, _ := h.run("setup", "--yes"); code != 0 {
+		t.Fatal("setup after")
+	}
+	if _, err := os.Stat(h.agentsFiles()); err != nil {
+		t.Errorf("stub not written once found: %v", err)
+	}
+}
+
+func TestRemoveTakesOutOnlyPhysasFilesAndEntries(t *testing.T) {
+	h := newHarness(t)
+	h.mkdir(t, ".codex")
+	h.seed(t, prior)
+	if err := os.WriteFile(h.codexHooks(), []byte(prior), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(h.home, ".agents", "skills", "other", "SKILL.md")
+	h.mkdir(t, ".agents", "skills", "other")
+	if err := os.WriteFile(other, []byte("mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.run("setup", "--yes")
+	code, out, errs := h.run("remove", "--yes")
+	if code != 0 || errs != "" || strings.Count(out, h.agentsFiles()) != 1 {
+		t.Fatalf("remove: %d %q %q", code, out, errs)
+	}
+	var want any
+	_ = json.Unmarshal([]byte(prior), &want)
+	for _, f := range []string{h.settings(), h.codexHooks()} {
+		b, _ := os.ReadFile(f)
+		var back any
+		if err := json.Unmarshal(b, &back); err != nil || !reflect.DeepEqual(want, back) {
+			t.Errorf("%s not the original: %s", f, b)
+		}
+	}
+	if b, _ := os.ReadFile(other); string(b) != "mine\n" {
+		t.Errorf("other skill: %q", b)
+	}
+	if _, err := os.Stat(h.agentsFiles()); err == nil {
+		t.Error("shared stub still there")
+	}
+	// Removing with nothing found still removes.
+	h.run("setup", "--yes")
+	if err := os.RemoveAll(filepath.Join(h.home, ".codex")); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, _ := h.run("remove", "--yes"); code != 0 {
+		t.Fatalf("remove 2: %d", code)
+	}
+	if _, err := os.Stat(h.agentsFiles()); err == nil {
+		t.Error("shared stub not removed when no agent is found")
+	}
+}
+
+func TestASharedStubNotWrittenByPhysaIsRefusedOnce(t *testing.T) {
+	h := newHarness(t)
+	h.mkdir(t, ".codex")
+	h.binaries = map[string]bool{"pi": true, "opencode": true}
+	h.mkdir(t, ".agents", "skills", "physa")
+	if err := os.WriteFile(h.agentsFiles(), []byte("hand\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []string{"setup", "remove"} {
+		code, _, errs := h.run(v, "--yes")
+		if code != 2 || strings.Count(errs, h.agentsFiles()) != 1 {
+			t.Errorf("%s: %d %q", v, code, errs)
+		}
+	}
+	if b, _ := os.ReadFile(h.agentsFiles()); string(b) != "hand\n" {
+		t.Errorf("changed: %q", b)
+	}
+}
+
+func TestJSONShapeCarriesFoundAndUnsupported(t *testing.T) {
+	h := newHarness(t)
+	h.mkdir(t, ".codex")
+	_, out, _ := h.run("setup", "--yes", "--json")
+	for _, w := range []string{`"found": true`, `"found": false`, `"state": "unsupported"`, `"action": "written"`} {
+		if !strings.Contains(out, w) {
+			t.Errorf("setup json lacks %s: %s", w, out)
+		}
+	}
+	a := decodeAll(t, out)
+	if a[1].Action != "written" || a[2].Action != "written" || a[3].Hook.State != "unsupported" || a[3].Hook.Action != "" {
+		t.Errorf("%+v", a)
+	}
+}
+
+func TestUnreadableSharedStubIsAnIOError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads everything")
+	}
+	h := newHarness(t)
+	h.mkdir(t, ".codex")
+	dir := filepath.Dir(h.agentsFiles())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	code, _, errs := h.run("status")
+	if code != 1 || !strings.Contains(errs, "physa skill status:") || !strings.Contains(errs, "permission denied") {
+		t.Fatalf("status: %d %q", code, errs)
 	}
 }

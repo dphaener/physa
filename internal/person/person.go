@@ -47,9 +47,10 @@ type Name struct {
 
 const fileName = "person"
 
-// ConfigDir returns Physa's config directory.
-func ConfigDir() (string, error) {
-	d, err := configdir.Dir()
+// ConfigDir returns Physa's config directory, reading the environment
+// through getenv.
+func ConfigDir(getenv func(string) string) (string, error) {
+	d, err := configdir.Dir(getenv)
 	if err != nil {
 		return "", fmt.Errorf("person: %w", err)
 	}

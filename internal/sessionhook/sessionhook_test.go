@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,13 +15,14 @@ import (
 	"github.com/dphaener/physa/internal/vcs/git"
 )
 
+// gitEnv is the environment of every git and hook run here: the process's,
+// with no global or system git config and no session.
+var gitEnv = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "CLAUDE_CODE_SESSION_ID=")
+
 // repo makes a git repo that ships an executable hook, with no global or
 // system config, and returns its root and hooks.
 func repo(t *testing.T) (string, vcs.Hooks) {
 	t.Helper()
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
 	root := t.TempDir()
 	gitRun(t, root, "init", "-q", "-b", "main")
 	if err := os.MkdirAll(filepath.Join(root, Dir), 0o755); err != nil {
@@ -29,7 +31,7 @@ func repo(t *testing.T) (string, vcs.Hooks) {
 	if err := os.WriteFile(filepath.Join(root, Hook), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	h, err := git.OpenHooks(context.Background(), root)
+	h, err := git.OpenHooks(context.Background(), root, gitEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +40,9 @@ func repo(t *testing.T) (string, vcs.Hooks) {
 
 func gitRun(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = gitEnv
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -48,11 +52,14 @@ func gitRun(t *testing.T, dir string, args ...string) string {
 // hooksPath returns the repo's local core.hooksPath, "" when unset.
 func hooksPath(t *testing.T, root string) string {
 	t.Helper()
-	out, _ := exec.Command("git", "-C", root, "config", "--local", "--get", "core.hooksPath").Output()
+	cmd := exec.Command("git", "-C", root, "config", "--local", "--get", "core.hooksPath")
+	cmd.Env = gitEnv
+	out, _ := cmd.Output()
 	return strings.TrimSpace(string(out))
 }
 
 func TestInstallSets(t *testing.T) {
+	t.Parallel()
 	root, h := repo(t)
 	got, err := Install(t.Context(), root, h)
 	if err != nil || got != (Outcome{Set: true}) {
@@ -68,6 +75,7 @@ func TestInstallSets(t *testing.T) {
 }
 
 func TestInstallAlready(t *testing.T) {
+	t.Parallel()
 	for _, p := range []string{"tools/hooks", "tools/hooks/", "./tools/hooks", "ABS"} {
 		root, h := repo(t)
 		if p == "ABS" {
@@ -85,6 +93,7 @@ func TestInstallAlready(t *testing.T) {
 }
 
 func TestInstallRefusesHooksPathElsewhere(t *testing.T) {
+	t.Parallel()
 	root, h := repo(t)
 	gitRun(t, root, "config", "--local", "core.hooksPath", ".githooks")
 	got, err := Install(t.Context(), root, h)
@@ -105,6 +114,7 @@ func TestInstallRefusesHooksPathElsewhere(t *testing.T) {
 }
 
 func TestInstallRefusesActiveHooks(t *testing.T) {
+	t.Parallel()
 	root, h := repo(t)
 	active := filepath.Join(root, ".git", "hooks", "pre-commit")
 	if err := os.WriteFile(active, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
@@ -141,6 +151,7 @@ func bare(t *testing.T) (string, vcs.Hooks) {
 }
 
 func TestEmbeddedHookMatchesShipped(t *testing.T) {
+	t.Parallel()
 	shipped, err := os.ReadFile(filepath.Join("..", "..", Hook))
 	if err != nil {
 		t.Fatal(err)
@@ -151,6 +162,7 @@ func TestEmbeddedHookMatchesShipped(t *testing.T) {
 }
 
 func TestInstallWritesEmbeddedHook(t *testing.T) {
+	t.Parallel()
 	root, h := bare(t)
 	pre := filepath.Join(root, ".git", "hooks", "pre-commit")
 	if err := os.WriteFile(pre, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
@@ -181,6 +193,7 @@ func TestInstallWritesEmbeddedHook(t *testing.T) {
 }
 
 func TestInstallCreatesHooksDir(t *testing.T) {
+	t.Parallel()
 	root, h := bare(t)
 	if err := os.RemoveAll(filepath.Join(root, ".git", "hooks")); err != nil {
 		t.Fatal(err)
@@ -191,6 +204,7 @@ func TestInstallCreatesHooksDir(t *testing.T) {
 }
 
 func TestInstallRefusesDifferentHook(t *testing.T) {
+	t.Parallel()
 	root, h := bare(t)
 	file := filepath.Join(root, ".git", "hooks", name)
 	if err := os.WriteFile(file, []byte("#!/bin/sh\necho mine\n"), 0o644); err != nil {
@@ -213,6 +227,7 @@ func TestInstallRefusesDifferentHook(t *testing.T) {
 }
 
 func TestInstallRefusesHooksPathWhenNothingShipped(t *testing.T) {
+	t.Parallel()
 	root, h := bare(t)
 	gitRun(t, root, "config", "--local", "core.hooksPath", Dir)
 	got, err := Install(t.Context(), root, h)
@@ -225,6 +240,7 @@ func TestInstallRefusesHooksPathWhenNothingShipped(t *testing.T) {
 }
 
 func TestInstallNonExecutableShippedHookWritesEmbedded(t *testing.T) {
+	t.Parallel()
 	root, h := repo(t)
 	if err := os.Chmod(filepath.Join(root, Hook), 0o644); err != nil {
 		t.Fatal(err)
@@ -266,7 +282,7 @@ func runHook(t *testing.T, fake string, env ...string) (string, int) {
 	}
 	cmd := exec.Command("sh", args...)
 	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CLAUDE_CODE_SESSION_ID=fake-session-1")
+	cmd.Env = append(slices.Clip(gitEnv), "PATH="+bin+":/usr/bin:/bin", "CLAUDE_CODE_SESSION_ID=fake-session-1")
 	for _, e := range env {
 		if !strings.HasPrefix(e, "SOURCE=") {
 			cmd.Env = append(cmd.Env, e)
@@ -290,6 +306,7 @@ func runHook(t *testing.T, fake string, env ...string) (string, int) {
 const base = "feat: x\n\nBody.\n\nCapability: ideas\n"
 
 func TestHookAddsChange(t *testing.T) {
+	t.Parallel()
 	got, code := runHook(t, "echo my-pursuit/retry-queue")
 	want := base + "Session: fake-session-1\nChange: my-pursuit/retry-queue\n"
 	if code != 0 || got != want {
@@ -298,6 +315,7 @@ func TestHookAddsChange(t *testing.T) {
 }
 
 func TestHookAddsNoChange(t *testing.T) {
+	t.Parallel()
 	want := base + "Session: fake-session-1\n"
 	for name, fake := range map[string]string{
 		"garbage":  "echo 'not a change'",
@@ -314,6 +332,7 @@ func TestHookAddsNoChange(t *testing.T) {
 }
 
 func TestHookSkips(t *testing.T) {
+	t.Parallel()
 	got, code := runHook(t, "echo my-pursuit/retry-queue", "CLAUDE_CODE_SESSION_ID=")
 	if code != 0 || got != base {
 		t.Errorf("no session: got %q (exit %d)", got, code)
@@ -325,6 +344,7 @@ func TestHookSkips(t *testing.T) {
 }
 
 func TestHookTwiceAddsNothingNew(t *testing.T) {
+	t.Parallel()
 	root, _ := repo(t)
 	bin := t.TempDir()
 	os.WriteFile(filepath.Join(bin, "physa"), []byte("#!/bin/sh\necho my-pursuit/retry-queue\n"), 0o755)
@@ -335,7 +355,7 @@ func TestHookTwiceAddsNothingNew(t *testing.T) {
 	for range 2 {
 		cmd := exec.Command("sh", hook, msg)
 		cmd.Dir = root
-		cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CLAUDE_CODE_SESSION_ID=fake-session-1")
+		cmd.Env = append(slices.Clip(gitEnv), "PATH="+bin+":/usr/bin:/bin", "CLAUDE_CODE_SESSION_ID=fake-session-1")
 		if err := cmd.Run(); err != nil {
 			t.Fatal(err)
 		}
@@ -347,6 +367,7 @@ func TestHookTwiceAddsNothingNew(t *testing.T) {
 }
 
 func TestInstallReplacesEarlierHooks(t *testing.T) {
+	t.Parallel()
 	for _, v := range []string{"prepare-commit-msg.v1", "prepare-commit-msg.v2"} {
 		t.Run(v, func(t *testing.T) {
 			root, h := bare(t)

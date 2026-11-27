@@ -20,6 +20,7 @@ func changes(n int) []store.GatheredChange {
 }
 
 func TestNew(t *testing.T) {
+	t.Parallel()
 	readme := store.Doc{Path: "README.md", Kind: "readme", Body: "# X\n"}
 	for _, tc := range []struct {
 		name string
@@ -43,6 +44,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestQuestions(t *testing.T) {
+	t.Parallel()
 	g := store.Gather{Docs: []store.Doc{{Kind: "readme", Body: "# Lathe\n\n[![ci](x)](y)\n\nLathe turns sketches into cut lists. It is fast.\nMore.\n"}}}
 	qs := Questions(g, "wood-shop")
 	if len(qs) != 3 {
@@ -69,6 +71,7 @@ func TestQuestions(t *testing.T) {
 }
 
 func TestAskAcceptsSuggestions(t *testing.T) {
+	t.Parallel()
 	qs := Questions(store.Gather{}, "lathe")
 	var out strings.Builder
 	a, err := Ask(strings.NewReader("\nyes\n\n"), &out, qs[:1])
@@ -86,6 +89,7 @@ func TestAskAcceptsSuggestions(t *testing.T) {
 }
 
 func TestAskEdited(t *testing.T) {
+	t.Parallel()
 	qs := Questions(store.Gather{}, "lathe")
 	in := "Lathe Pro\nIt turns sketches into cut lists.\nCut list: The parts to cut; Part: One piece\n"
 	a, err := Ask(strings.NewReader(in), &strings.Builder{}, qs)
@@ -102,6 +106,7 @@ func TestAskEdited(t *testing.T) {
 }
 
 func TestAskPromiseWithEllipsisAskedAgain(t *testing.T) {
+	t.Parallel()
 	qs := Questions(store.Gather{}, "lathe")[1:2]
 	a, err := Ask(strings.NewReader("\nstill …\nLathe cuts wood.\n"), &strings.Builder{}, qs)
 	if err != nil || a.Promise != "Lathe cuts wood." {
@@ -118,6 +123,7 @@ func TestAskPromiseWithEllipsisAskedAgain(t *testing.T) {
 }
 
 func TestAskInputEnds(t *testing.T) {
+	t.Parallel()
 	qs := Questions(store.Gather{}, "lathe")
 	if _, err := Ask(strings.NewReader("Lathe\n"), &strings.Builder{}, qs); err == nil || !strings.Contains(err.Error(), "question 2") {
 		t.Fatalf("err = %v", err)
@@ -134,6 +140,7 @@ func write(t *testing.T, text string) string {
 }
 
 func TestReadAnswers(t *testing.T) {
+	t.Parallel()
 	p := write(t, "# answers\n\n1: Lathe\n2: Lathe turns sketches into cut lists.\n3: Cut list: The parts to cut, with their sizes\n")
 	a, err := ReadAnswers(p)
 	if err != nil {
@@ -146,6 +153,7 @@ func TestReadAnswers(t *testing.T) {
 }
 
 func TestReadAnswersMissingTakeSuggestion(t *testing.T) {
+	t.Parallel()
 	qs := Questions(store.Gather{}, "lathe")
 	qs[1].Suggested = "Lathe cuts."
 	a, err := ReadAnswers(write(t, "1: Lathe Pro\n"), qs...)
@@ -158,6 +166,7 @@ func TestReadAnswersMissingTakeSuggestion(t *testing.T) {
 }
 
 func TestReadAnswersBad(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, text, want string }{
 		{"bad term", "1: L\n2: L cuts.\n3: Widget\n", `question 3: term "Widget" needs the form Name: meaning`},
 		{"empty meaning", "1: L\n2: L cuts.\n3: Widget:\n", "question 3"},
@@ -177,9 +186,20 @@ func TestReadAnswersBad(t *testing.T) {
 }
 
 // gitIn runs git in dir.
+// gitEnv is the environment of every git here: the process's, with an
+// identity and no signing, given as command-line config, so no commit reads
+// the machine's config.
+var gitEnv = append(os.Environ(),
+	"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_COUNT=3",
+	"GIT_CONFIG_KEY_0=user.name", "GIT_CONFIG_VALUE_0=W",
+	"GIT_CONFIG_KEY_1=user.email", "GIT_CONFIG_VALUE_1=w@example.com",
+	"GIT_CONFIG_KEY_2=commit.gpgsign", "GIT_CONFIG_VALUE_2=false")
+
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = gitEnv
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -189,12 +209,7 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 // TestNewCodebaseWritesAValidProductFolder writes a new codebase's answers
 // as init does, a map of no capabilities, and checks the branch's tree.
 func TestNewCodebaseWritesAValidProductFolder(t *testing.T) {
-	cfg := filepath.Join(t.TempDir(), "gitconfig")
-	if err := os.WriteFile(cfg, []byte("[user]\n\tname = W\n\temail = w@example.com\n[commit]\n\tgpgsign = false\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Parallel()
 	dir := t.TempDir()
 	gitIn(t, dir, "init", "-q", "-b", "main")
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Lathe\n"), 0o644); err != nil {
@@ -206,7 +221,7 @@ func TestNewCodebaseWritesAValidProductFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w, err := git.OpenWriter(context.Background(), dir)
+	w, err := git.OpenWriter(context.Background(), dir, gitEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +238,9 @@ func TestNewCodebaseWritesAValidProductFolder(t *testing.T) {
 	}
 	tree := filepath.Join(t.TempDir(), "tree")
 	gitIn(t, dir, "worktree", "add", "-q", "--detach", tree, initbranch.Branch)
-	res, err := mapcheck.CheckWith(t.Context(), tree, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
+	res, err := mapcheck.CheckWith(t.Context(), tree, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) {
+		return git.Open(context.Background(), d, gitEnv)
+	}})
 	if err != nil || len(res.Problems) > 0 || res.Capabilities != 0 {
 		t.Fatalf("check = %+v, %v", res, err)
 	}

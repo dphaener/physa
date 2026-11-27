@@ -81,11 +81,11 @@ func Add(dir, root string) (added bool, err error) {
 	return true, f.Close()
 }
 
-// StoreDir returns the store directory of the repo at path. A path that is
-// not a repo is an error naming it.
-func StoreDir(path string) (string, error) {
+// StoreDir returns the store directory of the repo at path, with git run in
+// env. A path that is not a repo is an error naming it.
+func StoreDir(path string, env []string) (string, error) {
 	ctx := context.TODO()
-	r, err := git.Open(ctx, path)
+	r, err := git.Open(ctx, path, env)
 	if err != nil {
 		return "", fmt.Errorf("%s: not a repo: %w", path, err)
 	}

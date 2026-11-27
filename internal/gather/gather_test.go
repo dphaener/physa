@@ -66,7 +66,7 @@ func (r *testRepo) commit(message string, files ...string) string {
 
 func (r *testRepo) open() vcs.Repo {
 	r.t.Helper()
-	v, err := git.Open(context.Background(), r.dir)
+	v, err := git.Open(context.Background(), r.dir, os.Environ())
 	if err != nil {
 		r.t.Fatal(err)
 	}

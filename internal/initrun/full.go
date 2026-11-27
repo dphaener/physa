@@ -54,7 +54,7 @@ func (r *run) full(ctx context.Context) int {
 func (r *run) recoverySession(only []string) recovery.Session {
 	s := recovery.Session{Agent: r.agent, Only: only, Root: r.root, OpenRepo: r.env.Repo, Progress: r.stderr, Now: r.env.Now}
 	if r.env.PRExists != nil {
-		s.PRExists = r.env.PRExists(".")
+		s.PRExists = r.env.PRExists(r.env.Proc.Dir)
 	}
 	return s
 }

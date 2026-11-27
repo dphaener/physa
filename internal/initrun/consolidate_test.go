@@ -88,9 +88,9 @@ func consEntry(heading, slug, anchor, body string) string {
 // each capability recovered from it, with the agent given.
 func consEnv(t *testing.T, a adapter.Adapter, caps []consCap) Env {
 	t.Helper()
-	newRepo(t)
-	env := testEnv(t, nil, a)
-	s, err := env.Store(context.Background(), ".")
+	dir := newRepo(t)
+	env := testEnv(t, dir, nil, a)
+	s, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,13 +132,14 @@ var mergeCaps = []consCap{
 const mergeSignIn = `{"capabilities":["sign-in","sign-in-2"],"name":"sign-in","promise_of":"sign-in-2","why":"one promise"}`
 
 func TestConsolidatePrintsAndStores(t *testing.T) {
+	t.Parallel()
 	a := &consolidateAgent{merge: mergeSignIn}
 	env := consEnv(t, a, mergeCaps)
 	code, out, errOut := runInit(env, "--consolidate")
 	if code != 0 || !strings.Contains(out, "Merged capabilities sign-in, sign-in-2 into sign-in") || !strings.Contains(out, "Model: fake-model") {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,9 +158,9 @@ func TestConsolidatePrintsAndStores(t *testing.T) {
 }
 
 func TestConsolidateWithoutAWalkNamesThePhases(t *testing.T) {
+	t.Parallel()
 	a := &consolidateAgent{}
-	env := testEnv(t, nil, a)
-	newRepo(t)
+	env := testEnv(t, newRepo(t), nil, a)
 	code, out, errOut := runInit(env, "--consolidate")
 	if code != 2 || out != "" || a.starts != 0 || !strings.Contains(errOut, "run physa init --walk, --place and --recover first") {
 		t.Errorf("code %d, %d sessions\nstdout %s\nstderr %s", code, a.starts, out, errOut)
@@ -167,22 +168,23 @@ func TestConsolidateWithoutAWalkNamesThePhases(t *testing.T) {
 }
 
 func TestConsolidateWriteWritesTheMergedCapability(t *testing.T) {
+	t.Parallel()
 	env := consEnv(t, &consolidateAgent{merge: mergeSignIn}, mergeCaps)
 	code, _, errOut := runInit(env, "--consolidate", "--write")
 	if code != 0 {
 		t.Fatalf("code %d\n%s", code, errOut)
 	}
-	files := gitIn(t, ".", "ls-tree", "-r", "--name-only", "physa/init")
+	files := gitIn(t, env.Proc.Dir, "ls-tree", "-r", "--name-only", "physa/init")
 	if !strings.Contains(files, ".physa/capabilities/sign-in/") || strings.Contains(files, "sign-in-2") || !strings.Contains(files, ".physa/capabilities/billing/") {
 		t.Errorf("physa/init holds:\n%s", files)
 	}
-	rules := gitIn(t, ".", "show", "physa/init:.physa/capabilities/sign-in/rules.md")
+	rules := gitIn(t, env.Proc.Dir, "show", "physa/init:.physa/capabilities/sign-in/rules.md")
 	for _, want := range []string{"Sessions last a day", "Browser sessions end on close", "session-length-2"} {
 		if !strings.Contains(rules, want) {
 			t.Errorf("sign-in rules lack %q:\n%s", want, rules)
 		}
 	}
-	if log := gitIn(t, ".", "log", "-1", "--format=%B", "physa/init"); !strings.Contains(log, "Session: rec-sign-in-2") {
+	if log := gitIn(t, env.Proc.Dir, "log", "-1", "--format=%B", "physa/init"); !strings.Contains(log, "Session: rec-sign-in-2") {
 		t.Errorf("the merged-away capability's session is not kept:\n%s", log)
 	}
 }
@@ -205,12 +207,13 @@ func liftCaps(n int) []consCap {
 // the product's rules exactly 150 lines, the most the map check accepts, and
 // the real write accepts them.
 func TestConsolidateLiftToTheRulesLimitPassesTheMapCheck(t *testing.T) {
+	t.Parallel()
 	env := consEnv(t, &consolidateAgent{lift: true}, liftCaps(24))
 	code, out, errOut := runInit(env, "--consolidate", "--write")
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
-	rules := gitIn(t, ".", "show", "physa/init:.physa/product/rules.md")
+	rules := gitIn(t, env.Proc.Dir, "show", "physa/init:.physa/product/rules.md")
 	if n := capabilitytext.Lines(rules); n != mapcheck.MaxRulesLines {
 		t.Errorf("product rules are %d lines, want %d", n, mapcheck.MaxRulesLines)
 	}
@@ -222,7 +225,7 @@ func TestConsolidateLiftToTheRulesLimitPassesTheMapCheck(t *testing.T) {
 func TestConsolidateIsBadUsageWithOtherPhases(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{{"--walk"}, {"--recover"}, {"--only", "x"}, {"--since", "2026-01-01"}} {
-		if code, _, _ := runInit(testEnv(t, nil, nil), append([]string{"--consolidate"}, args...)...); code != command.BadUsage {
+		if code, _, _ := runInit(testEnv(t, t.TempDir(), nil, nil), append([]string{"--consolidate"}, args...)...); code != command.BadUsage {
 			t.Errorf("--consolidate %v: code %d, want bad usage", args, code)
 		}
 	}
@@ -232,6 +235,7 @@ func TestConsolidateIsBadUsageWithOtherPhases(t *testing.T) {
 // recovered text, the stored consolidation no longer matches, so a write says
 // so and writes the recovered capabilities as they are.
 func TestRecoverWriteIgnoresAStaleConsolidation(t *testing.T) {
+	t.Parallel()
 	env := consEnv(t, &consolidateAgent{merge: mergeSignIn}, mergeCaps)
 	if code, _, errOut := runInit(env, "--consolidate"); code != 0 {
 		t.Fatalf("consolidate: %d %s", code, errOut)
@@ -241,8 +245,8 @@ func TestRecoverWriteIgnoresAStaleConsolidation(t *testing.T) {
 	if code != 0 || !strings.Contains(errOut, "run physa init --consolidate again") {
 		t.Fatalf("code %d\n%s", code, errOut)
 	}
-	files := gitIn(t, ".", "ls-tree", "-r", "--name-only", "physa/init")
-	if !strings.Contains(files, ".physa/capabilities/sign-in-2/") || !strings.Contains(gitIn(t, ".", "show", "physa/init:.physa/capabilities/billing/rules.md"), "Again billing") {
+	files := gitIn(t, env.Proc.Dir, "ls-tree", "-r", "--name-only", "physa/init")
+	if !strings.Contains(files, ".physa/capabilities/sign-in-2/") || !strings.Contains(gitIn(t, env.Proc.Dir, "show", "physa/init:.physa/capabilities/billing/rules.md"), "Again billing") {
 		t.Errorf("the stale consolidation was used:\n%s", files)
 	}
 }
@@ -252,6 +256,7 @@ func TestRecoverWriteIgnoresAStaleConsolidation(t *testing.T) {
 // reached and how to continue, and exits 1, and that one under a cap that
 // holds consolidates and stores as an uncapped one does.
 func TestCappedConsolidateStoresNothing(t *testing.T) {
+	t.Parallel()
 	a := &consolidateAgent{merge: mergeSignIn}
 	env := consEnv(t, a, mergeCaps)
 	code, out, errOut := runInit(env, "--consolidate", "--cap", "1k")
@@ -270,7 +275,7 @@ func TestCappedConsolidateStoresNothing(t *testing.T) {
 		t.Errorf("the cap's stop is said as a failure:\n%s", errOut)
 	}
 	consolidated := func() bool {
-		st, err := env.Store(context.Background(), ".")
+		st, err := env.Store(context.Background(), env.Proc.Dir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -292,9 +297,10 @@ func TestCappedConsolidateStoresNothing(t *testing.T) {
 // TestConsolidateSpendAddsUp checks that a second --consolidate adds what it
 // spent to the first's in init's record, so a cap sees both.
 func TestConsolidateSpendAddsUp(t *testing.T) {
+	t.Parallel()
 	env := consEnv(t, &consolidateAgent{merge: mergeSignIn}, mergeCaps)
 	spent := func() int64 {
-		st, err := env.Store(context.Background(), ".")
+		st, err := env.Store(context.Background(), env.Proc.Dir)
 		if err != nil {
 			t.Fatal(err)
 		}

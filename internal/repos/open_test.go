@@ -27,7 +27,7 @@ func resolved(t *testing.T, p string) string {
 
 func newSet(t *testing.T, dir string, o state.Options) *Set {
 	t.Helper()
-	s := NewSet(dir, o)
+	s := NewSet(dir, os.Environ(), o)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -79,7 +79,7 @@ func TestSetGetRegisters(t *testing.T) {
 
 func TestSetReopensRegistered(t *testing.T) {
 	dir, repo := t.TempDir(), gitInit(t)
-	first := NewSet(dir, state.Options{})
+	first := NewSet(dir, os.Environ(), state.Options{})
 	get(t, first, repo)
 	if err := first.Close(context.Background()); err != nil {
 		t.Fatal(err)
@@ -148,7 +148,7 @@ func TestSetRefusesOtherShape(t *testing.T) {
 
 func TestSetClosedRefusesGet(t *testing.T) {
 	dir, repo := t.TempDir(), gitInit(t)
-	s := NewSet(dir, state.Options{})
+	s := NewSet(dir, os.Environ(), state.Options{})
 	st := get(t, s, repo)
 	if err := s.Close(context.Background()); err != nil {
 		t.Fatal(err)
@@ -273,7 +273,7 @@ func TestSetPending(t *testing.T) {
 func TestSetCloseDuringGet(t *testing.T) {
 	for i := range 10 {
 		dir, repo := t.TempDir(), gitInit(t)
-		s := NewSet(dir, state.Options{})
+		s := NewSet(dir, os.Environ(), state.Options{})
 		var wg sync.WaitGroup
 		var st *state.State
 		var err error

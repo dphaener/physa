@@ -15,6 +15,7 @@ func fixed(s string) func() (string, error) {
 }
 
 func TestSettingWinsOverForge(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "person"), []byte("\n  owner  \nignored\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -29,6 +30,7 @@ func TestSettingWinsOverForge(t *testing.T) {
 }
 
 func TestSettingWithSpaceIsError(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "person"), []byte("Darin Haener\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -40,6 +42,7 @@ func TestSettingWithSpaceIsError(t *testing.T) {
 }
 
 func TestEmptySettingFallsThrough(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "person"), []byte("  \n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -51,6 +54,7 @@ func TestEmptySettingFallsThrough(t *testing.T) {
 }
 
 func TestForgeLoginIsKept(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	n, err := Resolve(Options{ConfigDir: dir, Login: fixed("dphaener")})
 	if err != nil {
@@ -74,6 +78,7 @@ func TestForgeLoginIsKept(t *testing.T) {
 }
 
 func TestForgeLoginNotKeptWhenWriteFails(t *testing.T) {
+	t.Parallel()
 	blocker := filepath.Join(t.TempDir(), "file")
 	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -85,6 +90,7 @@ func TestForgeLoginNotKeptWhenWriteFails(t *testing.T) {
 }
 
 func TestEmailFallback(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	n, err := Resolve(Options{ConfigDir: dir, Login: fail, Email: fixed("Darin.H@example.com")})
 	if err != nil {
@@ -99,6 +105,7 @@ func TestEmailFallback(t *testing.T) {
 }
 
 func TestUnknown(t *testing.T) {
+	t.Parallel()
 	for _, o := range []Options{
 		{ConfigDir: t.TempDir()},
 		{ConfigDir: t.TempDir(), Login: fail, Email: fail},
@@ -116,27 +123,37 @@ func TestUnknown(t *testing.T) {
 	}
 }
 
+// envOf is a getenv over vars, standing in for the command's environment.
+func envOf(vars map[string]string) func(string) string {
+	return func(k string) string { return vars[k] }
+}
+
 func TestConfigDirHonoursXDG(t *testing.T) {
+	t.Parallel()
 	x := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", x)
-	t.Setenv("HOME", t.TempDir())
-	got, err := ConfigDir()
+	got, err := ConfigDir(envOf(map[string]string{"XDG_CONFIG_HOME": x, "HOME": t.TempDir()}))
 	if err != nil || got != filepath.Join(x, "physa") {
 		t.Fatalf("got %q, %v", got, err)
 	}
 }
 
 func TestConfigDirFallsBackToHome(t *testing.T) {
+	t.Parallel()
 	h := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", "")
-	t.Setenv("HOME", h)
-	got, err := ConfigDir()
+	got, err := ConfigDir(envOf(map[string]string{"XDG_CONFIG_HOME": "", "HOME": h}))
 	if err != nil || got != filepath.Join(h, ".config", "physa") {
 		t.Fatalf("got %q, %v", got, err)
 	}
-	t.Setenv("XDG_CONFIG_HOME", "relative/path")
-	got, _ = ConfigDir()
+	got, _ = ConfigDir(envOf(map[string]string{"XDG_CONFIG_HOME": "relative/path", "HOME": h}))
 	if got != filepath.Join(h, ".config", "physa") {
 		t.Fatalf("relative XDG must be ignored, got %q", got)
+	}
+}
+
+func TestConfigDirWithNoHomeSaysSo(t *testing.T) {
+	t.Parallel()
+	got, err := ConfigDir(envOf(nil))
+	if err == nil || err.Error() != "person: no XDG_CONFIG_HOME and no HOME" {
+		t.Fatalf("got %q, %v", got, err)
 	}
 }

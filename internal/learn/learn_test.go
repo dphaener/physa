@@ -72,7 +72,7 @@ func (r *testRepo) revert() string {
 
 func (r *testRepo) open() vcs.Repo {
 	r.t.Helper()
-	repo, err := git.Open(context.Background(), r.dir)
+	repo, err := git.Open(context.Background(), r.dir, os.Environ())
 	if err != nil {
 		r.t.Fatal(err)
 	}

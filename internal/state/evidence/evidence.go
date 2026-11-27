@@ -40,9 +40,10 @@ const (
 )
 
 // Options returns the timer and intent kinds of the evidence poll, to pass
-// in state.Options. newForge gives the forge of a repo root; nil, or a forge
-// that cannot list merged PRs, means version control only.
-func Options(newForge func(root string) forge.Forge) (timers []state.TimerKind, intents []state.IntentKind) {
+// in state.Options. env is the environment git runs in. newForge gives the
+// forge of a repo root; nil, or a forge that cannot list merged PRs, means
+// version control only.
+func Options(env []string, newForge func(root string) forge.Forge) (timers []state.TimerKind, intents []state.IntentKind) {
 	timers = []state.TimerKind{
 		{Name: PollKind, Key: PollKey, Delay: 0, Fire: firePoll},
 		{Name: ExpireKind, Key: ExpireKey, Delay: expireEvery, Fire: expire},
@@ -51,7 +52,7 @@ func Options(newForge func(root string) forge.Forge) (timers []state.TimerKind, 
 		Name:   PollKind,
 		Repeat: "A poll only reads, and its facts are stored with INSERT OR IGNORE and its watermark moved only from the one it started at, so running it twice records nothing twice.",
 		Check:  checkPoll,
-		Do:     func(ctx context.Context, in state.Intent) (string, error) { return doPoll(ctx, in, newForge) },
+		Do:     func(ctx context.Context, in state.Intent) (string, error) { return doPoll(ctx, in, env, newForge) },
 		Record: recordPoll,
 	}}
 	return timers, intents

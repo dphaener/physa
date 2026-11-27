@@ -8,15 +8,17 @@ import (
 	"testing"
 
 	"github.com/dphaener/physa/internal/command"
+	"github.com/dphaener/physa/internal/proc"
 )
 
 func run(args ...string) (int, string, string) {
 	var out, errb bytes.Buffer
-	code := command.Execute(context.Background(), command.New("physa", "", nil, nil, Command(nil)), args, &out, &errb)
+	code := command.Execute(context.Background(), command.New("physa", "", nil, nil, Command(proc.State{}, nil)), args, &out, &errb)
 	return code, out.String(), errb.String()
 }
 
 func TestShowPrintsTheGuide(t *testing.T) {
+	t.Parallel()
 	code, out, errs := run("skill", "show")
 	if code != 0 || out != Guide() || errs != "" {
 		t.Fatalf("code %d, stdout matches %v, stderr %q", code, out == Guide(), errs)
@@ -27,6 +29,7 @@ func TestShowPrintsTheGuide(t *testing.T) {
 }
 
 func TestShowWithAnArgumentIsBadUsage(t *testing.T) {
+	t.Parallel()
 	code, out, errs := run("skill", "show", "extra")
 	if code != 2 || out != "" || !strings.Contains(errs, showUsage) {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errs)
@@ -55,6 +58,7 @@ func glossary(t *testing.T) []string {
 }
 
 func TestEveryListedTermIsInTheGlossary(t *testing.T) {
+	t.Parallel()
 	g := glossary(t)
 	lines := termLines(guide)
 	if len(lines) == 0 {
@@ -93,12 +97,14 @@ func TestEveryListedTermIsInTheGlossary(t *testing.T) {
 }
 
 func TestGuideNeverSaysADR(t *testing.T) {
+	t.Parallel()
 	if strings.Contains(strings.ToUpper(guide), "ADR") {
 		t.Fatal("the guide says ADR")
 	}
 }
 
 func TestGuideDoesNotCopyTheSliceSkill(t *testing.T) {
+	t.Parallel()
 	b, err := os.ReadFile("../mapslice/skill.md")
 	if err != nil {
 		t.Fatal(err)

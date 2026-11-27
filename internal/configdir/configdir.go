@@ -8,12 +8,14 @@ import (
 	"path/filepath"
 )
 
-// Dir returns the settings directory. It does not create it; see Ensure.
-func Dir() (string, error) {
-	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" && filepath.IsAbs(x) {
+// Dir returns the settings directory, reading XDG_CONFIG_HOME and HOME
+// through getenv, the command's lookup of its environment. It does not
+// create it; see Ensure.
+func Dir(getenv func(string) string) (string, error) {
+	if x := getenv("XDG_CONFIG_HOME"); x != "" && filepath.IsAbs(x) {
 		return filepath.Join(x, "physa"), nil
 	}
-	h := os.Getenv("HOME")
+	h := getenv("HOME")
 	if h == "" {
 		return "", errors.New("no XDG_CONFIG_HOME and no HOME")
 	}

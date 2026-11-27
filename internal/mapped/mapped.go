@@ -16,13 +16,13 @@ import (
 	"github.com/dphaener/physa/internal/vcs"
 )
 
-// Refuse is the early refusal: it errors, before anything is spent,
-// when the default branch already holds a map in either layout
-// (mapfolder.Products), naming the file found. With no default branch
-// to be found it checks the working tree instead, and leaves a missing
-// default branch for --write to report.
-func Refuse(ctx context.Context, open func(ctx context.Context, dir string) (vcs.Writer, error)) error {
-	w, err := open(ctx, ".")
+// Refuse is the early refusal on the repo at dir: it errors, before
+// anything is spent, when the default branch already holds a map in either
+// layout (mapfolder.Products), naming the file found. With no default
+// branch to be found it checks the working tree at dir instead, and leaves
+// a missing default branch for --write to report.
+func Refuse(ctx context.Context, dir string, open func(ctx context.Context, dir string) (vcs.Writer, error)) error {
+	w, err := open(ctx, dir)
 	if err != nil {
 		return err
 	}
@@ -30,18 +30,18 @@ func Refuse(ctx context.Context, open func(ctx context.Context, dir string) (vcs
 		return initbranch.HasMap(ctx, w)
 	}
 	for _, p := range mapfolder.Products {
-		if _, err := os.Stat(filepath.FromSlash(p)); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p))); err == nil {
 			return fmt.Errorf("the repo already has a map (%s in the working tree); init only starts a map, and learning keeps an existing one current: run physa map learn", p)
 		}
 	}
 	return nil
 }
 
-// DiscoveryOff is why --gather alone starts no discovery agent, or empty to
-// start one: the repo has a map, by the early refusal's check, or whether it
-// has one could not be told.
-func DiscoveryOff(ctx context.Context, open func(ctx context.Context, dir string) (vcs.Writer, error)) string {
-	switch err := Refuse(ctx, open); {
+// DiscoveryOff is why --gather alone starts no discovery agent on the repo
+// at dir, or empty to start one: the repo has a map, by the early refusal's
+// check, or whether it has one could not be told.
+func DiscoveryOff(ctx context.Context, dir string, open func(ctx context.Context, dir string) (vcs.Writer, error)) string {
+	switch err := Refuse(ctx, dir, open); {
 	case err == nil:
 		return ""
 	case strings.Contains(err.Error(), "already has a map"):

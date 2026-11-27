@@ -97,7 +97,7 @@ func (e *env) open() {
 	if e.ff != nil {
 		newForge = func(string) forge.Forge { return e.ff }
 	}
-	timers, intents := Options(newForge)
+	timers, intents := Options(os.Environ(), newForge)
 	s, err := state.Open(st, state.Options{StoreDir: dir, Now: e.c.Now, Timers: timers, Intents: intents})
 	if err != nil {
 		e.t.Fatal(err)

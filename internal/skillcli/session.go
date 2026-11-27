@@ -31,10 +31,10 @@ const (
 )
 
 // CurrentFunc returns the pursuit and change a session works on in the repo
-// that holds wd, read from the store and never from the engine. It returns
-// empty names and no error when there is none, and an error when it cannot
-// tell.
-type CurrentFunc func(wd, session string) (pursuit, change string, err error)
+// that holds wd, read from the store and never from the engine, with git run
+// in env. It returns empty names and no error when there is none, and an
+// error when it cannot tell.
+type CurrentFunc func(wd, session string, env []string) (pursuit, change string, err error)
 
 // sessionCommand is the command the session hook runs. It is hidden from help
 // and documented in architecture 13 §4.
@@ -76,7 +76,7 @@ func (e env) sessionLines(ctx context.Context, stdout io.Writer) {
 
 // sessionText is the whole output, or "" when any step fails.
 func (e env) sessionText(ctx context.Context) string {
-	if e.getwd == nil || e.getenv == nil {
+	if e.getwd == nil || e.getenv == nil || e.environ == nil {
 		return ""
 	}
 	wd, err := e.getwd()
@@ -86,7 +86,7 @@ func (e env) sessionText(ctx context.Context) string {
 	if info, err := os.Stat(filepath.Join(wd, ".physa")); err != nil || !info.IsDir() {
 		return ""
 	}
-	if _, err := git.Open(ctx, wd); err != nil {
+	if _, err := git.Open(ctx, wd, e.environ()); err != nil {
 		return ""
 	}
 	m, _, err := mapfile.Read(wd)
@@ -101,7 +101,7 @@ func (e env) sessionText(ctx context.Context) string {
 	}
 	fmt.Fprintf(&out, "This repo has a Physa map with %d %s.\n", n, noun)
 	if session := e.session(); session != "" && e.current != nil {
-		pursuit, change, err := e.current(wd, session)
+		pursuit, change, err := e.current(wd, session, e.environ())
 		if err != nil {
 			return ""
 		}

@@ -29,6 +29,7 @@ func (e *NotServedError) Unwrap() error { return e.Err }
 // share one store and one state.
 type Set struct {
 	dir     string
+	env     []string // the environment git runs in
 	o       state.Options
 	add     sync.Mutex // serializes Add, so racing Gets write one line
 	opening atomic.Int32
@@ -48,10 +49,11 @@ type entry struct {
 	err   error
 }
 
-// NewSet returns a Set for the settings directory dir. It opens nothing;
-// each state is opened with o and its own StoreDir.
-func NewSet(dir string, o state.Options) *Set {
-	return &Set{dir: dir, o: o, open: map[string]*entry{}}
+// NewSet returns a Set for the settings directory dir, finding each repo's
+// store with git run in env. It opens nothing; each state is opened with o
+// and its own StoreDir.
+func NewSet(dir string, env []string, o state.Options) *Set {
+	return &Set{dir: dir, env: env, o: o, open: map[string]*entry{}}
 }
 
 // Opening reports whether OpenRegistered is running.
@@ -94,7 +96,7 @@ func (s *Set) get(ctx context.Context, path string, register bool) (*state.State
 	if s.isClosed() {
 		return nil, ErrClosed
 	}
-	sd, err := StoreDir(path)
+	sd, err := StoreDir(path, s.env)
 	if err != nil {
 		return nil, &NotServedError{err}
 	}

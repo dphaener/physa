@@ -16,11 +16,12 @@ import (
 	"github.com/dphaener/physa/internal/vcs/git"
 )
 
-// capabilities reads the slugs of the capabilities in the repo's map; nil
-// when the repo has no map, which plan.Parse then reports.
-func capabilities(repo string) []string {
+// capabilities reads the slugs of the capabilities in the repo's map, with
+// git run in env to find its root; nil when the repo has no map, which
+// plan.Parse then reports.
+func capabilities(repo string, env []string) []string {
 	root := repo
-	if dir, err := repos.StoreDir(repo); err == nil {
+	if dir, err := repos.StoreDir(repo, env); err == nil {
 		root = filepath.Dir(filepath.Dir(dir))
 	}
 	m, _, err := mapfile.Read(root)
@@ -71,14 +72,14 @@ func orEmpty(s []string) []string {
 // showPursuit reads a pursuit and its progress. It first looks at the default branch
 // for the pursuit's Change: trailers and records what landed (and the pursuit done
 // when every planned change has); a version-control error is logged and the
-// progress shown is what the store holds.
-func showPursuit(ctx context.Context, st work.Submitter, repo, slug string) (client.PursuitOut, error) {
+// progress shown is what the store holds. Git runs in env.
+func showPursuit(ctx context.Context, st work.Submitter, env []string, repo, slug string) (client.PursuitOut, error) {
 	d, err := work.Pursuit(ctx, st, slug)
 	if err != nil {
 		return client.PursuitOut{}, err
 	}
 	var landed map[string]progress.Landing
-	if r, err := git.Open(ctx, repo); err != nil {
+	if r, err := git.Open(ctx, repo, env); err != nil {
 		log.Printf("pursuit.show %s: progress from version control: %v", slug, err)
 	} else if landed, err = progress.Landed(r, slug, d.CreatedAt); err != nil {
 		log.Printf("pursuit.show %s: progress from version control: %v", slug, err)
@@ -100,7 +101,7 @@ func showPursuit(ctx context.Context, st work.Submitter, repo, slug string) (cli
 	return o, nil
 }
 
-func planMethods(g getter) []api.Method {
+func planMethods(g getter, env []string) []api.Method {
 	const (
 		slugNotes = "An unknown slug replies bad_request naming it."
 		repo      = `"repo":"/home/me/code/shop"`
@@ -112,7 +113,7 @@ func planMethods(g getter) []api.Method {
 				"A revision after the first needs a reason: what the plan missed. Only an active pursuit takes a plan."},
 			`{`+repo+`,"pursuit":"try-a-quiet-mode","person":"ann","plan":{"changes":[{"name":"quiet-flag","capability":"cli","what":"Add --quiet.","acceptance":["failure case: an unknown flag exits 2"],"must_not":[],"after":[]}]}}`, planJSON,
 			func(ctx context.Context, _ *api.Conn, in client.PlanSetIn) (client.PlanOut, error) {
-				p, err := plan.Parse(in.Plan, capabilities(in.Repo))
+				p, err := plan.Parse(in.Plan, capabilities(in.Repo, env))
 				if err != nil {
 					return client.PlanOut{}, &api.Error{Code: api.CodeBadRequest, Message: err.Error()}
 				}

@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,7 +52,7 @@ type running struct {
 // Cleanup cancels it and waits for Run to return.
 func start(t *testing.T, dir string, idle time.Duration) *running {
 	t.Helper()
-	return startWith(t, Options{Dir: dir, Idle: idle})
+	return startWith(t, Options{Env: os.Environ(), Dir: dir, Idle: idle})
 }
 
 // startWith is start with every option; Version is always "test".
@@ -188,7 +189,7 @@ func TestModes(t *testing.T) {
 func TestAlreadyRunning(t *testing.T) {
 	dir := newDir(t)
 	start(t, dir, 0)
-	err := Run(context.Background(), Options{Dir: dir, Version: "test"})
+	err := Run(context.Background(), Options{Env: os.Environ(), Dir: dir, Version: "test"})
 	var re *RunningError
 	if !errors.As(err, &re) {
 		t.Fatalf("second Run = %v, want *RunningError", err)
@@ -342,24 +343,47 @@ func TestLongPath(t *testing.T) {
 	}
 }
 
-// gitRepo makes a git repo in its own temporary directory, with git's
+// gitRepoIn makes a git repo in its own temporary directory, with git's
 // settings kept in that directory too, and returns its root with symlinks
-// resolved, the way the engine reports it.
-func gitRepo(t *testing.T) string {
+// resolved, the way the engine reports it, and the settings directory.
+func gitRepoIn(t *testing.T) (root, xdg string) {
 	t.Helper()
 	tmp, err := os.MkdirTemp("", "px")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(tmp) })
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "config"))
-	root := filepath.Join(tmp, "repo")
-	if out, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+	xdg = filepath.Join(tmp, "config")
+	root = filepath.Join(tmp, "repo")
+	mk := exec.Command("git", "init", "-q", root)
+	mk.Env = withXDG(xdg)
+	if out, err := mk.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, out)
 	}
 	if root, err = filepath.EvalSymlinks(root); err != nil {
 		t.Fatal(err)
 	}
+	return root, xdg
+}
+
+// withXDG is the test process's environment with git's settings in xdg.
+func withXDG(xdg string) []string {
+	return append(slices.Clip(os.Environ()), "XDG_CONFIG_HOME="+xdg)
+}
+
+// gitRepoEnv is gitRepoIn with the environment that gives an engine and its
+// children the repo's settings directory, without touching the process's.
+func gitRepoEnv(t *testing.T) (string, []string) {
+	root, xdg := gitRepoIn(t)
+	return root, withXDG(xdg)
+}
+
+// gitRepo is gitRepoIn for the test that runs an engine as a child of this
+// process, which inherits the settings directory: it sets it on the
+// process, so that test stays serial.
+func gitRepo(t *testing.T) string {
+	root, xdg := gitRepoIn(t)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
 	return root
 }
 
@@ -409,9 +433,9 @@ func storeCount(t *testing.T, repo, query string, args ...any) int {
 }
 
 func TestEventsMethod(t *testing.T) {
-	repo := gitRepo(t)
+	repo, env := gitRepoEnv(t)
 	dir := newDir(t)
-	r := startWith(t, Options{Dir: dir, Methods: submitting("test.event", func(tx *state.Tx) error {
+	r := startWith(t, Options{Env: env, Dir: dir, Methods: submitting("test.event", func(tx *state.Tx) error {
 		return tx.Event("test.happened", "test", 7, "ann", map[string]int{"n": 1})
 	})})
 	c := mustDial(t, r.paths.Socket)
@@ -455,9 +479,8 @@ func TestEventsBadRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(notRepo) })
-	t.Setenv("XDG_CONFIG_HOME", notRepo)
 	dir := newDir(t)
-	r := start(t, dir, 0)
+	r := startWith(t, Options{Env: withXDG(notRepo), Dir: dir})
 	c := mustDial(t, r.paths.Socket)
 	for _, path := range []string{"some/repo", notRepo} {
 		err := callWith(c, "engine.events", map[string]any{"repo": path}, nil)
@@ -476,9 +499,9 @@ func TestEventsBadRepo(t *testing.T) {
 }
 
 func TestRegisteredRepoReopened(t *testing.T) {
-	repo := gitRepo(t)
+	repo, env := gitRepoEnv(t)
 	dir := newDir(t)
-	r := start(t, dir, 0)
+	r := startWith(t, Options{Env: env, Dir: dir})
 	c := mustDial(t, r.paths.Socket)
 	if err := callWith(c, "engine.events", map[string]any{"repo": repo}, nil); err != nil {
 		t.Fatal(err)
@@ -489,7 +512,7 @@ func TestRegisteredRepoReopened(t *testing.T) {
 	if err, ok := r.result(5 * time.Second); !ok || err != nil {
 		t.Fatalf("Run after engine.stop = %v (returned %v)", err, ok)
 	}
-	r = start(t, dir, 0)
+	r = startWith(t, Options{Env: env, Dir: dir})
 	c = mustDial(t, r.paths.Socket)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -506,7 +529,7 @@ func TestRegisteredRepoReopened(t *testing.T) {
 
 func TestIdleWaitsForIntent(t *testing.T) {
 	const idle = 200 * time.Millisecond
-	repo := gitRepo(t)
+	repo, env := gitRepoEnv(t)
 	release := make(chan struct{})
 	var once sync.Once
 	free := func() { once.Do(func() { close(release) }) }
@@ -520,7 +543,7 @@ func TestIdleWaitsForIntent(t *testing.T) {
 				return "", ctx.Err()
 			}
 		}}
-	r := startWith(t, Options{Dir: newDir(t), Idle: idle, State: state.Options{Intents: []state.IntentKind{block}},
+	r := startWith(t, Options{Env: env, Dir: newDir(t), Idle: idle, State: state.Options{Intents: []state.IntentKind{block}},
 		Methods: submitting("test.intent", func(tx *state.Tx) error {
 			id, err := tx.Intent("test.block", nil)
 			if err != nil {
@@ -549,11 +572,11 @@ func TestIdleWaitsForIntent(t *testing.T) {
 
 func TestIdleCountsTimer(t *testing.T) {
 	const idle = 400 * time.Millisecond
-	repo := gitRepo(t)
+	repo, env := gitRepoEnv(t)
 	ring := state.TimerKind{Name: "test.ring", Fire: func(tx *state.Tx, tm state.Timer) error {
 		return tx.Event("test.rang", "timer", tm.ID, "", nil)
 	}}
-	r := startWith(t, Options{Dir: newDir(t), Idle: idle, State: state.Options{Timers: []state.TimerKind{ring}},
+	r := startWith(t, Options{Env: env, Dir: newDir(t), Idle: idle, State: state.Options{Timers: []state.TimerKind{ring}},
 		Methods: submitting("test.timer", func(tx *state.Tx) error {
 			if err := tx.SetTimer("test.ring", "once", tx.Now().Add(600*time.Millisecond), nil); err != nil {
 				return err
@@ -580,7 +603,8 @@ func TestIdleCountsTimer(t *testing.T) {
 }
 
 func TestStopWhileOpening(t *testing.T) {
-	repo := gitRepo(t)
+	// Serial: it counts the process's goroutines, which parallel tests change.
+	repo, env := gitRepoEnv(t)
 	dir := newDir(t)
 	if err := configdir.Ensure(dir); err != nil {
 		t.Fatal(err)
@@ -589,7 +613,7 @@ func TestStopWhileOpening(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := runtime.NumGoroutine()
-	r := start(t, dir, 0)
+	r := startWith(t, Options{Env: env, Dir: dir})
 	c, err := dial(r.paths.Socket)
 	if err != nil {
 		t.Fatal(err)

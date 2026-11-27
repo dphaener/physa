@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 	}
 	// SIGTERM stops the engine the way `physa engine` does; SIGKILL is the crash.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	err := Run(ctx, Options{Dir: dir, Idle: crashIdle, Version: "test", Methods: crashMethods})
+	err := Run(ctx, Options{Env: os.Environ(), Dir: dir, Idle: crashIdle, Version: "test", Methods: crashMethods})
 	stop()
 	var running *RunningError
 	if errors.As(err, &running) {

@@ -24,16 +24,17 @@ func initCommand(d deps) *cobra.Command {
 	var c *cobra.Command
 	c = command.Declare(command.New("init", summary, initrun.Usage,
 		func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-			cache, _ := spend.Path() // no settings directory: prices are kept for the run only
+			cache, _ := spend.Path(d.proc().Getenv) // no settings directory: prices are kept for the run only
 			return initrun.Run(ctx, f, args, command.Words(c), stdout, stderr, initrun.Env{
+				Proc:       d.proc(),
 				Store:      d.openStore,
-				Repo:       openRepo,
+				Repo:       d.openRepo,
 				Forge:      d.newForge,
 				PRExists:   d.prResolver,
 				Agent:      d.agentFor,
 				Now:        time.Now,
-				Writer:     openWriter,
-				Hooks:      openHooks,
+				Writer:     d.openWriter,
+				Hooks:      d.openHooks,
 				Stdin:      os.Stdin,
 				IsTerminal: func() bool { return output.IsTerminal(os.Stdin) },
 				Spend:      cache,
@@ -51,19 +52,22 @@ func (d deps) skillNotice(name string) string {
 	if err != nil {
 		return ""
 	}
-	home, err := os.UserHomeDir()
+	home, err := d.proc().Home()
 	if err != nil {
 		return ""
 	}
 	return skillcli.Notice(a.Name(), home)
 }
 
-// openRepo, openWriter and openHooks open git's repo, writer and hooks at
-// dir, for the seams that take a context and a directory.
-func openRepo(ctx context.Context, dir string) (vcs.Repo, error) { return git.Open(ctx, dir) }
-
-func openWriter(ctx context.Context, dir string) (vcs.Writer, error) {
-	return git.OpenWriter(ctx, dir)
+// openRepo, openWriter and openHooks open git's repo, writer and hooks at dir, git run in the process's environment.
+func (d deps) openRepo(ctx context.Context, dir string) (vcs.Repo, error) {
+	return git.Open(ctx, dir, d.proc().Environ())
 }
 
-func openHooks(ctx context.Context, dir string) (vcs.Hooks, error) { return git.OpenHooks(ctx, dir) }
+func (d deps) openWriter(ctx context.Context, dir string) (vcs.Writer, error) {
+	return git.OpenWriter(ctx, dir, d.proc().Environ())
+}
+
+func (d deps) openHooks(ctx context.Context, dir string) (vcs.Hooks, error) {
+	return git.OpenHooks(ctx, dir, d.proc().Environ())
+}

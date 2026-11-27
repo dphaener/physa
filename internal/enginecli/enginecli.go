@@ -23,6 +23,7 @@ import (
 	"github.com/dphaener/physa/internal/forge/github"
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/person"
+	"github.com/dphaener/physa/internal/proc"
 	"github.com/dphaener/physa/internal/workapi"
 )
 
@@ -36,26 +37,28 @@ const callTimeout = 5 * time.Second
 const alreadyRunning = 3
 
 // Commands returns the engine and api groups. version is what a foreground
-// engine reports in engine.status.
-func Commands(version string) []*cobra.Command {
-	return commands(version, enginestart.Options{}, os.Getenv)
+// engine reports in engine.status; st is the process the command runs in.
+func Commands(version string, st proc.State) []*cobra.Command {
+	return group{version, enginestart.Options{}, st, os.Stdin}.commands()
 }
 
-// commands builds the groups, starting engines with start's Command, so
-// tests can make sure nothing is spawned, and finding an agent's session
-// through getenv.
-func commands(version string, start enginestart.Options, getenv func(string) string) []*cobra.Command {
-	g := group{version, start, getenv}
+func (g group) commands() []*cobra.Command {
 	return []*cobra.Command{g.engineCommand(), g.apiCommand()}
 }
 
 // group is what the commands share: the version a foreground engine
-// reports, how an engine is started, and how an agent's session is found.
+// reports, how an engine is started (tests make sure nothing is spawned),
+// the process's environment, where the settings directory, NO_COLOR and an
+// agent's session are read, and what `api call -` reads.
 type group struct {
 	version string
 	start   enginestart.Options
-	getenv  func(string) string
+	st      proc.State
+	stdin   io.Reader
 }
+
+// getenv reads the process's environment.
+func (g group) getenv(key string) string { return g.st.Getenv(key) }
 
 func (g group) engineCommand() *cobra.Command {
 	return build("engine",
@@ -80,13 +83,16 @@ func (g group) engineCommand() *cobra.Command {
 			"Print the engine's version, pid, start time, API revision and open repos, starting the engine when it is not running.",
 			g.engineStatus, "json"),
 		leaf("stop", "physa engine stop [--json]",
-			"Stop the engine and wait until it is gone. No engine running is not an error.", engineStop, "json"))
+			"Stop the engine and wait until it is gone. No engine running is not an error.", g.engineStop, "json"))
 }
+
+// printer is output's Printer on w, plain when NO_COLOR is set.
+func (g group) printer(w io.Writer) *output.Printer { return output.For(w, g.st.LookupEnv) }
 
 // namePerson names who adds an idea when idea.add leaves the person out:
 // the person running Physa on this machine, named as the CLI names them.
-func namePerson(ctx context.Context, dir string) string {
-	return person.ForRepo(ctx, dir, github.New(dir), io.Discard)
+func (g group) namePerson(ctx context.Context, dir string) string {
+	return person.ForRepo(ctx, g.st, dir, github.New(dir), io.Discard)
 }
 
 // engineRun serves in the foreground until SIGINT or SIGTERM, engine.stop
@@ -98,7 +104,7 @@ func (g group) engineRun(f *flags, args []string, _, stderr io.Writer) int {
 	}
 	dir, err := f.dir, error(nil)
 	if dir == "" {
-		dir, err = configdir.Dir()
+		dir, err = configdir.Dir(g.getenv)
 	} else if !filepath.IsAbs(dir) {
 		err = fmt.Errorf("--dir %q is not an absolute path", dir)
 	}
@@ -107,7 +113,8 @@ func (g group) engineRun(f *flags, args []string, _, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	err = engine.Run(ctx, engine.Options{Dir: dir, Idle: idle, Version: g.version, Methods: workapi.Methods(namePerson), State: workapi.StateOptions()})
+	env := g.st.Environ() // git's, wherever the engine runs it
+	err = engine.Run(ctx, engine.Options{Dir: dir, Idle: idle, Version: g.version, Env: env, Methods: workapi.Methods(env, g.namePerson), State: workapi.StateOptions(env)})
 	var running *engine.RunningError
 	if errors.As(err, &running) {
 		failed(stderr, "engine run", err)
@@ -121,7 +128,7 @@ func (g group) engineStart(f *flags, args []string, stdout, stderr io.Writer) in
 	if !ok || len(args) > 0 {
 		return command.BadUsage
 	}
-	dir, err := configdir.Dir()
+	dir, err := configdir.Dir(g.getenv)
 	if err != nil {
 		return failed(stderr, "engine start", err)
 	}
@@ -141,7 +148,7 @@ func (g group) engineStart(f *flags, args []string, stdout, stderr io.Writer) in
 			Status  engine.Status `json:"status"`
 		}{started, s}))
 	}
-	p := output.For(stdout)
+	p := g.printer(stdout)
 	if started {
 		p.Heading("Engine started")
 	} else {
@@ -165,7 +172,7 @@ func (g group) engineStatus(f *flags, args []string, stdout, stderr io.Writer) i
 	if f.json {
 		return written(stderr, "engine status", output.JSON(stdout, s))
 	}
-	printStatus(output.For(stdout), s)
+	printStatus(g.printer(stdout), s)
 	return 0
 }
 
@@ -184,11 +191,11 @@ func printStatus(p *output.Printer, s engine.Status) {
 }
 
 // engineStop stops the engine; it never starts one.
-func engineStop(f *flags, args []string, stdout, stderr io.Writer) int {
+func (g group) engineStop(f *flags, args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
 		return command.BadUsage
 	}
-	dir, err := configdir.Dir()
+	dir, err := configdir.Dir(g.getenv)
 	if err != nil {
 		return failed(stderr, "engine stop", err)
 	}
@@ -202,9 +209,9 @@ func engineStop(f *flags, args []string, stdout, stderr io.Writer) int {
 		}{stopped}))
 	}
 	if stopped {
-		output.For(stdout).Heading("Engine stopped")
+		g.printer(stdout).Heading("Engine stopped")
 	} else {
-		output.For(stdout).Heading("No engine running")
+		g.printer(stdout).Heading("No engine running")
 	}
 	return 0
 }
@@ -212,7 +219,7 @@ func engineStop(f *flags, args []string, stdout, stderr io.Writer) int {
 // call connects to the engine in the settings directory, starting it with
 // idle when it is not running, and calls method within callTimeout.
 func (g group) call(idle time.Duration, method string, params, result any) error {
-	dir, err := configdir.Dir()
+	dir, err := configdir.Dir(g.getenv)
 	if err != nil {
 		return err
 	}

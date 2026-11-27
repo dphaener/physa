@@ -6,9 +6,10 @@ import "os"
 // input and output are terminals, CI is unset, and no agent is running it. It
 // is the one place every idea and bet command decides between a person at a
 // terminal (pickers, styles, confirms) and a pipe, CI or an agent (plain text
-// or --json, errors instead of questions).
-func Interactive(in, out *os.File, agent bool) bool {
-	return interactive(IsTerminal(in), IsTerminal(out), os.Getenv("CI"), agent)
+// or --json, errors instead of questions). getenv reads CI from the
+// command's environment.
+func Interactive(in, out *os.File, getenv func(string) string, agent bool) bool {
+	return interactive(IsTerminal(in), IsTerminal(out), getenv("CI"), agent)
 }
 
 // interactive is Interactive with the environment and terminal checks passed

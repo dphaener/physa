@@ -29,7 +29,7 @@ func placeEnv(t *testing.T) (Env, *int) {
 	write(t, dir, "README.md", "# App\n")
 	gitIn(t, dir, "add", "README.md")
 	gitIn(t, dir, "commit", "-q", "-m", "docs: Add a readme (#4)")
-	env := testEnv(t, mergedFake{prs: []forge.PR{{Number: 3, Title: "App", MergedAt: time.Now()}, {Number: 4, Title: "Readme", MergedAt: time.Now()}}}, nil)
+	env := testEnv(t, dir, mergedFake{prs: []forge.PR{{Number: 3, Title: "App", MergedAt: time.Now()}, {Number: 4, Title: "Readme", MergedAt: time.Now()}}}, nil)
 	if code, _, errOut := runInit(env, "--gather"); code != 0 {
 		t.Fatalf("gather: %d %q", code, errOut)
 	}
@@ -49,6 +49,7 @@ func placeEnv(t *testing.T) (Env, *int) {
 }
 
 func TestPlacePrintsTheCountsWithNoAgentCall(t *testing.T) {
+	t.Parallel()
 	env, calls := placeEnv(t)
 	code, out, errOut := runInit(env, "--place")
 	if code != 0 || *calls != 0 {
@@ -59,7 +60,7 @@ func TestPlacePrintsTheCountsWithNoAgentCall(t *testing.T) {
 			t.Errorf("stdout lacks %q:\n%s", want, out)
 		}
 	}
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,6 +74,7 @@ func TestPlacePrintsTheCountsWithNoAgentCall(t *testing.T) {
 }
 
 func TestPlaceJSON(t *testing.T) {
+	t.Parallel()
 	env, calls := placeEnv(t)
 	code, out, errOut := runInit(env, "--place", "--json")
 	var res place.Result
@@ -85,6 +87,7 @@ func TestPlaceJSON(t *testing.T) {
 }
 
 func TestPlaceWithoutAWalkSaysToRunWalkFirst(t *testing.T) {
+	t.Parallel()
 	env := areasEnv(t, &areaAgent{})
 	calls := 0
 	env.Agent = func(string) (adapter.Adapter, error) { calls++; return nil, errors.New("agent") }
@@ -95,9 +98,10 @@ func TestPlaceWithoutAWalkSaysToRunWalkFirst(t *testing.T) {
 }
 
 func TestPlaceOnAStoppedGatherWarnsAndRuns(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	a := &walkAgent{next: &areaAgent{}}
-	env := fullEnv(t, nil, a)
+	env := fullEnv(t, dir, nil, a)
 	shortWait(&env, 3*time.Minute)
 	f, _ := stoppingForge(fixedNow(&env))
 	env.Forge = func(string) forge.Forge { return f }
@@ -119,7 +123,7 @@ func TestPlaceIsBadUsageWithOtherFlags(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{{"--areas"}, {"--walk"}, {"--gather"}, {"--propose"}, {"--recover"}, {"--write"}, {"--push"}, {"--hooks"},
 		{"--answers", "x"}, {"--yes"}, {"--only", "x"}, {"--since", "2026-01-01"}, {"--max-prs", "3"}} {
-		if code, _, _ := runInit(testEnv(t, nil, nil), append([]string{"--place"}, args...)...); code != command.BadUsage {
+		if code, _, _ := runInit(testEnv(t, t.TempDir(), nil, nil), append([]string{"--place"}, args...)...); code != command.BadUsage {
 			t.Errorf("--place %v: code %d, want bad usage", args, code)
 		}
 	}
@@ -128,8 +132,9 @@ func TestPlaceIsBadUsageWithOtherFlags(t *testing.T) {
 // TestPlaceNeverReachesTheMap: the placements are kept in init's record
 // under .git/physa and the repo is untouched.
 func TestPlaceNeverReachesTheMap(t *testing.T) {
+	t.Parallel()
 	env, _ := placeEnv(t)
-	dir := "."
+	dir := env.Proc.Dir
 	before := personState(t, dir)
 	if code, _, errOut := runInit(env, "--place"); code != 0 {
 		t.Fatalf("place: %d %s", code, errOut)

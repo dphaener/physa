@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	"github.com/dphaener/physa/internal/mapslice"
@@ -12,9 +11,9 @@ import (
 	"github.com/dphaener/physa/internal/vcs/git"
 )
 
-// gitStore opens the store that lives in the git directory of the repository at dir.
-func gitStore(ctx context.Context, dir string) (*store.Store, error) {
-	repo, err := git.Open(ctx, dir)
+// gitStore opens the store that lives in the git directory of the repository at dir, git run in env.
+func gitStore(ctx context.Context, dir string, env []string) (*store.Store, error) {
+	repo, err := git.Open(ctx, dir, env)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +48,7 @@ func (d deps) recordSlice(ctx context.Context, dir string, req mapslice.Request,
 	defer s.Close()
 	rec := store.SliceRecord{
 		At:      time.Now().UTC(),
-		Session: os.Getenv("CLAUDE_CODE_SESSION_ID"),
+		Session: d.proc().Getenv("CLAUDE_CODE_SESSION_ID"),
 	}
 	if len(req.Entries) > 0 {
 		rec.Entries = req.Entries

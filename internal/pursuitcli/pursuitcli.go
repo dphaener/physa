@@ -19,14 +19,15 @@ import (
 	"github.com/dphaener/physa/internal/ideacli"
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/picker"
+	"github.com/dphaener/physa/internal/proc"
 	"github.com/dphaener/physa/internal/tokens"
 	"github.com/dphaener/physa/internal/workapi"
 )
 
-// Commands returns `physa pursue` and the pursuit group, naming people
-// through the forge newForge builds for a repo.
-func Commands(newForge func(dir string) forge.Forge) []*cobra.Command {
-	return commandsFor(ideacli.New(newForge))
+// Commands returns `physa pursue` and the pursuit group for the process st,
+// naming people through the forge newForge builds for a repo.
+func Commands(st proc.State, newForge func(dir string) forge.Forge) []*cobra.Command {
+	return commandsFor(ideacli.New(st, newForge))
 }
 
 type pursuits struct{ *ideacli.Env }

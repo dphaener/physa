@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -83,12 +82,12 @@ func (p pursuits) current(stdout, stderr io.Writer) int {
 	if session == "" {
 		return 0
 	}
-	wd, err := os.Getwd()
+	wd, err := p.Proc.Getwd()
 	if err != nil {
 		fmt.Fprintf(stderr, "physa pursuit work: %v\n", err)
 		return 0
 	}
-	pursuit, change, err := Current(wd, session)
+	pursuit, change, err := Current(wd, session, p.Proc.Environ())
 	if err != nil {
 		fmt.Fprintf(stderr, "physa pursuit work: %v\n", err)
 		return 0
@@ -103,13 +102,13 @@ func (p pursuits) current(stdout, stderr io.Writer) int {
 // holds wd, read from the store and never from the engine. A directory outside
 // a repo, a store that does not exist yet, an empty session and a session with
 // no change give empty names and no error. A failing git, a store that cannot
-// be read and a failing query give an error.
-func Current(wd, session string) (pursuit, change string, err error) {
+// be read and a failing query give an error. Git runs in env.
+func Current(wd, session string, env []string) (pursuit, change string, err error) {
 	if session == "" {
 		return "", "", nil
 	}
 	ctx := context.TODO()
-	r, err := git.Open(ctx, wd)
+	r, err := git.Open(ctx, wd, env)
 	if err != nil {
 		if errors.Is(err, vcs.ErrNotRepo) {
 			return "", "", nil

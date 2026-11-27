@@ -31,10 +31,12 @@ type Printer struct {
 // New makes a Printer on w, styled when styled is true.
 func New(w io.Writer, styled bool) *Printer { return &Printer{w: w, styled: styled} }
 
-// For makes a Printer on w, styled when w is a terminal and NO_COLOR is unset.
-func For(w io.Writer) *Printer {
+// For makes a Printer on w, styled when w is a terminal and NO_COLOR is
+// unset in the environment lookup reads, the command's. Set to anything,
+// even "", NO_COLOR keeps it plain.
+func For(w io.Writer, lookup func(string) (string, bool)) *Printer {
 	f, ok := w.(*os.File)
-	_, noColor := os.LookupEnv("NO_COLOR")
+	_, noColor := lookup("NO_COLOR")
 	return New(w, ok && IsTerminal(f) && !noColor)
 }
 

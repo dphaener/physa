@@ -144,13 +144,13 @@ func newMap(a newcodebase.Answers, env Env, skill string) initbranch.Map {
 // hook keeps the branch and makes the exit code 2. With --pr it then opens
 // the branch's PR, or refreshes the open one. It returns the exit code.
 func writeMap(ctx context.Context, m initbranch.Map, o Flags, env Env, p *printer, stderr io.Writer) int {
-	w, err := env.Writer(ctx, ".")
+	w, err := env.Writer(ctx, env.Proc.Dir)
 	if err != nil {
 		return failed(stderr, err)
 	}
 	opts := initbranch.Options{Push: o.Push}
 	if env.PRExists != nil {
-		opts.PRExists = env.PRExists(".")
+		opts.PRExists = env.PRExists(env.Proc.Dir)
 	}
 	out, err := initbranch.Run(ctx, w, m, opts)
 	if err != nil {
@@ -158,14 +158,14 @@ func writeMap(ctx context.Context, m initbranch.Map, o Flags, env Env, p *printe
 	}
 	code := 0
 	if o.Hooks {
-		if m.Summary.Hook = initpr.InstallHook(ctx, env.Hooks); m.Summary.Hook.State == initbranch.HookRefused {
+		if m.Summary.Hook = initpr.InstallHook(ctx, env.Proc, env.Hooks); m.Summary.Hook.State == initbranch.HookRefused {
 			fmt.Fprintf(stderr, "physa init: the branch was written, but the hook was not installed: %s\n", m.Summary.Hook.Detail)
 			code = 2
 		}
 		out.Body = initbranch.Body(m)
 	}
 	if o.PR {
-		out.PR, err = initpr.Open(ctx, w, env.Forge("."), out)
+		out.PR, err = initpr.Open(ctx, w, env.Forge(env.Proc.Dir), out)
 	}
 	p.wrote(out, m.Summary.Hook)
 	if err != nil {

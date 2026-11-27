@@ -6,6 +6,7 @@ import (
 )
 
 func TestInteractiveRules(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		inTTY    bool
@@ -32,24 +33,31 @@ func TestInteractiveRules(t *testing.T) {
 }
 
 func TestInteractiveDevNullIsNotATerminal(t *testing.T) {
+	t.Parallel()
 	null, err := os.Open(os.DevNull)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer null.Close()
-	if Interactive(null, null, false) {
+	if Interactive(null, null, func(string) string { return "" }, false) {
 		t.Error("Interactive on /dev/null in and out = true, want false")
 	}
 }
 
 func TestInteractiveCIAndAgentFromCallers(t *testing.T) {
+	t.Parallel()
 	null, err := os.Open(os.DevNull)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer null.Close()
-	t.Setenv("CI", "1")
-	if Interactive(null, null, true) {
+	getenv := func(k string) string {
+		if k == "CI" {
+			return "1"
+		}
+		return ""
+	}
+	if Interactive(null, null, getenv, true) {
 		t.Error("Interactive with CI and agent set = true, want false")
 	}
 }

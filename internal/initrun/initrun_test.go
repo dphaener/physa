@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/proc"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
@@ -64,9 +66,21 @@ func (s fakeSession) Wait() (adapter.Result, error) {
 	return s.f.result, nil
 }
 
+// gitEnv is the environment of every git a test runs, its own and the one
+// init opens: the test process's, kept off the person's and the system's
+// config, with a fixed identity, and never finding a repo above a test's own.
+var gitEnv = slices.Concat(os.Environ(), []string{
+	"GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
+	"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+	"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
+	"GIT_CEILING_DIRECTORIES=/",
+})
+
+// gitIn runs git in dir with gitEnv and returns its output.
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "commit.gpgsign=false"}, args...)...)
+	cmd := exec.Command("git", append([]string{"-c", "commit.gpgsign=false"}, args...)...)
+	cmd.Dir, cmd.Env = dir, gitEnv
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
@@ -85,16 +99,9 @@ func write(t *testing.T, root, rel, text string) {
 	}
 }
 
-// newRepo is a repo with a few commits, made in the working directory of the
-// test.
+// newRepo is a repo with a few commits, in a temp directory of its own.
 func newRepo(t *testing.T) string {
 	t.Helper()
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	t.Setenv("GIT_AUTHOR_NAME", "t")
-	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
-	t.Setenv("GIT_COMMITTER_NAME", "t")
-	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
 	dir := t.TempDir()
 	gitIn(t, dir, "init", "-q")
 	write(t, dir, "AGENTS.md", "rules\n")
@@ -103,18 +110,22 @@ func newRepo(t *testing.T) string {
 	for _, msg := range []string{"feat: ok\n\nCapability: a", "feat: bare", "feat: two"} {
 		gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", msg)
 	}
-	t.Chdir(dir)
 	return dir
 }
 
-// testEnv is an Env on the repo in the working directory, with its own store,
-// the given forge and agent (none installed when nil), and the real clock.
-func testEnv(t *testing.T, f forge.Forge, a adapter.Adapter) Env {
+// testEnv is an Env on the repo at dir, its process state that directory and
+// gitEnv, with its own store, the given forge and agent (none installed when
+// nil), the real clock, and git opened in the state's environment.
+func testEnv(t *testing.T, dir string, f forge.Forge, a adapter.Adapter) Env {
 	t.Helper()
 	sd := t.TempDir()
+	st := proc.State{Dir: dir, Wd: dir, Env: gitEnv}
 	return Env{
+		Proc:  st,
 		Store: func(context.Context, string) (*store.Store, error) { return store.Open(context.Background(), sd) },
-		Repo:  func(_ context.Context, dir string) (vcs.Repo, error) { return git.Open(context.Background(), dir) },
+		Repo: func(_ context.Context, d string) (vcs.Repo, error) {
+			return git.Open(context.Background(), d, st.Env)
+		},
 		Forge: func(string) forge.Forge { return f },
 		Agent: func(string) (adapter.Adapter, error) {
 			if a == nil {
@@ -122,9 +133,11 @@ func testEnv(t *testing.T, f forge.Forge, a adapter.Adapter) Env {
 			}
 			return a, nil
 		},
-		Now:    time.Now,
-		Writer: func(_ context.Context, d string) (vcs.Writer, error) { return git.OpenWriter(context.Background(), d) },
-		Spend:  filepath.Join(sd, "spend.json"),
+		Now: time.Now,
+		Writer: func(_ context.Context, d string) (vcs.Writer, error) {
+			return git.OpenWriter(context.Background(), d, st.Env)
+		},
+		Spend: filepath.Join(sd, "spend.json"),
 	}
 }
 
@@ -145,7 +158,7 @@ func runInitTo(stdout, stderr io.Writer, env Env, args ...string) int {
 
 func storedGather(t *testing.T, env Env) store.Gather {
 	t.Helper()
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,9 +182,10 @@ func onePR() forge.Forge {
 }
 
 func TestGatherJSON(t *testing.T) {
+	t.Parallel()
 	dir := newRepo(t)
 	write(t, dir, "README.md", "hello\n")
-	env := testEnv(t, onePR(), nil)
+	env := testEnv(t, dir, onePR(), nil)
 	code, out, errOut := runInit(env, "--gather", "--json")
 	if code != 0 || errOut != "physa init: gather, with the discovery agent; init has no appetite and no circuit breaker\n" {
 		t.Fatalf("code %d, stderr %q", code, errOut)
@@ -193,8 +207,9 @@ func TestGatherJSON(t *testing.T) {
 }
 
 func TestGatherReplaces(t *testing.T) {
-	newRepo(t)
-	env := testEnv(t, mergedFake{prs: []forge.PR{{Number: 3, MergedAt: time.Now()}, {Number: 4, MergedAt: time.Now()}}}, nil)
+	t.Parallel()
+	dir := newRepo(t)
+	env := testEnv(t, dir, mergedFake{prs: []forge.PR{{Number: 3, MergedAt: time.Now()}, {Number: 4, MergedAt: time.Now()}}}, nil)
 	if code, _, errOut := runInit(env, "--gather"); code != 0 {
 		t.Fatalf("first run: %d %q", code, errOut)
 	}
@@ -213,17 +228,17 @@ func TestGatherReplaces(t *testing.T) {
 }
 
 func TestBadSinceIsBadUsage(t *testing.T) {
-	newRepo(t)
-	code, _, _ := runInit(testEnv(t, nil, nil), "--gather", "--since", "yesterday")
+	t.Parallel()
+	dir := newRepo(t)
+	code, _, _ := runInit(testEnv(t, dir, nil, nil), "--gather", "--since", "yesterday")
 	if code != command.BadUsage {
 		t.Errorf("code %d", code)
 	}
 }
 
 func TestOutsideARepo(t *testing.T) {
-	t.Chdir(t.TempDir())
-	t.Setenv("GIT_CEILING_DIRECTORIES", "/")
-	code, _, errOut := runInit(testEnv(t, nil, nil), "--gather")
+	t.Parallel()
+	code, _, errOut := runInit(testEnv(t, t.TempDir(), nil, nil), "--gather")
 	if code != 2 || !strings.HasPrefix(errOut, "physa init: ") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
@@ -239,8 +254,8 @@ const proposeReply = "Thinking.\n```json\n" +
 // no agent installed, ready to propose from with agent a.
 func gatheredEnv(t *testing.T, a adapter.Adapter) Env {
 	t.Helper()
-	newRepo(t)
-	env := testEnv(t, onePR(), nil)
+	dir := newRepo(t)
+	env := testEnv(t, dir, onePR(), nil)
 	if code, _, errOut := runInit(env, "--gather"); code != 0 {
 		t.Fatalf("gather: %d %q", code, errOut)
 	}
@@ -249,9 +264,10 @@ func gatheredEnv(t *testing.T, a adapter.Adapter) Env {
 }
 
 func TestProposeNoGather(t *testing.T) {
-	newRepo(t)
+	t.Parallel()
+	dir := newRepo(t)
 	f := &fakeAgent{}
-	code, out, errOut := runInit(testEnv(t, nil, f), "--propose")
+	code, out, errOut := runInit(testEnv(t, dir, nil, f), "--propose")
 	if code != 2 || out != "" || f.starts != 0 ||
 		!strings.Contains(errOut, "physa init: nothing gathered yet; run physa init --gather first") {
 		t.Errorf("code %d, starts %d, stdout %q, stderr %q", code, f.starts, out, errOut)
@@ -259,6 +275,7 @@ func TestProposeNoGather(t *testing.T) {
 }
 
 func TestProposeStoresAndPrintsMarkdown(t *testing.T) {
+	t.Parallel()
 	f := oneAgent()
 	env := gatheredEnv(t, f)
 	code, out, errOut := runInit(env, "--propose")
@@ -271,7 +288,7 @@ func TestProposeStoresAndPrintsMarkdown(t *testing.T) {
 	if !strings.Contains(out, "Coverage: the capabilities cite 1 of 1 gathered PRs;") || strings.Contains(errOut, "coverage is low") {
 		t.Errorf("the proposal's coverage:\n%s\n%s", out, errOut)
 	}
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,6 +300,7 @@ func TestProposeStoresAndPrintsMarkdown(t *testing.T) {
 }
 
 func TestProposeJSON(t *testing.T) {
+	t.Parallel()
 	env := gatheredEnv(t, oneAgent())
 	code, out, errOut := runInit(env, "--propose", "--json")
 	var v map[string]any
@@ -294,6 +312,7 @@ func TestProposeJSON(t *testing.T) {
 // TestProposeHasNoCircuitBreaker checks that --propose alone is unbounded:
 // a session far over any old appetite still proposes.
 func TestProposeHasNoCircuitBreaker(t *testing.T) {
+	t.Parallel()
 	env := gatheredEnv(t, &fakeAgent{
 		reports: []adapter.Tokens{{Input: 900_000, Output: 20}},
 		result:  adapter.Result{Text: proposeReply, Tokens: adapter.Tokens{Input: 900_000, Output: 20}},
@@ -304,17 +323,19 @@ func TestProposeHasNoCircuitBreaker(t *testing.T) {
 }
 
 func TestAppetiteIsBadUsage(t *testing.T) {
-	newRepo(t)
+	t.Parallel()
+	dir := newRepo(t)
 	for _, args := range [][]string{{"--appetite", "1000"}, {"--gather", "--appetite", "1000"}, {"--propose", "--appetite=1000"}, {"--recover", "--appetite", "1000"}} {
-		if code, _, _ := runInit(testEnv(t, nil, nil), args...); code != command.BadUsage {
+		if code, _, _ := runInit(testEnv(t, dir, nil, nil), args...); code != command.BadUsage {
 			t.Errorf("%v: code %d", args, code)
 		}
 	}
 }
 
 func TestProposeWithGatherIsBadUsage(t *testing.T) {
-	newRepo(t)
-	if code, _, _ := runInit(testEnv(t, nil, nil), "--propose", "--gather"); code != command.BadUsage {
+	t.Parallel()
+	dir := newRepo(t)
+	if code, _, _ := runInit(testEnv(t, dir, nil, nil), "--propose", "--gather"); code != command.BadUsage {
 		t.Errorf("code %d", code)
 	}
 }
@@ -350,6 +371,7 @@ func recoverAgent(in int64) *fakeAgent {
 }
 
 func TestRecoverNoProposal(t *testing.T) {
+	t.Parallel()
 	f := &fakeAgent{}
 	env := gatheredEnv(t, f)
 	code, out, errOut := runInit(env, "--recover")
@@ -360,6 +382,7 @@ func TestRecoverNoProposal(t *testing.T) {
 }
 
 func TestRecoverUnknownOnly(t *testing.T) {
+	t.Parallel()
 	f := recoverAgent(100)
 	env := proposedEnv(t, f)
 	code, out, errOut := runInit(env, "--recover", "--only", "nope")
@@ -369,15 +392,17 @@ func TestRecoverUnknownOnly(t *testing.T) {
 }
 
 func TestRecoverBadCombinationsAreBadUsage(t *testing.T) {
-	newRepo(t)
+	t.Parallel()
+	dir := newRepo(t)
 	for _, args := range [][]string{{"--recover", "--gather"}, {"--recover", "--propose"}, {"--only", "x"}} {
-		if code, _, _ := runInit(testEnv(t, nil, nil), args...); code != command.BadUsage {
+		if code, _, _ := runInit(testEnv(t, dir, nil, nil), args...); code != command.BadUsage {
 			t.Errorf("%v: code %d", args, code)
 		}
 	}
 }
 
 func TestRecoverText(t *testing.T) {
+	t.Parallel()
 	f := recoverAgent(100)
 	env := proposedEnv(t, f)
 	code, out, errOut := runInit(env, "--recover", "--only", "delivery")
@@ -395,7 +420,7 @@ func TestRecoverText(t *testing.T) {
 	if !strings.Contains(errOut, "physa init: delivery: recovered") {
 		t.Errorf("stderr %q", errOut)
 	}
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,6 +432,7 @@ func TestRecoverText(t *testing.T) {
 }
 
 func TestRecoverJSON(t *testing.T) {
+	t.Parallel()
 	env := proposedEnv(t, recoverAgent(100))
 	code, out, errOut := runInit(env, "--recover", "--only=delivery", "--json")
 	var rep struct {
@@ -424,6 +450,7 @@ func TestRecoverJSON(t *testing.T) {
 // TestRecoverHasNoAppetite checks that --recover alone starts every session
 // however large the prompts, with no refusal.
 func TestRecoverHasNoAppetite(t *testing.T) {
+	t.Parallel()
 	f := recoverAgent(9_000_000)
 	env := proposedEnv(t, f)
 	code, out, errOut := runInit(env, "--recover", "--only", "delivery")
@@ -433,6 +460,7 @@ func TestRecoverHasNoAppetite(t *testing.T) {
 }
 
 func TestRecoverFailedExitsTwo(t *testing.T) {
+	t.Parallel()
 	f := &fakeAgent{result: adapter.Result{Text: "no block here"}}
 	env := proposedEnv(t, f)
 	code, out, _ := runInit(env, "--recover", "--only", "delivery")
@@ -442,8 +470,9 @@ func TestRecoverFailedExitsTwo(t *testing.T) {
 }
 
 func TestStoredMapGivesOneSessionPerShareAndTheMerge(t *testing.T) {
+	t.Parallel()
 	env := proposedEnv(t, nil)
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,8 +511,9 @@ func (downForge) MergedPRs(context.Context, time.Time, int) ([]forge.PR, bool, e
 // TestGatherWarnsWhenThePRsAreMissing checks that a gather the forge gave
 // no PRs says on stderr that the map will be thin, and still gathers.
 func TestGatherWarnsWhenThePRsAreMissing(t *testing.T) {
-	newRepo(t)
-	code, _, errOut := runInit(testEnv(t, downForge{}, nil), "--gather")
+	t.Parallel()
+	dir := newRepo(t)
+	code, _, errOut := runInit(testEnv(t, dir, downForge{}, nil), "--gather")
 	if code != 0 || !strings.Contains(errOut, "physa init: warning: no PRs were gathered (gh is not logged in), so the map comes from history and docs alone and will be thin.") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
@@ -497,10 +527,11 @@ func (warnAgent) Warnings() []string { return []string{"KEY is set"} }
 // TestAgentWarningsComeBeforeAnySession checks that what the agent warns
 // of is said before its first session starts, and that init goes on.
 func TestAgentWarningsComeBeforeAnySession(t *testing.T) {
-	newRepo(t)
+	t.Parallel()
+	dir := newRepo(t)
 	a := warnAgent{oneAgent()}
 	var stderr bytes.Buffer
-	env := testEnv(t, onePR(), a)
+	env := testEnv(t, dir, onePR(), a)
 	starts := 0
 	env.Agent = func(string) (adapter.Adapter, error) {
 		return startSpy{warnAgent: a, before: func() {
@@ -526,11 +557,12 @@ func (s startSpy) Start(ctx context.Context, spec adapter.Spec) (adapter.Session
 }
 
 func TestStoredMapWritesTheWalksCapabilitiesAndSkipsRowsOfAnEarlierSource(t *testing.T) {
+	t.Parallel()
 	env, _ := placeEnv(t)
 	if code, _, errOut := runInit(env, "--place"); code != 0 {
 		t.Fatalf("place: %d %s", code, errOut)
 	}
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}

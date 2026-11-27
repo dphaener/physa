@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/proc"
 )
 
 // maxText bounds each text the Log returns, in runes, after redaction.
@@ -47,14 +48,16 @@ type Logs struct {
 }
 
 // New reads the logs of sessions run in dir, the repo's working
-// directory. Root is $CLAUDE_CONFIG_DIR, or $HOME/.claude when that is unset.
-func New(dir string) *Logs {
-	if abs, err := filepath.Abs(dir); err == nil {
+// directory, made absolute against st's. Root is $CLAUDE_CONFIG_DIR, or
+// $HOME/.claude when that is unset, both read from st, the command's
+// process state.
+func New(dir string, st proc.State) *Logs {
+	if abs, err := st.Abs(dir); err == nil {
 		dir = abs
 	}
-	root := os.Getenv("CLAUDE_CONFIG_DIR")
+	root := st.Getenv("CLAUDE_CONFIG_DIR")
 	if root == "" {
-		if home, err := os.UserHomeDir(); err == nil {
+		if home, err := st.Home(); err == nil {
 			root = filepath.Join(home, ".claude")
 		}
 	}

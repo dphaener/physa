@@ -8,23 +8,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/initbranch"
+	"github.com/dphaener/physa/internal/proc"
 	"github.com/dphaener/physa/internal/sessionhook"
 	"github.com/dphaener/physa/internal/vcs"
 )
 
-// InstallHook installs the Session: hook in the repo here and says what
-// happened; any error is a refusal, with its reason. hooks gives the repo's
-// hooks for the directory it is called with.
-func InstallHook(ctx context.Context, hooks func(ctx context.Context, dir string) (vcs.Hooks, error)) initbranch.Hook {
-	root, err := filepath.Abs(".")
+// InstallHook installs the Session: hook in the repo at st.Dir, resolved
+// against st's working directory, and says what happened; any error is a
+// refusal, with its reason. hooks gives the repo's hooks for the directory
+// it is called with.
+func InstallHook(ctx context.Context, st proc.State, hooks func(ctx context.Context, dir string) (vcs.Hooks, error)) initbranch.Hook {
+	root, err := st.Abs(st.Dir)
 	var h vcs.Hooks
 	if err == nil {
-		h, err = hooks(ctx, ".")
+		h, err = hooks(ctx, st.Dir)
 	}
 	var got sessionhook.Outcome
 	if err == nil {

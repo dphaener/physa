@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"io"
-	"path/filepath"
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/adapter/claude/claudelog"
@@ -15,7 +14,6 @@ import (
 	"github.com/dphaener/physa/internal/person"
 	"github.com/dphaener/physa/internal/propose"
 	"github.com/dphaener/physa/internal/store"
-	"github.com/dphaener/physa/internal/vcs/git"
 )
 
 // learnMap is physa map learn: the signals with --signals, else what a draft
@@ -24,9 +22,9 @@ import (
 // it printed, 1 when the breaker stopped the session, 2 on failure.
 func (d deps) learnMap(ctx context.Context, dir string, o learnbranch.Flags, stdout, stderr io.Writer) int {
 	session := propose.Session{Agent: func() (adapter.Adapter, error) { return d.agentFor(o.Agent) }, Appetite: o.Appetite,
-		Progress: stderr, Check: propose.Options{OpenRepo: openRepo, PRExists: d.prResolver(dir)}}
+		Progress: stderr, Check: propose.Options{OpenRepo: d.openRepo, PRExists: d.prResolver(dir)}}
 	if !o.Signals {
-		session.Person = resolvePerson(ctx, dir, d.newForge(dir), stderr)
+		session.Person = person.ForRepo(ctx, d.proc(), dir, d.newForge(dir), stderr)
 	}
 	var out learnbranch.Outcome
 	var err error
@@ -47,14 +45,12 @@ func (d deps) learnMap(ctx context.Context, dir string, o learnbranch.Flags, std
 	return 0
 }
 
-var resolvePerson = person.ForRepo
-
 func (d deps) writeBranch(ctx context.Context, dir string, o learnbranch.Flags, s propose.Session) (learnbranch.Outcome, error) {
-	w, err := git.OpenWriter(ctx, dir)
+	w, err := d.openWriter(ctx, dir)
 	if err != nil {
 		return learnbranch.Outcome{}, err
 	}
-	lo := learnbranch.Options{Push: o.Push, PR: o.PR, Since: o.Since, Session: s, Forge: d.newForge(dir), Sessions: sessionLogs(dir)}
+	lo := learnbranch.Options{Push: o.Push, PR: o.PR, Since: o.Since, Session: s, Forge: d.newForge(dir), Sessions: d.sessionLogs(dir)}
 	lo.PRs, _ = lo.Forge.(forge.PRs)
 	lo.Records, lo.RecordsReason = d.sliceRecords(ctx, dir)
 	return learnbranch.Run(ctx, w, lo)
@@ -62,11 +58,11 @@ func (d deps) writeBranch(ctx context.Context, dir string, o learnbranch.Flags, 
 
 // draftOnly drafts from the map and history in dir, or prints the signals.
 func (d deps) draftOnly(ctx context.Context, dir string, o learnbranch.Flags, s propose.Session, stdout io.Writer) (propose.Report, error) {
-	repo, err := git.Open(ctx, dir)
+	repo, err := d.openRepo(ctx, dir)
 	if err != nil {
 		return propose.Report{}, err
 	}
-	lo := learn.Options{Since: o.Since, Forge: d.newForge(dir), Sessions: sessionLogs(dir)}
+	lo := learn.Options{Since: o.Since, Forge: d.newForge(dir), Sessions: d.sessionLogs(dir)}
 	lo.Records, lo.RecordsReason = d.sliceRecords(ctx, dir)
 	m, res, err := learnbranch.Read(ctx, dir, repo, lo)
 	if err != nil {
@@ -83,9 +79,9 @@ func (d deps) draftOnly(ctx context.Context, dir string, o learnbranch.Flags, s 
 }
 
 // sessionLogs reads the logs of the sessions that worked in dir, whoever drafts.
-func sessionLogs(dir string) learn.Sessions {
-	abs, _ := filepath.Abs(dir) // fails only with no working directory, then nothing matches
-	return learnsession.New(claudelog.New(abs))
+func (d deps) sessionLogs(dir string) learn.Sessions {
+	abs, _ := d.proc().Abs(dir) // fails only with no working directory, then nothing matches
+	return learnsession.New(claudelog.New(abs, d.proc()))
 }
 
 // sliceRecords reads the slice records of the store of d in dir, or says why not.

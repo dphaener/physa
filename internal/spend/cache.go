@@ -17,9 +17,9 @@ import (
 const File = "spend.json"
 
 // Path is where the machine keeps its spend cache: File in the settings
-// directory configdir gives.
-func Path() (string, error) {
-	dir, err := configdir.Dir()
+// directory configdir gives, reading the environment through getenv.
+func Path(getenv func(string) string) (string, error) {
+	dir, err := configdir.Dir(getenv)
 	if err != nil {
 		return "", err
 	}

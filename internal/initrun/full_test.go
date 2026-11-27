@@ -159,21 +159,14 @@ func (a *routedAgent) Start(_ context.Context, s adapter.Spec) (adapter.Session,
 	return fakeSession{f: &fakeAgent{reports: []adapter.Tokens{t}, result: res}, usage: s.Usage}, nil
 }
 
-// remoteRepo is the person's clone of a local bare remote, with AGENTS.md,
-// a few changes, an uncommitted edit and an untracked file, made the test's
-// working directory. It returns the clone and the bare remote.
+// remoteRepo is the person's clone of a local bare remote, both on main,
+// with AGENTS.md, a few changes, an uncommitted edit and an untracked file.
+// It returns the clone and the bare remote.
 func remoteRepo(t *testing.T) (dir, bare string) {
 	t.Helper()
-	cfg := filepath.Join(t.TempDir(), "gitconfig")
-	body := "[user]\n\tname = W\n\temail = w@example.com\n[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = main\n"
-	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	dir, bare = t.TempDir(), t.TempDir()
-	gitIn(t, bare, "init", "-q", "--bare")
-	gitIn(t, dir, "init", "-q")
+	gitIn(t, bare, "init", "-q", "--bare", "-b", "main")
+	gitIn(t, dir, "init", "-q", "-b", "main")
 	write(t, dir, "AGENTS.md", "Our rules.\n")
 	write(t, dir, "main.go", "package main\n")
 	gitIn(t, dir, "add", ".")
@@ -185,16 +178,16 @@ func remoteRepo(t *testing.T) (dir, bare string) {
 	write(t, dir, "main.go", "package main // edited\n")
 	gitIn(t, dir, "add", "main.go")
 	write(t, dir, "scratch.txt", "mine\n")
-	t.Chdir(dir)
 	return dir, bare
 }
 
-// fullEnv is an Env on the repo in the working directory with its own
-// store, forge f and agent a, and the git writer and hooks.
-func fullEnv(t *testing.T, f forge.Forge, a adapter.Adapter) Env {
-	env := testEnv(t, f, a)
-	env.Writer = func(_ context.Context, d string) (vcs.Writer, error) { return git.OpenWriter(context.Background(), d) }
-	env.Hooks = func(_ context.Context, d string) (vcs.Hooks, error) { return git.OpenHooks(context.Background(), d) }
+// fullEnv is testEnv on the repo at dir with forge f and agent a, the git
+// hooks too, and no person at a terminal.
+func fullEnv(t *testing.T, dir string, f forge.Forge, a adapter.Adapter) Env {
+	env := testEnv(t, dir, f, a)
+	env.Hooks = func(_ context.Context, d string) (vcs.Hooks, error) {
+		return git.OpenHooks(context.Background(), d, env.Proc.Env)
+	}
 	env.Stdin = strings.NewReader("")
 	env.IsTerminal = func() bool { return false }
 	return env
@@ -217,18 +210,21 @@ func checkTree(t *testing.T, dir, ref string) {
 	t.Helper()
 	clone := t.TempDir()
 	gitIn(t, clone, "clone", "-q", "--branch", ref, dir, ".")
-	res, err := mapcheck.CheckWith(t.Context(), clone, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
+	res, err := mapcheck.CheckWith(t.Context(), clone, mapcheck.Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) {
+		return git.Open(context.Background(), d, gitEnv)
+	}})
 	if err != nil || len(res.Problems) > 0 {
 		t.Errorf("map check on %s: %v %v", ref, err, res.Problems)
 	}
 }
 
 func TestFullWritePushPR(t *testing.T) {
+	t.Parallel()
 	dir, bare := remoteRepo(t)
 	before := personState(t, dir)
 	f := &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}
 	a := newRoutedAgent()
-	code, out, errOut := runInit(fullEnv(t, f, a), "--write", "--push", "--pr")
+	code, out, errOut := runInit(fullEnv(t, dir, f, a), "--write", "--push", "--pr")
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -268,12 +264,13 @@ func TestFullWritePushPR(t *testing.T) {
 const noPricesLine = "physa init: no appetite and no circuit breaker: init runs to the end. Spend is shown in tokens; no prices are known yet, so they count raw and no cost is shown.\n"
 
 func TestFullPlanLineComesFirst(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	var stderr bytes.Buffer
 	a := newRoutedAgent()
 	var seen string
 	a.first = func() { seen = stderr.String() }
-	code := runInitTo(&bytes.Buffer{}, &stderr, fullEnv(t, onePR(), a))
+	code := runInitTo(&bytes.Buffer{}, &stderr, fullEnv(t, dir, onePR(), a))
 	if code != 0 {
 		t.Fatalf("code %d, stderr %s", code, stderr.String())
 	}
@@ -290,7 +287,7 @@ func TestFullPlanLineComesFirst(t *testing.T) {
 	if strings.Contains(stderr.String(), "$") || strings.Contains(stderr.String(), "appetite of") {
 		t.Errorf("with no prices a cost was shown, or an appetite named:\n%s", stderr.String())
 	}
-	if out := gitIn(t, ".", "branch", "--list", "physa/init"); out != "" {
+	if out := gitIn(t, dir, "branch", "--list", "physa/init"); out != "" {
 		t.Errorf("without --write a branch was made: %q", out)
 	}
 }
@@ -307,10 +304,11 @@ func (r readFails) Read([]byte) (int, error) {
 // no estimate and asks no question: it proposes and recovers without being
 // asked, and the next run's first line names what a token is worth.
 func TestBareRunAsksNothingAboutCost(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	a := newRoutedAgent()
 	a.priced = true
-	env := fullEnv(t, onePR(), a)
+	env := fullEnv(t, dir, onePR(), a)
 	env.IsTerminal = func() bool { return true }
 	env.Stdin = readFails{t}
 	code, out, errOut := runInit(env, "--write")
@@ -338,10 +336,11 @@ func TestBareRunAsksNothingAboutCost(t *testing.T) {
 // sessions whose input is all 1-hour cache writes, at twice input, its
 // weighted total is about twice the raw input and matches the end-of-run line.
 func TestFullTableAgreesWithTheRunAt1HourWrites(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	a := newRoutedAgent()
 	a.priced, a.writes1h = true, true
-	env := fullEnv(t, onePR(), a)
+	env := fullEnv(t, dir, onePR(), a)
 	code, out, errOut := runInit(env, "--write")
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
@@ -358,7 +357,7 @@ func TestFullTableAgreesWithTheRunAt1HourWrites(t *testing.T) {
 			t.Errorf("the table has no %s row:\n%s", phase, out)
 		}
 	}
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,10 +375,11 @@ func TestFullTableAgreesWithTheRunAt1HourWrites(t *testing.T) {
 // TestFullWithPricesShowsCost checks the PR body's weighted tokens and cost
 // estimate once the agent reports what its sessions cost.
 func TestFullWithPricesShowsCost(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	a := newRoutedAgent()
 	a.priced = true
-	code, out, errOut := runInit(fullEnv(t, onePR(), a), "--write")
+	code, out, errOut := runInit(fullEnv(t, dir, onePR(), a), "--write")
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -395,8 +395,9 @@ func TestFullWithPricesShowsCost(t *testing.T) {
 }
 
 func TestFullJSONIsOneDocument(t *testing.T) {
-	remoteRepo(t)
-	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--json")
+	t.Parallel()
+	dir, _ := remoteRepo(t)
+	code, out, errOut := runInit(fullEnv(t, dir, onePR(), newRoutedAgent()), "--write", "--json")
 	var doc struct {
 		Gather struct {
 			Version   int
@@ -430,7 +431,7 @@ func TestFullJSONIsOneDocument(t *testing.T) {
 }
 
 // newCodebaseRepo is a repo of two changes and a README only, with a local
-// bare remote, made the working directory.
+// bare remote.
 func newCodebaseRepo(t *testing.T) string {
 	t.Helper()
 	dir, _ := remoteRepo(t)
@@ -462,11 +463,12 @@ func noAgent(t *testing.T) func(string) (adapter.Adapter, error) {
 }
 
 func TestNewCodebaseAnswersWrite(t *testing.T) {
+	t.Parallel()
 	dir := newCodebaseRepo(t)
 	answers := filepath.Join(t.TempDir(), "answers.txt")
 	write(t, filepath.Dir(answers), "answers.txt", "# mine\n1: Lathe\n2: Lathe turns sketches into cut lists.\n3: Cut list: The parts to cut, with their sizes\n")
 	a := newRoutedAgent()
-	env := fullEnv(t, nil, a)
+	env := fullEnv(t, dir, nil, a)
 	code, out, errOut := runInit(env, "--write", "--answers", answers)
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
@@ -489,9 +491,10 @@ func TestNewCodebaseAnswersWrite(t *testing.T) {
 }
 
 func TestNewCodebaseAsksOnATerminal(t *testing.T) {
-	newCodebaseRepo(t)
+	t.Parallel()
+	dir := newCodebaseRepo(t)
 	a := newRoutedAgent()
-	env := fullEnv(t, nil, a)
+	env := fullEnv(t, dir, nil, a)
 	env.IsTerminal = func() bool { return true }
 	env.Stdin = strings.NewReader("\nLathe turns sketches into cut lists.\n\n")
 	code, out, errOut := runInit(env)
@@ -503,9 +506,10 @@ func TestNewCodebaseAsksOnATerminal(t *testing.T) {
 }
 
 func TestNewCodebaseWithoutAnswers(t *testing.T) {
-	newCodebaseRepo(t)
+	t.Parallel()
+	dir := newCodebaseRepo(t)
 	a := newRoutedAgent()
-	env := fullEnv(t, nil, a)
+	env := fullEnv(t, dir, nil, a)
 	code, _, errOut := runInit(env, "--write")
 	if code != 2 || !strings.Contains(errOut, "physa init: this looks like a new codebase (") ||
 		!strings.Contains(errOut, "answer its questions on a terminal or with --answers FILE") {
@@ -515,12 +519,13 @@ func TestNewCodebaseWithoutAnswers(t *testing.T) {
 }
 
 func TestFullHooksKeepsOtherHooks(t *testing.T) {
+	t.Parallel()
 	dir, _ := remoteRepo(t)
 	pre := filepath.Join(dir, ".git", "hooks", "pre-commit")
 	if err := os.WriteFile(pre, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--hooks")
+	code, out, errOut := runInit(fullEnv(t, dir, onePR(), newRoutedAgent()), "--write", "--hooks")
 	if code != 0 || !strings.Contains(out, "Hook: installed: ") {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -530,7 +535,9 @@ func TestFullHooksKeepsOtherHooks(t *testing.T) {
 	if info, err := os.Stat(pre); err != nil || info.Mode().Perm()&0o111 == 0 {
 		t.Errorf("pre-commit: %v %v", info, err)
 	}
-	if out, err := exec.Command("git", "-C", dir, "config", "--get", "core.hooksPath").Output(); err == nil {
+	cmd := exec.Command("git", "config", "--get", "core.hooksPath")
+	cmd.Dir, cmd.Env = dir, gitEnv
+	if out, err := cmd.Output(); err == nil {
 		t.Errorf("core.hooksPath was set: %q", out)
 	}
 	if !strings.Contains(out, "## The Session: hook\n\nInstalled at ") {
@@ -539,9 +546,10 @@ func TestFullHooksKeepsOtherHooks(t *testing.T) {
 }
 
 func TestFullHooksRefusedKeepsBranch(t *testing.T) {
+	t.Parallel()
 	dir, _ := remoteRepo(t)
 	gitIn(t, dir, "config", "core.hooksPath", "elsewhere")
-	code, out, errOut := runInit(fullEnv(t, onePR(), newRoutedAgent()), "--write", "--hooks")
+	code, out, errOut := runInit(fullEnv(t, dir, onePR(), newRoutedAgent()), "--write", "--hooks")
 	if code != 2 || !strings.Contains(errOut, "physa init: the branch was written, but the hook was not installed: core.hooksPath is already") {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -554,9 +562,10 @@ func TestFullHooksRefusedKeepsBranch(t *testing.T) {
 }
 
 func TestFullBadCombinationsAreBadUsage(t *testing.T) {
-	newRepo(t)
+	t.Parallel()
+	dir := newRepo(t)
 	for _, args := range [][]string{{"--push"}, {"--write", "--propose"}, {"--answers", "a.txt", "--recover"}, {"--hooks"}, {"--yes", "--gather"}, {"--appetite", "300000"}} {
-		if code, _, _ := runInit(testEnv(t, nil, nil), args...); code != command.BadUsage {
+		if code, _, _ := runInit(testEnv(t, dir, nil, nil), args...); code != command.BadUsage {
 			t.Errorf("%v: code %d", args, code)
 		}
 	}
@@ -570,22 +579,24 @@ var mapLayouts = map[string]string{
 }
 
 // mappedRepo is remoteRepo with a map's product at p committed to its
-// default branch.
-func mappedRepo(t *testing.T, p string) {
+// default branch; it returns the clone.
+func mappedRepo(t *testing.T, p string) string {
 	t.Helper()
 	dir, _ := remoteRepo(t)
 	write(t, dir, p, mapLayouts[p])
 	gitIn(t, dir, "add", p)
 	gitIn(t, dir, "commit", "-q", "-m", "docs(map): Add a map")
 	gitIn(t, dir, "push", "-q", "origin", "main")
+	return dir
 }
 
 func TestMappedRepoIsRefusedBeforeAnythingIsSpent(t *testing.T) {
+	t.Parallel()
 	for p := range mapLayouts {
 		for _, args := range [][]string{nil, {"--propose"}, {"--recover"}} {
-			mappedRepo(t, p)
+			dir := mappedRepo(t, p)
 			a := newRoutedAgent()
-			env := fullEnv(t, onePR(), a)
+			env := fullEnv(t, dir, onePR(), a)
 			code, out, errOut := runInit(env, args...)
 			t.Logf("%s %v: %s", p, args, strings.TrimSpace(errOut))
 			if code != 2 || out != "" || !strings.Contains(errOut, "the repo already has a map ("+p+" on origin/main)") || !strings.Contains(errOut, "physa map learn") {
@@ -594,7 +605,7 @@ func TestMappedRepoIsRefusedBeforeAnythingIsSpent(t *testing.T) {
 			if len(a.started) != 0 {
 				t.Errorf("%s %v: %d agent sessions ran", p, args, len(a.started))
 			}
-			st, err := env.Store(context.Background(), ".")
+			st, err := env.Store(context.Background(), env.Proc.Dir)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -607,8 +618,9 @@ func TestMappedRepoIsRefusedBeforeAnythingIsSpent(t *testing.T) {
 }
 
 func TestMappedRepoStillGathers(t *testing.T) {
-	mappedRepo(t, ".physa/product/index.md")
-	env := fullEnv(t, onePR(), nil)
+	t.Parallel()
+	dir := mappedRepo(t, ".physa/product/index.md")
+	env := fullEnv(t, dir, onePR(), nil)
 	env.Agent = noAgent(t)
 	if code, out, errOut := runInit(env, "--gather"); code != 0 || !strings.Contains(out, "Gathered into") ||
 		!strings.Contains(out, "Discovery: not started: the repo has a map") ||
@@ -636,20 +648,22 @@ func trunkRepo(t *testing.T) string {
 }
 
 func TestNoDefaultBranchSkipsTheEarlyCheck(t *testing.T) {
-	trunkRepo(t)
-	code, _, errOut := runInit(testEnv(t, nil, nil), "--propose")
+	t.Parallel()
+	dir := trunkRepo(t)
+	code, _, errOut := runInit(testEnv(t, dir, nil, nil), "--propose")
 	if code != 2 || strings.Contains(errOut, "already has a map") || !strings.Contains(errOut, "nothing gathered yet") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
 func TestNoDefaultBranchRefusesAMapInTheWorkingTree(t *testing.T) {
+	t.Parallel()
 	for p, text := range mapLayouts {
 		dir := trunkRepo(t)
 		write(t, dir, p, text)
 		a := newRoutedAgent()
 		for _, args := range [][]string{nil, {"--propose"}, {"--recover"}} {
-			code, out, errOut := runInit(testEnv(t, nil, a), args...)
+			code, out, errOut := runInit(testEnv(t, dir, nil, a), args...)
 			t.Logf("%s %v: %s", p, args, strings.TrimSpace(errOut))
 			if code != 2 || out != "" || !strings.Contains(errOut, "("+p+" in the working tree)") || !strings.Contains(errOut, "physa map learn") {
 				t.Errorf("%s %v: code %d, stdout %q, stderr %q", p, args, code, out, errOut)
@@ -662,12 +676,13 @@ func TestNoDefaultBranchRefusesAMapInTheWorkingTree(t *testing.T) {
 }
 
 func TestGatherChoosesTheDiscoveryAgent(t *testing.T) {
+	t.Parallel()
 	dir := newRepo(t)
 	write(t, dir, "docs/notes/why.md", "# Why\n")
 	a := newRoutedAgent()
 	a.discover = "```json\n" + `{"sources":[{"path":"docs/notes/why.md","kind":"overview","reason":"why the product exists"}]}` + "\n```\n"
 	a.discovers = adapter.Tokens{Input: 500, Output: 10}
-	env := testEnv(t, onePR(), a)
+	env := testEnv(t, dir, onePR(), a)
 	var names []string
 	env.Agent = func(name string) (adapter.Adapter, error) { names = append(names, name); return a, nil }
 	code, out, errOut := runInit(env, "--gather", "--agent", "x", "--json")
@@ -743,9 +758,10 @@ func bigPRs(tokens int) forge.Forge {
 // estimates every share and the merge, proposes in shares and a merge
 // before recovering, and writes a Session: trailer for each of them.
 func TestFullProposesInSharesWhenOneSessionCannotHoldTheSources(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	a := &windowedAgent{routedAgent: newRoutedAgent(), window: shareWindow}
-	code, out, errOut := runInit(fullEnv(t, bigPRs(4_000), a), "--write")
+	code, out, errOut := runInit(fullEnv(t, dir, bigPRs(4_000), a), "--write")
 	if code != 0 {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
 	}
@@ -768,7 +784,7 @@ func TestFullProposesInSharesWhenOneSessionCannotHoldTheSources(t *testing.T) {
 			t.Errorf("stdout lacks %q:\n%s", want, out)
 		}
 	}
-	msg := gitIn(t, ".", "log", "-1", "--format=%B", "physa/init")
+	msg := gitIn(t, dir, "log", "-1", "--format=%B", "physa/init")
 	if n := strings.Count(msg, "Session: "); n != 6 {
 		t.Errorf("%d Session: trailers, want the 3 shares', the merge's and 2 recoveries':\n%s", n, msg)
 	}
@@ -782,9 +798,10 @@ func TestFullProposesInSharesWhenOneSessionCannotHoldTheSources(t *testing.T) {
 // TestFullOneSessionWithinTheWindowIsUnchanged checks that an agent whose
 // window holds the whole prompt proposes in one session, as before.
 func TestFullOneSessionWithinTheWindowIsUnchanged(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	a := &windowedAgent{routedAgent: newRoutedAgent(), window: 1_000_000}
-	code, out, errOut := runInit(fullEnv(t, bigPRs(4_000), a))
+	code, out, errOut := runInit(fullEnv(t, dir, bigPRs(4_000), a))
 	if code != 0 || !slices.Equal(a.propose, []string{"share"}) || !strings.Contains(errOut, "propose reads its sources whole") ||
 		strings.Contains(errOut, "shares") || strings.Contains(out, "Share 1 of") {
 		t.Errorf("code %d, propose sessions %v\nstdout %s\nstderr %s", code, a.propose, out, errOut)
@@ -795,9 +812,10 @@ func TestFullOneSessionWithinTheWindowIsUnchanged(t *testing.T) {
 // empty share stops a bare run with exit 1 before any propose session, and
 // --propose alone the same way, naming the PR and how to leave it out.
 func TestFullStopsOnASourceLargerThanAShare(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	a := &windowedAgent{routedAgent: newRoutedAgent(), window: shareWindow}
-	env := fullEnv(t, bigPRs(10_000), a)
+	env := fullEnv(t, dir, bigPRs(10_000), a)
 	stop := regexp.MustCompile(`physa init: PR #3 takes about [0-9,]+ estimated tokens, and with the skill it is more than one share of propose holds \(about [0-9,]+ tokens\)\. ` +
 		`Nothing is cut, so init stops before spending on propose\. To leave it out of the gather, gather again with --since a date after it merged on [0-9-]+ \(physa init --gather --since [0-9-]+\), or with a smaller --max-prs\.\n$`)
 	code, out, errOut := runInit(env)
@@ -833,9 +851,10 @@ func lastLine(out string) string {
 }
 
 func TestFullSkillLineIsSaidOnceLastAndInThePRBody(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	f := &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}
-	env := fullEnv(t, f, newRoutedAgent())
+	env := fullEnv(t, dir, f, newRoutedAgent())
 	spy := &skillSpy{line: skillLine}
 	env.Skill = spy.skill
 	code, out, errOut := runInit(env, "--write", "--push", "--pr", "--agent", "fake")
@@ -861,8 +880,9 @@ func TestFullSkillLineIsSaidOnceLastAndInThePRBody(t *testing.T) {
 }
 
 func TestFullSkillLineIsInTheJSONBody(t *testing.T) {
-	remoteRepo(t)
-	env := fullEnv(t, onePR(), newRoutedAgent())
+	t.Parallel()
+	dir, _ := remoteRepo(t)
+	env := fullEnv(t, dir, onePR(), newRoutedAgent())
 	env.Skill = (&skillSpy{line: skillLine}).skill
 	code, out, errOut := runInit(env, "--write", "--json")
 	if code != 0 {
@@ -883,11 +903,12 @@ func TestFullSkillLineIsInTheJSONBody(t *testing.T) {
 }
 
 func TestFullSkillCurrentOrNilSaysNothing(t *testing.T) {
+	t.Parallel()
 	for name, skill := range map[string]func(string) string{"empty": (&skillSpy{}).skill, "nil": nil} {
 		t.Run(name, func(t *testing.T) {
-			remoteRepo(t)
+			dir, _ := remoteRepo(t)
 			f := &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}
-			env := fullEnv(t, f, newRoutedAgent())
+			env := fullEnv(t, dir, f, newRoutedAgent())
 			env.Skill = skill
 			code, out, errOut := runInit(env, "--write", "--push", "--pr")
 			if code != 0 || len(f.bodies) != 1 {
@@ -903,10 +924,11 @@ func TestFullSkillCurrentOrNilSaysNothing(t *testing.T) {
 }
 
 func TestNewCodebaseSkillLineIsInTheBody(t *testing.T) {
-	newCodebaseRepo(t)
+	t.Parallel()
+	dir := newCodebaseRepo(t)
 	answers := filepath.Join(t.TempDir(), "answers.txt")
 	write(t, filepath.Dir(answers), "answers.txt", "1: Lathe\n2: Lathe turns sketches into cut lists.\n3: Cut list: The parts to cut\n")
-	env := fullEnv(t, nil, newRoutedAgent())
+	env := fullEnv(t, dir, nil, newRoutedAgent())
 	spy := &skillSpy{line: skillLine}
 	env.Skill = spy.skill
 	code, out, errOut := runInit(env, "--write", "--answers", answers)
@@ -922,26 +944,27 @@ func TestNewCodebaseSkillLineIsInTheBody(t *testing.T) {
 }
 
 func TestFullSkillLineKeepsTheExitCode(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
-		repo  func(t *testing.T)
+		repo  func(t *testing.T) string
 		forge forge.Forge
 		agent func() adapter.Adapter
 		args  []string
 	}{
-		"stopped before proposing": {func(t *testing.T) { remoteRepo(t) }, bigPRs(10_000),
+		"stopped before proposing": {func(t *testing.T) string { dir, _ := remoteRepo(t); return dir }, bigPRs(10_000),
 			func() adapter.Adapter { return &windowedAgent{routedAgent: newRoutedAgent(), window: shareWindow} }, []string{"--write"}},
-		"a new codebase unanswered": {func(t *testing.T) { newCodebaseRepo(t) }, nil, func() adapter.Adapter { return newRoutedAgent() }, []string{"--write"}},
-		"a hook refused": {func(t *testing.T) {
+		"a new codebase unanswered": {func(t *testing.T) string { return newCodebaseRepo(t) }, nil, func() adapter.Adapter { return newRoutedAgent() }, []string{"--write"}},
+		"a hook refused": {func(t *testing.T) string {
 			dir, _ := remoteRepo(t)
 			gitIn(t, dir, "config", "core.hooksPath", "elsewhere")
+			return dir
 		}, onePR(), func() adapter.Adapter { return newRoutedAgent() }, []string{"--write", "--hooks"}},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			codes := map[string]int{}
 			for _, line := range []string{"", skillLine} {
-				c.repo(t)
-				env := fullEnv(t, c.forge, c.agent())
+				env := fullEnv(t, c.repo(t), c.forge, c.agent())
 				env.Skill = (&skillSpy{line: line}).skill
 				code, _, errOut := runInit(env, c.args...)
 				codes[line] = code
@@ -957,9 +980,10 @@ func TestFullSkillLineKeepsTheExitCode(t *testing.T) {
 }
 
 func TestSkillIsNotAskedOutsideAFullRun(t *testing.T) {
+	t.Parallel()
 	never := func(string) string { t.Error("Skill was asked"); return skillLine }
-	newRepo(t)
-	env := testEnv(t, onePR(), nil)
+	dir := newRepo(t)
+	env := testEnv(t, dir, onePR(), nil)
 	env.Skill = never
 	if code, _, errOut := runInit(env, "--gather"); code != 0 || strings.Contains(errOut, "physa skill") {
 		t.Errorf("--gather: code %d, stderr %s", code, errOut)
@@ -968,8 +992,8 @@ func TestSkillIsNotAskedOutsideAFullRun(t *testing.T) {
 		t.Errorf("a bad line: code %d, stderr %s", code, errOut)
 	}
 	for _, args := range [][]string{nil, {"--propose"}, {"--recover"}} {
-		mappedRepo(t, ".physa/product/index.md")
-		env := fullEnv(t, onePR(), newRoutedAgent())
+		dir := mappedRepo(t, ".physa/product/index.md")
+		env := fullEnv(t, dir, onePR(), newRoutedAgent())
 		env.Skill = never
 		if code, _, errOut := runInit(env, args...); code != 2 || strings.Contains(errOut, "physa skill") {
 			t.Errorf("a mapped repo %v: code %d, stderr %s", args, code, errOut)

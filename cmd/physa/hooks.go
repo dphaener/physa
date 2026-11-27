@@ -6,15 +6,14 @@ import (
 	"io"
 
 	"github.com/dphaener/physa/internal/sessionhook"
-	"github.com/dphaener/physa/internal/vcs/git"
 )
 
 // hooks is physa map hooks: it makes the repo at dir stamp Session:, by
 // pointing its hooks at the hook the repo ships or by writing Physa's embedded
 // hook beside its own. It returns 0 when it did so or found it done, and
 // 2 when the repo cannot be opened or Install refuses, saying why.
-func hooks(ctx context.Context, dir string, stdout, stderr io.Writer) int {
-	h, err := git.OpenHooks(ctx, dir)
+func (d deps) hooks(ctx context.Context, dir string, stdout, stderr io.Writer) int {
+	h, err := d.openHooks(ctx, dir)
 	if err != nil {
 		return failed(stderr, "hooks", err)
 	}

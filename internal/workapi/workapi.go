@@ -86,18 +86,18 @@ func pursuitDetailOut(d work.PursuitDetail) client.PursuitOut {
 }
 
 // Methods returns what the engine calls with its state opener to get the
-// twelve methods. name names who adds an idea when idea.add leaves the
-// person out: the person running Physa on this machine, named as the CLI
-// names them; "" when no name can be had.
-func Methods(name func(ctx context.Context, dir string) string) func(get func(ctx context.Context, repo string) (*state.State, error)) []api.Method {
+// twelve methods. env is the environment git runs in. name names who adds an
+// idea when idea.add leaves the person out: the person running Physa on this
+// machine, named as the CLI names them; "" when no name can be had.
+func Methods(env []string, name func(ctx context.Context, dir string) string) func(get func(ctx context.Context, repo string) (*state.State, error)) []api.Method {
 	return func(get func(ctx context.Context, repo string) (*state.State, error)) []api.Method {
-		return methods(get, name)
+		return methods(get, env, name)
 	}
 }
 
 // methods returns the twelve methods, reading and changing the state get
-// opens for the repo each call names.
-func methods(get func(ctx context.Context, repo string) (*state.State, error), name func(context.Context, string) string) []api.Method {
+// opens for the repo each call names, with git run in env.
+func methods(get func(ctx context.Context, repo string) (*state.State, error), env []string, name func(context.Context, string) string) []api.Method {
 	g := getter(get)
 	const (
 		repo        = `"repo":"/home/me/code/shop"`
@@ -105,7 +105,7 @@ func methods(get func(ctx context.Context, repo string) (*state.State, error), n
 		pursuitJSON = `{"slug":"try-a-quiet-mode","idea":"try-a-quiet-mode","idea_text":"Try a quiet mode","person":"ann","appetite":200000,"spent":0,"state":"active","created_at":"2026-11-22T10:00:00Z","started_at":"2026-11-22T10:00:00Z"}`
 		slugNotes   = "An unknown slug replies bad_request naming it."
 	)
-	return append(append(planMethods(g), evidenceMethods(g)...), []api.Method{
+	return append(append(planMethods(g, env), evidenceMethods(g)...), []api.Method{
 		api.Define("idea.add", "Adds an idea, owned by the person who adds it.",
 			[]string{"The slug is made from the text (up to five words) and numbered when taken; a slug that is given and taken replies bad_request.",
 				"Left out, the person is named as the CLI names them: their setting, else their forge login, else their git email; when none can be had it replies bad_request.",
@@ -199,7 +199,7 @@ func methods(get func(ctx context.Context, repo string) (*state.State, error), n
 				if err != nil {
 					return client.PursuitOut{}, err
 				}
-				o, err := showPursuit(ctx, st, in.Repo, in.Slug)
+				o, err := showPursuit(ctx, st, env, in.Repo, in.Slug)
 				return o, refused(err)
 			}),
 		api.Define("pursuit.stop", "Stops an active pursuit.",

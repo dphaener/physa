@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,6 +21,7 @@ const initLine = `{"type":"system","subtype":"init","cwd":"/x","session_id":"s",
 const okResult = `{"type":"result","subtype":"success","is_error":false,"result":"the answer","usage":{"input_tokens":10,"cache_creation_input_tokens":200,"cache_read_input_tokens":3000,"output_tokens":45}}`
 
 func TestParseSuccessWithUsage(t *testing.T) {
+	t.Parallel()
 	in := initLine + "\n" + `{"type":"assistant","message":{"content":[]}}` + "\n" + okResult + "\n"
 	st, err := parse(strings.NewReader(in), nil)
 	if err != nil {
@@ -39,6 +41,7 @@ func TestParseSuccessWithUsage(t *testing.T) {
 }
 
 func TestParseErrorResult(t *testing.T) {
+	t.Parallel()
 	in := `{"type":"result","subtype":"error_during_execution","is_error":true,"result":"limit reached"}`
 	st, err := parse(strings.NewReader(in), nil)
 	if err != nil {
@@ -50,6 +53,7 @@ func TestParseErrorResult(t *testing.T) {
 }
 
 func TestParseNoResult(t *testing.T) {
+	t.Parallel()
 	st, err := parse(strings.NewReader(initLine+"\n"), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -60,6 +64,7 @@ func TestParseNoResult(t *testing.T) {
 }
 
 func TestParseSkipsJunk(t *testing.T) {
+	t.Parallel()
 	in := "not json\n\n{broken\n[1,2]\n" + `{"type":"stream_event","event":{}}` + "\n" + `{"type":"result","is_error":"not a bool"}` + "\n" + okResult + "\n" + "trailing junk"
 	st, err := parse(strings.NewReader(in), nil)
 	if err != nil {
@@ -71,6 +76,7 @@ func TestParseSkipsJunk(t *testing.T) {
 }
 
 func TestParseVeryLongLine(t *testing.T) {
+	t.Parallel()
 	big := strings.Repeat("x", 17<<20)
 	in := initLine + "\n" + `{"type":"result","subtype":"success","is_error":false,"result":"` + big + `"}` + "\n"
 	st, err := parse(strings.NewReader(in), nil)
@@ -83,6 +89,7 @@ func TestParseVeryLongLine(t *testing.T) {
 }
 
 func TestArgs(t *testing.T) {
+	t.Parallel()
 	base := []string{"-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence"}
 	if got := args(adapter.Spec{}, ""); !reflect.DeepEqual(got, base) {
 		t.Errorf("args = %q, want %q", got, base)
@@ -94,6 +101,7 @@ func TestArgs(t *testing.T) {
 }
 
 func TestArgsReadOnly(t *testing.T) {
+	t.Parallel()
 	base := []string{"-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence"}
 	readOnly := append(append([]string{}, base...), "--tools", "Read,Glob,Grep", "--strict-mcp-config")
 	promptOnly := append(append([]string{}, base...), "--tools", "", "--strict-mcp-config")
@@ -116,6 +124,7 @@ func TestArgsReadOnly(t *testing.T) {
 const testSessionID = "0f8e7d6c-5b4a-4392-8170-a1b2c3d4e5f6"
 
 func TestArgsWithSessionID(t *testing.T) {
+	t.Parallel()
 	want := []string{"-p", "--output-format", "stream-json", "--verbose", "--session-id", testSessionID}
 	if got := args(adapter.Spec{SessionID: testSessionID}, ""); !reflect.DeepEqual(got, want) {
 		t.Errorf("args = %q, want %q", got, want)
@@ -127,8 +136,9 @@ func TestArgsWithSessionID(t *testing.T) {
 }
 
 func TestSessionArgvWithSessionID(t *testing.T) {
+	t.Parallel()
 	cmd, rec := fake(t, okResult+"\n", "", 0)
-	if _, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p", SessionID: testSessionID}); err != nil {
+	if _, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, adapter.Spec{Prompt: "p", SessionID: testSessionID}); err != nil {
 		t.Fatal(err)
 	}
 	argv := strings.Split(strings.TrimSuffix(read(t, filepath.Join(rec, "argv")), "\n"), "\n")
@@ -147,6 +157,7 @@ func TestSessionArgvWithSessionID(t *testing.T) {
 }
 
 func TestArgsResume(t *testing.T) {
+	t.Parallel()
 	want := []string{"-p", "--output-format", "stream-json", "--verbose", "--resume", testSessionID}
 	if got := args(adapter.Spec{SessionID: testSessionID, Resume: true}, ""); !reflect.DeepEqual(got, want) {
 		t.Errorf("resume args = %q, want %q", got, want)
@@ -158,9 +169,10 @@ func TestArgsResume(t *testing.T) {
 }
 
 func TestSessionArgvResume(t *testing.T) {
+	t.Parallel()
 	cmd, rec := fake(t, okResult+"\n", "", 0)
 	spec := adapter.Spec{Prompt: "next", SessionID: testSessionID, Resume: true, PromptOnly: true}
-	if _, err := run(t, &Adapter{Command: cmd}, spec); err != nil {
+	if _, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, spec); err != nil {
 		t.Fatal(err)
 	}
 	argv := strings.Split(strings.TrimSuffix(read(t, filepath.Join(rec, "argv")), "\n"), "\n")
@@ -179,8 +191,9 @@ func TestSessionArgvResume(t *testing.T) {
 }
 
 func TestStartRefusesResumeWithoutSessionID(t *testing.T) {
+	t.Parallel()
 	cmd, rec := fake(t, okResult+"\n", "", 0)
-	sess, err := (&Adapter{Command: cmd}).Start(context.Background(), adapter.Spec{Prompt: "p", Resume: true})
+	sess, err := (&Adapter{Command: cmd, Env: testEnv()}).Start(context.Background(), adapter.Spec{Prompt: "p", Resume: true})
 	if err == nil || sess != nil {
 		t.Fatalf("Start: session %v, err %v; want an error", sess, err)
 	}
@@ -190,6 +203,7 @@ func TestStartRefusesResumeWithoutSessionID(t *testing.T) {
 }
 
 func TestStartRefusesBadSessionID(t *testing.T) {
+	t.Parallel()
 	cmd, rec := fake(t, okResult+"\n", "", 0)
 	for _, id := range []string{
 		"not-a-uuid",
@@ -199,7 +213,7 @@ func TestStartRefusesBadSessionID(t *testing.T) {
 		"--resume",
 		"../0f8e7d6c-5b4a-4392-8170-a1b2c3d4e5f6",
 	} {
-		sess, err := (&Adapter{Command: cmd}).Start(context.Background(), adapter.Spec{Prompt: "p", SessionID: id})
+		sess, err := (&Adapter{Command: cmd, Env: testEnv()}).Start(context.Background(), adapter.Spec{Prompt: "p", SessionID: id})
 		if err == nil || sess != nil {
 			t.Errorf("Start with id %q: session %v, err %v; want an error", id, sess, err)
 		}
@@ -213,8 +227,11 @@ func TestStartRefusesBadSessionID(t *testing.T) {
 }
 
 func TestName(t *testing.T) {
-	if New().Name() != "claude-code" || New().Command != "claude" {
-		t.Fatalf("New() = %+v, Name %q", New(), New().Name())
+	t.Parallel()
+	e := testEnv("ANTHROPIC_API_KEY=sk-x")
+	a := New(e, func(k string) string { return map[string]string{apiKey: "sk-x"}[k] })
+	if a.Name() != "claude-code" || a.Command != "claude" || !slices.Equal(a.Env, e) || len(a.Warnings()) != 1 {
+		t.Fatalf("New = %+v, Name %q, Warnings %q", a, a.Name(), a.Warnings())
 	}
 }
 
@@ -267,6 +284,26 @@ func read(t *testing.T, path string) string {
 	return string(b)
 }
 
+// testEnv is the environment a test's adapter hands claude: only the test
+// process's PATH, which the fake agent's script needs, and kv.
+func testEnv(kv ...string) []string { return append([]string{"PATH=" + os.Getenv("PATH")}, kv...) }
+
+// TestStartRefusesAnEmptyEnv shows that no session starts with no
+// environment, which would hand claude this process's own.
+func TestStartRefusesAnEmptyEnv(t *testing.T) {
+	t.Parallel()
+	cmd, rec := fake(t, okResult+"\n", "", 0)
+	if _, err := (&Adapter{Command: cmd}).Start(context.Background(), adapter.Spec{Prompt: "p", Env: []string{"PHYSA_FAKE_ENV=x"}}); !errors.Is(err, errNoEnv) {
+		t.Fatalf("err = %v, want the empty environment refused", err)
+	}
+	if _, err := os.Stat(filepath.Join(rec, "argv")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the agent ran: %v", err)
+	}
+	if _, err := (&Adapter{Command: cmd}).Usage(context.Background()); !errors.Is(err, errNoEnv) {
+		t.Errorf("Usage: err = %v, want the empty environment refused", err)
+	}
+}
+
 func run(t *testing.T, a *Adapter, s adapter.Spec) (adapter.Result, error) {
 	t.Helper()
 	sess, err := a.Start(context.Background(), s)
@@ -277,10 +314,11 @@ func run(t *testing.T, a *Adapter, s adapter.Spec) (adapter.Result, error) {
 }
 
 func TestSessionSuccess(t *testing.T) {
+	t.Parallel()
 	cmd, rec := fake(t, initLine+"\n"+okResult+"\n", "", 0)
 	work := t.TempDir()
 	prompt := "review this\nwith a second line " + strings.Repeat("p", 300<<10)
-	res, err := run(t, &Adapter{Command: cmd}, adapter.Spec{
+	res, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, adapter.Spec{
 		Prompt:     prompt,
 		Dir:        work,
 		Env:        []string{"PHYSA_FAKE_ENV=added"},
@@ -311,8 +349,9 @@ func TestSessionSuccess(t *testing.T) {
 }
 
 func TestSessionArgvWithoutPromptOnly(t *testing.T) {
+	t.Parallel()
 	cmd, rec := fake(t, okResult+"\n", "", 0)
-	if _, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p"}); err != nil {
+	if _, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, adapter.Spec{Prompt: "p"}); err != nil {
 		t.Fatal(err)
 	}
 	want := strings.Join(args(adapter.Spec{}, ""), "\n") + "\n"
@@ -324,16 +363,19 @@ func TestSessionArgvWithoutPromptOnly(t *testing.T) {
 	}
 }
 
+// TestSessionEnvOverrides shows a variable of the adapter's Env reaching the
+// child, and a Spec's Env winning over it.
 func TestSessionEnvOverrides(t *testing.T) {
-	t.Setenv("PHYSA_FAKE_ENV", "inherited")
+	t.Parallel()
 	cmd, rec := fake(t, okResult+"\n", "", 0)
-	if _, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p"}); err != nil {
+	a := &Adapter{Command: cmd, Env: testEnv("PHYSA_FAKE_ENV=inherited")}
+	if _, err := run(t, a, adapter.Spec{Prompt: "p"}); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(t, filepath.Join(rec, "env")); got != "inherited" {
 		t.Errorf("inherited env = %q", got)
 	}
-	if _, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p", Env: []string{"PHYSA_FAKE_ENV=mine"}}); err != nil {
+	if _, err := run(t, a, adapter.Spec{Prompt: "p", Env: []string{"PHYSA_FAKE_ENV=mine"}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(t, filepath.Join(rec, "env")); got != "mine" {
@@ -342,9 +384,10 @@ func TestSessionEnvOverrides(t *testing.T) {
 }
 
 func TestSessionErrorResult(t *testing.T) {
+	t.Parallel()
 	stream := initLine + "\n" + `{"type":"result","subtype":"success","is_error":true,"result":"Credit balance is too low","usage":{"input_tokens":4,"output_tokens":1}}` + "\n"
 	cmd, _ := fake(t, stream, "", 1)
-	res, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p"})
+	res, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, adapter.Spec{Prompt: "p"})
 	if !errors.Is(err, adapter.ErrFailed) {
 		t.Fatalf("err = %v, want ErrFailed", err)
 	}
@@ -357,16 +400,18 @@ func TestSessionErrorResult(t *testing.T) {
 }
 
 func TestSessionErrorResultExitZero(t *testing.T) {
+	t.Parallel()
 	cmd, _ := fake(t, `{"type":"result","subtype":"error_max_turns","is_error":true}`+"\n", "", 0)
-	_, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p"})
+	_, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, adapter.Spec{Prompt: "p"})
 	if !errors.Is(err, adapter.ErrFailed) || !strings.Contains(err.Error(), "error_max_turns") {
 		t.Fatalf("err = %v, want ErrFailed naming the subtype", err)
 	}
 }
 
 func TestSessionNoResultUsesStderr(t *testing.T) {
+	t.Parallel()
 	cmd, _ := fake(t, initLine+"\n", strings.Repeat("noise ", 1000)+"Invalid API key", 1)
-	_, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p"})
+	_, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, adapter.Spec{Prompt: "p"})
 	if !errors.Is(err, adapter.ErrFailed) || !strings.Contains(err.Error(), "Invalid API key") {
 		t.Fatalf("err = %v, want ErrFailed with the end of stderr", err)
 	}
@@ -376,22 +421,25 @@ func TestSessionNoResultUsesStderr(t *testing.T) {
 }
 
 func TestSessionNoResultExitZero(t *testing.T) {
+	t.Parallel()
 	cmd, _ := fake(t, initLine+"\n", "", 0)
-	_, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p"})
+	_, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, adapter.Spec{Prompt: "p"})
 	if !errors.Is(err, adapter.ErrFailed) || !strings.Contains(err.Error(), "no result") {
 		t.Fatalf("err = %v, want ErrFailed saying no result", err)
 	}
 }
 
 func TestSessionGoodResultNonZeroExit(t *testing.T) {
+	t.Parallel()
 	cmd, _ := fake(t, okResult+"\n", "", 3)
-	_, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p"})
+	_, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, adapter.Spec{Prompt: "p"})
 	if !errors.Is(err, adapter.ErrFailed) || !strings.Contains(err.Error(), "exit status 3") {
 		t.Fatalf("err = %v, want ErrFailed with exit status", err)
 	}
 }
 
 func TestSessionCancel(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake agent is a shell script")
 	}
@@ -401,7 +449,7 @@ func TestSessionCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	sess, err := (&Adapter{Command: cmd}).Start(ctx, adapter.Spec{Prompt: "p"})
+	sess, err := (&Adapter{Command: cmd, Env: testEnv()}).Start(ctx, adapter.Spec{Prompt: "p"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,6 +465,7 @@ func TestSessionCancel(t *testing.T) {
 }
 
 func TestSessionCancelSendsInterrupt(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake agent is a shell script")
 	}
@@ -428,7 +477,7 @@ func TestSessionCancelSendsInterrupt(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	sess, err := (&Adapter{Command: cmd}).Start(ctx, adapter.Spec{Prompt: "p"})
+	sess, err := (&Adapter{Command: cmd, Env: testEnv()}).Start(ctx, adapter.Spec{Prompt: "p"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,22 +498,23 @@ func TestSessionCancelSendsInterrupt(t *testing.T) {
 
 func TestStartNotInstalled(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "no-such-claude")
-	_, err := (&Adapter{Command: missing}).Start(context.Background(), adapter.Spec{Prompt: "p"})
+	_, err := (&Adapter{Command: missing, Env: testEnv()}).Start(context.Background(), adapter.Spec{Prompt: "p"})
 	if !errors.Is(err, adapter.ErrNotInstalled) {
 		t.Fatalf("path: err = %v, want ErrNotInstalled", err)
 	}
 	t.Setenv("PATH", t.TempDir())
-	_, err = (&Adapter{Command: "physa-no-such-agent"}).Start(context.Background(), adapter.Spec{Prompt: "p"})
+	_, err = (&Adapter{Command: "physa-no-such-agent", Env: testEnv()}).Start(context.Background(), adapter.Spec{Prompt: "p"})
 	if !errors.Is(err, adapter.ErrNotInstalled) {
 		t.Fatalf("PATH: err = %v, want ErrNotInstalled", err)
 	}
-	_, err = (&Adapter{}).Start(context.Background(), adapter.Spec{Prompt: "p"})
+	_, err = (&Adapter{Env: testEnv()}).Start(context.Background(), adapter.Spec{Prompt: "p"})
 	if !errors.Is(err, adapter.ErrNotInstalled) {
 		t.Fatalf("default command with empty PATH: err = %v, want ErrNotInstalled", err)
 	}
 }
 
 func TestTailWriter(t *testing.T) {
+	t.Parallel()
 	w := &tailWriter{max: 4}
 	w.Write([]byte("ab"))
 	w.Write([]byte("cdef"))
@@ -480,6 +530,7 @@ const (
 )
 
 func TestParseUsageRunningSums(t *testing.T) {
+	t.Parallel()
 	in := initLine + "\n" + asstA1 + "\n" + asstA2 + "\n" + asstB + "\n" + okResult + "\n"
 	var calls []adapter.Tokens
 	st, err := parse(strings.NewReader(in), func(tk adapter.Tokens) { calls = append(calls, tk) })
@@ -501,6 +552,7 @@ func TestParseUsageRunningSums(t *testing.T) {
 }
 
 func TestParseUsageSkipsAssistantWithoutUsage(t *testing.T) {
+	t.Parallel()
 	in := `{"type":"assistant","message":{"id":"m1"}}` + "\n" +
 		`{"type":"assistant","message":"junk"}` + "\n" +
 		`{"type":"assistant","message":{"id":"m1","usage":"junk"}}` + "\n" +
@@ -516,6 +568,7 @@ func TestParseUsageSkipsAssistantWithoutUsage(t *testing.T) {
 }
 
 func TestParseUsageNilCallback(t *testing.T) {
+	t.Parallel()
 	st, err := parse(strings.NewReader(asstA1+"\n"+okResult+"\n"), nil)
 	if err != nil || st.result == nil || st.result.Result != "the answer" {
 		t.Fatalf("st = %+v, err = %v", st, err)
@@ -523,9 +576,10 @@ func TestParseUsageNilCallback(t *testing.T) {
 }
 
 func TestSessionUsageCallbackMatchesResult(t *testing.T) {
+	t.Parallel()
 	cmd, _ := fake(t, asstA1+"\n"+okResult+"\n", "", 0)
 	var last adapter.Tokens
-	res, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p", Usage: func(tk adapter.Tokens) { last = tk }})
+	res, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, adapter.Spec{Prompt: "p", Usage: func(tk adapter.Tokens) { last = tk }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -535,6 +589,7 @@ func TestSessionUsageCallbackMatchesResult(t *testing.T) {
 }
 
 func TestSessionUsageCancelAtLimit(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake agent is a shell script")
 	}
@@ -553,7 +608,7 @@ func TestSessionUsageCancelAtLimit(t *testing.T) {
 			cancel()
 		}
 	}}
-	sess, err := (&Adapter{Command: cmd}).Start(ctx, spec)
+	sess, err := (&Adapter{Command: cmd, Env: testEnv()}).Start(ctx, spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -576,6 +631,7 @@ const costResult = `{"type":"result","subtype":"success","is_error":false,"resul
 	`"claude-haiku-4-5":{"inputTokens":7,"outputTokens":3,"cacheReadInputTokens":0,"cacheCreationInputTokens":40,"costUSD":0.000001}}}`
 
 func TestParseCostPerModel(t *testing.T) {
+	t.Parallel()
 	st, err := parse(strings.NewReader(initLine+"\n"+costResult+"\n"), nil)
 	if err != nil || st.result == nil {
 		t.Fatalf("result %+v, err %v", st.result, err)
@@ -593,6 +649,7 @@ func TestParseCostPerModel(t *testing.T) {
 }
 
 func TestParseNoModelUsageNoCost(t *testing.T) {
+	t.Parallel()
 	st, err := parse(strings.NewReader(okResult+"\n"), nil)
 	if err != nil || st.result == nil || st.result.cost() != nil {
 		t.Fatalf("cost of a result without modelUsage = %+v, err %v", st.result.cost(), err)
@@ -600,15 +657,17 @@ func TestParseNoModelUsageNoCost(t *testing.T) {
 }
 
 func TestWindow(t *testing.T) {
-	if got := adapter.Window(New()); got != 1_000_000 {
+	t.Parallel()
+	if got := adapter.Window(New(testEnv(), nil)); got != 1_000_000 {
 		t.Errorf("Window = %d, want 1000000", got)
 	}
 }
 
 func TestSessionTooLong(t *testing.T) {
+	t.Parallel()
 	stream := initLine + "\n" + `{"type":"result","subtype":"success","is_error":true,"result":"Prompt is too long","usage":{"input_tokens":4,"output_tokens":1}}` + "\n"
 	cmd, _ := fake(t, stream, "", 1)
-	_, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p"})
+	_, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, adapter.Spec{Prompt: "p"})
 	if !errors.Is(err, adapter.ErrFailed) || !errors.Is(err, adapter.ErrTooLong) {
 		t.Fatalf("err = %v, want ErrFailed and ErrTooLong", err)
 	}
@@ -618,17 +677,19 @@ func TestSessionTooLong(t *testing.T) {
 }
 
 func TestSessionTooLongOnStderr(t *testing.T) {
+	t.Parallel()
 	cmd, _ := fake(t, "", "Error: prompt is too long: 1200000 tokens", 1)
-	_, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p"})
+	_, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, adapter.Spec{Prompt: "p"})
 	if !errors.Is(err, adapter.ErrFailed) || !errors.Is(err, adapter.ErrTooLong) {
 		t.Fatalf("err = %v, want ErrFailed and ErrTooLong", err)
 	}
 }
 
 func TestSessionOtherFailureIsNotTooLong(t *testing.T) {
+	t.Parallel()
 	stream := initLine + "\n" + `{"type":"result","subtype":"success","is_error":true,"result":"rate limited","usage":{"input_tokens":4,"output_tokens":1}}` + "\n"
 	cmd, _ := fake(t, stream, "", 1)
-	_, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p"})
+	_, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, adapter.Spec{Prompt: "p"})
 	if !errors.Is(err, adapter.ErrFailed) {
 		t.Fatalf("err = %v, want ErrFailed", err)
 	}
@@ -638,9 +699,10 @@ func TestSessionOtherFailureIsNotTooLong(t *testing.T) {
 }
 
 func TestSessionSystemGoesInAFileThatIsRemoved(t *testing.T) {
+	t.Parallel()
 	cmd, rec := fake(t, okResult+"\n", "", 0)
 	system := "the docs every capability reads " + strings.Repeat("s", 300<<10)
-	if _, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p", System: system, PromptOnly: true}); err != nil {
+	if _, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, adapter.Spec{Prompt: "p", System: system, PromptOnly: true}); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(t, filepath.Join(rec, "system")); got != system {
@@ -662,8 +724,9 @@ func TestSessionSystemGoesInAFileThatIsRemoved(t *testing.T) {
 }
 
 func TestResumeSendsNoSystem(t *testing.T) {
+	t.Parallel()
 	cmd, rec := fake(t, okResult+"\n", "", 0)
-	if _, err := run(t, &Adapter{Command: cmd}, adapter.Spec{Prompt: "p", System: "s", SessionID: testSessionID, Resume: true}); err != nil {
+	if _, err := run(t, &Adapter{Command: cmd, Env: testEnv()}, adapter.Spec{Prompt: "p", System: "s", SessionID: testSessionID, Resume: true}); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(read(t, filepath.Join(rec, "argv")), "--append-system-prompt-file") {
@@ -672,6 +735,7 @@ func TestResumeSendsNoSystem(t *testing.T) {
 }
 
 func TestWarningsNameASetAPIKey(t *testing.T) {
+	t.Parallel()
 	env := func(v string) func(string) string {
 		return func(k string) string { return map[string]string{apiKey: v}[k] }
 	}
@@ -684,20 +748,22 @@ func TestWarningsNameASetAPIKey(t *testing.T) {
 }
 
 func TestInvalidAPIKeyNamesTheVariable(t *testing.T) {
+	t.Parallel()
 	stream := initLine + "\n" + `{"type":"result","subtype":"success","is_error":true,"result":"Invalid API key · Fix external API key"}` + "\n"
 	cmd, _ := fake(t, stream, "", 1)
 	none := func(string) string { return "" }
-	_, err := run(t, &Adapter{Command: cmd, Getenv: none}, adapter.Spec{Prompt: "p", Env: []string{apiKey + "=sk-bad"}})
+	_, err := run(t, &Adapter{Command: cmd, Env: testEnv(), Getenv: none}, adapter.Spec{Prompt: "p", Env: []string{apiKey + "=sk-bad"}})
 	if err == nil || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY is set in the environment") {
 		t.Errorf("key set: err = %v", err)
 	}
-	_, err = run(t, &Adapter{Command: cmd, Getenv: none}, adapter.Spec{Prompt: "p"})
+	_, err = run(t, &Adapter{Command: cmd, Env: testEnv(), Getenv: none}, adapter.Spec{Prompt: "p"})
 	if err == nil || strings.Contains(err.Error(), apiKey) {
 		t.Errorf("no key set: err = %v", err)
 	}
 }
 
 func TestSkillFile(t *testing.T) {
+	t.Parallel()
 	got := SkillFile("/h", "physa")
 	want := filepath.Join("/h", ".claude", "skills", "physa", "SKILL.md")
 	if got != want {
@@ -706,6 +772,7 @@ func TestSkillFile(t *testing.T) {
 }
 
 func TestSettingsFile(t *testing.T) {
+	t.Parallel()
 	got := SettingsFile("/h")
 	want := filepath.Join("/h", ".claude", "settings.json")
 	if got != want {

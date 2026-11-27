@@ -24,6 +24,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dphaener/physa/internal/command"
+	"github.com/dphaener/physa/internal/proc"
 )
 
 // guide is the skill's text. It points to the slice skill and never copies it.
@@ -36,10 +37,13 @@ const showUsage = "physa skill show"
 // Guide is the guide a person's agent loads, as show prints it.
 func Guide() string { return guide }
 
-// Command returns the skill group, reading the person's home directory and
-// asking on the terminal. current reads the pursuit and change a session works
-// on, for the hidden session command the session hook runs.
-func Command(current CurrentFunc) *cobra.Command { return newCommand(defaultEnv(current)) }
+// Command returns the skill group, reading the person's home directory, the
+// working directory and the environment from st, the command's process state,
+// and asking on the terminal. current reads the pursuit and change a session
+// works on, for the hidden session command the session hook runs.
+func Command(st proc.State, current CurrentFunc) *cobra.Command {
+	return newCommand(defaultEnv(st, current))
+}
 
 func show(_ context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 {

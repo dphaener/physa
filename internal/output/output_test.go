@@ -12,6 +12,7 @@ import (
 var ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func TestPlainFields(t *testing.T) {
+	t.Parallel()
 	var b bytes.Buffer
 	New(&b, false).Fields([2]string{"pid", "42"}, [2]string{"socket", "/x"})
 	want := "pid     42\nsocket  /x\n"
@@ -21,6 +22,7 @@ func TestPlainFields(t *testing.T) {
 }
 
 func TestPlainTable(t *testing.T) {
+	t.Parallel()
 	var b bytes.Buffer
 	p := New(&b, false)
 	p.Heading("Methods")
@@ -32,6 +34,7 @@ func TestPlainTable(t *testing.T) {
 }
 
 func TestStyledHasTextAndEscapes(t *testing.T) {
+	t.Parallel()
 	var b bytes.Buffer
 	p := New(&b, true)
 	p.Heading("Head")
@@ -46,14 +49,21 @@ func TestStyledHasTextAndEscapes(t *testing.T) {
 }
 
 func TestForBufferIsPlain(t *testing.T) {
+	t.Parallel()
 	var b bytes.Buffer
-	For(&b).Heading("x")
+	var asked []string
+	lookup := func(k string) (string, bool) { asked = append(asked, k); return "", false }
+	For(&b, lookup).Heading("x")
 	if b.String() != "x\n" {
 		t.Errorf("got %q", b.String())
+	}
+	if len(asked) != 1 || asked[0] != "NO_COLOR" {
+		t.Errorf("For asked the environment for %q, want NO_COLOR", asked)
 	}
 }
 
 func TestIsTerminalDevNull(t *testing.T) {
+	t.Parallel()
 	f, err := os.Open(os.DevNull)
 	if err != nil {
 		t.Fatal(err)
@@ -65,6 +75,7 @@ func TestIsTerminalDevNull(t *testing.T) {
 }
 
 func TestIsTerminalFile(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "in")
 	if err := os.WriteFile(path, []byte("answer\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -80,6 +91,7 @@ func TestIsTerminalFile(t *testing.T) {
 }
 
 func TestJSON(t *testing.T) {
+	t.Parallel()
 	var b bytes.Buffer
 	if err := JSON(&b, map[string]any{"a": 1, "b": []string{"x"}}); err != nil {
 		t.Fatal(err)

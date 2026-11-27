@@ -31,7 +31,7 @@ type View struct {
 
 // View makes the View for w, styled when Interactive says a person is there.
 func (e *Env) View(w io.Writer) *View {
-	return &View{w: w, styled: e.Interactive(), plain: output.For(w)}
+	return &View{w: w, styled: e.Interactive(), plain: e.printer(w)}
 }
 
 // line writes to the terminal, so a failed write is not something to act on,

@@ -11,7 +11,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -26,15 +25,17 @@ import (
 
 type repo struct {
 	dir string
+	env []string // the environment git's children run in
 }
 
 var _ vcs.Repo = (*repo)(nil)
 var _ vcs.Tracker = (*repo)(nil)
 
-// Open returns the repository that contains dir. It returns vcs.ErrNotRepo
-// when dir is not in one, and a wrapped error when git cannot run.
-func Open(ctx context.Context, dir string) (vcs.Repo, error) {
-	r := &repo{dir: dir}
+// Open returns the repository that contains dir, whose git commands run in
+// env. It returns vcs.ErrNotRepo when dir is not in one, and a wrapped error
+// when git cannot run, as when env is empty.
+func Open(ctx context.Context, dir string, env []string) (vcs.Repo, error) {
+	r := &repo{dir: dir, env: slices.Clone(env)}
 	_, stderr, err := r.git(ctx, "rev-parse", "--git-dir")
 	if err != nil {
 		var exit *exec.ExitError
@@ -256,7 +257,7 @@ func (r *repo) Tracked(ctx context.Context) ([]vcs.TrackedFile, error) {
 	for i, f := range files {
 		index[f.Path] = i
 	}
-	attrs, stderr, err := runGit(ctx, strings.TrimSpace(top), strings.Join(paths, "\x00")+"\x00", os.Environ(),
+	attrs, stderr, err := runGit(ctx, strings.TrimSpace(top), strings.Join(paths, "\x00")+"\x00", r.env,
 		"check-attr", "-z", "--stdin", "linguist-vendored", "linguist-generated")
 	if err != nil {
 		return nil, gitError(err, stderr)
@@ -374,14 +375,20 @@ func isTrailerBlock(para []string) bool {
 
 // git runs one read-only git command in the repo's directory.
 func (r *repo) git(ctx context.Context, args ...string) (stdout, stderr string, err error) {
-	return runGit(ctx, r.dir, "", os.Environ(), args...)
+	return runGit(ctx, r.dir, "", r.env, args...)
 }
 
-// runGit runs one git command in dir with env, stdin as its input, git's
-// messages in C.
+// errNoEnv refuses git an empty environment, which would leave it no HOME or PATH.
+var errNoEnv = errors.New("git cannot run with an empty environment")
+
+// runGit runs one git command in dir with a copy of env, stdin as its input,
+// git's messages in C. An empty env is refused.
 func runGit(ctx context.Context, dir, stdin string, env []string, args ...string) (stdout, stderr string, err error) {
+	if len(env) == 0 {
+		return "", "", errNoEnv
+	}
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = append(env, "LC_ALL=C")
+	cmd.Env = append(slices.Clip(env), "LC_ALL=C")
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}

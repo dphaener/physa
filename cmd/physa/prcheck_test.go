@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -23,8 +22,8 @@ func runPRCheck(t *testing.T, d deps, args ...string) (int, string, string) {
 }
 
 func TestPRCheckMarkdown(t *testing.T) {
-	t.Chdir(trailersRepo(t))
-	code, out, errOut := runPRCheck(t, testDeps(t), "HEAD~4..HEAD")
+	t.Parallel()
+	code, out, errOut := runPRCheck(t, depsIn(t, trailersRepo(t)), "HEAD~4..HEAD")
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, errOut)
 	}
@@ -36,8 +35,8 @@ func TestPRCheckMarkdown(t *testing.T) {
 }
 
 func TestPRCheckJSON(t *testing.T) {
-	t.Chdir(trailersRepo(t))
-	code, out, errOut := runPRCheck(t, testDeps(t), "HEAD~4..HEAD", "--json")
+	t.Parallel()
+	code, out, errOut := runPRCheck(t, depsIn(t, trailersRepo(t)), "HEAD~4..HEAD", "--json")
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, errOut)
 	}
@@ -59,10 +58,10 @@ func TestPRCheckJSON(t *testing.T) {
 }
 
 func TestPRCheckMapProblemsStillExitZero(t *testing.T) {
+	t.Parallel()
 	root := trailersRepo(t)
 	folder(t, root, mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md · #99\nBecause: y.\n")
-	t.Chdir(root)
-	code, out, errOut := runPRCheck(t, testDeps(t), "HEAD~4..HEAD", "--json")
+	code, out, errOut := runPRCheck(t, depsIn(t, root), "HEAD~4..HEAD", "--json")
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr %q", code, errOut)
 	}
@@ -72,10 +71,11 @@ func TestPRCheckMapProblemsStillExitZero(t *testing.T) {
 }
 
 func TestPRCheckNoGHFallsBack(t *testing.T) {
-	t.Chdir(trailersRepo(t))
-	d := testDeps(t)
+	t.Parallel()
+	root := trailersRepo(t)
+	d := depsIn(t, root)
 	useNoGH(&d)
-	folder(t, ".", mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md · #10\nBecause: y.\n")
+	folder(t, root, mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md · #10\nBecause: y.\n")
 	code, out, _ := runPRCheck(t, d, "HEAD~4..HEAD", "--json")
 	if code != 0 || !strings.Contains(out, `"pr_anchors":"form-only"`) || !strings.Contains(out, "gh is not installed") {
 		t.Errorf("code %d, out %s", code, out)
@@ -94,17 +94,18 @@ func TestCheckHelpNamesChanges(t *testing.T) {
 }
 
 func TestPRCheckStrict(t *testing.T) {
-	t.Chdir(trailersRepo(t))
-	if code, out, errOut := runPRCheck(t, testDeps(t), "HEAD~4..HEAD", "--strict"); code != 1 || !strings.Contains(out, "nosuch") {
+	t.Parallel()
+	root := trailersRepo(t)
+	if code, out, errOut := runPRCheck(t, depsIn(t, root), "HEAD~4..HEAD", "--strict"); code != 1 || !strings.Contains(out, "nosuch") {
 		t.Errorf("strict with findings: code %d, stdout %q, stderr %q, want 1", code, out, errOut)
 	}
-	folder(t, ".", mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md\nBecause: y.\n")
-	code, out, errOut := runPRCheck(t, testDeps(t), "--strict", "HEAD~4..HEAD~3", "--json")
+	folder(t, root, mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/d.md\nBecause: y.\n")
+	code, out, errOut := runPRCheck(t, depsIn(t, root), "--strict", "HEAD~4..HEAD~3", "--json")
 	if code != 0 {
 		t.Errorf("strict and clean: code %d, stdout %q, stderr %q, want 0", code, out, errOut)
 	}
-	folder(t, ".", mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/nope.md\nBecause: y.\n")
-	if code, out, _ := runPRCheck(t, testDeps(t), "HEAD~4..HEAD~3", "--strict"); code != 1 || !strings.Contains(out, "docs/nope.md") {
+	folder(t, root, mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` · from docs/nope.md\nBecause: y.\n")
+	if code, out, _ := runPRCheck(t, depsIn(t, root), "HEAD~4..HEAD~3", "--strict"); code != 1 || !strings.Contains(out, "docs/nope.md") {
 		t.Errorf("strict with a map problem: code %d, stdout %q, want 1", code, out)
 	}
 }
@@ -112,13 +113,13 @@ func TestPRCheckStrict(t *testing.T) {
 // A change that adds a capability may name it; a change naming a slug that
 // only a later change adds may not.
 func TestPRCheckMapAsEachChangeLeavesIt(t *testing.T) {
+	t.Parallel()
 	root := trailersRepo(t)
 	gitIn(t, root, "commit", "-q", "--allow-empty", "-m", "feat: early\n\nCapability: c")
 	folder(t, root, mapfolder.CapabilityDir("c"), "---\npromise: z\n---\n# C\n\n")
 	gitIn(t, root, "add", ".")
 	gitIn(t, root, "commit", "-q", "-m", "feat: add c\n\nCapability: c")
-	t.Chdir(root)
-	code, out, errOut := runPRCheck(t, testDeps(t), "HEAD~2..HEAD", "--json")
+	code, out, errOut := runPRCheck(t, depsIn(t, root), "HEAD~2..HEAD", "--json")
 	if code != 0 {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -132,20 +133,20 @@ func TestPRCheckMapAsEachChangeLeavesIt(t *testing.T) {
 }
 
 func TestPRCheckNotARepo(t *testing.T) {
-	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(t.TempDir()))
-	t.Chdir(tempMap(t, "r from docs/d.md"))
-	code, _, errOut := runPRCheck(t, testDeps(t), "HEAD~1..HEAD")
+	t.Parallel()
+	code, _, errOut := runPRCheck(t, depsIn(t, tempMap(t, "r from docs/d.md"), ceiling(t)), "HEAD~1..HEAD")
 	if code != 2 || errOut != "physa check changes: not a repository under version control\n" {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
 func TestPRCheckUsageErrors(t *testing.T) {
-	t.Chdir(trailersRepo(t))
+	t.Parallel()
+	d := depsIn(t, trailersRepo(t))
 	for _, args := range [][]string{
 		{"--check-run"}, {"--pr", "7"}, {"--review"}, {"--skip-review", "x"}, {"--bogus"}, {"a..b", "c..d"}, {"--json=1"},
 	} {
-		code, _, errOut := runPRCheck(t, testDeps(t), args...)
+		code, _, errOut := runPRCheck(t, d, args...)
 		if code != 2 || !strings.HasPrefix(errOut, "usage: physa check changes") {
 			t.Errorf("%v: code %d, stderr %q", args, code, errOut)
 		}
@@ -153,8 +154,8 @@ func TestPRCheckUsageErrors(t *testing.T) {
 }
 
 func TestPRCheckBadRange(t *testing.T) {
-	t.Chdir(trailersRepo(t))
-	code, _, errOut := runPRCheck(t, testDeps(t), "not-a-ref..HEAD")
+	t.Parallel()
+	code, _, errOut := runPRCheck(t, depsIn(t, trailersRepo(t)), "not-a-ref..HEAD")
 	if code != 2 || !strings.HasPrefix(errOut, "physa check changes: ") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
@@ -215,34 +216,36 @@ func TestCheckFormOnlyUnauthenticated(t *testing.T) {
 	}
 }
 
-func runCheck(t *testing.T, args ...string) (int, string, string) {
+func runCheck(t *testing.T, d deps, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(t.Context(), testDeps(t), append([]string{"check"}, args...), &stdout, &stderr)
+	code := run(t.Context(), d, append([]string{"check"}, args...), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
 func TestBareCheckWithoutRepositoryChecksTheMap(t *testing.T) {
-	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(t.TempDir()))
-	t.Chdir(tempMap(t, "`r` · from docs/d.md"))
-	code, out, errOut := runCheck(t)
+	t.Parallel()
+	code, out, errOut := runCheck(t, depsIn(t, tempMap(t, "`r` · from docs/d.md"), ceiling(t)))
 	if code != 0 || out != "physa check: ok (1 capability, 1 entry)\n" || errOut != "" {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }
 
 func TestBareCheckWithoutOriginMainChecksTheMap(t *testing.T) {
-	t.Chdir(trailersRepo(t))
-	folder(t, ".", mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` \u00b7 from docs/d.md\nBecause: y.\n")
-	code, out, _ := runCheck(t)
+	t.Parallel()
+	root := trailersRepo(t)
+	folder(t, root, mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` \u00b7 from docs/d.md\nBecause: y.\n")
+	code, out, _ := runCheck(t, depsIn(t, root))
 	if code != 0 || !strings.HasPrefix(out, "physa check: ok") {
 		t.Errorf("code %d, stdout %q", code, out)
 	}
 }
 
 func TestBareCheckRangeRunsTheChangeCheck(t *testing.T) {
-	t.Chdir(trailersRepo(t))
-	code, out, errOut := runCheck(t, "HEAD~4..HEAD")
+	t.Parallel()
+	root := trailersRepo(t)
+	d := depsIn(t, root)
+	code, out, errOut := runCheck(t, d, "HEAD~4..HEAD")
 	if code != 1 {
 		t.Fatalf("a map with problems: code %d, want 1; stderr %q", code, errOut)
 	}
@@ -251,22 +254,23 @@ func TestBareCheckRangeRunsTheChangeCheck(t *testing.T) {
 			t.Errorf("markdown lacks %q:\n%s", want, out)
 		}
 	}
-	folder(t, ".", mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` \u00b7 from docs/d.md\nBecause: y.\n")
-	if code, _, errOut := runCheck(t, "HEAD~4..HEAD"); code != 0 {
+	folder(t, root, mapfolder.CapabilityDir("a"), "---\npromise: x\n---\n# T\n\n## Rules\n\n### R\n`r` \u00b7 from docs/d.md\nBecause: y.\n")
+	if code, _, errOut := runCheck(t, d, "HEAD~4..HEAD"); code != 0 {
 		t.Errorf("sound map with findings: code %d, want 0; stderr %q", code, errOut)
 	}
-	if code, _, _ := runCheck(t, "HEAD~4..HEAD", "--strict"); code != 1 {
+	if code, _, _ := runCheck(t, d, "HEAD~4..HEAD", "--strict"); code != 1 {
 		t.Errorf("strict with findings: code %d, want 1", code)
 	}
 }
 
 func TestBareCheckBadRangeAndUsage(t *testing.T) {
-	t.Chdir(trailersRepo(t))
-	if code, _, errOut := runCheck(t, "not-a-ref..HEAD"); code != 2 || !strings.HasPrefix(errOut, "physa check: ") {
+	t.Parallel()
+	d := depsIn(t, trailersRepo(t))
+	if code, _, errOut := runCheck(t, d, "not-a-ref..HEAD"); code != 2 || !strings.HasPrefix(errOut, "physa check: ") {
 		t.Errorf("bad range: code %d, stderr %q", code, errOut)
 	}
 	for _, args := range [][]string{{"--json"}, {"a..b", "c..d"}, {"--bogus"}} {
-		if code, _, errOut := runCheck(t, args...); code != 2 || !strings.HasPrefix(errOut, "usage: physa check") {
+		if code, _, errOut := runCheck(t, d, args...); code != 2 || !strings.HasPrefix(errOut, "usage: physa check") {
 			t.Errorf("%v: code %d, stderr %q", args, code, errOut)
 		}
 	}

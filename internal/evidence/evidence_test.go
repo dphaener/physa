@@ -31,7 +31,7 @@ func newRepo(t *testing.T) (vcs.Repo, string) {
 	t.Helper()
 	dir := t.TempDir()
 	run(t, dir, "init", "-q", "-b", "main")
-	r, err := git.Open(context.Background(), dir)
+	r, err := git.Open(context.Background(), dir, os.Environ())
 	if err != nil {
 		t.Fatal(err)
 	}

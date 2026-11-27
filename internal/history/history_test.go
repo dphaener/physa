@@ -13,14 +13,16 @@ import (
 	"github.com/dphaener/physa/internal/vcs/git"
 )
 
+// gitEnv is the environment every git here runs in: the process's, with the
+// person's git config off.
+var gitEnv = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+
 // newRepo makes a git repo in a temp dir, isolated from the user's git config.
 func newRepo(t *testing.T) (vcs.Repo, string) {
 	t.Helper()
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	dir := t.TempDir()
 	run(t, dir, "init", "-q")
-	r, err := git.Open(context.Background(), dir)
+	r, err := git.Open(context.Background(), dir, gitEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,6 +33,7 @@ func run(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir,
 		"-c", "user.name=T", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
+	cmd.Env = gitEnv
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
@@ -62,6 +65,7 @@ func addCapability(t *testing.T, dir, slug, message string) {
 }
 
 func TestReadTrailers(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, msg string
 		caps      []string
@@ -86,6 +90,7 @@ func TestReadTrailers(t *testing.T) {
 }
 
 func TestTrailers(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, msg, key string
 		values         []string
@@ -111,6 +116,7 @@ func TestTrailers(t *testing.T) {
 }
 
 func TestReadParsesTrailers(t *testing.T) {
+	t.Parallel()
 	r, dir := newRepo(t)
 	commit(t, dir, "chore: base")
 	commit(t, dir, "feat: a\n\nBody.\n\nCapability: slices\n\nCo-authored-by: X <x@y.z>")
@@ -138,6 +144,7 @@ func TestReadParsesTrailers(t *testing.T) {
 }
 
 func TestReadBadRange(t *testing.T) {
+	t.Parallel()
 	r, dir := newRepo(t)
 	commit(t, dir, "chore: base")
 	_, err := Read(t.Context(), r, "nosuch..HEAD")
@@ -172,6 +179,7 @@ func kinds(t *testing.T, r vcs.Repo, rng string) ([]fk, []Finding) {
 }
 
 func TestCheck(t *testing.T) {
+	t.Parallel()
 	r, dir := newRepo(t)
 	addCapability(t, dir, "slices", "chore: slices")
 	addCapability(t, dir, "map", "chore: map")
@@ -205,6 +213,7 @@ func TestCheck(t *testing.T) {
 // capability may name it; a change naming a slug a later change adds may not,
 // nor one naming a slug only the working tree has.
 func TestCheckMapAsTheChangeLeavesIt(t *testing.T) {
+	t.Parallel()
 	r, dir := newRepo(t)
 	addCapability(t, dir, "map", "chore: base")
 	commit(t, dir, "early\n\nCapability: later")
@@ -226,6 +235,7 @@ func TestCheckMapAsTheChangeLeavesIt(t *testing.T) {
 }
 
 func TestCheckFilesError(t *testing.T) {
+	t.Parallel()
 	r, dir := newRepo(t)
 	commit(t, dir, "x\n\nCapability: a")
 	_, err := Check(t.Context(), r, []Commit{{Hash: "deadbeefdeadbeef", Short: "deadbee", Capabilities: []string{"a"}}})
@@ -235,6 +245,7 @@ func TestCheckFilesError(t *testing.T) {
 }
 
 func TestSessions(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, msg string
 		want      []string
@@ -256,6 +267,7 @@ func TestSessions(t *testing.T) {
 }
 
 func TestReadFillsSessions(t *testing.T) {
+	t.Parallel()
 	r, dir := newRepo(t)
 	commit(t, dir, "chore: base")
 	commit(t, dir, "feat: a\n\nCapability: map\nSession: s1, s2")
@@ -269,6 +281,7 @@ func TestReadFillsSessions(t *testing.T) {
 }
 
 func TestTrailerBlock(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, msg string
 		want      [][2]string
@@ -292,6 +305,7 @@ func TestTrailerBlock(t *testing.T) {
 // change whose parent leaves no map, the root included, nor for the change
 // that adds the map. The first change after the map needs its trailer.
 func TestCheckExemptsChangesBeforeTheMap(t *testing.T) {
+	t.Parallel()
 	r, dir := newRepo(t)
 	commit(t, dir, "root")
 	commit(t, dir, "second")
@@ -333,6 +347,7 @@ func addFolderCapability(t *testing.T, dir, slug, message string) {
 
 // A trailer names a capability folder of the map as the change leaves it.
 func TestCheckFolderCapability(t *testing.T) {
+	t.Parallel()
 	r, dir := newRepo(t)
 	commit(t, dir, "root")
 	addFolderCapability(t, dir, "map", "chore: add the map")
@@ -353,6 +368,7 @@ func TestCheckFolderCapability(t *testing.T) {
 // A change before the map is exempt in both layouts: its parent has neither
 // .physa/product.md nor a file under .physa/product/.
 func TestCheckBeforeTheMapInBothLayouts(t *testing.T) {
+	t.Parallel()
 	for _, layout := range []string{"files", "folders"} {
 		t.Run(layout, func(t *testing.T) {
 			r, dir := newRepo(t)
@@ -378,6 +394,7 @@ func TestCheckBeforeTheMapInBothLayouts(t *testing.T) {
 // the folder does, and a slug the folder map lacks is not rescued by a
 // leftover old file.
 func TestCheckConvertSeries(t *testing.T) {
+	t.Parallel()
 	r, dir := newRepo(t)
 	addCapability(t, dir, "map", "chore: files")
 	commit(t, dir, "old\n\nCapability: map")
@@ -400,6 +417,7 @@ func TestCheckConvertSeries(t *testing.T) {
 
 // A slug the folder map lacks is unknown.
 func TestCheckUnknownSlugInFolderMap(t *testing.T) {
+	t.Parallel()
 	r, dir := newRepo(t)
 	commit(t, dir, "root")
 	addFolderCapability(t, dir, "map", "chore: add the map")
@@ -418,6 +436,7 @@ func TestCheckUnknownSlugInFolderMap(t *testing.T) {
 // a path: "../product" would list the product folder, "map/../map" and
 // "Map" are no slugs either.
 func TestCheckUnknownInvalidSlug(t *testing.T) {
+	t.Parallel()
 	r, dir := newRepo(t)
 	commit(t, dir, "root")
 	addFolderCapability(t, dir, "map", "chore: add the map")

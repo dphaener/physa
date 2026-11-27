@@ -22,9 +22,9 @@ type writer struct {
 var _ vcs.Writer = (*writer)(nil)
 
 // OpenWriter returns the repository that contains dir, able to write
-// learning's branch. Its errors are Open's.
-func OpenWriter(ctx context.Context, dir string) (vcs.Writer, error) {
-	r, err := Open(ctx, dir)
+// learning's branch, whose git commands run in env. Its errors are Open's.
+func OpenWriter(ctx context.Context, dir string, env []string) (vcs.Writer, error) {
+	r, err := Open(ctx, dir, env)
 	if err != nil {
 		return nil, err
 	}
@@ -36,11 +36,11 @@ func OpenWriter(ctx context.Context, dir string) (vcs.Writer, error) {
 // can reach the person's own index or working tree through them.
 var placeVars = []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_PREFIX", "GIT_OBJECT_DIRECTORY", "GIT_NAMESPACE"}
 
-// writeEnv is the environment of a writing command: the process's own,
-// without placeVars.
-func writeEnv() []string {
+// writeEnv is the environment of a writing command: the repo's own, without
+// placeVars.
+func (r *repo) writeEnv() []string {
 	env := []string{}
-	for _, kv := range os.Environ() {
+	for _, kv := range r.env {
 		name, _, _ := strings.Cut(kv, "=")
 		drop := false
 		for _, v := range placeVars {
@@ -54,8 +54,8 @@ func writeEnv() []string {
 }
 
 // write runs one writing git command in dir.
-func write(ctx context.Context, dir, stdin string, args ...string) (stdout, stderr string, err error) {
-	return runGit(ctx, dir, stdin, writeEnv(), args...)
+func (r *repo) write(ctx context.Context, dir, stdin string, args ...string) (stdout, stderr string, err error) {
+	return runGit(ctx, dir, stdin, r.writeEnv(), args...)
 }
 
 // branchRef returns refs/heads/name, or an error when git would not accept
@@ -88,7 +88,7 @@ func (w *writer) Fetch(ctx context.Context, branches ...string) error {
 		}
 		refs[i] = ref
 	}
-	out, stderr, err := write(ctx, w.dir, "", append([]string{"ls-remote", "--refs", remote}, refs...)...)
+	out, stderr, err := w.write(ctx, w.dir, "", append([]string{"ls-remote", "--refs", remote}, refs...)...)
 	if err != nil {
 		return fmt.Errorf("%s cannot be read: %w", remote, gitError(err, stderr))
 	}
@@ -106,7 +106,7 @@ func (w *writer) Fetch(ctx context.Context, branches ...string) error {
 			continue
 		}
 		if w.hasRef(ctx, tracking) {
-			if _, stderr, err := write(ctx, w.dir, "", "update-ref", "-d", "--end-of-options", tracking); err != nil {
+			if _, stderr, err := w.write(ctx, w.dir, "", "update-ref", "-d", "--end-of-options", tracking); err != nil {
 				return gitError(err, stderr)
 			}
 		}
@@ -115,7 +115,7 @@ func (w *writer) Fetch(ctx context.Context, branches ...string) error {
 		return nil
 	}
 	args := append([]string{"fetch", "--quiet", "--no-tags", "--no-write-fetch-head", remote}, specs...)
-	if _, stderr, err := write(ctx, w.dir, "", args...); err != nil {
+	if _, stderr, err := w.write(ctx, w.dir, "", args...); err != nil {
 		return fmt.Errorf("%s cannot be fetched: %w", remote, gitError(err, stderr))
 	}
 	return nil
@@ -158,7 +158,7 @@ func (w *writer) NewCopy(ctx context.Context, base string) (vcs.Copy, error) {
 		return nil, err
 	}
 	dir := filepath.Join(tmp, "work")
-	if _, stderr, err := write(ctx, w.dir, "", "worktree", "add", "--quiet", "--detach", "--end-of-options", dir, id); err != nil {
+	if _, stderr, err := w.write(ctx, w.dir, "", "worktree", "add", "--quiet", "--detach", "--end-of-options", dir, id); err != nil {
 		if rmErr := os.Remove(tmp); rmErr != nil {
 			return nil, fmt.Errorf("the working copy cannot be made: %w; %s is left behind", gitError(err, stderr), tmp)
 		}
@@ -193,7 +193,7 @@ func (w *writer) SetBranch(ctx context.Context, name, id, old string) error {
 			return fmt.Errorf("%s does not hold %s: %w", name, old, vcs.ErrLease)
 		}
 	}
-	_, stderr, err := write(ctx, w.dir, "", "update-ref", "-m", "physa: set "+name, "--end-of-options", ref, full, expect)
+	_, stderr, err := w.write(ctx, w.dir, "", "update-ref", "-m", "physa: set "+name, "--end-of-options", ref, full, expect)
 	if err == nil {
 		return nil
 	}
@@ -233,7 +233,7 @@ func (w *writer) Push(ctx context.Context, branch, id, expect string) error {
 	if expect != "" && !hexID.MatchString(expect) {
 		return fmt.Errorf("%q is not a change id", expect)
 	}
-	out, stderr, err := write(ctx, w.dir, "", "push", "--porcelain", "--force-with-lease="+ref+":"+expect, remote, full+":"+ref)
+	out, stderr, err := w.write(ctx, w.dir, "", "push", "--porcelain", "--force-with-lease="+ref+":"+expect, remote, full+":"+ref)
 	if err == nil {
 		return nil
 	}
@@ -260,8 +260,8 @@ func (c *workCopy) Replay(ctx context.Context, id string) (bool, error) {
 	if !ok {
 		return false, noChange(ctx, id)
 	}
-	if _, stderr, err := write(ctx, c.dir, "", "cherry-pick", "--no-commit", "--end-of-options", full); err != nil {
-		conflicted, _, _ := write(ctx, c.dir, "", "ls-files", "--unmerged")
+	if _, stderr, err := c.w.write(ctx, c.dir, "", "cherry-pick", "--no-commit", "--end-of-options", full); err != nil {
+		conflicted, _, _ := c.w.write(ctx, c.dir, "", "ls-files", "--unmerged")
 		if rErr := c.reset(ctx); rErr != nil {
 			return false, rErr
 		}
@@ -273,10 +273,10 @@ func (c *workCopy) Replay(ctx context.Context, id string) (bool, error) {
 		}
 		return false, gitError(err, stderr)
 	}
-	if _, _, err := write(ctx, c.dir, "", "diff", "--cached", "--quiet"); err == nil {
+	if _, _, err := c.w.write(ctx, c.dir, "", "diff", "--cached", "--quiet"); err == nil {
 		return false, c.reset(ctx)
 	}
-	if _, stderr, err := write(ctx, c.dir, "", "-c", noHooks, "commit", "--quiet", "--no-verify", "--reuse-message="+full); err != nil {
+	if _, stderr, err := c.w.write(ctx, c.dir, "", "-c", noHooks, "commit", "--quiet", "--no-verify", "--reuse-message="+full); err != nil {
 		if rErr := c.reset(ctx); rErr != nil {
 			return false, rErr
 		}
@@ -289,8 +289,8 @@ func (c *workCopy) Replay(ctx context.Context, id string) (bool, error) {
 // cherry-pick. It runs to the end even when ctx is cancelled.
 func (c *workCopy) reset(ctx context.Context) error {
 	ctx = context.WithoutCancel(ctx)
-	_, _, _ = write(ctx, c.dir, "", "cherry-pick", "--quit")
-	if _, stderr, err := write(ctx, c.dir, "", "reset", "--quiet", "--hard", "HEAD"); err != nil {
+	_, _, _ = c.w.write(ctx, c.dir, "", "cherry-pick", "--quit")
+	if _, stderr, err := c.w.write(ctx, c.dir, "", "reset", "--quiet", "--hard", "HEAD"); err != nil {
 		return gitError(err, stderr)
 	}
 	return nil
@@ -303,13 +303,13 @@ func (c *workCopy) Commit(ctx context.Context, message string) (vcs.Change, erro
 	if strings.TrimSpace(message) == "" {
 		return vcs.Change{}, errors.New("a change needs a message")
 	}
-	if _, stderr, err := write(ctx, c.dir, "", "add", "--all"); err != nil {
+	if _, stderr, err := c.w.write(ctx, c.dir, "", "add", "--all"); err != nil {
 		return vcs.Change{}, gitError(err, stderr)
 	}
-	if _, stderr, err := write(ctx, c.dir, message, "-c", noHooks, "commit", "--quiet", "--no-verify", "--allow-empty", "--file=-"); err != nil {
+	if _, stderr, err := c.w.write(ctx, c.dir, message, "-c", noHooks, "commit", "--quiet", "--no-verify", "--allow-empty", "--file=-"); err != nil {
 		return vcs.Change{}, gitError(err, stderr)
 	}
-	out, stderr, err := write(ctx, c.dir, "", "log", "-n", "1", logFormat, "HEAD", "--")
+	out, stderr, err := c.w.write(ctx, c.dir, "", "log", "-n", "1", logFormat, "HEAD", "--")
 	if err != nil {
 		return vcs.Change{}, gitError(err, stderr)
 	}
@@ -323,7 +323,7 @@ func (c *workCopy) Commit(ctx context.Context, message string) (vcs.Change, erro
 // Remove runs git worktree remove --force, then removes the temp dir, which
 // is empty by then.
 func (c *workCopy) Remove(ctx context.Context) error {
-	if _, stderr, err := write(ctx, c.w.dir, "", "worktree", "remove", "--force", "--end-of-options", c.dir); err != nil {
+	if _, stderr, err := c.w.write(ctx, c.w.dir, "", "worktree", "remove", "--force", "--end-of-options", c.dir); err != nil {
 		return fmt.Errorf("the working copy %s cannot be removed: %w", c.dir, gitError(err, stderr))
 	}
 	if err := os.Remove(c.tmp); err != nil && !errors.Is(err, os.ErrNotExist) {

@@ -14,6 +14,7 @@ import (
 )
 
 func TestParseUsageRecordedReport(t *testing.T) {
+	t.Parallel()
 	f, err := os.Open("testdata/usage_report.jsonl")
 	if err != nil {
 		t.Fatal(err)
@@ -40,6 +41,7 @@ func TestParseUsageRecordedReport(t *testing.T) {
 }
 
 func TestParseUsageOldTextOnlyIsErrNoUsage(t *testing.T) {
+	t.Parallel()
 	in := initLine + "\n" + `{"type":"result","subtype":"success","is_error":false,"result":"Current week (all models): 59% used · resets Nov 30, 6am"}` + "\n"
 	_, err := parseUsage(strings.NewReader(in))
 	if !errors.Is(err, adapter.ErrNoUsage) || !strings.Contains(err.Error(), "usage_report") {
@@ -48,11 +50,10 @@ func TestParseUsageOldTextOnlyIsErrNoUsage(t *testing.T) {
 }
 
 func TestUsageRunsUsageWithoutAPIKey(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake agent is a shell script")
 	}
-	t.Setenv("ANTHROPIC_API_KEY", "sk-secret")
-	t.Setenv("PHYSA_KEEP", "yes")
 	dir := t.TempDir()
 	report, err := os.ReadFile("testdata/usage_report.jsonl")
 	if err != nil {
@@ -65,7 +66,7 @@ func TestUsageRunsUsageWithoutAPIKey(t *testing.T) {
 	if err := os.Chmod(cmd, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	u, err := (&Adapter{Command: cmd}).Usage(context.Background())
+	u, err := (&Adapter{Command: cmd, Env: testEnv("ANTHROPIC_API_KEY=sk-secret", "PHYSA_KEEP=yes")}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +81,10 @@ func TestUsageRunsUsageWithoutAPIKey(t *testing.T) {
 		t.Error("the child's environment has ANTHROPIC_API_KEY")
 	}
 	if !strings.Contains(env, "PHYSA_KEEP=yes") {
-		t.Error("the child's environment lost the rest of the process's")
+		t.Error("the child's environment lost the rest of the adapter's")
+	}
+	if strings.HasPrefix(env, "HOME=") || strings.Contains(env, "\nHOME=") {
+		t.Error("the child's environment has HOME, which only this process's has")
 	}
 	if got := read(t, filepath.Join(dir, "stdin")); got != "" {
 		t.Errorf("stdin = %q; want none", got)
@@ -88,12 +92,13 @@ func TestUsageRunsUsageWithoutAPIKey(t *testing.T) {
 }
 
 func TestUsageFailureAndMissingCommand(t *testing.T) {
+	t.Parallel()
 	cmd, _ := fake(t, "", "boom happened", 3)
-	_, err := (&Adapter{Command: cmd}).Usage(context.Background())
+	_, err := (&Adapter{Command: cmd, Env: testEnv()}).Usage(context.Background())
 	if !errors.Is(err, adapter.ErrFailed) || !strings.Contains(err.Error(), "boom happened") {
 		t.Errorf("err = %v; want ErrFailed with stderr", err)
 	}
-	_, err = (&Adapter{Command: "/no/such/claude-x"}).Usage(context.Background())
+	_, err = (&Adapter{Command: "/no/such/claude-x", Env: testEnv()}).Usage(context.Background())
 	if !errors.Is(err, adapter.ErrNotInstalled) {
 		t.Errorf("err = %v; want ErrNotInstalled", err)
 	}

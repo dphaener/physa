@@ -83,7 +83,9 @@ func lineOf(t *testing.T, root, rel, prefix string) int {
 // check checks the map under root with the git adapter for commit anchors.
 func check(t *testing.T, root string) Result {
 	t.Helper()
-	r, err := CheckWith(t.Context(), root, Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) { return git.Open(context.Background(), d) }})
+	r, err := CheckWith(t.Context(), root, Options{OpenRepo: func(_ context.Context, d string) (vcs.Repo, error) {
+		return git.Open(context.Background(), d, gitEnv)
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,6 +105,7 @@ func expect(t *testing.T, r Result, path string, line int, part string) {
 const goodCap = "## Rules\n\n### R\n`r` · from docs/d.md\nBecause: y.\n\n## Decisions\n\n### D\n`d` · decided by Ann, accepting a proposal · 2026-01-02 · #3\nBecause: y.\n\n## Questions\n\n### Q\n`q` · raised by Ann · 2026-01-03\n"
 
 func TestGoodMap(t *testing.T) {
+	t.Parallel()
 	r := check(t, newMap(t, "", goodCap))
 	if len(r.Problems) != 0 {
 		t.Fatalf("want none, got %v", r.Problems)
@@ -113,6 +116,7 @@ func TestGoodMap(t *testing.T) {
 }
 
 func TestMapWithoutCapabilitiesPasses(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	folder(t, root, mapfolder.ProductDir, "")
 	write(t, root, ".physa/glossary.md", "# Glossary\n\n**Map**: a thing.\n")
@@ -127,12 +131,14 @@ func TestMapWithoutCapabilitiesPasses(t *testing.T) {
 }
 
 func TestMissingMapIsError(t *testing.T) {
+	t.Parallel()
 	if _, err := Check(t.Context(), t.TempDir()); err == nil {
 		t.Fatal("want an error for a missing .physa")
 	}
 }
 
 func TestRuleChecks(t *testing.T) {
+	t.Parallel()
 	cap := "## Rules\n\n### R\n`r` · decided by Ann, in their words · 2026-01-02\n\n### S\n`s` · from docs/d.md\n"
 	root := newMap(t, "", cap)
 	r := check(t, root)
@@ -148,6 +154,7 @@ func TestRuleChecks(t *testing.T) {
 }
 
 func TestDecisionChecks(t *testing.T) {
+	t.Parallel()
 	const p = capDir + "decisions.md"
 	cap := "## Decisions\n\n### A\n`a` · decided by Ann, at random · 2026-01-02 · #1\nBecause: y.\n\n### B\n`b` · decided by Ann\nBecause: y.\n\n### C\n`c` · raised by Ann · 2026-01-02 · #1\nBecause: y.\n\n### D\n`d` · #1\n"
 	root := newMap(t, "", cap)
@@ -163,6 +170,7 @@ func TestDecisionChecks(t *testing.T) {
 }
 
 func TestDecisionHowsPass(t *testing.T) {
+	t.Parallel()
 	var b strings.Builder
 	b.WriteString("## Decisions\n\n")
 	for i, h := range hows {
@@ -175,6 +183,7 @@ func TestDecisionHowsPass(t *testing.T) {
 }
 
 func TestQuestionChecks(t *testing.T) {
+	t.Parallel()
 	const p = capDir + "questions.md"
 	cap := "## Questions\n\n### A\n`a` · decided by Ann, in their words · 2026-01-02\n\n### B\n`b` · raised by Ann\n\n### C\n`c` · 2026-01-02\n"
 	root := newMap(t, "", cap)
@@ -185,6 +194,7 @@ func TestQuestionChecks(t *testing.T) {
 }
 
 func TestDuplicateSlug(t *testing.T) {
+	t.Parallel()
 	prod := "## Rules\n\n### R\n`dup` · from docs/d.md\nBecause: y.\n"
 	cap := "## Rules\n\n### R\n`dup` · from docs/d.md\nBecause: y.\n\n### S\n`dup` · from docs/d.md\nBecause: y.\n"
 	root := newMap(t, prod, cap)
@@ -200,12 +210,14 @@ func TestDuplicateSlug(t *testing.T) {
 func itoa(n int) string { return strconv.Itoa(n) }
 
 func TestDuplicateTerm(t *testing.T) {
+	t.Parallel()
 	root := newMap(t, "", goodCap)
 	write(t, root, ".physa/glossary.md", "# G\n\n**Map**: a.\n\n**map**: b.\n")
 	expect(t, check(t, root), ".physa/glossary.md", 5, "already defined at line 3")
 }
 
 func TestDocAnchors(t *testing.T) {
+	t.Parallel()
 	cap := "## Rules\n\n### A\n`a` · from docs/nope.md\nBecause: y.\n\n### B\n`b` · from ../outside.md\nBecause: y.\n\n### C\n`c` · from /etc/passwd\nBecause: y.\n\n### D\n`d` · from docs\nBecause: y.\n\n### E\n`e` · from docs/d.md · 1a2b3c4 · #99999\nBecause: y.\n"
 	root := newMap(t, "", cap)
 	write(t, root, "outside.md", "x\n")
@@ -221,14 +233,18 @@ func TestDocAnchors(t *testing.T) {
 	}
 }
 
+// gitEnv is the environment every git here runs in: the process's, with the
+// person's git config off.
+var gitEnv = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+
 // gitIn runs git in dir, isolated from the user's configuration, and returns
 // its trimmed output.
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	full := append([]string{"-C", dir, "-c", "user.name=T", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)
-	out, err := exec.Command("git", full...).CombinedOutput()
+	cmd := exec.Command("git", full...)
+	cmd.Env = gitEnv
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -240,6 +256,7 @@ func commitCap(hash string) string {
 }
 
 func TestCommitAnchorsResolve(t *testing.T) {
+	t.Parallel()
 	root := newMap(t, "", "")
 	gitIn(t, root, "init", "-q")
 	gitIn(t, root, "add", ".")
@@ -254,6 +271,7 @@ func TestCommitAnchorsResolve(t *testing.T) {
 }
 
 func TestCommitAnchorMissing(t *testing.T) {
+	t.Parallel()
 	root := newMap(t, "", "")
 	gitIn(t, root, "init", "-q")
 	gitIn(t, root, "add", ".")
@@ -268,6 +286,7 @@ func TestCommitAnchorMissing(t *testing.T) {
 
 // Without version control, a commit anchor cannot resolve.
 func TestCommitAnchorNoVersionControl(t *testing.T) {
+	t.Parallel()
 	root := newMap(t, "", commitCap("1a2b3c4"))
 	r, err := Check(t.Context(), root)
 	if err != nil {
@@ -282,6 +301,7 @@ func TestCommitAnchorNoVersionControl(t *testing.T) {
 // The opener is called once, however many commit anchors the map has, and
 // its error is each anchor's problem.
 func TestCommitAnchorOpenerError(t *testing.T) {
+	t.Parallel()
 	cap := commitCap("1a2b3c4") + "\n### B\n`b` · from docs/d.md · 5e6f7a8\nBecause: y.\n"
 	root := newMap(t, "", cap)
 	calls := 0
@@ -299,6 +319,7 @@ func TestCommitAnchorOpenerError(t *testing.T) {
 
 // An anchor to a change a shallow clone lacks carries the hint to fetch.
 func TestCommitAnchorShallowHint(t *testing.T) {
+	t.Parallel()
 	src := newMap(t, "", "")
 	gitIn(t, src, "init", "-q")
 	gitIn(t, src, "add", ".")
@@ -315,6 +336,7 @@ func TestCommitAnchorShallowHint(t *testing.T) {
 // Without commit anchors no git is needed: a map with only #N anchors passes
 // in a directory that is not a repo.
 func TestPRAnchorsNeedNoGit(t *testing.T) {
+	t.Parallel()
 	cap := "## Rules\n\n### A\n`a` · from docs/d.md · #12\nBecause: y.\n"
 	if r := check(t, newMap(t, "", cap)); len(r.Problems) != 0 {
 		t.Errorf("want none, got %v", r.Problems)
@@ -336,6 +358,7 @@ func index(n int, kinds ...mapfolder.Kind) string {
 }
 
 func TestLimits(t *testing.T) {
+	t.Parallel()
 	// index.md at 30 lines: 3 of front matter, a blank, the title, a blank,
 	// the overview, a blank and one link.
 	root := newMap(t, grow("p", MaxRulesLines), grow("r", MaxRulesLines))
@@ -376,6 +399,7 @@ func exact(t *testing.T, r Result, want []string) {
 
 // The map has no limit on how many capabilities it holds.
 func TestNoCapabilityCountLimit(t *testing.T) {
+	t.Parallel()
 	root := newMap(t, "", "")
 	for i := 0; i < 60; i++ {
 		folder(t, root, mapfolder.CapabilityDir("c"+strings.Repeat("x", i+1)), "")
@@ -484,6 +508,7 @@ var formatCases = []struct {
 // TestFolderFormat has one fixture per fault of the folder format (09 §2,
 // §3), each changing one file of a good folder.
 func TestFolderFormat(t *testing.T) {
+	t.Parallel()
 	for _, tc := range formatCases {
 		t.Run(tc.name, func(t *testing.T) {
 			root := newMap(t, "", "")
@@ -509,6 +534,7 @@ func TestFolderFormat(t *testing.T) {
 
 // The product is held to the same format as a capability.
 func TestProductFolderFormat(t *testing.T) {
+	t.Parallel()
 	root := newMap(t, "", "")
 	write(t, root, ".physa/product/index.md", strings.Replace(goodIndex, "# T", "# Product", 1))
 	write(t, root, ".physa/product/rules.md", rulesWith("- [R two](#r-two)\n- [R one](#r-one)\n", ruleOne+"\n"+ruleTwo))
@@ -521,6 +547,7 @@ func TestProductFolderFormat(t *testing.T) {
 }
 
 func TestProblemsSorted(t *testing.T) {
+	t.Parallel()
 	cap := "## Rules\n\n### A\n`a` · from docs/d.md\n\n### B\n`b` · from docs/d.md\n"
 	r := check(t, newMap(t, "", cap))
 	for i := 1; i < len(r.Problems); i++ {
@@ -532,12 +559,14 @@ func TestProblemsSorted(t *testing.T) {
 }
 
 func TestReaderProblemsIncluded(t *testing.T) {
+	t.Parallel()
 	root := newMap(t, "", goodCap)
 	os.Remove(filepath.Join(root, ".physa/README.md"))
 	expect(t, check(t, root), ".physa/README.md", 0, "")
 }
 
 func TestOwnMapPasses(t *testing.T) {
+	t.Parallel()
 	r := check(t, "../..")
 	for _, p := range r.Problems {
 		t.Error(p)
@@ -547,6 +576,7 @@ func TestOwnMapPasses(t *testing.T) {
 // TestBrokenCopy copies the real map and docs, breaks two things and checks
 // both are reported, in order.
 func TestBrokenCopy(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	copyTree(t, "../../.physa", filepath.Join(root, ".physa"))
 	copyTree(t, "../../docs", filepath.Join(root, "docs"))
@@ -646,6 +676,7 @@ func checkWith(t *testing.T, root string, o Options) Result {
 }
 
 func TestPRAnchorsResolved(t *testing.T) {
+	t.Parallel()
 	root := newMap(t, "", prCap("10"))
 	r := checkWith(t, root, Options{PRExists: func(_ context.Context, n int) (bool, error) { return n == 10, nil }})
 	if len(r.Problems) != 0 || r.PRAnchors != "github" || r.PRNote != "" {
@@ -654,6 +685,7 @@ func TestPRAnchorsResolved(t *testing.T) {
 }
 
 func TestPRAnchorUnknown(t *testing.T) {
+	t.Parallel()
 	root := newMap(t, "", prCap("10", "999"))
 	r := checkWith(t, root, Options{PRExists: func(_ context.Context, n int) (bool, error) { return n == 10, nil }})
 	expect(t, r, capRules, lineOf(t, root, capRules, "`rb` ·"), "anchor #999 names no PR in this repo")
@@ -663,6 +695,7 @@ func TestPRAnchorUnknown(t *testing.T) {
 }
 
 func TestPRAnchorResolvedOnce(t *testing.T) {
+	t.Parallel()
 	root := newMap(t, "", prCap("10", "10", "11"))
 	calls := map[int]int{}
 	checkWith(t, root, Options{PRExists: func(_ context.Context, n int) (bool, error) { calls[n]++; return true, nil }})
@@ -672,6 +705,7 @@ func TestPRAnchorResolvedOnce(t *testing.T) {
 }
 
 func TestPRAnchorsFallBackOnError(t *testing.T) {
+	t.Parallel()
 	root := newMap(t, "", prCap("10", "999"))
 	calls := 0
 	r := checkWith(t, root, Options{PRExists: func(_ context.Context, n int) (bool, error) { calls++; return false, errors.New("gh is not logged in") }})
@@ -681,6 +715,7 @@ func TestPRAnchorsFallBackOnError(t *testing.T) {
 }
 
 func TestPRAnchorsWithoutResolverAreFormOnly(t *testing.T) {
+	t.Parallel()
 	r := check(t, newMap(t, "", prCap("10")))
 	if r.PRAnchors != "form-only" || r.PRNote != "" {
 		t.Errorf("got %q %q", r.PRAnchors, r.PRNote)
@@ -688,6 +723,7 @@ func TestPRAnchorsWithoutResolverAreFormOnly(t *testing.T) {
 }
 
 func TestDocRootResolvesDocAnchors(t *testing.T) {
+	t.Parallel()
 	cap := "## Rules\n\n### A\n`a` · from docs/a.md\nBecause: y.\n"
 	root := newMap(t, "", cap)
 	docs := t.TempDir()
@@ -702,6 +738,7 @@ func TestDocRootResolvesDocAnchors(t *testing.T) {
 
 // FormOnly resolves no commit anchor, so one that would be a problem is none.
 func TestFormOnlyLeavesCommitAnchorsUnresolved(t *testing.T) {
+	t.Parallel()
 	root := newMap(t, "", commitCap("1a2b3c4"))
 	if r := checkWith(t, root, Options{}); len(r.Problems) != 1 {
 		t.Fatalf("without the option: want one problem, got %v", r.Problems)
@@ -716,6 +753,7 @@ func TestFormOnlyLeavesCommitAnchorsUnresolved(t *testing.T) {
 
 // FormOnly does not resolve #N anchors, even with a resolver set.
 func TestFormOnlyDoesNotResolvePRAnchors(t *testing.T) {
+	t.Parallel()
 	root := newMap(t, "", prCap("10"))
 	exists := func(context.Context, int) (bool, error) { t.Error("resolver called"); return false, nil }
 	r := checkWith(t, root, Options{FormOnly: true, PRExists: exists})
@@ -726,6 +764,7 @@ func TestFormOnlyDoesNotResolvePRAnchors(t *testing.T) {
 
 // FormOnly still reports a malformed entry, with its path and line.
 func TestFormOnlyStillReportsMalformedEntry(t *testing.T) {
+	t.Parallel()
 	root := newMap(t, "", "## Rules\n\n### A\n`a` · from docs/d.md · 1a2b3c4\n")
 	r := checkWith(t, root, Options{FormOnly: true})
 	if len(r.Problems) == 0 {

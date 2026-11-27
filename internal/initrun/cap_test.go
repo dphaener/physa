@@ -32,7 +32,7 @@ func (u *usageAgent) Usage(context.Context) (adapter.Usage, error) {
 // recoveredRows is what init's record holds of each capability's recovery.
 func recoveredRows(t *testing.T, env Env) map[string]string {
 	t.Helper()
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,6 +55,7 @@ func recoveredRows(t *testing.T, env Env) map[string]string {
 // --recover continues, and exits 1. A second --recover with a larger cap
 // recovers only the capability left.
 func TestCappedRecoverStopsThenContinues(t *testing.T) {
+	t.Parallel()
 	a := newRoutedAgent()
 	a.priced, a.recovers = true, 300_000 // each recovering session spends about $1.20
 	a.replies["delivery"] = recoverReply // checks clean, so no retry starts a second session
@@ -114,6 +115,7 @@ func TestCappedRecoverStopsThenContinues(t *testing.T) {
 // than any session's budget, starts no session, stores no walk, keeps the
 // stored areas, says no phase failed and gives physa init --walk to continue.
 func TestCappedWalkStopsCleanly(t *testing.T) {
+	t.Parallel()
 	env, a := walkEnv(t)
 	code, out, errOut := runInit(env, "--walk", "--cap", "1k")
 	if code != 1 || a.starts != 0 || out != "" {
@@ -131,7 +133,7 @@ func TestCappedWalkStopsCleanly(t *testing.T) {
 	if strings.Contains(errOut, "did not end whole") || strings.Contains(errOut, "not started:") {
 		t.Errorf("a line says the walk failed:\n%s", errOut)
 	}
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,6 +151,7 @@ func TestCappedWalkStopsCleanly(t *testing.T) {
 // one above it reads usage before each session and runs, and that a run with
 // no --cap says nothing of a cap.
 func TestShareCapAtThePlanUsageStartsNoSession(t *testing.T) {
+	t.Parallel()
 	u := &usageAgent{fakeAgent: recoverAgent(100), percent: 60}
 	env := proposedEnv(t, u)
 	code, _, errOut := runInit(env, "--recover", "--cap", "60%")
@@ -181,15 +184,16 @@ func TestShareCapAtThePlanUsageStartsNoSession(t *testing.T) {
 // with an agent that cannot report its plan's usage refuses the run before
 // anything starts, says why and exits 2, with nothing gathered.
 func TestUsageCapWithoutUsageRefusesToStart(t *testing.T) {
-	newRepo(t)
+	t.Parallel()
+	dir := newRepo(t)
 	f := oneAgent()
-	env := testEnv(t, onePR(), f)
+	env := testEnv(t, dir, onePR(), f)
 	code, out, errOut := runInit(env, "--cap", "80%")
 	want := "physa init: --cap 80% needs the agent's plan usage, and fake cannot report its plan's usage: it has no way to read it\n"
 	if code != 2 || f.starts != 0 || out != "" || errOut != want {
 		t.Fatalf("code %d, %d sessions\nstdout %s\nstderr %q\nwant %q", code, f.starts, out, errOut, want)
 	}
-	st, err := env.Store(context.Background(), ".")
+	st, err := env.Store(context.Background(), env.Proc.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,10 +207,11 @@ func TestUsageCapWithoutUsageRefusesToStart(t *testing.T) {
 // line names the cap beside what a token is worth, that it shows its spend
 // in dollars, and that it ends with what init spent against the cap.
 func TestBareCappedRunNamesTheCapFirst(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	a := newRoutedAgent()
 	a.priced = true
-	env := fullEnv(t, onePR(), a)
+	env := fullEnv(t, dir, onePR(), a)
 	code, out, errOut := runInit(env, "--cap", "$5")
 	if code != 0 || !strings.Contains(out, "## delivery: recovered") {
 		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
@@ -224,10 +229,11 @@ func TestBareCappedRunNamesTheCapFirst(t *testing.T) {
 // bare run the cap stops once proposing is done gives physa init --recover,
 // with the words of the line --recover takes, to continue.
 func TestBareCappedRunStoppedWhileRecoveringContinuesWithRecover(t *testing.T) {
-	remoteRepo(t)
+	t.Parallel()
+	dir, _ := remoteRepo(t)
 	a := newRoutedAgent()
 	a.priced, a.propose = true, 200_000 // proposing spends about $0.80
-	env := fullEnv(t, onePR(), a)
+	env := fullEnv(t, dir, onePR(), a)
 	code, out, errOut := runInit(env, "--write", "--since", "2025-01-01", "--cap=$0.80")
 	if code != 1 || slices.Contains(a.started, "delivery") || !slices.Contains(a.started, "propose") {
 		t.Fatalf("code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
@@ -240,7 +246,8 @@ func TestBareCappedRunStoppedWhileRecoveringContinuesWithRecover(t *testing.T) {
 // TestBadCapIsBadUsage checks that a --cap init cannot read, or one with
 // --place, is bad usage that says why, before anything starts.
 func TestBadCapIsBadUsage(t *testing.T) {
-	newRepo(t)
+	t.Parallel()
+	dir := newRepo(t)
 	for args, want := range map[string]string{
 		"--gather --cap 120%":           `physa init: --cap "120%" must be above 0% and at most 100%: give an amount of money ($5 or 5usd), a share of the plan's usage (80%) or tokens (2m)`,
 		"--place --cap 5usd":            "physa init: --place starts no session, so it takes no --cap",
@@ -253,7 +260,7 @@ func TestBadCapIsBadUsage(t *testing.T) {
 		"--gather --cap 5usd --propose": "usage: physa init",
 	} {
 		f := oneAgent()
-		code, _, errOut := runInit(testEnv(t, onePR(), f), strings.Fields(args)...)
+		code, _, errOut := runInit(testEnv(t, dir, onePR(), f), strings.Fields(args)...)
 		if code != command.BadUsage || f.starts != 0 || !strings.Contains(errOut, want) {
 			t.Errorf("%s: code %d, %d sessions, stderr %q", args, code, f.starts, errOut)
 		}
@@ -264,6 +271,7 @@ func TestBadCapIsBadUsage(t *testing.T) {
 // session the cap refuses stores no gather, so the earlier one stays whole,
 // and gives physa init --gather to continue.
 func TestCappedGatherStoresNothing(t *testing.T) {
+	t.Parallel()
 	env := gatheredEnv(t, oneAgent())
 	before := storedGather(t, env).Run.At
 	code, _, errOut := runInit(env, "--gather", "--cap", "1k")

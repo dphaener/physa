@@ -21,6 +21,7 @@ import (
 	"github.com/dphaener/physa/internal/enginestart"
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/ideacli"
+	"github.com/dphaener/physa/internal/proc"
 	"github.com/dphaener/physa/internal/state"
 	stateevidence "github.com/dphaener/physa/internal/state/evidence"
 	"github.com/dphaener/physa/internal/workapi"
@@ -35,9 +36,14 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// Tests that start an engine stay serial: started together under -race on a
+// loaded machine, an engine's first call can pass the 5s call deadlines
+// (enginecli's, ideacli's and enginestart's).
+//
 // newTest runs an engine that polls version control (no forge) on a short
 // temporary settings directory, in a fresh git repo that already holds the
-// commits with the given messages, one new file each. Nothing is interactive.
+// commits with the given messages, one new file each, both passed in the
+// Env's process state. Nothing is interactive.
 func newTest(t *testing.T, messages ...string) *ideacli.Env {
 	t.Helper()
 	tmp, err := os.MkdirTemp("", "px")
@@ -45,7 +51,6 @@ func newTest(t *testing.T, messages ...string) *ideacli.Env {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(tmp) })
-	t.Setenv("XDG_CONFIG_HOME", tmp)
 	repo := filepath.Join(tmp, "repo")
 	git := func(args ...string) {
 		t.Helper()
@@ -65,13 +70,12 @@ func newTest(t *testing.T, messages ...string) *ideacli.Env {
 		git("add", name)
 		git("commit", "-q", "-m", m)
 	}
-	t.Chdir(repo)
 	dir := filepath.Join(tmp, "physa")
-	timers, intents := stateevidence.Options(func(string) forge.Forge { return nil })
+	timers, intents := stateevidence.Options(os.Environ(), func(string) forge.Forge { return nil })
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- engine.Run(ctx, engine.Options{Dir: dir, Idle: time.Minute, Version: "test", Methods: workapi.Methods(func(context.Context, string) string { return "" }),
+		done <- engine.Run(ctx, engine.Options{Env: os.Environ(), Dir: dir, Idle: time.Minute, Version: "test", Methods: workapi.Methods(os.Environ(), func(context.Context, string) string { return "" }),
 			State: state.Options{Timers: timers, Intents: intents}})
 	}()
 	t.Cleanup(func() {
@@ -101,12 +105,11 @@ func newTest(t *testing.T, messages ...string) *ideacli.Env {
 			t.Fatalf("the engine did not answer within 5s: %v", err)
 		}
 	}
-	e := ideacli.New(nil)
+	e := ideacli.New(proc.State{Dir: repo, Wd: repo, Env: []string{"XDG_CONFIG_HOME=" + tmp}}, nil)
 	e.Start = enginestart.Options{Command: func(dir string, _ time.Duration) *exec.Cmd {
 		t.Errorf("a command tried to start an engine on %s", dir)
 		return exec.Command("false")
 	}}
-	e.Getenv = func(string) string { return "" }
 	e.IsInteractive = func() bool { return false }
 	return e
 }

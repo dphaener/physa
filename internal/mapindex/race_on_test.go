@@ -1,0 +1,6 @@
+//go:build race
+
+package mapindex
+
+// raceEnabled is true when the tests run with -race, which slows them too much for latency budgets to mean anything.
+const raceEnabled = true

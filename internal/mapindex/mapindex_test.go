@@ -156,6 +156,9 @@ func capability(n int) string {
 }
 
 func TestLatency(t *testing.T) {
+	if raceEnabled {
+		t.Skip("latency budgets don't hold under -race")
+	}
 	root := t.TempDir()
 	put(t, root, ".physa/README.md", "# Map\n\nRead the product first.\n")
 	put(t, root, ".physa/glossary.md", "# Glossary\n\n**Map**: The product's knowledge.\n_Avoid_: model\n")

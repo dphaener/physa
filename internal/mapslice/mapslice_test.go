@@ -674,6 +674,9 @@ func glossary() string {
 // collected heap, as a fresh physa process does. The median of a case's
 // seven runs must be under 50 ms.
 func TestLatency(t *testing.T) {
+	if raceEnabled {
+		t.Skip("latency budgets don't hold under -race")
+	}
 	root := t.TempDir()
 	put(t, root, "docs/vision.md", "# Vision\n")
 	put(t, root, ".physa/README.md", "# Map\n\nRead the product first.\n")

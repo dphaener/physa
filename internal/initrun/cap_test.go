@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,11 +21,11 @@ import (
 type usageAgent struct {
 	*fakeAgent
 	percent float64
-	reads   int
+	reads   atomic.Int64
 }
 
 func (u *usageAgent) Usage(context.Context) (adapter.Usage, error) {
-	u.reads++
+	u.reads.Add(1)
 	return adapter.Usage{Limits: []adapter.Limit{{Kind: "weekly_all", Percent: u.percent, Active: true, ResetsAt: time.Date(2026, 11, 30, 14, 0, 0, 0, time.UTC)}}}, nil
 }
 
@@ -162,10 +163,10 @@ func TestShareCapAtThePlanUsageStartsNoSession(t *testing.T) {
 			t.Errorf("stderr lacks %q:\n%s", want, errOut)
 		}
 	}
-	u.reads = 0
+	u.reads.Store(0)
 	code, _, errOut = runInit(env, "--recover", "--cap", "80%")
-	if code != 0 || u.starts != 2 || u.reads < 3 { // once to check, then before each session
-		t.Fatalf("code %d, %d sessions, %d reads\nstderr %s", code, u.starts, u.reads, errOut)
+	if code != 0 || u.starts != 2 || u.reads.Load() < 3 { // once to check, then before each session
+		t.Fatalf("code %d, %d sessions, %d reads\nstderr %s", code, u.starts, u.reads.Load(), errOut)
 	}
 	if !strings.Contains(errOut, "physa init: the cap is 80% of the plan's usage: init starts no session while it is at or over that; the plan's usage is 60% (weekly_all resets ") {
 		t.Errorf("stderr:\n%s", errOut)

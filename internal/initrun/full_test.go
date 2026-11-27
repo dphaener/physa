@@ -429,26 +429,6 @@ func TestFullJSONIsOneDocument(t *testing.T) {
 	}
 }
 
-// storedRow returns the stored recovery of capability c.
-func storedRow(t *testing.T, env Env, c string) initrecord.Recovered {
-	t.Helper()
-	st, err := env.Store(context.Background(), ".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	rows, err := initrecord.Of(st).Recovered(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, r := range rows {
-		if r.Capability == c {
-			return r
-		}
-	}
-	return initrecord.Recovered{}
-}
-
 // newCodebaseRepo is a repo of two changes and a README only, with a local
 // bare remote, made the working directory.
 func newCodebaseRepo(t *testing.T) string {

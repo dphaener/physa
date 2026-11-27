@@ -151,8 +151,7 @@ func (s *Set) start(sd string, e *entry) {
 	o.StoreDir = sd
 	stt, err := state.Open(st, o)
 	if err != nil {
-		st.Close()
-		e.err = fmt.Errorf("open its state: %w", err)
+		e.err = errors.Join(fmt.Errorf("open its state: %w", err), st.Close())
 		s.forget(sd, e)
 		return
 	}
@@ -164,7 +163,7 @@ func (s *Set) start(sd string, e *entry) {
 			e.err = fmt.Errorf("%w; its state did not close, so its store is left open: %v", ErrClosed, err)
 			return
 		}
-		st.Close()
+		e.err = errors.Join(ErrClosed, st.Close())
 		return
 	}
 	e.st, e.state = st, stt

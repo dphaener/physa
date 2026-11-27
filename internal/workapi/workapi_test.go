@@ -5,6 +5,7 @@ package workapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -121,7 +122,8 @@ func (e *env) must(method string, params map[string]any, out any) {
 func (e *env) badRequest(method string, params map[string]any, want ...string) {
 	e.t.Helper()
 	err := e.call(method, params, nil)
-	ae, ok := err.(*api.Error)
+	var ae *api.Error
+	ok := errors.As(err, &ae)
 	if !ok || ae.Code != api.CodeBadRequest {
 		e.t.Fatalf("%s: err = %v, want bad_request", method, err)
 	}
@@ -198,7 +200,8 @@ func TestBadRequests(t *testing.T) {
 	e.badRequest("idea.add", map[string]any{"text": "x", "slug": "try-a-quiet-mode", "person": "ann"}, "try-a-quiet-mode")
 	e.badRequest("idea.add", map[string]any{"text": "x", "person": "ann", "extra": 1}, "extra")
 	for _, gone := range []string{"idea.shape", "bet.start", "bet.list"} {
-		if ae, ok := e.call(gone, map[string]any{"slug": "try-a-quiet-mode", "person": "ann"}, nil).(*api.Error); !ok || ae.Code != api.CodeUnknownMethod {
+		var ae *api.Error
+		if !errors.As(e.call(gone, map[string]any{"slug": "try-a-quiet-mode", "person": "ann"}, nil), &ae) || ae.Code != api.CodeUnknownMethod {
 			t.Errorf("%s: err = %v, want unknown_method", gone, ae)
 		}
 	}
@@ -214,7 +217,8 @@ func TestBadRequests(t *testing.T) {
 	e.must("pursuit.stop", map[string]any{"slug": "try-a-quiet-mode", "person": "ann"}, nil)
 	e.badRequest("pursuit.stop", map[string]any{"slug": "try-a-quiet-mode", "person": "ann"}, "not active")
 	err := e.c.Call(context.Background(), "idea.list", map[string]any{"repo": "some/repo"}, nil)
-	if ae, ok := err.(*api.Error); !ok || ae.Code != api.CodeBadRequest {
+	var ae *api.Error
+	if !errors.As(err, &ae) || ae.Code != api.CodeBadRequest {
 		t.Errorf("a repo that is not absolute: %v", err)
 	}
 }
@@ -444,7 +448,8 @@ func TestEvidenceBadRepo(t *testing.T) {
 	e.t.Helper()
 	for _, repo := range []string{"some/repo", filepath.Join(t.TempDir(), "not-a-repo")} {
 		err := e.c.Call(context.Background(), "evidence.list", map[string]any{"repo": repo}, nil)
-		ae, ok := err.(*api.Error)
+		var ae *api.Error
+		ok := errors.As(err, &ae)
 		if !ok || ae.Code != api.CodeBadRequest || !strings.Contains(ae.Message, repo) {
 			t.Errorf("evidence.list %q: err = %v, want bad_request naming the path", repo, err)
 		}

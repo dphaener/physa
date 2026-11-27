@@ -34,7 +34,9 @@ func (e *Env) View(w io.Writer) *View {
 	return &View{w: w, styled: e.Interactive(), plain: output.For(w)}
 }
 
-func (v *View) line(s string) { lipgloss.Fprintln(v.w, s) }
+// line writes to the terminal, so a failed write is not something to act on,
+// as with fmt.Fprint.
+func (v *View) line(s string) { _, _ = lipgloss.Fprintln(v.w, s) }
 
 // Title prints s as the answer's title.
 func (v *View) Title(s string) {

@@ -3,6 +3,7 @@ package initrecord
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 )
 
@@ -49,7 +50,7 @@ func (s *Store) Proposed(ctx context.Context) (Proposal, bool, error) {
 	var gatherAt, at, body string
 	err := s.DB().QueryRowContext(ctx, `SELECT gather_at, at, session_id, model, appetite, input, cached_input, output, body FROM init_proposal WHERE id = 1`).
 		Scan(&gatherAt, &at, &p.SessionID, &p.Model, &p.Appetite, &p.Input, &p.CachedInput, &p.Output, &body)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return Proposal{}, false, nil
 	}
 	if err != nil {

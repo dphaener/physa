@@ -3,6 +3,7 @@ package initrecord
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 )
 
@@ -26,7 +27,7 @@ func (s *Store) Place(ctx context.Context) (Place, bool, error) {
 	var walkAt, at string
 	err := s.DB().QueryRowContext(ctx, `SELECT walk_at, at, body FROM init_place WHERE id = 1`).Scan(&walkAt, &at, &p.Body)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			err = nil
 		}
 		return Place{}, false, err

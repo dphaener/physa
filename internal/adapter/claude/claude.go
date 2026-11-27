@@ -155,8 +155,7 @@ func (a *Adapter) Start(ctx context.Context, s adapter.Spec) (adapter.Session, e
 			err = cerr
 		}
 		if err != nil {
-			os.Remove(system)
-			return nil, err
+			return nil, errors.Join(err, os.Remove(system))
 		}
 	}
 	cmd := exec.CommandContext(ctx, path, args(s, system)...)
@@ -172,18 +171,20 @@ func (a *Adapter) Start(ctx context.Context, s adapter.Spec) (adapter.Session, e
 	tail := &tailWriter{max: stderrTail}
 	cmd.Stderr = tail
 	if err := cmd.Start(); err != nil {
+		err = fmt.Errorf("starting %s: %w", command, err)
 		if system != "" {
-			os.Remove(system)
+			err = errors.Join(err, os.Remove(system))
 		}
-		return nil, fmt.Errorf("starting %s: %w", command, err)
+		return nil, err
 	}
 	done := make(chan error, 1)
 	go func() {
 		err := cmd.Wait()
 		if system != "" {
-			os.Remove(system)
+			_ = os.Remove(system) // best effort: the run is over, and its result is what the caller needs
 		}
-		pw.Close()
+		_ = pw.Close() // always nil: closing a pipe's write end cannot fail
+
 		if cerr := ctx.Err(); err != nil && cerr != nil {
 			err = fmt.Errorf("%w: %w", adapter.ErrFailed, cerr)
 		}
@@ -204,7 +205,7 @@ type session struct {
 // Wait reads the stream to its end, then waits for the process.
 func (s *session) Wait() (adapter.Result, error) {
 	st, readErr := parse(s.out, s.usage)
-	s.out.Close()
+	_ = s.out.Close() // always nil: closing a pipe's read end cannot fail
 	exitErr := <-s.done
 	res := adapter.Result{Model: st.model, SessionID: st.id}
 	if st.result != nil {

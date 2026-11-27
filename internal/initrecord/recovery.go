@@ -3,6 +3,7 @@ package initrecord
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 )
 
@@ -48,7 +49,7 @@ func (s *Store) PutRecovered(ctx context.Context, rs []Recovered) error {
 		if r.KeepEarlier {
 			var file string
 			err := tx.QueryRowContext(ctx, `SELECT file FROM init_recovery WHERE capability = ?`, r.Capability).Scan(&file)
-			if err != nil && err != sql.ErrNoRows {
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
 			if err == nil && file != "" {

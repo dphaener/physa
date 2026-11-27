@@ -72,8 +72,14 @@ func Start(ctx context.Context, o Options) (started bool, err error) {
 		// zombie of this process.
 		ch := make(chan int, 1)
 		go func() {
-			cmd.Wait()
-			ch <- cmd.ProcessState.ExitCode()
+			// -1 when the child could not be waited for: its exit code
+			// is unknown.
+			code := -1
+			var exit *exec.ExitError
+			if err := cmd.Wait(); err == nil || errors.As(err, &exit) {
+				code = cmd.ProcessState.ExitCode()
+			}
+			ch <- code
 		}()
 		exited = ch
 		return nil
@@ -127,7 +133,9 @@ func Stop(ctx context.Context, dir string) (stopped bool, err error) {
 	cctx, cancel := context.WithTimeout(ctx, callTimeout)
 	callErr := c.Call(cctx, "engine.stop", nil, nil)
 	cancel()
-	c.Close()
+	// A stopping engine closes the connection itself, so Close's error
+	// says nothing: whether it stopped is decided below.
+	_ = c.Close()
 	var apiErr *api.Error
 	if errors.As(callErr, &apiErr) {
 		return false, callErr
@@ -181,7 +189,9 @@ func lastLine(path string) string {
 	}
 	defer f.Close()
 	if fi, err := f.Stat(); err == nil && fi.Size() > 4096 {
-		f.Seek(fi.Size()-4096, io.SeekStart)
+		if _, err := f.Seek(fi.Size()-4096, io.SeekStart); err != nil {
+			return "" // reading from the start would quote the wrong line
+		}
 	}
 	b, _ := io.ReadAll(io.LimitReader(f, 4096))
 	b = bytes.TrimRight(b, " \t\r\n")

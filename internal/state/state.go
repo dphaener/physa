@@ -186,7 +186,7 @@ func (s *State) apply(c Command) error {
 		err = sqlTx.Commit()
 	}
 	if err != nil {
-		sqlTx.Rollback()
+		_ = sqlTx.Rollback() // after a failed Commit the tx is already done; err is the cause
 		return err
 	}
 	if tx.timers {

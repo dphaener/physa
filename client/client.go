@@ -60,7 +60,9 @@ func Dial(ctx context.Context, socketPath string) (*Client, error) {
 		return nil, err
 	}
 	if ws.Subprotocol() != Subprotocol {
-		ws.Close(websocket.StatusPolicyViolation, "the "+Subprotocol+" subprotocol is required")
+		// A refusal: the error returned is that the engine does not
+		// speak physa.v1, whether or not it answers the close.
+		_ = ws.Close(websocket.StatusPolicyViolation, "the "+Subprotocol+" subprotocol is required")
 		return nil, errors.New("engine does not speak " + Subprotocol)
 	}
 	ws.SetReadLimit(readLimit)

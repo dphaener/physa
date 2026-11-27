@@ -142,7 +142,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return // Accept has written the HTTP error.
 	}
 	if ws.Subprotocol() != Subprotocol {
-		ws.Close(websocket.StatusPolicyViolation, "the "+Subprotocol+" subprotocol is required")
+		// A refusal ends the connection whether or not the peer answers.
+		_ = ws.Close(websocket.StatusPolicyViolation, "the "+Subprotocol+" subprotocol is required")
 		return
 	}
 	ws.SetReadLimit(readLimit)
@@ -154,13 +155,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	run(s.hooks.Connected)
 	if closed {
-		ws.Close(websocket.StatusGoingAway, "the engine is stopping")
+		_ = ws.Close(websocket.StatusGoingAway, "the engine is stopping") // a refusal
 	} else {
 		s.serve(ss)
 	}
 	cancel()
 	ss.calls.Wait()
-	ws.CloseNow()
+	_ = ws.CloseNow() // the session is over: an error says only it was closed
 	s.mu.Lock()
 	delete(s.sessions, ss)
 	s.mu.Unlock()
@@ -176,7 +177,7 @@ func (s *Server) serve(ss *session) {
 		}
 		id, method, params, perr := parse(data)
 		if typ != websocket.MessageText || id == nil {
-			ss.ws.Close(websocket.StatusUnsupportedData, "a request is a JSON text object with a numeric id")
+			_ = ss.ws.Close(websocket.StatusUnsupportedData, "a request is a JSON text object with a numeric id") // a refusal
 			return
 		}
 		if s.hooks.Called != nil {
@@ -229,7 +230,9 @@ func (s *Server) handle(ss *session, id json.RawMessage, method string, params j
 		Result json.RawMessage `json:"result,omitempty"`
 		Error  *Error          `json:"error,omitempty"`
 	}{id, res, e})
-	ss.ws.Write(ss.ctx, websocket.MessageText, b)
+	if err := ss.ws.Write(ss.ctx, websocket.MessageText, b); err != nil {
+		ss.cancel() // half a frame may be on the stream: end the session
+	}
 }
 
 // call runs the method under a recover: a panic replies internal.
@@ -271,7 +274,8 @@ func (s *Server) Close(ctx context.Context) error {
 		closing.Add(1)
 		go func() {
 			defer closing.Done()
-			ss.ws.Close(websocket.StatusGoingAway, "the engine is stopping")
+			// A peer that does not answer is closed below once ctx ends.
+			_ = ss.ws.Close(websocket.StatusGoingAway, "the engine is stopping")
 		}()
 	}
 	done := make(chan struct{})
@@ -288,11 +292,11 @@ func (s *Server) Close(ctx context.Context) error {
 	for _, ss := range s.open() {
 		// CloseNow does nothing while a close handshake is under way, so
 		// the hijacked connection is closed first.
-		ss.cancel()
+		ss.cancel() // the closes are best effort: the error returned says so
 		if ss.raw != nil {
-			ss.raw.Close()
+			_ = ss.raw.Close()
 		}
-		ss.ws.CloseNow()
+		_ = ss.ws.CloseNow()
 	}
 	<-done
 	return fmt.Errorf("api: connections closed without a handshake: %w", ctx.Err())

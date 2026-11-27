@@ -349,7 +349,7 @@ func (r *run) fail(ctx context.Context, kept string, err error) int {
 // failed prints err as init's failure and returns 2, or 1 for a stop before spending on propose.
 func failed(stderr io.Writer, err error) int {
 	fmt.Fprintf(stderr, "physa init: %v\n", err)
-	if _, ok := err.(*shares.TooLarge); ok { // found before any share ran; after a halving it comes wrapped
+	if _, ok := err.(*shares.TooLarge); ok { //nolint:errorlint // unwrapped on purpose: found before any share ran; after a halving it comes wrapped and exits 2
 		return 1
 	}
 	return 2

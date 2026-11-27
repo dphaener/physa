@@ -260,5 +260,5 @@ func (s *State) drop(area capabilitytext.Area, d DropChoice) {
 		return
 	}
 	s.remove(d.ID, "dropped as answered by "+d.AnsweredBy)
-	s.rec.Dropped = append(s.rec.Dropped, DroppedQuestion{d.ID, d.AnsweredBy})
+	s.rec.Dropped = append(s.rec.Dropped, DroppedQuestion(d))
 }

@@ -2,6 +2,7 @@ package spend
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -184,7 +185,7 @@ func writeFile(path string, b []byte) error {
 		err = os.Rename(f.Name(), path)
 	}
 	if err != nil {
-		os.Remove(f.Name())
+		err = errors.Join(err, os.Remove(f.Name()))
 	}
 	return err
 }

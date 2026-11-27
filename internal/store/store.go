@@ -16,6 +16,7 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,12 +50,10 @@ func Open(ctx context.Context, dir string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 	if err := whileBusy(func() error { return db.PingContext(ctx) }); err != nil {
-		db.Close()
-		return nil, err
+		return nil, errors.Join(err, db.Close())
 	}
 	if err := whileBusy(func() error { return migrate(ctx, db) }); err != nil {
-		db.Close()
-		return nil, err
+		return nil, errors.Join(err, db.Close())
 	}
 	return &Store{db: db}, nil
 }
@@ -72,8 +71,7 @@ func OpenReadOnly(ctx context.Context, path string) (*sql.DB, error) {
 		return nil, err
 	}
 	if err := db.PingContext(ctx); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("open %s read-only: %w", path, err)
+		return nil, errors.Join(fmt.Errorf("open %s read-only: %w", path, err), db.Close())
 	}
 	return db, nil
 }

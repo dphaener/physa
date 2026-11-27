@@ -32,8 +32,7 @@ func WriteTemp(pattern, md string) (string, error) {
 		err = cerr
 	}
 	if err != nil {
-		os.Remove(f.Name())
-		return "", err
+		return "", errors.Join(err, os.Remove(f.Name()))
 	}
 	return f.Name(), nil
 }

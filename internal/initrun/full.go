@@ -24,7 +24,10 @@ func (r *run) full(ctx context.Context) int {
 	if r.env.Skill != nil {
 		r.skill = r.env.Skill(r.o.Agent)
 	}
-	r.agent() // resolved here so the first line can say what a token is worth; gather reports a failure
+	// Resolved here so the first line can say what a token is worth. The
+	// failure is kept in r.err, and the gather's discovery session, which asks
+	// r.agent again, reports it.
+	_, _ = r.agent()
 	fmt.Fprintf(r.stderr, "physa init: %s %s\n", r.guard.StartLine(), initcost.Unit(r.cache, r.meter.Name()))
 	g, sum, err := r.gatherInto(ctx, "")
 	if err != nil {

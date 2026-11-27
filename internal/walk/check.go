@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dphaener/physa/internal/draft"
@@ -83,14 +84,12 @@ func resolve(a Area, owners []owner, p *Problems) map[string][]string {
 	}
 	where, missing, twice := sourceset.Claims(a.Files, cs)
 	p.Unclaimed = missing
+	p.Twice = map[string][]string{}
 	for f, ids := range twice {
-		if p.Twice == nil {
-			p.Twice = map[string][]string{}
-		}
 		for _, id := range ids {
-			var i int
-			fmt.Sscan(id, &i)
-			p.Twice[f] = append(p.Twice[f], owners[i].label)
+			if i, err := strconv.Atoi(id); err == nil && i >= 0 && i < len(owners) { // resolve's own ids; skip any other
+				p.Twice[f] = append(p.Twice[f], owners[i].label)
+			}
 		}
 	}
 	owned := map[string][]string{}

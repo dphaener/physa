@@ -3,6 +3,7 @@ package initrecord
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 )
 
@@ -43,7 +44,7 @@ func (s *Store) Walk(ctx context.Context) (Walk, bool, error) {
 	var areasAt, at string
 	err := s.DB().QueryRowContext(ctx, `SELECT areas_at, at, model, input, cached_input, output, body FROM init_walk WHERE id = 1`).Scan(&areasAt, &at, &w.Model, &w.Input, &w.CachedInput, &w.Output, &w.Body)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			err = nil
 		}
 		return Walk{}, false, err

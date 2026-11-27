@@ -91,8 +91,7 @@ func (l *Logs) ReadSession(id string) (adapter.Log, error) {
 		return adapter.Log{}, fmt.Errorf("%w: %v", adapter.ErrUnavailable, err)
 	}
 	r := &reader{}
-	err = r.transcript(f, transcript{lead: true})
-	f.Close()
+	err = errors.Join(r.transcript(f, transcript{lead: true}), f.Close())
 	if err != nil {
 		return adapter.Log{}, fmt.Errorf("%w: session %s: %v", adapter.ErrUnavailable, id, err)
 	}
@@ -199,7 +198,7 @@ func (r *reader) agentsIn(dir, group string) {
 		if err := r.transcript(f, t); err != nil {
 			r.skipped++
 		}
-		f.Close()
+		_ = f.Close() // read-only: a failed close loses nothing, and the transcript is already read or skipped
 	}
 }
 

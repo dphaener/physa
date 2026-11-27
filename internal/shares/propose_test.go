@@ -160,7 +160,7 @@ func tooLong() error {
 }
 
 // propose runs Propose on g with f, which states its window when it has one.
-func propose(g store.Gather, f *fakeAgent) (mapping.Result, error, *fakeStore, string) {
+func propose(g store.Gather, f *fakeAgent) (mapping.Result, *fakeStore, string, error) {
 	st := &fakeStore{gather: g, has: true}
 	var progress bytes.Buffer
 	var a adapter.Adapter = f
@@ -172,7 +172,7 @@ func propose(g store.Gather, f *fakeAgent) (mapping.Result, error, *fakeStore, s
 		Progress: &progress,
 		Now:      func() time.Time { return nowAt },
 	})
-	return res, err, st, progress.String()
+	return res, st, progress.String(), err
 }
 
 // readOnce asserts that the share sessions that ended well read every PR
@@ -218,7 +218,7 @@ func TestProposeThatFitsRunsOneSessionUnchanged(t *testing.T) {
 	for _, window := range []int{0, 1_000_000} {
 		t.Run(fmt.Sprintf("window %d", window), func(t *testing.T) {
 			f := &fakeAgent{window: window}
-			res, err, st, progress := propose(g, f)
+			res, st, progress, err := propose(g, f)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -256,7 +256,7 @@ func TestProposeInSharesAndAMerge(t *testing.T) {
 	// The merge adds a PR that was gathered but that no share gave, and one
 	// that does not exist.
 	f := &fakeAgent{window: smallWindow, extra: []string{"#2", "#999999"}}
-	res, err, st, progress := propose(g, f)
+	res, st, progress, err := propose(g, f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +379,7 @@ func TestProposeHalvesWhenAShareIsRefused(t *testing.T) {
 	f := &fakeAgent{window: smallWindow, script: func(n int, c call) (string, error, bool) {
 		return "", tooLong(), n == 1 // the second share, once
 	}}
-	res, err, st, progress := propose(g, f)
+	res, st, progress, err := propose(g, f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +432,7 @@ func TestProposeGoesOnInSharesWhenTheOneSessionIsRefused(t *testing.T) {
 	for _, window := range []int{0, reading.Tokens(whole) + mapping.ReplyReserve} {
 		t.Run(fmt.Sprintf("window %d", window), func(t *testing.T) {
 			f := &fakeAgent{window: window, script: func(n int, c call) (string, error, bool) { return "", tooLong(), n == 0 }}
-			res, err, st, progress := propose(g, f)
+			res, st, progress, err := propose(g, f)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -460,7 +460,7 @@ func TestProposeARefusalThatHalvingCannotHelpEnds(t *testing.T) {
 	// An agent that refuses everything: the run ends with a source too large
 	// for a share, or the refusal, never an endless loop.
 	f := &fakeAgent{window: smallWindow, script: func(int, call) (string, error, bool) { return "", tooLong(), true }}
-	_, err, st, _ := propose(large(), f)
+	_, st, _, err := propose(large(), f)
 	var tl *TooLarge
 	if !errors.As(err, &tl) && !errors.Is(err, adapter.ErrTooLong) {
 		t.Fatalf("err = %v", err)
@@ -482,7 +482,7 @@ func TestProposeTooLargeStartsNoSession(t *testing.T) {
 	g.PRs[4].Body = text(60_000, "huge")
 	g.PRs[4].MergedAt = time.Date(2026, 3, 2, 15, 0, 0, 0, time.UTC)
 	f := &fakeAgent{window: smallWindow}
-	res, err, st, progress := propose(g, f)
+	res, st, progress, err := propose(g, f)
 	var tl *TooLarge
 	if !errors.As(err, &tl) {
 		t.Fatalf("err = %v, want a TooLarge", err)
@@ -500,7 +500,7 @@ func TestProposeTooLargeStartsNoSession(t *testing.T) {
 
 func TestProposeUnreadableShareStoresNothing(t *testing.T) {
 	f := &fakeAgent{window: smallWindow, script: func(n int, c call) (string, error, bool) { return "I could not decide.", nil, n == 1 }}
-	res, err, st, _ := propose(large(), f)
+	res, st, _, err := propose(large(), f)
 	if err == nil || !strings.HasPrefix(err.Error(), "the session's output: share 2 of ") || !strings.Contains(err.Error(), "no fenced json block") {
 		t.Fatalf("err = %v", err)
 	}
@@ -528,7 +528,7 @@ func TestProposeAFailedOrRefusedSessionStoresNothing(t *testing.T) {
 				}
 				return "", tc.err, tc.fail(n, c)
 			}}
-			_, err, st, _ := propose(large(), f)
+			_, st, _, err := propose(large(), f)
 			if !errors.Is(err, adapter.ErrFailed) || !strings.Contains(err.Error(), tc.want) || len(st.put) != 0 || merges > 1 {
 				t.Fatalf("err = %v, stored %d, merges %d", err, len(st.put), merges)
 			}
@@ -544,7 +544,7 @@ func TestProposeKeepsWhatASharesReplyLost(t *testing.T) {
  "questions": []}` + "\n```\n"
 	f := &fakeAgent{window: smallWindow, script: func(n int, c call) (string, error, bool) { return bad, nil, n == 0 }}
 	f.gave = []string{"#1"}
-	res, err, _, _ := propose(large(), f)
+	res, _, _, err := propose(large(), f)
 	if err != nil {
 		t.Fatal(err)
 	}

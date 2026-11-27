@@ -26,7 +26,6 @@ type fakeAgent struct {
 	specs    []adapter.Spec
 	reply    func(s adapter.Spec, n int) string
 	noResume bool
-	window   int
 	late     int    // sessions started with a done ctx
 	cancel   func() // when set, the first session cancels
 }

@@ -3,6 +3,7 @@ package sessionhook
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -274,7 +275,8 @@ func runHook(t *testing.T, fake string, env ...string) (string, int) {
 	code := 0
 	if err := cmd.Run(); err != nil {
 		code = 1
-		if ee, ok := err.(*exec.ExitError); ok {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
 			code = ee.ExitCode()
 		}
 	}

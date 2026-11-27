@@ -22,7 +22,6 @@ type sample struct {
 	Data    []byte            `json:"data,omitempty"`
 	Ptr     *item             `json:"ptr,omitempty"`
 	Skipped string            `json:"-"`
-	hidden  string
 }
 
 func TestForNestedStruct(t *testing.T) {

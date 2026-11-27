@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -161,7 +162,7 @@ func (s *Store) Gathered(ctx context.Context) (Gather, bool, error) {
 	err := s.db.QueryRowContext(ctx, `SELECT at, since, max_prs, prs_limited, forge, forge_reason, stopped, stopped_reached, stopped_reason FROM gather_runs WHERE id = 1`).
 		Scan(&at, &since, &g.Run.MaxPRs, &limited, &g.Run.Forge, &g.Run.ForgeReason, &stopped, &reached, &g.Run.StopReason)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			err = nil
 		}
 		return Gather{}, false, err

@@ -101,8 +101,8 @@ type PR struct {
 	Reason string
 }
 
-// leaseTwice is the error of a run whose redo lost the lease as well.
-var leaseTwice = errors.New(Branch + " moved on the remote twice while this run wrote it; run physa map learn again")
+// errLeaseTwice is the error of a run whose redo lost the lease as well.
+var errLeaseTwice = errors.New(Branch + " moved on the remote twice while this run wrote it; run physa map learn again")
 
 // state is what a run knows of the branch and the default branch.
 type state struct {
@@ -369,7 +369,7 @@ func redo(ctx context.Context, w vcs.Writer, out *Outcome, lo learn.Options, b d
 	}
 	err = w.Push(ctx, Branch, out.Commit.ID, st.remote)
 	if errors.Is(err, vcs.ErrLease) {
-		return leaseTwice
+		return errLeaseTwice
 	}
 	return err
 }

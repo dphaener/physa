@@ -119,6 +119,8 @@ var goldenLines = []string{
 	"init --since yesterday",
 	"init --only a",
 	"init --gather --propose",
+	"init --areas --propose",
+	"init --areas --write",
 	"pursuit show --json=maybe",
 	"pursuit list --json=maybe",
 	"evidence --limit 0",

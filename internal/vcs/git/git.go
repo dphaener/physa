@@ -27,6 +27,7 @@ type repo struct {
 }
 
 var _ vcs.Repo = (*repo)(nil)
+var _ vcs.Tracker = (*repo)(nil)
 
 // Open returns the repository that contains dir. It returns vcs.ErrNotRepo
 // when dir is not in one, and a wrapped error when git cannot run.
@@ -233,6 +234,60 @@ func (r *repo) Listed() ([]string, error) {
 		}
 	}
 	sort.Strings(files)
+	return files, nil
+}
+
+// Tracked lists the files git tracks with their linguist-vendored and
+// linguist-generated marks. Git reads the marks from every .gitattributes, in
+// one call run from the root, since git reads paths against its directory.
+func (r *repo) Tracked() ([]vcs.TrackedFile, error) {
+	out, stderr, err := r.git("ls-files", "-z", "--cached", "--full-name", "--", ":/")
+	if err != nil {
+		return nil, gitError(err, stderr)
+	}
+	seen := map[string]bool{}
+	paths := []string{}
+	for _, p := range strings.Split(out, "\x00") {
+		if p != "" && !seen[p] {
+			seen[p] = true
+			paths = append(paths, p)
+		}
+	}
+	sort.Strings(paths)
+	files := make([]vcs.TrackedFile, len(paths))
+	for i, p := range paths {
+		files[i].Path = p
+	}
+	if len(files) == 0 {
+		return files, nil
+	}
+	top, stderr, err := r.git("rev-parse", "--show-toplevel")
+	if err != nil {
+		return nil, gitError(err, stderr)
+	}
+	index := make(map[string]int, len(files))
+	for i, f := range files {
+		index[f.Path] = i
+	}
+	attrs, stderr, err := runGit(strings.TrimSpace(top), strings.Join(paths, "\x00")+"\x00", os.Environ(),
+		"check-attr", "-z", "--stdin", "linguist-vendored", "linguist-generated")
+	if err != nil {
+		return nil, gitError(err, stderr)
+	}
+	// With -z, each answer is path, attribute and value, each ended by NUL.
+	f := strings.Split(attrs, "\x00")
+	for i := 0; i+2 < len(f); i += 3 {
+		n, ok := index[f[i]]
+		if !ok || (f[i+2] != "set" && f[i+2] != "true") {
+			continue
+		}
+		switch f[i+1] {
+		case "linguist-vendored":
+			files[n].Vendored = true
+		case "linguist-generated":
+			files[n].Generated = true
+		}
+	}
 	return files, nil
 }
 

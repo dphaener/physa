@@ -124,6 +124,28 @@ type Lister interface {
 	Listed() ([]string, error)
 }
 
+// TrackedFile is a file the repo tracks, with the marks the repo gives it.
+type TrackedFile struct {
+	// Path is the file's slash path from the repo root.
+	Path string
+	// Vendored is true when the repo marks the file linguist-vendored.
+	Vendored bool
+	// Generated is true when the repo marks the file linguist-generated.
+	Generated bool
+}
+
+// Tracker is an optional part of a Repo, for an adapter that can list the
+// files the repo tracks with the marks the repo gives them. Callers ask for it
+// with a type assertion; it is not in Repo, so fakes that stand in for a Repo
+// need no change.
+type Tracker interface {
+	// Tracked returns the files the repo tracks, never untracked or ignored
+	// ones, as slash paths relative to the root. The list is sorted and has no
+	// duplicates. A mark counts only when the repo sets it, as git reads every
+	// .gitattributes; unset, false and unspecified do not count.
+	Tracked() ([]TrackedFile, error)
+}
+
 // Writer is a history Physa can read and write, for learning's branch. It
 // writes only refs it is asked to and isolated working copies it makes;
 // never the person's working copy, index or checked-out branch.

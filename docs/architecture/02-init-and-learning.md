@@ -16,7 +16,7 @@ From the vision and 01:
 
 ## 2. `physa init`
 
-> **Brought up to date on 2026-11-21, decided by Claude as arbiter for the owner to review.** Gather (§2.2), propose (§2.3), recover (§2.4) and check (§2.5) are built as `physa init --gather`, `--propose` and `--recover`, and a bare `physa init` runs them in order, never bounded, after showing its estimate and getting a yes (§2.7). `--write`, `--push`, `--pr` and `--hooks` put the map on `physa/init` and open its PR (§2.6), and `--answers` gives a new codebase's answers (§2.8). §2.6 holds the hook, and §2.8 drops the workflow, which 07 removed.
+> **Brought up to date on 2026-11-21, decided by Claude as arbiter for the owner to review.** Gather (§2.2), propose (§2.3), recover (§2.4) and check (§2.5) are built as `physa init --gather`, `--propose` and `--recover`, and a bare `physa init` runs them in order, never bounded, after showing its estimate and getting a yes (§2.7). `--write`, `--push`, `--pr` and `--hooks` put the map on `physa/init` and open its PR (§2.6), and `--answers` gives a new codebase's answers (§2.8). `--areas` divides the source files into areas for the code-first phases (15 §3), as a phase alone. §2.6 holds the hook, and §2.8 drops the workflow, which 07 removed.
 
 ### 2.1 Phases
 

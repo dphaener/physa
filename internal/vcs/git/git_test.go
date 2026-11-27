@@ -234,6 +234,76 @@ func TestListed(t *testing.T) {
 	}
 }
 
+func TestTracked(t *testing.T) {
+	r, dir := newRepo(t)
+	write := func(p, body string) {
+		t.Helper()
+		full := filepath.Join(dir, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".gitattributes", "third_party/** linguist-vendored\n")
+	write("main.go", "m")
+	write("third_party/lib/x.go", "v")
+	write("gen/.gitattributes", "*.pb.go linguist-generated=true\nkeep.pb.go -linguist-generated\n")
+	write("gen/a.pb.go", "g")
+	write("gen/keep.pb.go", "k")
+	write("dir with space/my file.go", "s")
+	write("both/.gitattributes", "* linguist-vendored linguist-generated\n")
+	write("both/z.txt", "b")
+	run(t, dir, "add", ".")
+	commit(t, dir, "tracked")
+	write("untracked.go", "u")
+	tracker, ok := r.(vcs.Tracker)
+	if !ok {
+		t.Fatal("git repo should implement vcs.Tracker")
+	}
+	want := []vcs.TrackedFile{
+		{Path: ".gitattributes"},
+		{Path: "both/.gitattributes", Vendored: true, Generated: true},
+		{Path: "both/z.txt", Vendored: true, Generated: true},
+		{Path: "dir with space/my file.go"},
+		{Path: "gen/.gitattributes"},
+		{Path: "gen/a.pb.go", Generated: true},
+		{Path: "gen/keep.pb.go"},
+		{Path: "main.go"},
+		{Path: "third_party/lib/x.go", Vendored: true},
+	}
+	got, err := tracker.Tracked()
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("Tracked = %v, %v; want %v", got, err, want)
+	}
+	fromSub, err := Open(filepath.Join(dir, "gen"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotSub, err := fromSub.(vcs.Tracker).Tracked()
+	if err != nil || !reflect.DeepEqual(gotSub, want) {
+		t.Errorf("Tracked from a subdirectory = %v, %v; want the root's %v", gotSub, err, want)
+	}
+}
+
+func TestTrackedEmpty(t *testing.T) {
+	r, _ := newRepo(t)
+	got, err := r.(vcs.Tracker).Tracked()
+	if err != nil || len(got) != 0 {
+		t.Fatalf("Tracked = %v, %v; want none", got, err)
+	}
+}
+
+func TestTrackedNotRepo(t *testing.T) {
+	r := &repo{dir: t.TempDir()}
+	got, err := r.Tracked()
+	t.Logf("Tracked in a folder that is no repo: %v", err)
+	if err == nil || got != nil || !strings.Contains(err.Error(), "not a git repository") {
+		t.Fatalf("Tracked = %v, %v; want an error naming git's message", got, err)
+	}
+}
+
 func TestChangeTime(t *testing.T) {
 	r, dir := newRepo(t)
 	commit(t, dir, "one")

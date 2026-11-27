@@ -164,6 +164,19 @@ func TestLinePropose(t *testing.T) {
 	}
 }
 
+func TestLineAreas(t *testing.T) {
+	f, ok := parseLine([]string{"--areas", "--agent=claude", "--json"}, now)
+	if !ok || !f.Areas || f.Full() || f.Agent != "claude" || !f.JSON {
+		t.Fatalf("got %+v %v", f, ok)
+	}
+	for _, args := range [][]string{{"--gather"}, {"--propose"}, {"--recover"}, {"--write"}, {"--write", "--push"}, {"--hooks"},
+		{"--answers", "a"}, {"--yes"}, {"--only", "a"}, {"--since", "2026-01-02"}, {"--max-prs", "5"}} {
+		if _, ok := parseLine(append([]string{"--areas"}, args...), now); ok {
+			t.Errorf("--areas %v accepted", args)
+		}
+	}
+}
+
 func TestLineProposeRejections(t *testing.T) {
 	for _, args := range [][]string{
 		{"--propose", "--gather"},

@@ -46,6 +46,19 @@ func Stopped(run store.GatherRun) []string {
 		run.StopReason, reach, asked, missed)}
 }
 
+// Gathered is the store as Stored reads it.
+type Gathered interface {
+	Gathered() (store.Gather, bool, error)
+}
+
+// Stored warns on w when st holds a gather the forge stopped short, as
+// Stopped says; no gather, or a complete one, says nothing.
+func Stored(w io.Writer, st Gathered) {
+	if g, ok, err := st.Gathered(); err == nil && ok {
+		Warn(w, Stopped(g.Run))
+	}
+}
+
 // Warn writes each warning on w as init's, one line each.
 func Warn(w io.Writer, warnings []string) {
 	for _, s := range warnings {

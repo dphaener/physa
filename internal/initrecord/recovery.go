@@ -1,4 +1,4 @@
-package store
+package initrecord
 
 import (
 	"database/sql"
@@ -34,7 +34,7 @@ type Recovered struct {
 // replaced, every other stored capability is kept. A row with KeepEarlier
 // leaves an earlier row that holds a file as it is.
 func (s *Store) PutRecovered(rs []Recovered) error {
-	tx, err := s.db.Begin()
+	tx, err := s.DB().Begin()
 	if err != nil {
 		return err
 	}
@@ -64,7 +64,7 @@ func (s *Store) PutRecovered(rs []Recovered) error {
 
 // Recovered returns the stored recoveries ordered by capability.
 func (s *Store) Recovered() ([]Recovered, error) {
-	rows, err := s.db.Query(`SELECT capability, proposal_at, at, status, file, terms, details, session_id, model, attempts, appetite, input, cached_input, output FROM init_recovery ORDER BY capability`)
+	rows, err := s.DB().Query(`SELECT capability, proposal_at, at, status, file, terms, details, session_id, model, attempts, appetite, input, cached_input, output FROM init_recovery ORDER BY capability`)
 	if err != nil {
 		return nil, err
 	}

@@ -3,11 +3,12 @@
 // names (shared by every worktree, never committed). It keeps slice records:
 // which capabilities were read, with what, which entries were taken by slug,
 // when and by which session. It also keeps one gather of the repo's sources (docs,
-// history, PRs), replaced whole in one transaction, and the one init proposal made from it,
-// which a new gather clears. It also holds the engine's tables (ideas, pursuits,
-// plans, plan revisions, events, intents and timers), which only the
-// engine's state package writes. Schema changes are numbered migrations applied at
-// open.
+// history, PRs), replaced whole in one transaction, which clears init's record
+// beside it. Init's record (the areas, the proposal, the recoveries and init's
+// spend) has its tables here but its code in package initrecord. It also holds
+// the engine's tables (ideas, pursuits, plans, plan revisions, events, intents
+// and timers), which only the engine's state package writes. Schema changes,
+// init's record's included, are numbered migrations applied at open.
 package store
 
 import (
@@ -98,7 +99,8 @@ func isBusy(err error) bool {
 }
 
 // DB returns the open database. It is for the engine's state package, which
-// alone writes the engine's tables (codecheck's engine-tables-writer rule).
+// alone writes the engine's tables (codecheck's engine-tables-writer rule),
+// and for package initrecord, which keeps init's record.
 func (s *Store) DB() *sql.DB { return s.db }
 
 // Close closes the database.

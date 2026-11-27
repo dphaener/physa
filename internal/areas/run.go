@@ -12,6 +12,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/draft"
+	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/sourceset"
@@ -32,7 +33,7 @@ const (
 // Store is init's record as the areas phase uses it.
 type Store interface {
 	Gathered() (store.Gather, bool, error)
-	PutAreas(store.Areas) error
+	PutAreas(initrecord.Areas) error
 }
 
 // Session is how the phase's sessions are run: the agent, the repo's root
@@ -177,7 +178,7 @@ func Run(ctx context.Context, st Store, s Session) (Result, error) {
 	if s.Now != nil {
 		now = s.Now
 	}
-	return res, st.PutAreas(store.Areas{
+	return res, st.PutAreas(initrecord.Areas{
 		GatherAt: g.Run.At, At: now().UTC(), Model: res.Model,
 		Input: res.Tokens.Input, CachedInput: res.Tokens.CachedInput, Output: res.Tokens.Output, Body: body,
 	})

@@ -3,6 +3,7 @@ package initcost
 import (
 	"time"
 
+	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/spend"
 	"github.com/dphaener/physa/internal/store"
@@ -12,7 +13,7 @@ import (
 // phase spent.
 type Stored interface {
 	Gathered() (store.Gather, bool, error)
-	Spending() ([]store.Spent, error)
+	Spending() ([]initrecord.Spent, error)
 }
 
 // Record keeps what a recovery of every proposed capability measured, for

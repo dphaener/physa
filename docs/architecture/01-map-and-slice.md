@@ -149,7 +149,7 @@ Settled with the owner on 2026-11-20 (`grouped-cli`): "Rather than having 100 co
 
 The full planned tree. `check`, `map`, `physa init`, with its gather, propose and recover phases, `physa engine`, `physa api`, `physa idea`, `physa pursue`, `physa pursuit` and `physa skill` (setup, status, show and remove for Claude Code, Codex, OpenCode and Pi, with the session hooks for Claude Code and Codex) are built today; everything else is planned.
 
-- `physa init` (02), built: a bare run gathers, proposes, recovers and checks under one appetite; `--write` commits the map to `physa/init`, `--push` pushes it, `--pr` opens or refreshes its PR, `--hooks` installs the hook, and `--answers` gives a new codebase's answers. Phases alone: `--gather`, `--propose`, `--recover`, `--areas`. A map may have no `capabilities/` directory yet, as a new codebase's map has none (02 §2.8).
+- `physa init` (02), built: a bare run gathers, proposes, recovers and checks under one appetite; `--write` commits the map to `physa/init`, `--push` pushes it, `--pr` opens or refreshes its PR, `--hooks` installs the hook, and `--answers` gives a new codebase's answers. Phases alone: `--gather`, `--propose`, `--recover`, `--areas`, `--walk`. A map may have no `capabilities/` directory yet, as a new codebase's map has none (02 §2.8).
 - `physa check [map | changes [range]]` (07 §5), built. Bare `check` runs the map check and, when a range is given or `origin/main..HEAD` resolves, the change check on it.
 - `physa map [index | slice | changes | records | learn | hooks]` (01, 07 §4.1), built. Bare `map` prints the index.
 - `physa map learn` (08), built (signals, drafting and the physa/learn branch with --write, --push and --pr); it also reads session logs (08 §5).

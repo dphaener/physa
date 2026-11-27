@@ -11,6 +11,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/draft"
+	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapping/shareview"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
@@ -44,7 +45,7 @@ type Session struct {
 // for the proposal.
 type Store interface {
 	Gathered() (store.Gather, bool, error)
-	PutProposal(store.Proposal) error
+	PutProposal(initrecord.Proposal) error
 }
 
 // Result is how one run of Propose ended.
@@ -76,7 +77,7 @@ type Result struct {
 // Share is what one share's session, or the merge's, read and used.
 type Share = shareview.Share
 
-// Stored is the JSON form of store.Proposal's Body: the checked proposal
+// Stored is the JSON form of initrecord.Proposal's Body: the checked proposal
 // with what was dropped, what was malformed and what the session read.
 type Stored struct {
 	Proposal  Proposal    `json:"proposal"`
@@ -150,7 +151,7 @@ func Propose(ctx context.Context, st Store, s Session) (Result, error) {
 	if s.Now != nil {
 		now = s.Now
 	}
-	err = st.PutProposal(store.Proposal{
+	err = st.PutProposal(initrecord.Proposal{
 		GatherAt: g.Run.At, At: now().UTC(),
 		SessionID: res.SessionID, Model: res.Model,
 		Input: res.Tokens.Input, CachedInput: res.Tokens.CachedInput, Output: res.Tokens.Output,

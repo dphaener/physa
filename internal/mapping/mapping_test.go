@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/reading"
 	"github.com/dphaener/physa/internal/store"
 )
@@ -55,12 +56,12 @@ func (s *fakeSession) Wait() (adapter.Result, error) {
 type fakeStore struct {
 	gather store.Gather
 	has    bool
-	put    []store.Proposal
+	put    []initrecord.Proposal
 }
 
 func (s *fakeStore) Gathered() (store.Gather, bool, error) { return s.gather, s.has, nil }
 
-func (s *fakeStore) PutProposal(p store.Proposal) error {
+func (s *fakeStore) PutProposal(p initrecord.Proposal) error {
 	s.put = append(s.put, p)
 	return nil
 }
@@ -701,7 +702,7 @@ func TestWriteEmptyResult(t *testing.T) {
 }
 
 // The real store is a Store.
-var _ Store = (*store.Store)(nil)
+var _ Store = (*initrecord.Store)(nil)
 
 func TestPluralTokensSingularAndPlural(t *testing.T) {
 	for _, c := range []struct {

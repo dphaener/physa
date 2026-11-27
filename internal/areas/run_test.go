@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
+	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/sourceset"
 	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs/git"
@@ -142,7 +143,7 @@ const splitAnswer = "```json\n" + `{"tests":["spec/","*_test.go","e2e/"],"docs":
 func fenceJSON(s string) string { return "Here.\n\n```json\n" + s + "\n```\n" }
 
 // setup returns the store holding a gather and the session for dir.
-func setup(t *testing.T, dir string, f *fakeAgent) (*store.Store, Session) {
+func setup(t *testing.T, dir string, f *fakeAgent) (*initrecord.Store, Session) {
 	t.Helper()
 	st, err := store.Open(t.TempDir())
 	if err != nil {
@@ -156,11 +157,11 @@ func setup(t *testing.T, dir string, f *fakeAgent) (*store.Store, Session) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return st, Session{Agent: func() (adapter.Adapter, error) { return f, nil }, Root: dir, Repo: repo,
+	return initrecord.Of(st), Session{Agent: func() (adapter.Adapter, error) { return f, nil }, Root: dir, Repo: repo,
 		Now: func() time.Time { return time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC) }}
 }
 
-func load(t *testing.T, st *store.Store) (Record, bool) {
+func load(t *testing.T, st *initrecord.Store) (Record, bool) {
 	t.Helper()
 	r, ok, err := Load(st)
 	if err != nil {
@@ -523,7 +524,7 @@ func TestRunNeedsAGather(t *testing.T) {
 	}
 	defer st.Close()
 	called := false
-	_, err = Run(context.Background(), st, Session{Agent: func() (adapter.Adapter, error) { called = true; return nil, errors.New("x") }})
+	_, err = Run(context.Background(), initrecord.Of(st), Session{Agent: func() (adapter.Adapter, error) { called = true; return nil, errors.New("x") }})
 	if err == nil || !strings.Contains(err.Error(), "physa init --gather") || called {
 		t.Errorf("error %v, agent resolved %v", err, called)
 	}

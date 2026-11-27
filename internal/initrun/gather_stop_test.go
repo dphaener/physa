@@ -11,6 +11,7 @@ import (
 
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather/merged"
+	"github.com/dphaener/physa/internal/initrecord"
 )
 
 // pagesFake is a forge that lists merged PRs a page at a time: it replies
@@ -241,7 +242,7 @@ func TestFullRunStoppedByRateLimitDoesNotPropose(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if _, ok, err := st.Proposed(); ok || err != nil {
+	if _, ok, err := initrecord.Of(st).Proposed(); ok || err != nil {
 		t.Errorf("a proposal was stored after a stopped gather: %v %v", ok, err)
 	}
 }
@@ -303,7 +304,7 @@ func TestStoppedGatherThenProposeWarnsAndStillProposes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, ok, err := st.Proposed()
+	_, ok, err := initrecord.Of(st).Proposed()
 	st.Close()
 	if !ok || err != nil {
 		t.Errorf("no proposal stored after --propose on a stopped gather: %v %v", ok, err)

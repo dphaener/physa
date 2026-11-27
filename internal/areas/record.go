@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/sourceset"
-	"github.com/dphaener/physa/internal/store"
 )
 
 // Record is the body init's record keeps for the areas, which the walk reads
@@ -36,11 +36,10 @@ type AreaRecord struct {
 
 // Loader is the store as Load reads it.
 type Loader interface {
-	Areas() (store.Areas, bool, error)
+	Areas() (initrecord.Areas, bool, error)
 }
 
-// Load reads the stored areas and decodes their body, false when none are
-// stored.
+// Load reads the stored areas and decodes their body, false when none exist.
 func Load(st Loader) (Record, bool, error) {
 	a, ok, err := st.Areas()
 	if err != nil || !ok {

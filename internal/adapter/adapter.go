@@ -117,6 +117,22 @@ type Spec struct {
 	Usage func(Tokens)
 }
 
+// Tools is the one list of tools a fenced session may use. A PromptOnly spec
+// has none, an empty list that is not nil; a ReadOnly spec has Read, Glob and
+// Grep; a spec with no fence has nil, meaning no list. An adapter passes the
+// list to its agent as the session's tools, and a test agent honours it, so a
+// fenced session cannot write, run commands or reach the network with a tool.
+// No fenced list holds Write, Edit, Bash or NotebookEdit.
+func (s Spec) Tools() []string {
+	switch {
+	case s.PromptOnly:
+		return []string{}
+	case s.ReadOnly:
+		return []string{"Read", "Glob", "Grep"}
+	}
+	return nil
+}
+
 // Session is a running headless session.
 //
 // Later calls (send a message, stream output, progress, blocked, end) are

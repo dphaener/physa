@@ -10,11 +10,11 @@ import (
 
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/initbranch"
+	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/newcodebase"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/sessionhook"
-	"github.com/dphaener/physa/internal/store"
 	"github.com/dphaener/physa/internal/vcs"
 )
 
@@ -38,7 +38,7 @@ func (r *run) writeStored() int {
 // order, the sessions Physa started, and what the PR body summarises, with
 // what each phase spent as the meter counted it. The product is named after
 // root.
-func storedMap(st *store.Store, root string, env Env) (initbranch.Map, error) {
+func storedMap(st *initrecord.Store, root string, env Env) (initbranch.Map, error) {
 	prop, ok, err := st.Proposed()
 	if err == nil && !ok {
 		err = recovery.ErrNoProposal
@@ -64,7 +64,7 @@ func storedMap(st *store.Store, root string, env Env) (initbranch.Map, error) {
 	for _, mf := range s.Malformed {
 		m.Summary.Dropped = append(m.Summary.Dropped, initbranch.Drop{What: "malformed item", Value: mf.Raw, Reason: mf.Reason})
 	}
-	byName := map[string]store.Recovered{}
+	byName := map[string]initrecord.Recovered{}
 	for _, r := range rows {
 		byName[r.Capability] = r
 	}
@@ -91,7 +91,7 @@ func storedMap(st *store.Store, root string, env Env) (initbranch.Map, error) {
 
 // withRecovery gives c its stored recovery r: the text, how it ended and
 // why, and the entries dropped from it.
-func withRecovery(c initbranch.Capability, r store.Recovered) (initbranch.Capability, error) {
+func withRecovery(c initbranch.Capability, r initrecord.Recovered) (initbranch.Capability, error) {
 	var d recovery.Outcome
 	if err := json.Unmarshal(r.Details, &d); len(r.Details) > 0 && err != nil {
 		return c, fmt.Errorf("the stored recovery of %s cannot be read: %w", r.Capability, err)

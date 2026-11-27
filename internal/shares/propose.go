@@ -11,6 +11,7 @@ import (
 
 	"github.com/dphaener/physa/internal/adapter"
 	"github.com/dphaener/physa/internal/draft"
+	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapping"
 	"github.com/dphaener/physa/internal/mapping/shareview"
 	"github.com/dphaener/physa/internal/reading"
@@ -88,7 +89,7 @@ func Propose(ctx context.Context, st mapping.Store, s mapping.Session) (mapping.
 	if s.Now != nil {
 		now = s.Now
 	}
-	err = st.PutProposal(store.Proposal{
+	err = st.PutProposal(initrecord.Proposal{
 		GatherAt: g.Run.At, At: now().UTC(),
 		SessionID: p.res.SessionID, Model: p.res.Model,
 		Input: p.res.Tokens.Input, CachedInput: p.res.Tokens.CachedInput, Output: p.res.Tokens.Output,

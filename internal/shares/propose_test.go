@@ -494,9 +494,6 @@ func TestProposeTooLargeStartsNoSession(t *testing.T) {
 			t.Errorf("error lacks %q: %s", want, err)
 		}
 	}
-	if _, _, _, eerr := Estimate(g, smallWindow); !errors.As(eerr, &tl) || tl.Source != "PR #5" {
-		t.Errorf("Estimate err = %v, want the same TooLarge", eerr)
-	}
 }
 
 func TestProposeUnreadableShareStoresNothing(t *testing.T) {
@@ -555,31 +552,5 @@ func TestProposeKeepsWhatASharesReplyLost(t *testing.T) {
 	}
 	if len(res.Malformed) != 1 || !strings.HasPrefix(res.Malformed[0].Reason, "in share 1: ") {
 		t.Errorf("malformed: %+v", res.Malformed)
-	}
-}
-
-func TestEstimateMatchesTheSharesProposeRuns(t *testing.T) {
-	g := large()
-	f := &fakeAgent{window: smallWindow}
-	res, err, _, _ := propose(g, f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prompt, reply, shares, err := Estimate(g, smallWindow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	k, sum := len(res.Shares), 0
-	for _, s := range res.Shares {
-		sum += s.PromptTokens
-	}
-	if shares != k || prompt != sum+MergeTokens(k) || reply != (k+1)*mapping.ReplyReserve {
-		t.Errorf("Estimate = %d, %d, %d; want %d, %d, %d", prompt, reply, shares, sum+MergeTokens(k), (k+1)*mapping.ReplyReserve, k)
-	}
-	for _, window := range []int{0, 1_000_000} {
-		prompt, reply, shares, err := Estimate(g, window)
-		if err != nil || prompt != mapping.Estimate(g) || reply != mapping.ReplyReserve || shares != 0 {
-			t.Errorf("Estimate at window %d = %d, %d, %d, %v; want one session's", window, prompt, reply, shares, err)
-		}
 	}
 }

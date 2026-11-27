@@ -51,7 +51,7 @@ func WriteText(w io.Writer, r recovery.Report) error {
 		fmt.Fprintf(&b, "Attempts: %d; session %s; tokens: %s.\n", o.Attempts, orNone(o.SessionID), o.Tokens)
 	}
 	if len(notYet) > 0 {
-		fmt.Fprintf(&b, "\nNot yet recovered (the run stopped before reaching them; run again with --only %s):\n", strings.Join(notYet, ","))
+		b.WriteString("\nNot yet recovered (the run stopped before reaching them; physa init --recover continues with them):\n")
 		for _, n := range notYet {
 			fmt.Fprintf(&b, "- %s\n", n)
 		}

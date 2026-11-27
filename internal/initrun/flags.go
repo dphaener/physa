@@ -1,10 +1,8 @@
 // Package initrun is physa init as a command: it reads init's flags, runs the
-// phases asked for against the repo's store, and prints what it did. Init is
-// never bounded: it has no appetite and no circuit breaker, and is up front
-// about its cost instead. Bare, it runs every phase in order, estimating the
-// rest of the run in weighted tokens once it has gathered and asking before
-// it goes on, and with --write it writes the map to physa/init through
-// initbranch, then pushes it, opens its PR and installs the Session: hook
+// phases asked for against the repo's store, and prints what it did. Init has
+// no appetite and no circuit breaker; a person may give it a --cap, and it
+// stops before a session that would pass it. Bare, it runs every phase in order to the end, and with --write it
+// writes the map to physa/init through initbranch, then pushes it, opens its PR and installs the Session: hook
 // when asked. The phases' own work is in gather, mapping, recovery,
 // newcodebase and initbranch.
 package initrun
@@ -17,31 +15,30 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/dphaener/physa/internal/command"
+	"github.com/dphaener/physa/internal/initcap"
 )
 
 // Usage is the command's synopsis lines.
 var Usage = []string{
-	"physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--json]",
-	"physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--json]",
-	"physa init --propose [--agent NAME] [--json]",
-	"physa init --areas [--agent NAME] [--json]",
-	"physa init --walk [--agent NAME] [--json]",
+	"physa init [--write [--push [--pr]] [--hooks]] [--agent NAME] [--answers FILE] [--since YYYY-MM-DD] [--max-prs N] [--cap <amount>] [--json]",
+	"physa init --gather [--since YYYY-MM-DD] [--max-prs N] [--agent NAME] [--cap <amount>] [--json]",
+	"physa init --propose [--agent NAME] [--cap <amount>] [--json]",
+	"physa init --areas [--agent NAME] [--cap <amount>] [--json]",
+	"physa init --walk [--agent NAME] [--cap <amount>] [--json]",
 	"physa init --place [--json]",
-	"physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]",
+	"physa init --recover [--only CAPABILITY]... [--agent NAME] [--cap <amount>] [--write [--push [--pr]] [--hooks]] [--json]",
 }
 
 // Flags is a physa init command line as its declared flags read it. Since is
 // the bound's start: the date given (SinceSet), or twelve months before now;
 // MaxPRs is --max-prs, or 0 for no PR limit.
 // Gather, Propose, Areas, Walk, Place and Recover select one phase; none selects the full run.
-// Agent is empty when not given; Only empty means every capability. Yes goes
-// on past the full run's estimate without asking. Write, Push, PR and Hooks
+// Agent is empty when not given; Only empty means every capability. Write, Push, PR and Hooks
 // write physa/init, push it, open its PR and install the Session: hook;
-// Answers is a new codebase's answers file.
+// Answers is a new codebase's answers file; Cap is --cap, none when not given.
 type Flags struct {
 	Gather, Propose, Recover, Areas, Walk, Place bool
 	Only                                         []string
-	Yes                                          bool
 	Agent                                        string
 	Since                                        time.Time
 	SinceSet                                     bool
@@ -49,7 +46,10 @@ type Flags struct {
 	JSON                                         bool
 	Write, Push, PR, Hooks                       bool
 	Answers                                      string
+	Cap                                          initcap.Cap
 
+	bad           error // why --cap was refused
+	cap           string
 	only          []string // --only as typed, each value one or more comma-separated names
 	since, maxPRs string
 	fs            *pflag.FlagSet
@@ -62,12 +62,12 @@ func (o Flags) Full() bool {
 
 // Declare declares the flags of physa init on fs and starts o afresh, so it
 // runs once for every command line: the switches, and the values --since
-// (YYYY-MM-DD), --max-prs (at least 1), --agent, --answers and --only
+// (YYYY-MM-DD), --max-prs (at least 1), --agent, --answers, --cap and --only
 // (repeatable or comma-separated).
 func (o *Flags) Declare(fs *pflag.FlagSet) {
 	*o = Flags{fs: fs}
 	for name, on := range map[string]*bool{"gather": &o.Gather, "propose": &o.Propose, "recover": &o.Recover, "areas": &o.Areas, "walk": &o.Walk, "place": &o.Place,
-		"yes": &o.Yes, "json": &o.JSON, "write": &o.Write, "push": &o.Push, "pr": &o.PR, "hooks": &o.Hooks} {
+		"json": &o.JSON, "write": &o.Write, "push": &o.Push, "pr": &o.PR, "hooks": &o.Hooks} {
 		command.Switch(fs, name, on, "")
 	}
 	fs.StringArrayVar(&o.only, "only", nil, "recover only this capability")
@@ -75,13 +75,14 @@ func (o *Flags) Declare(fs *pflag.FlagSet) {
 	fs.StringVar(&o.Answers, "answers", "", "a new codebase's answers file")
 	fs.StringVar(&o.since, "since", "", "gather from this day, YYYY-MM-DD")
 	fs.StringVar(&o.maxPRs, "max-prs", "", "gather at most this many merged PRs (default: every PR of the bound)")
+	fs.StringVar(&o.cap, "cap", "", "stop before a session that would pass it: an amount of money ($5), a share of the plan's usage (80%) or tokens (2m)")
 }
 
 // read finishes the parsed line against now and reports whether it is a good
 // one: no positionals, a real --since day, a --max-prs of at least 1, no
-// empty --only name, at most one phase, --since and --max-prs with --gather
+// empty --only name, a --cap initcap reads and not with --place, at most one phase, --since and --max-prs with --gather
 // or the full run, --areas, --walk and --place each with no other phase and none of the
-// flags --propose refuses, --only with --recover, --answers and --yes with the full
+// flags --propose refuses, --only with --recover, --answers with the full
 // run, --write with --recover or the full run, --push with --write, --pr
 // with --push and --hooks with --write.
 func (o *Flags) read(args []string, now time.Time) bool {
@@ -100,6 +101,7 @@ func (o *Flags) read(args []string, now time.Time) bool {
 		}
 		o.MaxPRs = n
 	}
+	o.Cap, o.bad = initcap.Read(o.cap, !o.Place)
 	o.Only = nil
 	for _, v := range o.only {
 		for _, c := range strings.Split(v, ",") {
@@ -111,14 +113,14 @@ func (o *Flags) read(args []string, now time.Time) bool {
 	}
 	gatherOnly := o.SinceSet || o.fs.Changed("max-prs")
 	switch {
-	case len(args) > 0,
+	case len(args) > 0, o.bad != nil,
 		o.Gather && o.Propose, o.Gather && o.Recover, o.Propose && o.Recover,
 		o.Areas && (o.Gather || o.Propose || o.Recover || o.Place || o.Write || len(o.Only) > 0 || gatherOnly),
 		o.Walk && (o.Gather || o.Propose || o.Recover || o.Areas || o.Place || o.Write || len(o.Only) > 0 || gatherOnly),
 		o.Place && (o.Gather || o.Propose || o.Recover || o.Write || len(o.Only) > 0 || gatherOnly),
 		gatherOnly && (o.Propose || o.Recover),
 		len(o.Only) > 0 && !o.Recover,
-		(o.Answers != "" || o.Yes) && !o.Full(),
+		o.Answers != "" && !o.Full(),
 		o.Write && (o.Gather || o.Propose),
 		o.Push && !o.Write,
 		o.PR && !o.Push,

@@ -1,6 +1,7 @@
 package initrun
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"github.com/dphaener/physa/internal/forge"
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/gather/merged"
+	"github.com/dphaener/physa/internal/initcap"
 	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapped"
 	"github.com/dphaener/physa/internal/mapping"
@@ -35,8 +37,7 @@ import (
 // Env is what init reaches outside itself through, each a seam the caller
 // owns: the store, repo, forge, writer and hooks of the repo at a directory,
 // the agent a name selects (empty for the default), the clock, and the
-// person's input, where a new codebase's answers are asked, and Confirm asks
-// whether to go on past the estimate, when IsTerminal. PRExists resolves #N
+// person's input, where a new codebase's answers are asked when IsTerminal. PRExists resolves #N
 // anchors; nil checks them for form only. Spend is the file of the
 // machine's spend cache (spend.Path); empty keeps prices for the run only.
 // Skill is the line saying the agent a name selects has no current Physa
@@ -52,24 +53,25 @@ type Env struct {
 	Hooks      func(dir string) (vcs.Hooks, error)
 	Stdin      io.Reader
 	IsTerminal func() bool
-	Confirm    func(question string) (bool, error)
 	Spend      string
 	Skill      func(agent string) string
 }
 
-// Run runs physa init on the repo in the current directory: the phase named,
-// or every phase in order; --write then writes the map to physa/init. No
-// phase has an appetite or a circuit breaker (design 10 Q6). Every session
-// is weighed through a spend.Meter, and the prices it learns are saved to
-// the machine's spend cache. It returns 0 when all asked was done, 1 when
-// it stopped before proposing, for want of a yes or for a source larger than
-// one share of propose, or some capabilities are not yet recovered (still written with --write), 2 when it
-// could not (a capability failed, the map failed its check, the hook was
-// refused), and command.BadUsage for a bad line. o is the line's flags as
-// Declare read them, args its positionals and words the words typed after
-// init, which a rerun hint repeats.
+// Run runs physa init on the repo in the current directory: the phase named, or every phase in
+// order; --write then writes the map to physa/init. No phase has an appetite or a circuit breaker
+// (design 10 Q6); a --cap holds every session to it (initcap). Every session is weighed through a
+// spend.Meter, and the prices it learns are saved to the machine's spend cache. It returns 0 when
+// all asked was done, 1 when it stopped before proposing for a source larger than one share of
+// propose, or before a session that would pass the cap, or some capabilities are not yet recovered
+// (still written with --write), 2 when it could not (a capability failed, the map failed its check,
+// the hook was refused, the cap needs usage the agent cannot report), and command.BadUsage for a
+// bad line. o is the line's flags as Declare read them, args its positionals and words the words
+// typed after init, which a rerun hint repeats.
 func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 	if !o.read(args, env.Now()) {
+		if o.bad != nil {
+			fmt.Fprintf(stderr, "physa init: %v\n", o.bad)
+		}
 		return command.BadUsage
 	}
 	root, err := filepath.Abs(".")
@@ -95,6 +97,11 @@ func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 	}()
 	r := &run{o: o, env: env, st: initrecord.Of(st), root: root, args: words, stderr: stderr, cache: cache, p: newPrinter(o, stdout), counts: map[string]spend.Count{}}
 	code := 0
+	if o.Cap.Kind != initcap.None { // held to the cap from here on; a code other than 0 ends the run before any phase
+		if r.guard, code = initcap.Start(context.Background(), initcap.Run{Cap: o.Cap, Agent: r.agent, Cache: cache, Record: r.st, Fresh: o.Full() || o.Gather, Again: initcap.Again(words, false), Say: !o.Full(), Out: stderr}); code != 0 {
+			return code
+		}
+	}
 	if o.Propose || o.Recover || o.Areas || o.Walk || o.Place { // the phases on a stored gather say when the forge stopped it, and still run
 		preflight.Stored(stderr, st)
 	}
@@ -108,23 +115,23 @@ func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 	case o.Propose:
 		code = r.propose()
 	case o.Recover:
-		code = r.recoverPhase(r.o.Only, r.record)
+		code = r.recoverPhase(r.o.Only, nil)
 	case o.Full():
 		code = r.full()
 	default:
 		if off == "" {
-			fmt.Fprintln(stderr, "physa init: gather, with the discovery agent; init is never bounded, so it has no appetite and no circuit breaker")
+			fmt.Fprintln(stderr, "physa init: gather, with the discovery agent; init has no appetite and no circuit breaker")
 		} else {
 			fmt.Fprintf(stderr, "physa init: gather starts no agent (%s)\n", off)
 		}
 		var sum gather.Summary
 		if _, sum, err = r.gatherInto(off); err != nil {
-			return failed(stderr, err)
+			return r.guard.Finish(stderr, r.fail(err), initcap.Again(words, false))
 		}
 		r.p.gather(sum)
 		preflight.Warn(stderr, preflight.Gather(sum))
 	}
-	code = r.p.done(code, stderr)
+	code = r.p.done(r.guard.Finish(stderr, code, initcap.Again(words, r.inRec && o.Full())), stderr)
 	if r.skill != "" { // said last, so it is the line left on the screen; it never changes the code
 		fmt.Fprintf(stderr, "physa init: %s\n", r.skill)
 	}
@@ -142,7 +149,9 @@ type run struct {
 	stderr io.Writer
 	cache  *spend.Cache
 	p      *printer
-	skill  string // the full run's line on the agent's Physa skill, empty for none
+	skill  string         // the full run's line on the agent's Physa skill, empty for none
+	guard  *initcap.Guard // the agent sessions start on when capped, nil when not
+	inRec  bool           // recovering has started
 
 	once   sync.Once
 	meter  *spend.Meter
@@ -150,7 +159,8 @@ type run struct {
 	counts map[string]spend.Count // what each phase spent in this run
 }
 
-// agent resolves o's agent once, weighed through a meter on the cache.
+// agent resolves o's agent once, weighed through a meter on the cache, and
+// held to the cap by the guard around the meter once Run made it.
 func (r *run) agent() (adapter.Adapter, error) {
 	r.once.Do(func() {
 		a, err := r.env.Agent(r.o.Agent)
@@ -161,6 +171,9 @@ func (r *run) agent() (adapter.Adapter, error) {
 	})
 	if r.err != nil {
 		return nil, r.err
+	}
+	if r.guard != nil {
+		return r.guard, nil
 	}
 	return r.meter, nil
 }
@@ -197,8 +210,8 @@ func (r *run) gatherInto(off string) (store.Gather, gather.Summary, error) {
 	}
 	bounds := gather.Bounds{Since: r.o.Since, SinceSet: r.o.SinceSet, MaxPRs: r.o.MaxPRs, Wait: merged.Wait{Progress: r.stderr}}
 	g, sum, err := gather.Run(".", repo, r.env.Forge("."), bounds, d, r.env.Now())
-	if stop := (*gather.Stopped)(nil); err != nil && !errors.As(err, &stop) {
-		return g, sum, err
+	if stop := (*gather.Stopped)(nil); r.guard.Stopped() || err != nil && !errors.As(err, &stop) { // the cap refused discovery: nothing is stored
+		return g, sum, cmp.Or(err, adapter.ErrCapped)
 	}
 	sum.Store = dir
 	if perr := r.st.PutGather(g); perr != nil {
@@ -214,7 +227,7 @@ func (r *run) propose() int {
 	res, err := shares.Propose(context.Background(), r.st, mapping.Session{Agent: r.agent, Progress: r.stderr, Now: r.env.Now})
 	r.spent("propose", from)
 	if err != nil {
-		return failed(r.stderr, err)
+		return r.fail(err)
 	}
 	r.p.proposal(res)
 	if g, ok, err := r.st.Gathered(); err == nil && ok { // what recovery reads beyond the citations, and what no capability got
@@ -236,7 +249,7 @@ func (r *run) areas() int {
 	res, err := areas.Run(context.Background(), r.st, areas.Session{Agent: r.agent, Root: r.root, Repo: repo, Progress: r.stderr, Now: r.env.Now})
 	r.spent("areas", from)
 	if err != nil {
-		return failed(r.stderr, err)
+		return r.fail(err)
 	}
 	r.p.emit("areas", func(w io.Writer) error { return areas.Text(w, res) }, func(w io.Writer) error { return json.NewEncoder(w).Encode(res) })
 	return 0
@@ -248,7 +261,7 @@ func (r *run) walk() int {
 	res, err := walk.Run(context.Background(), r.st, walk.Session{Agent: r.agent, Root: r.root, Progress: r.stderr, Now: r.env.Now})
 	r.spent("walk", from)
 	if err != nil {
-		return failed(r.stderr, err)
+		return r.fail(err)
 	}
 	r.p.emit("walk", func(w io.Writer) error { return walk.Text(w, res) }, func(w io.Writer) error { return json.NewEncoder(w).Encode(res) })
 	return 0
@@ -271,10 +284,11 @@ func (r *run) place() int {
 // earlier run recovered. done, when set, is called with the report first.
 func (r *run) recoverPhase(only []string, done func(recovery.Report)) int {
 	from := r.meter.Count()
+	r.inRec = true
 	rep, err := recovery.Run(context.Background(), r.st, r.recoverySession(only))
 	r.spent("recover", from)
 	if err != nil {
-		return failed(r.stderr, err)
+		return r.fail(err)
 	}
 	if done != nil {
 		done(rep)
@@ -285,6 +299,14 @@ func (r *run) recoverPhase(only []string, done func(recovery.Report)) int {
 		code = max(code, r.writeStored())
 	}
 	return code
+}
+
+// fail is failed, but once the cap stopped the run it says nothing and returns 1, as the guard's Finish says why.
+func (r *run) fail(err error) int {
+	if r.guard.Stopped() {
+		return 1
+	}
+	return failed(r.stderr, err)
 }
 
 // failed prints err as init's failure and returns 2, or 1 for a stop before spending on propose.

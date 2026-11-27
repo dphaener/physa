@@ -157,7 +157,10 @@ type fakeStore struct {
 	seed     *uint64
 	seeds    []uint64
 	puts     [][]initrecord.Recovered
+	rows     []initrecord.Recovered // what init's record already holds
 }
+
+func (s *fakeStore) Recovered() ([]initrecord.Recovered, error) { return s.rows, nil }
 
 func (s *fakeStore) Walk() (initrecord.Walk, bool, error) {
 	if s.walk == nil {
@@ -757,7 +760,7 @@ func TestPluralCountsSingularAndPlural(t *testing.T) {
 		n    int
 		want string
 	}{{1, "1 token"}, {2, "2 tokens"}, {60_000, "60000 tokens"}} {
-		if got := plural(c.n, "token", "tokens"); got != c.want {
+		if got := recoverinput.Plural(c.n, "token", "tokens"); got != c.want {
 			t.Errorf("plural(%d) = %q, want %q", c.n, got, c.want)
 		}
 	}
@@ -1238,6 +1241,141 @@ func TestRetryWithoutResumeStartsAFreshSession(t *testing.T) {
 		t.Errorf("the fresh session's prompt:\n%s", second.Prompt)
 	}
 	if !strings.Contains(h.progress.String(), "the agent cannot resume, so the retry starts a new session") {
+		t.Errorf("progress:\n%s", h.progress)
+	}
+}
+
+// rowOf is a stored row of capability name with status, from the source at at.
+func rowOf(name, status string, at time.Time) initrecord.Recovered {
+	return initrecord.Recovered{Capability: name, ProposalAt: at, At: runAt, Status: status, File: "# " + name + "\n"}
+}
+
+// TestContinueSkipsWhatIsAlreadyRecovered checks that a run with no --only
+// starts sessions only for the capabilities not yet recovered from this
+// walk, in the seeded order, says how many it kept, leaves the stored rows
+// of the others alone, and reports a whole run.
+func TestContinueSkipsWhatIsAlreadyRecovered(t *testing.T) {
+	h := walkHarness(t, goodScripts(1), true)
+	order := walkOrder(t, h, recoverinput.Seed(h.store.gather))
+	h.store.rows = []initrecord.Recovered{rowOf(order[1], StatusRecovered, walkedAt), rowOf(order[3], StatusRecovered, walkedAt)}
+	rep := h.run(t)
+	if want := []string{order[0], order[2]}; !slices.Equal(runNames(rep), want) {
+		t.Errorf("ran %v, want %v in the seeded order", runNames(rep), want)
+	}
+	for _, n := range []string{order[1], order[3]} {
+		if len(h.agent.specs[n]) != 0 {
+			t.Errorf("%s started a session", n)
+		}
+	}
+	for _, row := range h.store.puts[0] {
+		if row.Capability == order[1] || row.Capability == order[3] {
+			t.Errorf("%s was rewritten", row.Capability)
+		}
+	}
+	if !rep.Whole() {
+		t.Error("the continued run is not whole")
+	}
+	if want := "physa init: 2 capabilities already recovered from the walk and placements are kept; recovering the other 2\n"; !strings.Contains(h.progress.String(), want) {
+		t.Errorf("progress:\n%s", h.progress)
+	}
+}
+
+// TestContinueRecoversAgainWhatIsNotFromThisSource checks that rows from an
+// earlier walk, failed rows and not yet recovered rows are recovered again.
+func TestContinueRecoversAgainWhatIsNotFromThisSource(t *testing.T) {
+	h := walkHarness(t, goodScripts(1), true)
+	order := walkOrder(t, h, recoverinput.Seed(h.store.gather))
+	h.store.rows = []initrecord.Recovered{
+		rowOf(order[0], StatusRecovered, walkedAt.Add(-time.Hour)),
+		rowOf(order[1], StatusFailed, walkedAt),
+		rowOf(order[2], StatusNotYet, walkedAt),
+		rowOf(order[3], StatusRecovered, proposedAt),
+	}
+	rep := h.run(t)
+	if !slices.Equal(runNames(rep), order) {
+		t.Errorf("ran %v, want all of %v", runNames(rep), order)
+	}
+	if strings.Contains(h.progress.String(), "already recovered") {
+		t.Errorf("progress:\n%s", h.progress)
+	}
+}
+
+// TestContinueOnlyRecoversANamedCapabilityAgain checks that --only recovers a
+// capability already recovered.
+func TestContinueOnlyRecoversANamedCapabilityAgain(t *testing.T) {
+	h := walkHarness(t, goodScripts(1), true)
+	order := walkOrder(t, h, recoverinput.Seed(h.store.gather))
+	h.store.rows = []initrecord.Recovered{rowOf(order[0], StatusRecovered, walkedAt)}
+	h.session.Only = []string{order[0]}
+	if rep := h.run(t); !slices.Equal(runNames(rep), []string{order[0]}) {
+		t.Errorf("ran %v", runNames(rep))
+	}
+}
+
+// TestContinueWithEverythingRecoveredRunsNothing checks that when every
+// capability is already recovered no agent resolves and the report is whole.
+func TestContinueWithEverythingRecoveredRunsNothing(t *testing.T) {
+	h := walkHarness(t, goodScripts(1), true)
+	for _, n := range walkOrder(t, h, recoverinput.Seed(h.store.gather)) {
+		h.store.rows = append(h.store.rows, rowOf(n, StatusRecovered, walkedAt))
+	}
+	rep := h.run(t)
+	if h.resolved != 0 || h.agent.starts() != 0 || len(h.store.puts) != 0 || len(rep.Capabilities) != 0 || !rep.Whole() || rep.From != "walk" {
+		t.Errorf("resolved %d, started %d, puts %d, report %+v", h.resolved, h.agent.starts(), len(h.store.puts), rep)
+	}
+	if !strings.Contains(h.progress.String(), "recovering the other 0") {
+		t.Errorf("progress:\n%s", h.progress)
+	}
+}
+
+// capping refuses, as a cap's guard does, the first session of the
+// capability first names and every resumed session, and starts the rest on
+// its fake.
+type capping struct {
+	*fakeAdapter
+	first string
+}
+
+func (c capping) Start(ctx context.Context, s adapter.Spec) (adapter.Session, error) {
+	if s.Resume || strings.Contains(s.Prompt, "name: "+c.first+"\n") {
+		return nil, fmt.Errorf("%w: a session held to 80k tokens would pass the cap", adapter.ErrCapped)
+	}
+	return c.fakeAdapter.Start(ctx, s)
+}
+
+// TestCappedSessionLeavesItNotYetRecovered checks that a capability whose
+// first session, or whose retry, the cap refuses ends not yet recovered,
+// not failed, with nothing of it stored as recovered, while the others are.
+func TestCappedSessionLeavesItNotYetRecovered(t *testing.T) {
+	h := newHarness(t, map[string][]step{
+		"export":  {{text: reply("# Notes\n\n## Rules\n\n"+bare("export-signed"), "")}}, // its retry is refused
+		"search":  {{text: reply(good("search-rule"), "")}},                             // its first session is refused
+		"sharing": {{text: reply(good("sharing-rule"), "")}},
+	})
+	h.session.Only = []string{"export", "search", "sharing"}
+	h.session.Agent = func() (adapter.Adapter, error) { return capping{fakeAdapter: h.agent, first: "search"}, nil }
+	rep := h.run(t)
+	want := []string{"export: " + StatusNotYet, "search: " + StatusNotYet, "sharing: " + StatusRecovered}
+	if got := statuses(rep); !reflect.DeepEqual(got, want) {
+		t.Fatalf("statuses %q, want %q", got, want)
+	}
+	for _, o := range rep.Capabilities[:2] {
+		if o.Error != "" || o.File != "" {
+			t.Errorf("%s: error %q, file %q", o.Name, o.Error, o.File)
+		}
+	}
+	if rep.Whole() {
+		t.Error("a capped run is whole")
+	}
+	for _, row := range h.store.puts[0] {
+		if row.Capability != "sharing" && (row.Status != StatusNotYet || row.File != "" || !row.KeepEarlier) {
+			t.Errorf("stored %s as %q with file %q", row.Capability, row.Status, row.File)
+		}
+	}
+	if o := rep.Capabilities[0]; o.Attempts != 1 || len(h.agent.specs["export"]) != 1 {
+		t.Errorf("export ran %d attempts, %d started; the refused retry counts none", o.Attempts, len(h.agent.specs["export"]))
+	}
+	if !strings.Contains(h.progress.String(), "physa init: search: "+StatusNotYet+"\n") {
 		t.Errorf("progress:\n%s", h.progress)
 	}
 }

@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/dphaener/physa/internal/adapter"
@@ -63,6 +62,7 @@ type Store interface {
 	RecoverSeed() (uint64, bool, error)
 	PutRecoverSeed(uint64, time.Time) error
 	PutRecovered([]initrecord.Recovered) error
+	Recovered() ([]initrecord.Recovered, error)
 }
 
 // Session says how Run runs its sessions.
@@ -141,17 +141,6 @@ type job struct {
 	err        error
 }
 
-// tooLong is err, a session refused as too long, with how big physa made
-// its prompt, system and message, by its own estimate, and what read, its
-// sources, counts. An agent's own account may count everything physa
-// passes outside the message as its system prompt, which here holds only
-// the skill and the docs every capability reads; the capability's own
-// sources are in the message.
-func tooLong(err error, system, message string, read reading.Report) error {
-	return fmt.Errorf("%w (by physa's estimate, the system prompt, the recovering skill and the docs every capability reads, came to about %s tokens, and the message, with this capability's own sources, to about %s; its sources: %s)",
-		err, reading.Thousands(int64(reading.Tokens(system))), reading.Thousands(int64(reading.Tokens(message))), strings.Join(read.Lines(), "; "))
-}
-
 // Run is init's recover and check phases end to end, from the walk and the
 // placements when both are stored (a new gather, new areas or a new walk
 // clears the later ones, so both are of the current gather), else from the
@@ -208,6 +197,20 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	if err != nil {
 		return rep, err
 	}
+	done, err := recoverinput.Kept(st, s.Only, at) // a continued run keeps what this gather and source recovered
+	if err != nil {
+		return rep, err
+	}
+	if len(done) > 0 {
+		n := len(jobs)
+		jobs = slices.DeleteFunc(jobs, func(j job) bool { return done[j.capability.Name] })
+		if s.Progress != nil {
+			fmt.Fprintln(s.Progress, recoverinput.KeptLine(n-len(jobs), len(jobs), what))
+		}
+		if len(jobs) == 0 {
+			return rep, nil
+		}
+	}
 	if s.Agent == nil {
 		return rep, errors.New("no agent to recover with")
 	}
@@ -227,10 +230,10 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 	}
 	r := &runner{
 		agent: a, progress: s.Progress,
-		check: checker{product: product, root: s.Root, prExists: resolver(g, s.PRExists), openRepo: s.OpenRepo},
+		check: checker{product: product, root: s.Root, prExists: recoverinput.Resolver(g, s.PRExists), openRepo: s.OpenRepo},
 	}
 	if s.Progress != nil {
-		fmt.Fprintf(s.Progress, "physa init: recovering %s, at most %d at once, from %s\n", plural(len(jobs), "capability", "capabilities"), Concurrency, what)
+		fmt.Fprintf(s.Progress, "physa init: recovering %s, at most %d at once, from %s\n", recoverinput.Plural(len(jobs), "capability", "capabilities"), Concurrency, what)
 	}
 	rep.Capabilities = r.all(ctx, jobs)
 	if err := dedupe(r.check, rep.Capabilities); err != nil {
@@ -245,7 +248,7 @@ func Run(ctx context.Context, st Store, s Session) (Report, error) {
 		if o.Problems == nil {
 			o.Problems = []string{}
 		}
-		add(&rep.Used, o.Tokens)
+		recoverinput.Add(&rep.Used, o.Tokens)
 		d := *o
 		d.File, d.Terms = "", ""
 		details, err := json.Marshal(d)
@@ -322,21 +325,6 @@ func walkJobs(st Store, w initrecord.Walk, g store.Gather, s Session, product st
 			Promise: c.Promise, Area: c.Area, Footprint: &c.Footprint, Date: date, Sources: reading.Of(c.Sources, recovering.Reads)})
 	}
 	return jobs, nil
-}
-
-// plural counts n things: "1 rule", "3 rules".
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return "1 " + one
-	}
-	return fmt.Sprintf("%d %s", n, many)
-}
-
-// add adds t to sum.
-func add(sum *adapter.Tokens, t adapter.Tokens) {
-	sum.Input += t.Input
-	sum.CachedInput += t.CachedInput
-	sum.Output += t.Output
 }
 
 // Whole reports whether every capability r holds got its session: none is

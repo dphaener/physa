@@ -144,7 +144,7 @@ func TestInitBadSinceIsBadUsage(t *testing.T) {
 
 func TestInitHelp(t *testing.T) {
 	code, out, errOut := runInit("--help")
-	if code != 0 || errOut != "" || !strings.HasPrefix(out, "usage: physa init [--yes] [--write") || strings.Contains(out, "--appetite") || !strings.Contains(out, "physa init --gather") {
+	if code != 0 || errOut != "" || !strings.HasPrefix(out, "usage: physa init [--write") || strings.Contains(out, "--appetite") || !strings.Contains(out, "physa init --gather") {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }

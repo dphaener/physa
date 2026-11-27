@@ -21,6 +21,7 @@ import (
 	"github.com/dphaener/physa/internal/initrecord"
 	"github.com/dphaener/physa/internal/mapped"
 	"github.com/dphaener/physa/internal/mapping"
+	"github.com/dphaener/physa/internal/place"
 	"github.com/dphaener/physa/internal/preflight"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/recoveryreport"
@@ -94,7 +95,7 @@ func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 	}()
 	r := &run{o: o, env: env, st: initrecord.Of(st), root: root, args: words, stderr: stderr, cache: cache, p: newPrinter(o, stdout), counts: map[string]spend.Count{}}
 	code := 0
-	if o.Propose || o.Recover || o.Areas || o.Walk { // the phases on a stored gather say when the forge stopped it, and still run
+	if o.Propose || o.Recover || o.Areas || o.Walk || o.Place { // the phases on a stored gather say when the forge stopped it, and still run
 		preflight.Stored(stderr, st)
 	}
 	switch {
@@ -102,6 +103,8 @@ func Run(o Flags, args, words []string, stdout, stderr io.Writer, env Env) int {
 		code = r.areas()
 	case o.Walk:
 		code = r.walk()
+	case o.Place:
+		code = r.place()
 	case o.Propose:
 		code = r.propose()
 	case o.Recover:
@@ -248,6 +251,17 @@ func (r *run) walk() int {
 		return failed(r.stderr, err)
 	}
 	r.p.emit("walk", func(w io.Writer) error { return walk.Text(w, res) }, func(w io.Writer) error { return json.NewEncoder(w).Encode(res) })
+	return 0
+}
+
+// place places the stored gather's PRs and changes on the capabilities by the stored footprints, with no
+// session, stores the placements in init's record and prints the counts.
+func (r *run) place() int {
+	res, err := place.Run(r.st)
+	if err != nil {
+		return failed(r.stderr, err)
+	}
+	r.p.emit("place", func(w io.Writer) error { return place.Text(w, res) }, func(w io.Writer) error { return json.NewEncoder(w).Encode(res) })
 	return 0
 }
 

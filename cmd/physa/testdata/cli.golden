@@ -9,7 +9,7 @@ Physa: product management for agents.
 Commands:
   check     Check the map and the changes of a range against it.
   map       Read the map: a bare map prints the index.
-  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
   idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
@@ -32,7 +32,7 @@ Physa: product management for agents.
 Commands:
   check     Check the map and the changes of a range against it.
   map       Read the map: a bare map prints the index.
-  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
   idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
@@ -55,7 +55,7 @@ Physa: product management for agents.
 Commands:
   check     Check the map and the changes of a range against it.
   map       Read the map: a bare map prints the index.
-  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
   idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
@@ -77,7 +77,7 @@ Physa: product management for agents.
 Commands:
   check     Check the map and the changes of a range against it.
   map       Read the map: a bare map prints the index.
-  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
   idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
@@ -100,7 +100,7 @@ Physa: product management for agents.
 Commands:
   check     Check the map and the changes of a range against it.
   map       Read the map: a bare map prints the index.
-  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
   idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
@@ -255,9 +255,10 @@ usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--
        physa init --propose [--agent NAME] [--json]
        physa init --areas [--agent NAME] [--json]
        physa init --walk [--agent NAME] [--json]
+       physa init --place [--json]
        physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
 --- stderr
 
 $ physa idea --help
@@ -750,9 +751,10 @@ usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--
        physa init --propose [--agent NAME] [--json]
        physa init --areas [--agent NAME] [--json]
        physa init --walk [--agent NAME] [--json]
+       physa init --place [--json]
        physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
 
 $ physa idea list extra
 exit 2
@@ -993,9 +995,10 @@ usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--
        physa init --propose [--agent NAME] [--json]
        physa init --areas [--agent NAME] [--json]
        physa init --walk [--agent NAME] [--json]
+       physa init --place [--json]
        physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
 
 $ physa init --max-prs 0
 exit 2
@@ -1006,9 +1009,10 @@ usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--
        physa init --propose [--agent NAME] [--json]
        physa init --areas [--agent NAME] [--json]
        physa init --walk [--agent NAME] [--json]
+       physa init --place [--json]
        physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
 
 $ physa init --since yesterday
 exit 2
@@ -1019,9 +1023,10 @@ usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--
        physa init --propose [--agent NAME] [--json]
        physa init --areas [--agent NAME] [--json]
        physa init --walk [--agent NAME] [--json]
+       physa init --place [--json]
        physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
 
 $ physa init --only a
 exit 2
@@ -1032,9 +1037,10 @@ usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--
        physa init --propose [--agent NAME] [--json]
        physa init --areas [--agent NAME] [--json]
        physa init --walk [--agent NAME] [--json]
+       physa init --place [--json]
        physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
 
 $ physa init --gather --propose
 exit 2
@@ -1045,9 +1051,10 @@ usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--
        physa init --propose [--agent NAME] [--json]
        physa init --areas [--agent NAME] [--json]
        physa init --walk [--agent NAME] [--json]
+       physa init --place [--json]
        physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
 
 $ physa init --areas --propose
 exit 2
@@ -1058,9 +1065,10 @@ usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--
        physa init --propose [--agent NAME] [--json]
        physa init --areas [--agent NAME] [--json]
        physa init --walk [--agent NAME] [--json]
+       physa init --place [--json]
        physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
 
 $ physa init --areas --write
 exit 2
@@ -1071,9 +1079,10 @@ usage: physa init [--yes] [--write [--push [--pr]] [--hooks]] [--agent NAME] [--
        physa init --propose [--agent NAME] [--json]
        physa init --areas [--agent NAME] [--json]
        physa init --walk [--agent NAME] [--json]
+       physa init --place [--json]
        physa init --recover [--only CAPABILITY]... [--agent NAME] [--write [--push [--pr]] [--hooks]] [--json]
 
-Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
 
 $ physa pursuit show --json=maybe
 exit 2
@@ -1174,7 +1183,7 @@ Physa: product management for agents.
 Commands:
   check     Check the map and the changes of a range against it.
   map       Read the map: a bare map prints the index.
-  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk or --recover runs one phase.
+  init      Build the map of a repo, never bounded: it estimates its cost and asks first; with --write, commit it to physa/init; --gather, --propose, --areas, --walk, --place or --recover runs one phase.
   idea      Add, list and show ideas: a bare idea lists them. An idea belongs to the person who adds it; its facts say where it stands. A slug left out is chosen from a list on a terminal.
   pursue    Pursue an idea: put your name on building it, against a signal of four parts (claim, direction, window, resolver). On a terminal the signal is written in $VISUAL or $EDITOR; --signal-from reads it from a file, or stdin for -, and off a terminal it is required. --appetite sets a budget in tokens; with none there is no circuit breaker, and spend is still counted. Only a person pursues: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.
   pursuit   List, show and stop pursuits, set and show a pursuit's plan, and say which change a session works on. Only a person stops a pursuit: inside an agent's session it is refused. A slug left out is chosen from a list on a terminal.

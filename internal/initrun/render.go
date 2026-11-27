@@ -3,9 +3,7 @@ package initrun
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
-	"strings"
 
 	"github.com/dphaener/physa/internal/gather"
 	"github.com/dphaener/physa/internal/initbranch"
@@ -13,6 +11,7 @@ import (
 	"github.com/dphaener/physa/internal/newcodebase"
 	"github.com/dphaener/physa/internal/recovery"
 	"github.com/dphaener/physa/internal/recoveryreport"
+	"github.com/dphaener/physa/internal/writereport"
 )
 
 // printer prints a run phase by phase: a run of one phase as that phase's
@@ -77,32 +76,8 @@ func (p *printer) newCodebase(a newcodebase.Answers, write bool) {
 
 // wrote prints what writing physa/init did, then in text the PR body.
 func (p *printer) wrote(out initbranch.Outcome, hook initbranch.Hook) {
-	pr, h := out.PR, hook.State
-	if pr.State == initbranch.PRNotAsked {
-		pr.State = "not asked"
-	}
-	if h == initbranch.HookNotAsked {
-		h = "not asked"
-	}
-	v := map[string]any{"branch": initbranch.Branch, "files": out.Files, "pushed": out.Pushed, "body": out.Body,
-		"pr":   map[string]any{"state": pr.State, "number": pr.Number, "url": pr.URL, "reason": pr.Reason},
-		"hook": map[string]string{"state": h, "detail": hook.Detail}}
-	var b strings.Builder
-	if c := out.Commit; c != nil {
-		v["commit"] = map[string]string{"id": c.ID, "short": c.Short, "subject": c.Subject}
-		fmt.Fprintf(&b, "Wrote %s at %s: %s\n", initbranch.Branch, c.Short, c.Subject)
-	}
-	fmt.Fprintf(&b, "Files: %s\nPushed: %v\nPR: %s", strings.Join(out.Files, ", "), out.Pushed, pr.State)
-	if pr.Number != 0 {
-		fmt.Fprintf(&b, " #%d %s", pr.Number, pr.URL)
-	}
-	if pr.Reason != "" {
-		b.WriteString(": " + pr.Reason)
-	}
-	if b.WriteString("\nHook: " + h); hook.Detail != "" {
-		b.WriteString(": " + hook.Detail)
-	}
-	p.value("write", b.String()+"\n\n"+strings.TrimRight(out.Body, "\n")+"\n", v)
+	text, v := writereport.Describe(out, hook)
+	p.value("write", text, v)
 }
 
 // done ends the run, writing the one document of a --json run of more than

@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/dphaener/physa/internal/sourceset"
 )
 
 func TestMessageGivesTheAreaAndTheOverviews(t *testing.T) {
@@ -34,5 +36,13 @@ func TestMessageHasNoCapabilityCountOrLabWords(t *testing.T) {
 		if count.MatchString(s) || lab.MatchString(s) {
 			t.Errorf("text has a count or a lab word:\n%s", s)
 		}
+	}
+}
+
+func TestMessageGivesTheOtherFilesOverview(t *testing.T) {
+	sp := sourceset.Division{Files: map[sourceset.Kind][]string{sourceset.Other: {"config/a.yml", "config/b.yml"}}}
+	m := Message(area, sp, nil)
+	if !strings.Contains(m, "### The repo's other files") || !strings.Contains(m, "config/ (") {
+		t.Errorf("message lacks the other overview:\n%s", m)
 	}
 }

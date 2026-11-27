@@ -738,3 +738,32 @@ func TestRunUnreadableAnswerIsAskedOnce(t *testing.T) {
 		t.Errorf("stored a walk, or tooling had %d turns", len(f.of("tooling")))
 	}
 }
+
+func TestCollectKeepsEntriesAsWrittenAndOldBodiesLoad(t *testing.T) {
+	j := &job{area: Area{Name: "a"}, fp: Footprints{Capabilities: []Footprint{{
+		Name: "x", Promise: "p", Sources: []string{"s/a.go"},
+		Tests: []string{"t/a_test.go", "t/b_test.go"}, Other: []string{"cfg/a.yml"},
+		Entries: Entries{Tests: []string{"t/"}, Docs: []string{"docs/a.md"}, Other: []string{"cfg/"}},
+	}}}}
+	var res Result
+	rec, failed := collect([]*job{j}, &res)
+	if len(failed) != 0 {
+		t.Fatal(failed)
+	}
+	c := rec.Capabilities[0]
+	if !slices.Equal(c.Entries.Tests, []string{"t/"}) || !slices.Equal(c.Entries.Other, []string{"cfg/"}) || !slices.Equal(c.Other, []string{"cfg/a.yml"}) || len(c.Tests) != 2 {
+		t.Errorf("record %+v", c)
+	}
+	j.fp.Capabilities[0].Entries.Tests[0] = "changed"
+	if c.Entries.Tests[0] != "t/" {
+		t.Error("entries share the footprint's slice")
+	}
+	var old Record
+	body := `{"capabilities":[{"name":"x","promise":"p","sources":["s/a.go"],"tests":["t/a_test.go"],"docs":[],"area":"a","parent":""}],"shared":[],"splits":[],"renamed":[],"sessions":[]}`
+	if err := json.Unmarshal([]byte(body), &old); err != nil {
+		t.Fatal(err)
+	}
+	if o := old.Capabilities[0]; len(o.Other) != 0 || o.Entries.Tests != nil || o.Entries.Docs != nil || o.Entries.Other != nil || len(o.Tests) != 1 {
+		t.Errorf("old body %+v", o)
+	}
+}

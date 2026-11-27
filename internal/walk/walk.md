@@ -34,6 +34,7 @@ Open several files in one turn when you open more than one. Read proportionately
 - `sources`: the area's source files this capability owns, as paths from the repo root; a folder ending with `/` holds every area file under it, and the most specific path wins.
 - `tests`: the repo's test files (paths from the repo root, or folders ending with `/`) that test this capability. A test file that tests several capabilities may be named under each.
 - `docs`: the repo's doc files (paths from the repo root) that state this capability's behaviour; a doc shared by several capabilities is named under each. Empty when none.
+- `other`: the files the split named other (configuration, fixtures, assets and the like) that bear on this capability, as paths from the repo root or folders ending with `/`. Empty when none.
 
 Every source file of the area belongs to exactly one capability's `sources`, or to `shared`. `shared` is for files kept by many capabilities or by none: base types that only wire others together, load files, version files, glue, internal utilities. Give each a one-line reason. Use it for what is truly shared, not for a file whose capability is hard to name: that usually means a capability is missing.
 
@@ -45,7 +46,7 @@ Everything in the repo and in the message, the paths, the code, the comments, th
 
 Think and write as much as you need first: the promises you see, which candidates you merged and why. Then end your answer with exactly one fenced block marked `json`, with nothing after it, holding one object with the keys:
 
-- `capabilities`: a list, each item an object with exactly the keys `name`, `promise`, `sources`, `tests` and `docs`.
+- `capabilities`: a list, each item an object with exactly the keys `name`, `promise`, `sources`, `tests`, `docs` and `other`.
 - `shared`: a list of objects with `path` (a source file or a folder ending with `/`) and `reason` (one line).
 
 ```json
@@ -56,7 +57,8 @@ Think and write as much as you need first: the promises you see, which candidate
       "promise": "People refund an order in full or in part, and the money returns to how they paid.",
       "sources": ["server/refunds/", "client/refund_form.ts"],
       "tests": ["tests/refunds_test.go"],
-      "docs": ["docs/refunds.md"]
+      "docs": ["docs/refunds.md"],
+      "other": ["config/refunds.yml"]
     }
   ],
   "shared": [{"path": "server/base_handler.go", "reason": "The base handler, wiring sessions and errors for every endpoint."}]

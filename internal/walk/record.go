@@ -3,6 +3,7 @@ package walk
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/dphaener/physa/internal/areas"
 	"github.com/dphaener/physa/internal/initrecord"
@@ -24,6 +25,16 @@ type CapabilityRecord struct {
 	Capability
 	Area   string `json:"area"`
 	Parent string `json:"parent"`
+	// Entries are the test, doc and other paths as the session wrote them,
+	// folders keeping their trailing slash; empty in an older stored walk.
+	Entries Entries `json:"entries,omitempty"`
+}
+
+// Entries are the paths a footprint names for one kind of file, as written.
+type Entries struct {
+	Tests []string `json:"tests,omitempty"`
+	Docs  []string `json:"docs,omitempty"`
+	Other []string `json:"other,omitempty"`
 }
 
 // SharedRecord is a source file no capability owns, with its area.
@@ -81,14 +92,15 @@ func collect(jobs []*job, res *Result) (rec Record, failed []string) {
 			rec.Splits = append(rec.Splits, SplitRecord{a.Name, parts})
 		}
 		for _, c := range j.fp.Capabilities {
-			kept := Capability{Name: c.Name, Promise: c.Promise, Sources: c.Sources, Tests: append([]string{}, c.Tests...), Docs: append([]string{}, c.Docs...)}
+			kept := Capability{Name: c.Name, Promise: c.Promise, Sources: c.Sources, Tests: append([]string{}, c.Tests...), Docs: append([]string{}, c.Docs...), Other: append([]string{}, c.Other...)}
+			ent := Entries{slices.Clone(c.Entries.Tests), slices.Clone(c.Entries.Docs), slices.Clone(c.Entries.Other)}
 			for n := 2; taken[kept.Name]; n++ {
 				kept.Name = fmt.Sprintf("%s-%d", c.Name, n)
 			}
 			if taken[kept.Name] = true; kept.Name != c.Name {
 				rec.Renamed = append(rec.Renamed, Rename{Area: a.Name, From: c.Name, To: kept.Name})
 			}
-			rec.Capabilities = append(rec.Capabilities, CapabilityRecord{kept, a.Name, a.Parent})
+			rec.Capabilities = append(rec.Capabilities, CapabilityRecord{kept, a.Name, a.Parent, ent})
 			ar.Capabilities, ar.Owned = append(ar.Capabilities, kept.Name), ar.Owned+len(c.Sources)
 		}
 		for _, s := range j.fp.Shared {

@@ -18,11 +18,13 @@ type Area struct {
 	Files                 []string
 }
 
-// Footprint is a capability with the source files it owns and the tests and
-// docs that bear on it, every folder expanded to files and sorted.
+// Footprint is a capability with the source files it owns and the tests,
+// docs and other files that bear on it, every folder expanded to files and
+// sorted. Entries are the test, doc and other paths as the session gave them.
 type Footprint struct {
-	Name, Promise        string
-	Sources, Tests, Docs []string
+	Name, Promise               string
+	Sources, Tests, Docs, Other []string
+	Entries                     Entries
 }
 
 // Footprints are an area's capabilities, and its shared files with reasons.
@@ -43,9 +45,9 @@ type Problems struct {
 	// Outside are "owner: path" for source or shared paths matching no file
 	// of the area.
 	Outside []string
-	// NotTest and NotDoc are "capability: path" for tests and docs paths
-	// matching no file the split named a test or a doc.
-	NotTest, NotDoc []string
+	// NotTest, NotDoc and NotOther are "capability: path" for tests, docs and
+	// other paths matching no file the split named a test, a doc or other.
+	NotTest, NotDoc, NotOther []string
 	// NoSource are the capabilities (or parts) owning no source file.
 	NoSource []string
 	// Names are the other faults: a repeated, malformed or empty name, an
@@ -55,7 +57,7 @@ type Problems struct {
 
 // Empty reports whether nothing was found.
 func (p Problems) Empty() bool {
-	return len(p.Unclaimed)+len(p.Twice)+len(p.Outside)+len(p.NotTest)+len(p.NotDoc)+len(p.NoSource)+len(p.Names) == 0
+	return len(p.Unclaimed)+len(p.Twice)+len(p.Outside)+len(p.NotTest)+len(p.NotDoc)+len(p.NotOther)+len(p.NoSource)+len(p.Names) == 0
 }
 
 var kebabName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -158,6 +160,8 @@ func Check(a Area, ans Answer, split sourceset.Division) (Footprints, Problems) 
 		f := Footprint{Name: c.Name, Promise: c.Promise, Sources: owned[fmt.Sprint(i)]}
 		f.Tests = expand(c.Tests, split.Files[sourceset.Test], c.Name, &p.NotTest)
 		f.Docs = expand(c.Docs, split.Files[sourceset.Doc], c.Name, &p.NotDoc)
+		f.Other = expand(c.Other, split.Files[sourceset.Other], c.Name, &p.NotOther)
+		f.Entries = Entries{Tests: slices.Clone(c.Tests), Docs: slices.Clone(c.Docs), Other: slices.Clone(c.Other)}
 		if len(f.Sources) == 0 {
 			p.NoSource = append(p.NoSource, c.Name)
 		}

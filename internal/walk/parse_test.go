@@ -73,3 +73,14 @@ func TestApplyMovesAddedPathsAndRemovesByName(t *testing.T) {
 		t.Errorf("shared %+v, or the input changed", got.Shared)
 	}
 }
+
+func TestParseReadsOtherAndApplyDropsFromIt(t *testing.T) {
+	a, err := Parse("```json\n{\"capabilities\":[{\"name\":\"a\",\"promise\":\"p\",\"sources\":[\"s/\"],\"other\":[\"cfg/a.yml\",\"cfg/b.yml\"]}]}\n```")
+	if err != nil || !slices.Equal(a.Capabilities[0].Other, []string{"cfg/a.yml", "cfg/b.yml"}) {
+		t.Fatalf("%+v, %v", a, err)
+	}
+	b := Apply(a, Fix{Drop: []string{"cfg/a.yml"}})
+	if !slices.Equal(b.Capabilities[0].Other, []string{"cfg/b.yml"}) || len(a.Capabilities[0].Other) != 2 {
+		t.Errorf("applied %v, original %v", b.Capabilities[0].Other, a.Capabilities[0].Other)
+	}
+}

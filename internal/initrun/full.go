@@ -20,7 +20,11 @@ import (
 // the spend passes the top of the estimate, records what proposing and recovering spent, weighed,
 // against their prompt and sources for the next estimate (record), and with --write writes physa/init.
 // Every run starts fresh: it replaces the stored gather, proposal and recoveries.
+// Before it writes, it asks Env.Skill for the line on the agent's Physa skill, which the PR body carries and Run says last.
 func (r *run) full() int {
+	if r.env.Skill != nil {
+		r.skill = r.env.Skill(r.o.Agent)
+	}
 	r.agent() // resolved here so the first line can say what a token is worth; gather reports a failure
 	fmt.Fprintf(r.stderr, "physa init: no appetite and no circuit breaker: init is never bounded, and is up front about its cost instead: once it has gathered it estimates the rest of the run and asks before going on. %s\n", initcost.Unit(r.cache, r.meter.Name()))
 	g, sum, err := r.gatherInto("")
@@ -98,5 +102,5 @@ func (r *run) newCodebase(g store.Gather) int {
 	if !r.o.Write {
 		return 0
 	}
-	return writeMap(newMap(a, r.env), r.o, r.env, r.p, r.stderr)
+	return writeMap(newMap(a, r.env, r.skill), r.o, r.env, r.p, r.stderr)
 }

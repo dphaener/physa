@@ -94,6 +94,9 @@ type Summary struct {
 	Tokens []Tokens
 	// Hook is what happened to the Session: hook.
 	Hook Hook
+	// Skill is the line saying the agent init ran with has no current Physa
+	// skill; empty when it has one or its state could not be read.
+	Skill string
 }
 
 // Tokens are one phase's tokens, raw and weighted.

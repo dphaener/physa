@@ -11,6 +11,7 @@ import (
 	"github.com/dphaener/physa/internal/initrun"
 	"github.com/dphaener/physa/internal/output"
 	"github.com/dphaener/physa/internal/picker"
+	"github.com/dphaener/physa/internal/skillcli"
 	"github.com/dphaener/physa/internal/spend"
 	"github.com/dphaener/physa/internal/vcs/git"
 )
@@ -36,7 +37,23 @@ func initCommand() *cobra.Command {
 				IsTerminal: func() bool { return output.IsTerminal(os.Stdin) },
 				Confirm:    func(q string) (bool, error) { return picker.ConfirmOrNo(os.Stdin, os.Stderr, q) },
 				Spend:      cache,
+				Skill:      skillNotice,
 			})
 		}), f.Declare)
 	return c
+}
+
+// skillNotice is the line init prints when the agent a name selects has no
+// current Physa skill on this account, or "" when it has one, the agent is
+// unknown or the home cannot be found.
+func skillNotice(name string) string {
+	a, err := agentFor(name)
+	if err != nil {
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return skillcli.Notice(a.Name(), home)
 }

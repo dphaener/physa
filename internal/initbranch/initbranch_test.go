@@ -543,6 +543,26 @@ func TestBodySummarisesTheRun(t *testing.T) {
 	}
 }
 
+func TestBodySkillSection(t *testing.T) {
+	const line = "Claude Code has no Physa skill on this account: run `physa skill setup` to install it, so its sessions learn Physa's commands and terms."
+	f := newFixture(t, nil)
+	m := sample(f)
+	m.Summary.Skill = line
+	body := Body(m)
+	want := "\n## The Session: hook\n\n" + hookLine(m.Summary.Hook) + "\n\n## Physa's skill\n\n" + line + "\n"
+	if !strings.HasSuffix(body, want) {
+		t.Errorf("body does not end with the skill section:\n%s", body)
+	}
+}
+
+func TestBodyWithoutSkillHasNoSection(t *testing.T) {
+	f := newFixture(t, nil)
+	m := sample(f)
+	if body := Body(m); strings.Contains(body, "Physa's skill") {
+		t.Errorf("body with an empty Skill names the skill:\n%s", body)
+	}
+}
+
 func TestHasMap(t *testing.T) {
 	for _, p := range mapfolder.Products {
 		t.Run(p, func(t *testing.T) {

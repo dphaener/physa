@@ -989,3 +989,165 @@ func TestFullStopsOnASourceLargerThanAShare(t *testing.T) {
 		t.Errorf("--propose: code %d, sessions %v\nstdout %s\nstderr %s", code, a.started, out, errOut)
 	}
 }
+
+// skillLine is a line Env.Skill gives for an agent with no current Physa skill.
+const skillLine = "Claude Code has no Physa skill on this account: run `physa skill setup` to install it, so its sessions learn Physa's commands and terms."
+
+// skillSpy is an Env.Skill that gives line and counts the agents it was asked about.
+type skillSpy struct {
+	line   string
+	agents []string
+}
+
+func (s *skillSpy) skill(agent string) string {
+	s.agents = append(s.agents, agent)
+	return s.line
+}
+
+// lastLine is the last line of out, without its newline.
+func lastLine(out string) string {
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	return lines[len(lines)-1]
+}
+
+func TestFullSkillLineIsSaidOnceLastAndInThePRBody(t *testing.T) {
+	remoteRepo(t)
+	f := &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}
+	env := fullEnv(t, f, newRoutedAgent())
+	spy := &skillSpy{line: skillLine}
+	env.Skill = spy.skill
+	code, out, errOut := runInit(env, "--write", "--push", "--pr", "--yes", "--agent", "fake")
+	if code != 0 {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	if !slices.Equal(spy.agents, []string{"fake"}) {
+		t.Errorf("Skill asked about %v, want [fake] once", spy.agents)
+	}
+	if n := strings.Count(errOut, "physa skill setup"); n != 1 {
+		t.Errorf("stderr names physa skill setup %d times, want 1:\n%s", n, errOut)
+	}
+	if got := lastLine(errOut); got != "physa init: "+skillLine {
+		t.Errorf("stderr's last line %q, want the skill's line", got)
+	}
+	section := "\n## Physa's skill\n\n" + skillLine + "\n"
+	if len(f.bodies) != 1 || !strings.HasSuffix(f.bodies[0], section) {
+		t.Errorf("the PR body does not end with the skill's section:\n%v", f.bodies)
+	}
+	if !strings.Contains(out, section) {
+		t.Errorf("the body on stdout lacks the skill's section:\n%s", out)
+	}
+}
+
+func TestFullSkillLineIsInTheJSONBody(t *testing.T) {
+	remoteRepo(t)
+	env := fullEnv(t, onePR(), newRoutedAgent())
+	env.Skill = (&skillSpy{line: skillLine}).skill
+	code, out, errOut := runInit(env, "--write", "--yes", "--json")
+	if code != 0 {
+		t.Fatalf("code %d\nstdout %s\nstderr %s", code, out, errOut)
+	}
+	var doc struct {
+		Write struct{ Body string } `json:"write"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("not one JSON document: %v\n%s", err, out)
+	}
+	if !strings.HasSuffix(doc.Write.Body, "\n## Physa's skill\n\n"+skillLine+"\n") {
+		t.Errorf("--json's body lacks the skill's section:\n%s", doc.Write.Body)
+	}
+	if got := lastLine(errOut); got != "physa init: "+skillLine {
+		t.Errorf("stderr's last line %q, want the skill's line", got)
+	}
+}
+
+func TestFullSkillCurrentOrNilSaysNothing(t *testing.T) {
+	for name, skill := range map[string]func(string) string{"empty": (&skillSpy{}).skill, "nil": nil} {
+		t.Run(name, func(t *testing.T) {
+			remoteRepo(t)
+			f := &prForge{mergedFake: mergedFake{prs: []forge.PR{{Number: 3, Title: "A change", Body: "why", MergedAt: time.Now()}}}}
+			env := fullEnv(t, f, newRoutedAgent())
+			env.Skill = skill
+			code, out, errOut := runInit(env, "--write", "--push", "--pr", "--yes")
+			if code != 0 || len(f.bodies) != 1 {
+				t.Fatalf("code %d, bodies %d\nstdout %s\nstderr %s", code, len(f.bodies), out, errOut)
+			}
+			for where, s := range map[string]string{"stdout": out, "stderr": errOut, "PR body": f.bodies[0]} {
+				if strings.Contains(s, "Physa's skill") || strings.Contains(s, "physa skill") {
+					t.Errorf("%s names the skill:\n%s", where, s)
+				}
+			}
+		})
+	}
+}
+
+func TestNewCodebaseSkillLineIsInTheBody(t *testing.T) {
+	newCodebaseRepo(t)
+	answers := filepath.Join(t.TempDir(), "answers.txt")
+	write(t, filepath.Dir(answers), "answers.txt", "1: Lathe\n2: Lathe turns sketches into cut lists.\n3: Cut list: The parts to cut\n")
+	env := fullEnv(t, nil, newRoutedAgent())
+	spy := &skillSpy{line: skillLine}
+	env.Skill = spy.skill
+	code, out, errOut := runInit(env, "--write", "--answers", answers)
+	if code != 0 || len(spy.agents) != 1 {
+		t.Fatalf("code %d, asked %v\nstdout %s\nstderr %s", code, spy.agents, out, errOut)
+	}
+	if !strings.HasSuffix(out, "\n## Physa's skill\n\n"+skillLine+"\n") {
+		t.Errorf("the body on stdout does not end with the skill's section:\n%s", out)
+	}
+	if strings.Count(errOut, "physa skill setup") != 1 || lastLine(errOut) != "physa init: "+skillLine {
+		t.Errorf("stderr:\n%s", errOut)
+	}
+}
+
+func TestFullSkillLineKeepsTheExitCode(t *testing.T) {
+	cases := map[string]struct {
+		repo func(t *testing.T)
+		args []string
+	}{
+		"stopped before proposing":  {func(t *testing.T) { remoteRepo(t) }, []string{"--write"}},
+		"a new codebase unanswered": {func(t *testing.T) { newCodebaseRepo(t) }, []string{"--write"}},
+		"a hook refused": {func(t *testing.T) {
+			dir, _ := remoteRepo(t)
+			gitIn(t, dir, "config", "core.hooksPath", "elsewhere")
+		}, []string{"--write", "--hooks", "--yes"}},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			codes := map[string]int{}
+			for _, line := range []string{"", skillLine} {
+				c.repo(t)
+				env := fullEnv(t, onePR(), newRoutedAgent())
+				env.Skill = (&skillSpy{line: line}).skill
+				code, _, errOut := runInit(env, c.args...)
+				codes[line] = code
+				if said := strings.Contains(errOut, "physa skill setup"); said != (line != "") {
+					t.Errorf("line %q: stderr names the skill %v:\n%s", line, said, errOut)
+				}
+			}
+			if codes[""] != codes[skillLine] || codes[""] == 0 {
+				t.Errorf("exit codes %v, want the same non-zero code with and without the line", codes)
+			}
+		})
+	}
+}
+
+func TestSkillIsNotAskedOutsideAFullRun(t *testing.T) {
+	never := func(string) string { t.Error("Skill was asked"); return skillLine }
+	newRepo(t)
+	env := testEnv(t, onePR(), nil)
+	env.Skill = never
+	if code, _, errOut := runInit(env, "--gather"); code != 0 || strings.Contains(errOut, "physa skill") {
+		t.Errorf("--gather: code %d, stderr %s", code, errOut)
+	}
+	if code, _, errOut := runInit(env, "--push"); code != command.BadUsage || strings.Contains(errOut, "physa skill") {
+		t.Errorf("a bad line: code %d, stderr %s", code, errOut)
+	}
+	for _, args := range [][]string{nil, {"--propose"}, {"--recover"}} {
+		mappedRepo(t, ".physa/product/index.md")
+		env := fullEnv(t, onePR(), newRoutedAgent())
+		env.Skill = never
+		if code, _, errOut := runInit(env, args...); code != 2 || strings.Contains(errOut, "physa skill") {
+			t.Errorf("a mapped repo %v: code %d, stderr %s", args, code, errOut)
+		}
+	}
+}

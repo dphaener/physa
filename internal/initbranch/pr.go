@@ -40,7 +40,8 @@ func openPR(out *Outcome, st state, o Options) error {
 // none, the questions raised, the entries dropped and the tokens spent, then
 // what happened to the Session: hook. Entries are read back from m's files
 // as the map reader reads them; Run's Outcome.Body is the same text, read
-// from the branch's working copy.
+// from the branch's working copy. Last, when Summary.Skill is set, comes
+// the agent's Physa skill line.
 func Body(m Map) string {
 	dir, err := os.MkdirTemp("", "physa-init-body-")
 	if err != nil {
@@ -94,6 +95,9 @@ func body(m Map, read *mapfile.Map) string {
 	b.WriteString("\n## Tokens spent\n\n")
 	b.WriteString(initcost.Table(m.Summary.Tokens))
 	b.WriteString("\n## The Session: hook\n\n" + hookLine(m.Summary.Hook) + "\n")
+	if m.Summary.Skill != "" {
+		b.WriteString("\n## Physa's skill\n\n" + m.Summary.Skill + "\n")
+	}
 	return b.String()
 }
 

@@ -59,6 +59,14 @@ It is not `physa map hooks`, which points the repo's git hooks at the one that s
 
 When `physa init` finds no Physa skill installed for the agent it runs with, it says so in its output and its PR body, with the line to run. It never installs it: that is the person's account, not the repo.
 
+Built (decided by Myxo for the owner to review, 2026-11-26). A full run of `physa init` (bare, with or without `--write` or `--pr`, and a new codebase's) writes the line once on stderr as its last line, prefixed `physa init: `, so `--json` stays one document. When it writes the PR body, the body ends with a `## Physa's skill` section carrying the same line. The line is one of three, read from the same `targets` table `physa skill status` reads, and it writes the stub's path with `~` for home:
+
+- missing: Claude Code has no Physa skill on this account: run `physa skill setup` to install it, so its sessions learn Physa's commands and terms.
+- stale: Claude Code's Physa skill is out of date: run `physa skill setup` to update it.
+- other, a `SKILL.md` Physa did not write: `~/.claude/skills/physa/SKILL.md` was not written by Physa, so Claude Code has no current Physa skill, and `physa skill setup` leaves that file alone: move it aside, then run `physa skill setup`.
+
+A current skill, a state that cannot be read, no home, and an agent with no target say nothing. So do the phases alone (`--gather`, `--propose`, `--recover`) and a run that stops on a bad command line or a refused repo. A full run that has started says it even when it then stops or its hook is refused. The line never changes the exit code, and init never installs, updates or removes the skill.
+
 ## 6. The glossary
 
 Added with this draft, as the owner chose (2026-11-26):
